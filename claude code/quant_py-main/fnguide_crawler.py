@@ -185,7 +185,7 @@ def get_all_financial_statements(tickers, use_cache=True):
     return fs_data
 
 
-def extract_magic_formula_data(fs_dict, base_date=None):
+def extract_magic_formula_data(fs_dict, base_date=None, use_ttm=True):
     """
     재무제표에서 마법공식 계산에 필요한 항목 추출
 
@@ -198,50 +198,125 @@ def extract_magic_formula_data(fs_dict, base_date=None):
     Args:
         fs_dict: {ticker: 재무제표 데이터프레임}
         base_date: 기준일 (str, YYYYMMDD). None이면 최신 데이터 사용.
-                   공시 시차 반영: base_date - 3개월 이전 재무제표만 사용
+                   공시 시차 반영: 분기는 45일, 연간은 90일
+        use_ttm: True면 TTM(최근 4분기 합산) 사용, False면 연간 데이터만 사용
 
     Returns:
-        데이터프레임: 종목별 최근 연간 재무제표 항목
+        데이터프레임: 종목별 TTM 또는 연간 재무제표 항목
     """
     result_list = []
 
-    # 기준일 설정 (공시 시차 3개월 반영)
+    # 손익계산서/현금흐름표 항목 (4분기 합산 대상)
+    flow_accounts = [
+        '당기순이익', '법인세비용', '세전계속사업이익',
+        '매출액', '매출총이익', '영업이익',
+        '영업활동으로인한현금흐름', '감가상각비'
+    ]
+
+    # 재무상태표 항목 (최근 분기 값 사용 - 스냅샷)
+    stock_accounts = [
+        '자산', '부채', '유동부채', '유동자산', '비유동자산',
+        '현금및현금성자산', '자본'
+    ]
+
+    # 기준일 설정 (공시 시차 반영)
     if base_date:
         from datetime import datetime, timedelta
         base_dt = datetime.strptime(base_date, '%Y%m%d')
-        # 3개월 전
-        cutoff_date = base_dt - timedelta(days=90)
+        # 분기 공시 시차: 45일, 연간 공시 시차: 90일
+        cutoff_date_quarterly = base_dt - timedelta(days=45)
+        cutoff_date_annual = base_dt - timedelta(days=90)
     else:
-        cutoff_date = None
+        cutoff_date_quarterly = None
+        cutoff_date_annual = None
 
     for ticker, fs_df in fs_dict.items():
-        # 연간 데이터만 추출
-        annual_data = fs_df[fs_df['공시구분'] == 'y'].copy()
+        if use_ttm:
+            # TTM 방식: 분기 데이터 사용
+            quarterly_data = fs_df[fs_df['공시구분'] == 'q'].copy()
 
-        if annual_data.empty:
-            continue
+            if quarterly_data.empty:
+                # 분기 데이터 없으면 연간 데이터로 폴백
+                annual_data = fs_df[fs_df['공시구분'] == 'y'].copy()
+                if cutoff_date_annual:
+                    annual_data = annual_data[annual_data['기준일'] <= cutoff_date_annual]
+                if annual_data.empty:
+                    continue
+                latest_date = annual_data['기준일'].max()
+                latest_data = annual_data[annual_data['기준일'] == latest_date]
+                pivot_data = latest_data.pivot_table(
+                    index='종목코드', columns='계정', values='값', aggfunc='first'
+                )
+                pivot_data['기준일'] = latest_date
+                result_list.append(pivot_data)
+                continue
 
-        # 공시 시차 반영: cutoff_date 이전 데이터만 사용
-        if cutoff_date:
-            annual_data = annual_data[annual_data['기준일'] <= cutoff_date]
+            # 공시 시차 반영
+            if cutoff_date_quarterly:
+                quarterly_data = quarterly_data[quarterly_data['기준일'] <= cutoff_date_quarterly]
 
-        if annual_data.empty:
-            continue
+            if quarterly_data.empty:
+                continue
 
-        # 최근 기준일 찾기
-        latest_date = annual_data['기준일'].max()
-        latest_data = annual_data[annual_data['기준일'] == latest_date]
+            # 최근 4분기 찾기
+            unique_dates = sorted(quarterly_data['기준일'].unique(), reverse=True)
+            if len(unique_dates) < 4:
+                # 4분기 미만이면 있는 만큼만 사용 (비율 조정)
+                recent_dates = unique_dates
+            else:
+                recent_dates = unique_dates[:4]
 
-        # 피벗: 계정을 컬럼으로
-        pivot_data = latest_data.pivot_table(
-            index='종목코드',
-            columns='계정',
-            values='값',
-            aggfunc='first'
-        )
+            latest_date = recent_dates[0]  # 가장 최근 분기
 
-        pivot_data['기준일'] = latest_date
-        result_list.append(pivot_data)
+            # 최근 4분기 데이터 추출
+            ttm_data = quarterly_data[quarterly_data['기준일'].isin(recent_dates)]
+
+            # 손익계산서/현금흐름표: 4분기 합산
+            flow_data = ttm_data[ttm_data['계정'].isin(flow_accounts)]
+            flow_sum = flow_data.groupby(['종목코드', '계정'])['값'].sum().reset_index()
+            flow_pivot = flow_sum.pivot_table(
+                index='종목코드', columns='계정', values='값', aggfunc='first'
+            )
+
+            # 재무상태표: 최근 분기 값
+            stock_data = ttm_data[
+                (ttm_data['계정'].isin(stock_accounts)) &
+                (ttm_data['기준일'] == latest_date)
+            ]
+            stock_pivot = stock_data.pivot_table(
+                index='종목코드', columns='계정', values='값', aggfunc='first'
+            )
+
+            # 합치기
+            if flow_pivot.empty and stock_pivot.empty:
+                continue
+
+            pivot_data = pd.concat([flow_pivot, stock_pivot], axis=1)
+            pivot_data['기준일'] = latest_date
+            result_list.append(pivot_data)
+
+        else:
+            # 기존 방식: 연간 데이터만 사용
+            annual_data = fs_df[fs_df['공시구분'] == 'y'].copy()
+
+            if annual_data.empty:
+                continue
+
+            if cutoff_date_annual:
+                annual_data = annual_data[annual_data['기준일'] <= cutoff_date_annual]
+
+            if annual_data.empty:
+                continue
+
+            latest_date = annual_data['기준일'].max()
+            latest_data = annual_data[annual_data['기준일'] == latest_date]
+
+            pivot_data = latest_data.pivot_table(
+                index='종목코드', columns='계정', values='값', aggfunc='first'
+            )
+
+            pivot_data['기준일'] = latest_date
+            result_list.append(pivot_data)
 
     if not result_list:
         return pd.DataFrame()
@@ -254,7 +329,7 @@ def extract_magic_formula_data(fs_dict, base_date=None):
     # ※ '이자비용'은 FnGuide에 없으므로 대안 사용
     account_mapping = {
         '당기순이익': '당기순이익',
-        '법인세차감전순이익': '법인세차감전순이익',  # EBIT 계산용
+        '세전계속사업이익': '세전계속사업이익',  # EBIT 계산용
         '법인세비용': '법인세비용',
         '자산': '자산',
         '부채': '총부채',  # '부채'를 '총부채'로 매핑
@@ -267,6 +342,7 @@ def extract_magic_formula_data(fs_dict, base_date=None):
         '매출액': '매출액',
         '매출총이익': '매출총이익',
         '영업활동으로인한현금흐름': '영업현금흐름',
+        '영업이익': '영업이익',
     }
 
     # 컬럼명 변경 (원본 계정명 → 간소화된 이름)

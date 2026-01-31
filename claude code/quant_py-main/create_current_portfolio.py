@@ -160,9 +160,16 @@ def main():
     fs_data = get_all_financial_statements(universe_tickers, use_cache=True)
     print(f"재무제표 수집 완료: {len(fs_data)}개 종목")
 
-    # 마법공식용 데이터 추출 (공시 시차 3개월 반영)
-    magic_df = extract_magic_formula_data(fs_data, base_date=BASE_DATE)
-    print(f"마법공식 데이터 추출: {len(magic_df)}개 종목 (공시 시차 3개월 반영)")
+    # 마법공식용 데이터 추출 (TTM 방식 - 최근 4분기 합산)
+    magic_df = extract_magic_formula_data(fs_data, base_date=BASE_DATE, use_ttm=True)
+    print(f"마법공식 데이터 추출: {len(magic_df)}개 종목 (TTM 방식 - 최근 4분기 합산)")
+
+    # 자본잠식 종목 필터링 (자본 <= 0 제외)
+    if '자본' in magic_df.columns:
+        before_count = len(magic_df)
+        magic_df = magic_df[magic_df['자본'] > 0].copy()
+        filtered_count = before_count - len(magic_df)
+        print(f"자본잠식 종목 제외: {filtered_count}개 제외 → {len(magic_df)}개 종목 남음")
 
     # =========================================================================
     # 4단계: 펀더멘털 데이터 수집 (pykrx) - 현재 미사용
