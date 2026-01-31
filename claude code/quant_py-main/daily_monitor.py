@@ -636,61 +636,107 @@ def get_entry_reason(r):
     return " | ".join(reasons[:4])  # 최대 4개
 
 
-def send_telegram_message(buy, watch, latest_date):
-    """텔레그램 메시지 발송"""
+def send_telegram_message_full(buy, watch, wait, latest_date):
+    """텔레그램 메시지 발송 (전체 포트폴리오)"""
 
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         print("\n⚠️ 텔레그램 설정이 없어 알림을 건너뜁니다.")
         print("   TELEGRAM_BOT_TOKEN과 TELEGRAM_CHAT_ID를 설정하세요.")
         return False
 
-    total_stocks = len(buy) + len(watch)
+    total = len(buy) + len(watch) + len(wait)
 
-    # 메시지 구성
+    # 전략별 카운트
+    a_only = sum(1 for r in (buy + watch + wait) if r['strategy'] == 'A')
+    b_only = sum(1 for r in (buy + watch + wait) if r['strategy'] == 'B')
+    ab_both = sum(1 for r in (buy + watch + wait) if r['strategy'] == 'A+B')
+
     msg = "📊 퀀트 포트폴리오 일일 리포트\n"
-    msg += f"📅 {latest_date[:4]}-{latest_date[4:6]}-{latest_date[6:]}\n"
-    msg += "━━━━━━━━━━━━━━━━━━━━━\n\n"
+    msg += f"📅 {latest_date[:4]}.{latest_date[4:6]}.{latest_date[6:]}\n"
+    msg += "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
 
-    # 포트폴리오 요약
-    msg += "📋 포트폴리오 현황\n"
-    msg += f"• 전략 A: 마법공식 (가치+수익성)\n"
-    msg += f"• 전략 B: 멀티팩터 (가치+품질+모멘텀)\n"
-    msg += f"• 분석 종목: {total_stocks}개\n\n"
+    # 포트폴리오 구성
+    msg += "📋 오늘의 포트폴리오\n"
+    msg += f"총 {total}개 종목 분석\n"
+    msg += f"• 전략A(마법공식): {a_only + ab_both}개\n"
+    msg += f"• 전략B(멀티팩터): {b_only + ab_both}개\n"
+    msg += f"• 공통선정(A+B): {ab_both}개\n\n"
 
-    # 매수 적기
-    msg += "🟢 지금 매수 추천\n"
+    # 🟢 매수 적기
+    msg += f"🟢 매수 추천 ({len(buy)}개)\n"
     if buy:
         for r in buy:
-            change = "🔺" if r['daily_return'] > 0 else "🔻" if r['daily_return'] < 0 else "➖"
-            msg += f"\n▶ {r['name']} ({r['ticker']})\n"
-            msg += f"   현재가: {r['current_price']:,}원 {change}{abs(r['daily_return']):.1f}%\n"
-            msg += f"   진입점수: {r['entry_score']:.2f} ⭐\n"
-            reason = get_entry_reason(r)
-            msg += f"   근거: {reason}\n"
-            msg += f"   → {r['strategy']} 전략 선정종목\n"
+            chg = "▲" if r['daily_return'] > 0 else "▼" if r['daily_return'] < 0 else "-"
+            msg += f"★ {r['name']} {r['current_price']:,}원\n"
+            msg += f"   점수 {r['entry_score']:.2f} | "
+
+            # 핵심 근거 1줄
+            reasons = []
+            if r['from_52w_high'] <= -50:
+                reasons.append(f"고점比{r['from_52w_high']:.0f}%")
+            if r['per'] < 10:
+                reasons.append(f"PER{r['per']:.1f}")
+            if r['rsi'] <= 40:
+                reasons.append(f"RSI{r['rsi']:.0f}")
+            msg += " | ".join(reasons[:2]) + "\n"
     else:
-        msg += "   현재 매수 적기 종목 없음\n"
+        msg += "   없음 (전종목 관망/과열)\n"
 
-    msg += "\n━━━━━━━━━━━━━━━━━━━━━\n"
+    msg += "\n"
 
-    # 관망 (조정 시 매수)
-    msg += "🟡 조정 시 매수 검토\n\n"
-    if watch:
-        for r in watch[:8]:
-            change = "🔺" if r['daily_return'] > 0 else "🔻" if r['daily_return'] < 0 else "➖"
-            msg += f"• {r['name']} {r['current_price']:,}원 {change}{abs(r['daily_return']):.1f}%\n"
-            msg += f"  점수 {r['entry_score']:.2f} | {r['strategy']}\n"
-        if len(watch) > 8:
-            msg += f"\n... 외 {len(watch) - 8}개 종목\n"
+    # 🟡 관망
+    msg += f"🟡 조정시 매수 ({len(watch)}개)\n"
+    for r in watch[:6]:
+        chg = "▲" if r['daily_return'] > 0 else "▼" if r['daily_return'] < 0 else "-"
+        msg += f"• {r['name']} {r['current_price']:,}원 ({r['entry_score']:.2f})\n"
+    if len(watch) > 6:
+        others = [r['name'] for r in watch[6:10]]
+        msg += f"  +{', '.join(others)}"
+        if len(watch) > 10:
+            msg += f" 외 {len(watch)-10}개"
+        msg += "\n"
+
+    msg += "\n"
+
+    # 🔴 과열 (매수 금지)
+    msg += f"🔴 과열 주의 ({len(wait)}개)\n"
+    if wait:
+        hot_names = [r['name'] for r in wait[:5]]
+        msg += f"   {', '.join(hot_names)}"
+        if len(wait) > 5:
+            msg += f" 외 {len(wait)-5}개"
+        msg += "\n"
+        msg += "   → RSI 70↑ 또는 신고가, 추격매수 금지\n"
     else:
-        msg += "   해당 종목 없음\n"
+        msg += "   없음\n"
 
-    msg += "\n━━━━━━━━━━━━━━━━━━━━━\n"
-    msg += "💡 진입점수 기준\n"
-    msg += "• 0.6↑: 매수 적기 (저점)\n"
-    msg += "• 0.3~0.6: 관망 (조정대기)\n"
-    msg += "• 0.3↓: 과열 (매수보류)\n"
-    msg += "\n📈 Quant Bot by Volume"
+    msg += "\n━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    msg += "📈 Quant Bot | 매일 장마감 후 발송"
+
+    # 텔레그램 API 호출
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        data = {
+            'chat_id': TELEGRAM_CHAT_ID,
+            'text': msg,
+        }
+        response = requests.post(url, data=data, timeout=10)
+
+        if response.status_code == 200:
+            print("\n✅ 텔레그램 알림 발송 완료")
+            return True
+        else:
+            print(f"\n⚠️ 텔레그램 발송 실패: {response.status_code}")
+            return False
+
+    except Exception as e:
+        print(f"\n⚠️ 텔레그램 발송 오류: {e}")
+        return False
+
+
+def send_telegram_message(buy, watch, latest_date):
+    """텔레그램 메시지 발송 (하위호환)"""
+    return send_telegram_message_full(buy, watch, [], latest_date)
 
     # 텔레그램 API 호출
     try:
@@ -802,7 +848,7 @@ def main():
         save_results(results, buy, watch, wait, latest_date)
 
         # 5. 텔레그램 알림
-        send_telegram_message(buy, watch, latest_date)
+        send_telegram_message_full(buy, watch, wait, latest_date)
 
         # 6. Git 커밋 & 푸시
         git_commit_and_push(latest_date)
