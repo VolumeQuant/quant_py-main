@@ -36,16 +36,16 @@ OUTPUT_DIR = BASE_DIR / 'output'
 DAILY_DIR = BASE_DIR / 'daily_reports'
 DAILY_DIR.mkdir(exist_ok=True)
 
-# 텔레그램 설정 (사용자가 설정해야 함)
-TELEGRAM_BOT_TOKEN = ""  # 여기에 봇 토큰 입력
-TELEGRAM_CHAT_ID = ""    # 여기에 채팅 ID 입력
-
-# Git 설정
-GIT_AUTO_PUSH = True
-
-# 진입 점수 임계값
-SCORE_BUY = 0.6      # 매수 적기
-SCORE_WATCH = 0.3    # 관망
+# 설정 로드 (config.py에서 가져오기)
+try:
+    from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, GIT_AUTO_PUSH, SCORE_BUY, SCORE_WATCH
+except ImportError:
+    # config.py가 없으면 기본값 사용
+    TELEGRAM_BOT_TOKEN = ""
+    TELEGRAM_CHAT_ID = ""
+    GIT_AUTO_PUSH = True
+    SCORE_BUY = 0.6
+    SCORE_WATCH = 0.3
 
 # ============================================================================
 # 포트폴리오 종목 로드
