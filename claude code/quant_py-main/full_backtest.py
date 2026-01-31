@@ -160,8 +160,8 @@ def run_strategy_for_date(collector, date, universe_tickers, universe_df, strate
 
     try:
         if strategy_type == 'A':
-            # 마법공식: FnGuide 데이터 필요
-            fs_data = get_all_financial_statements(universe_tickers[:100], use_cache=True)  # 상위 100개만
+            # 마법공식: FnGuide 데이터 필요 (캐시 사용)
+            fs_data = get_all_financial_statements(universe_tickers, use_cache=True)
             magic_df = extract_magic_formula_data(fs_data)
 
             if magic_df.empty:
@@ -182,8 +182,8 @@ def run_strategy_for_date(collector, date, universe_tickers, universe_df, strate
 
         else:
             # 멀티팩터: FnGuide 데이터 + 모멘텀 (개선 버전)
-            # 1. FnGuide 재무제표 수집
-            fs_data = get_all_financial_statements(universe_tickers[:100], use_cache=True)
+            # 1. FnGuide 재무제표 수집 (캐시 사용)
+            fs_data = get_all_financial_statements(universe_tickers, use_cache=True)
             magic_df = extract_magic_formula_data(fs_data, base_date=date)
 
             if magic_df.empty:
@@ -325,7 +325,7 @@ def calculate_portfolio_return(collector, portfolio_tickers, start_date, end_dat
 
     # Task #9: 상장폐지 종목 경고
     if delisted_stocks:
-        print(f"    ⚠️  상장폐지 감지: {len(delisted_stocks)}개 종목 -100% 손실 반영")
+        print(f"    [!] 상장폐지 감지: {len(delisted_stocks)}개 종목 -100% 손실 반영")
 
     # 동일 가중 포트폴리오 수익률
     returns_df = pd.concat(returns_list, axis=1)
@@ -611,45 +611,56 @@ def run_full_backtest(strategy_type='A', benchmark_returns=None):
 
 def run_benchmark():
     """
-    벤치마크 (코스피) 성과 계산
+    벤치마크 (코스피200 + 코스닥150) 성과 계산
     """
-    print("\n[벤치마크 - 코스피 지수]")
+    from pykrx import stock
 
-    try:
-        from pykrx import stock
-        # pykrx 1.0.51 호환 방식으로 KOSPI 지수 조회
-        kospi = stock.get_index_ohlcv(START_DATE, END_DATE, '1001')
+    results = {}
+    all_returns = {}
 
-        if kospi.empty:
-            print("  KOSPI 지수 데이터 없음, 스킵")
-            return pd.Series(dtype=float), {}
+    benchmarks = [
+        ('1028', '코스피200', 'backtest_kospi200_returns.csv'),
+        ('2203', '코스닥150', 'backtest_kosdaq150_returns.csv'),
+    ]
 
-        # 종가 컬럼명 찾기
-        close_col = None
-        for col in kospi.columns:
-            if '종가' in col or 'close' in col.lower():
-                close_col = col
-                break
+    for idx_code, name, filename in benchmarks:
+        print(f"\n[벤치마크 - {name}]")
+        try:
+            idx_data = stock.get_index_ohlcv(START_DATE, END_DATE, idx_code)
 
-        if close_col is None:
-            close_col = kospi.columns[3] if len(kospi.columns) > 3 else kospi.columns[0]
+            if idx_data.empty:
+                print(f"  {name} 데이터 없음, 스킵")
+                continue
 
-        kospi_returns = kospi[close_col].pct_change().dropna()
-        metrics = calculate_performance_metrics(kospi_returns)
+            # 종가 컬럼명 찾기
+            close_col = None
+            for col in idx_data.columns:
+                if '종가' in col or 'close' in col.lower():
+                    close_col = col
+                    break
 
-        print(f"  CAGR: {metrics.get('cagr', 0):.2f}%")
-        print(f"  MDD: {metrics.get('mdd', 0):.2f}%")
-        print(f"  Sharpe: {metrics.get('sharpe', 0):.2f}")
+            if close_col is None:
+                close_col = idx_data.columns[3] if len(idx_data.columns) > 3 else idx_data.columns[0]
 
-        # 저장
-        kospi_returns.to_csv(OUTPUT_DIR / 'backtest_benchmark_returns.csv')
+            returns = idx_data[close_col].pct_change().dropna()
+            metrics = calculate_performance_metrics(returns)
 
-        return kospi_returns, metrics
+            print(f"  CAGR: {metrics.get('cagr', 0):.2f}%")
+            print(f"  MDD: {metrics.get('mdd', 0):.2f}%")
+            print(f"  Sharpe: {metrics.get('sharpe', 0):.2f}")
 
-    except Exception as e:
-        print(f"  벤치마크 계산 실패: {e}")
-        print("  벤치마크 스킵, 전략만 백테스트 진행")
-        return pd.Series(dtype=float), {}
+            # 저장
+            returns.to_csv(OUTPUT_DIR / filename)
+
+            results[name] = metrics
+            all_returns[name] = returns
+
+        except Exception as e:
+            print(f"  {name} 계산 실패: {e}")
+
+    # 기존 호환성: 코스피200을 기본 벤치마크로 반환
+    default_returns = all_returns.get('코스피200', pd.Series(dtype=float))
+    return default_returns, results, all_returns
 
 
 def main():
@@ -663,8 +674,8 @@ def main():
     print(f"OOS: {IS_END_DATE} ~ {END_DATE}")
     print("=" * 80)
 
-    # 벤치마크
-    benchmark_returns, benchmark_metrics = run_benchmark()
+    # 벤치마크 (코스피200 + 코스닥150)
+    benchmark_returns, benchmark_metrics, all_bench_returns = run_benchmark()
 
     # 전략 A 백테스트 (Task #7: 벤치마크 전달)
     returns_a, results_a = run_full_backtest('A', benchmark_returns)
@@ -677,11 +688,15 @@ def main():
     print("최종 비교 리포트")
     print("=" * 80)
 
-    comparison = pd.DataFrame({
-        '코스피': benchmark_metrics,
-        '전략 A (마법공식)': results_a.get('full_metrics', {}),
-        '전략 B (멀티팩터)': results_b.get('full_metrics', {})
-    }).T
+    comparison_data = {}
+    # 벤치마크들 추가
+    for bench_name, bench_metric in benchmark_metrics.items():
+        comparison_data[bench_name] = bench_metric
+    # 전략들 추가
+    comparison_data['전략 A (마법공식)'] = results_a.get('full_metrics', {})
+    comparison_data['전략 B (멀티팩터)'] = results_b.get('full_metrics', {})
+
+    comparison = pd.DataFrame(comparison_data).T
 
     print(comparison.to_string())
 
