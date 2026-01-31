@@ -1,9 +1,11 @@
 # 한국 주식 퀀트 투자 시스템
 
-데이터 기반 한국 주식 투자 전략 백테스팅 및 포트폴리오 생성 시스템
+데이터 기반 한국 주식 투자 전략 백테스팅, 포트폴리오 생성 및 **일별 매매 타이밍 분석** 시스템
 
 [![Python 3.13](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Daily Monitor](https://img.shields.io/badge/Daily-Monitor-green.svg)](daily_monitor.py)
+[![Telegram](https://img.shields.io/badge/Telegram-Bot-blue.svg)](https://telegram.org/)
 
 ## 📊 프로젝트 개요
 
@@ -15,6 +17,8 @@ Joel Greenblatt의 마법공식(Magic Formula)과 멀티팩터 전략을 한국 
 - ✅ **높은 수익률**: 연평균 12.7~16.0% (코스피 7.6% 대비 2배)
 - ✅ **낮은 리스크**: MDD -23~31% (코스피 -44% 대비 안정적)
 - ✅ **자동화**: 분기별 포트폴리오 자동 생성
+- ✅ **일별 모니터링**: 진입 타이밍 자동 분석 및 알림
+- ✅ **텔레그램 연동**: 실시간 매수 신호 알림
 - ✅ **투명성**: 모든 거래비용 반영, 오픈소스
 
 ### 백테스팅 성과 (2015-2025)
@@ -62,6 +66,24 @@ python full_backtest.py
 - `backtest_results/backtest_strategy_B_*.csv` - 전략 B 백테스트 결과
 - `backtest_results/backtest_comparison.csv` - 전략 비교
 
+### 4. 일별 모니터링 (진입 타이밍)
+
+```bash
+# 매일 장 마감 후 실행 (~5분 소요)
+python daily_monitor.py
+```
+
+**기능**:
+- 포트폴리오 종목의 기술적 지표 분석
+- 진입 점수(Entry Score) 산출
+- 텔레그램 알림 자동 발송
+- Git 자동 커밋/푸시
+
+**결과**:
+- `daily_reports/daily_analysis_YYYYMMDD.json` - JSON 분석 결과
+- `daily_reports/daily_analysis_YYYYMMDD.csv` - CSV 상세 데이터
+- `daily_reports/daily_report_YYYYMMDD.txt` - 텍스트 리포트
+
 ## 📈 투자 전략
 
 ### Strategy A - 마법공식 (안정형)
@@ -89,6 +111,55 @@ python full_backtest.py
 - CAGR 16.0%, MDD -31.5%
 
 **추천 대상**: 높은 수익 추구, 대형주 선호, 변동성 감내 가능
+
+## 📡 일별 진입 타이밍 분석
+
+선정된 포트폴리오 종목의 **매수 적기**를 매일 분석하는 시스템입니다.
+
+### 진입 점수 (Entry Score) 산출 방식
+
+| 지표 | 가중치 | 산출 방법 | 의미 |
+|------|--------|----------|------|
+| **RSI** | 25% | RSI ≤ 30 → 1.0점, RSI ≥ 70 → 0점 | 과매도 구간 탐지 |
+| **52주 위치** | 25% | 저점 근접 → 1.0점, 고점 근접 → 0점 | 연간 저점 매수 기회 |
+| **볼린저밴드** | 20% | 하단 접근 → 1.0점, 상단 → 0점 | 단기 과매도 탐지 |
+| **이동평균 이격도** | 20% | 60일선 -20% → 1.0점, +20% → 0점 | 중기 저평가 판단 |
+| **거래량 신호** | 10% | 평균 대비 2배 → 1.0점 | 관심 증가 확인 |
+
+### 진입 신호 분류
+
+| 등급 | 진입 점수 | 의미 | 행동 |
+|------|----------|------|------|
+| 🟢 **매수 적기** | ≥ 0.6 | 기술적 저점, 매수 타이밍 | 즉시 매수 검토 |
+| 🟡 **관망** | 0.3 ~ 0.6 | 중립 구간 | 추가 하락 대기 |
+| 🔴 **대기** | < 0.3 | 고점 구간 또는 과열 | 매수 보류 |
+
+### 텔레그램 알림 설정
+
+```python
+# config.py 파일 생성
+TELEGRAM_BOT_TOKEN = "your-bot-token"
+TELEGRAM_CHAT_ID = "your-chat-id"
+GIT_AUTO_PUSH = True
+SCORE_BUY = 0.6      # 매수 적기 기준
+SCORE_WATCH = 0.3    # 관망 기준
+```
+
+### 예시 알림
+
+```
+📊 일별 포트폴리오 모니터링
+📅 기준일: 20260130
+━━━━━━━━━━━━━━━━━━━━━
+
+🟢 매수 적기
+
+▶ 제닉 (123330)
+   16,360원 🔻5.4%
+   ⭐ 진입점수: 0.78
+   📌 RSI 48 | 52주高 -62% (급락) | PER 7.1 (저평가)
+   전략: A+B
+```
 
 ## 💰 2026년 1월 추천 종목
 
@@ -120,9 +191,11 @@ python full_backtest.py
 quant_py-main/
 ├── README.md                       # 프로젝트 개요 (이 파일)
 ├── README_BACKTEST.md              # 백테스팅 상세 가이드
+├── BACKTEST_RESULTS.md             # 백테스트 결과 및 TOP 20 종목
 ├── PROJECT_REPORT.md               # 프로젝트 결과 리포트
 ├── INVESTMENT_GUIDE_2026_01.md     # 투자 가이드 (2026년 1월)
 ├── SESSION_HANDOFF.md              # 개발 작업 로그
+├── config_template.py              # 설정 템플릿 (복사 후 config.py로 사용)
 │
 ├── 핵심 전략 모듈
 │   ├── strategy_a_magic.py         # 전략 A: 마법공식
@@ -137,12 +210,17 @@ quant_py-main/
 ├── 실행 스크립트
 │   ├── create_current_portfolio.py # 현재 포트폴리오 생성
 │   ├── full_backtest.py            # 전체 백테스팅
-│   └── compare_strategies_abc.py   # 전략 비교
+│   ├── compare_strategies_abc.py   # 전략 비교
+│   └── daily_monitor.py            # 일별 모니터링 (진입 타이밍)
 │
 ├── 결과 디렉토리
 │   ├── output/                     # 포트폴리오 결과
 │   ├── backtest_results/           # 백테스팅 결과
+│   ├── daily_reports/              # 일별 분석 리포트
 │   └── data_cache/                 # 데이터 캐시
+│
+├── 리포트
+│   └── Quant_Portfolio_Report_2026Q1.pdf  # PDF 포트폴리오 리포트
 │
 └── 분석 차트
     ├── strategy_a_analysis.png
@@ -249,8 +327,25 @@ MIT License
 
 ---
 
-**작성일**: 2026-01-30
-**버전**: 1.0
+## 📝 최근 업데이트 (2026-01-31)
+
+### v1.1 - 일별 모니터링 시스템 추가
+- **daily_monitor.py**: 매일 진입 타이밍 분석
+- **진입 점수 시스템**: RSI, 볼린저밴드, 52주 위치, 이격도, 거래량 종합 분석
+- **텔레그램 알림**: 매수 적기 종목 실시간 알림
+- **Git 자동화**: 일별 리포트 자동 커밋/푸시
+- **PDF 리포트**: 프로젝트 및 포트폴리오 설명 문서 생성
+
+### v1.0 - 초기 릴리스
+- 전략 A (마법공식) 구현
+- 전략 B (멀티팩터) 구현
+- 10년 백테스팅 완료
+- 포트폴리오 자동 생성
+
+---
+
+**작성일**: 2026-01-31
+**버전**: 1.1
 **Python**: 3.13+
 
 Made with ❤️ by Volume Quant Team
