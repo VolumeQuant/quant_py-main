@@ -698,120 +698,100 @@ def get_hot_reason(r):
     return ", ".join(reasons) if reasons else "기술적 과열"
 
 
+def send_single_telegram(msg):
+    """단일 텔레그램 메시지 발송"""
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        data = {'chat_id': TELEGRAM_CHAT_ID, 'text': msg}
+        response = requests.post(url, data=data, timeout=10)
+        return response.status_code == 200
+    except:
+        return False
+
+
 def send_telegram_message_full(buy, watch, wait, latest_date):
-    """텔레그램 메시지 발송 (전체 포트폴리오)"""
+    """텔레그램 메시지 발송 (전체 포트폴리오 - 여러 메시지)"""
 
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         print("\n⚠️ 텔레그램 설정이 없어 알림을 건너뜁니다.")
-        print("   TELEGRAM_BOT_TOKEN과 TELEGRAM_CHAT_ID를 설정하세요.")
         return False
 
     total = len(buy) + len(watch) + len(wait)
-
-    # 전략별 카운트
     a_only = sum(1 for r in (buy + watch + wait) if r['strategy'] == 'A')
     b_only = sum(1 for r in (buy + watch + wait) if r['strategy'] == 'B')
     ab_both = sum(1 for r in (buy + watch + wait) if r['strategy'] == 'A+B')
 
-    msg = "📊 퀀트 포트폴리오 일일 리포트\n"
-    msg += f"📅 {latest_date[:4]}.{latest_date[4:6]}.{latest_date[6:]}\n"
-    msg += "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    # ===== 메시지 1: 개요 + 매수 추천 =====
+    msg1 = "📊 퀀트 포트폴리오 일일 리포트\n"
+    msg1 += f"📅 {latest_date[:4]}.{latest_date[4:6]}.{latest_date[6:]}\n"
+    msg1 += "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
 
-    # 전략 설명
-    msg += "📋 투자 전략 소개\n"
-    msg += "전략A 마법공식: 이익수익률+자본효율이 높은 저평가 우량주\n"
-    msg += "전략B 멀티팩터: 가치+품질+모멘텀 종합점수 상위주\n\n"
+    msg1 += "📋 투자 전략\n"
+    msg1 += "• 전략A(마법공식): 이익수익률+자본효율 높은 저평가주\n"
+    msg1 += "• 전략B(멀티팩터): 가치+품질+모멘텀 종합 상위주\n\n"
 
-    # 포트폴리오 구성
-    msg += f"📈 오늘의 포트폴리오 ({total}개)\n"
-    msg += f"• 전략A: {a_only + ab_both}개 | 전략B: {b_only + ab_both}개\n"
-    msg += f"• 양쪽 모두 선정(A+B): {ab_both}개\n\n"
+    msg1 += f"📈 포트폴리오 구성 (총 {total}개)\n"
+    msg1 += f"• 전략A {a_only + ab_both}개 / 전략B {b_only + ab_both}개\n"
+    msg1 += f"• 공통선정(A+B) {ab_both}개\n\n"
 
-    # 🟢 매수 적기
-    msg += f"🟢 매수 추천 ({len(buy)}개)\n"
-    msg += "가치 높고 현재 저평가된 종목\n"
+    msg1 += "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    msg1 += f"🟢 매수 추천 ({len(buy)}개)\n"
+    msg1 += "펀더멘털 우수 + 현재 저평가\n\n"
+
     if buy:
         for r in buy:
             reason = get_buy_reason(r)
-            msg += f"\n★ {r['name']} ({r['ticker']})\n"
-            msg += f"   {r['current_price']:,}원 | 점수 {r['entry_score']:.2f}\n"
-            msg += f"   → {reason}\n"
-            msg += f"   [{r['strategy']}전략]\n"
+            msg1 += f"★ {r['name']} ({r['ticker']}) [{r['strategy']}]\n"
+            msg1 += f"   현재가: {r['current_price']:,}원\n"
+            msg1 += f"   진입점수: {r['entry_score']:.2f}\n"
+            msg1 += f"   근거: {reason}\n\n"
     else:
-        msg += "   현재 해당 종목 없음\n"
+        msg1 += "현재 매수적기 종목 없음\n"
 
-    msg += "\n━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    send_single_telegram(msg1)
+    time.sleep(0.5)
 
-    # 🟡 관망
-    msg += f"🟡 조정시 매수 ({len(watch)}개)\n"
-    msg += "우량주이나 단기 조정 대기 필요\n\n"
+    # ===== 메시지 2: 관망 종목 =====
+    msg2 = f"🟡 조정시 매수 ({len(watch)}개)\n"
+    msg2 += "우량주이나 추가 하락 대기\n"
+    msg2 += "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+
     for r in watch:
         reason = get_watch_reason(r)
-        msg += f"• {r['name']} {r['current_price']:,}원\n"
-        msg += f"  점수 {r['entry_score']:.2f} | {reason}\n"
+        msg2 += f"• {r['name']} ({r['ticker']}) [{r['strategy']}]\n"
+        msg2 += f"  {r['current_price']:,}원 | 점수 {r['entry_score']:.2f}\n"
+        msg2 += f"  → {reason}\n\n"
 
-    msg += "\n━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    send_single_telegram(msg2)
+    time.sleep(0.5)
 
-    # 🔴 과열 (매수 금지)
-    msg += f"🔴 과열 주의 ({len(wait)}개)\n"
-    msg += "우량주이나 현재 고점권, 매수 보류\n\n"
+    # ===== 메시지 3: 과열 종목 =====
+    msg3 = f"🔴 과열 주의 ({len(wait)}개)\n"
+    msg3 += "우량주이나 고점권, 추격매수 금지\n"
+    msg3 += "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+
     if wait:
         for r in wait:
             reason = get_hot_reason(r)
-            msg += f"• {r['name']} {r['current_price']:,}원\n"
-            msg += f"  → {reason}\n"
+            msg3 += f"• {r['name']} ({r['ticker']}) [{r['strategy']}]\n"
+            msg3 += f"  {r['current_price']:,}원\n"
+            msg3 += f"  → {reason}\n\n"
     else:
-        msg += "   해당 종목 없음\n"
+        msg3 += "해당 종목 없음\n"
 
-    msg += "\n━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-    msg += "💡 매일 장마감 후 자동 분석\n"
-    msg += "📈 Quant Bot by Volume"
+    msg3 += "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    msg3 += "💡 매일 장마감 후 자동 분석\n"
+    msg3 += "📈 Quant Bot by Volume"
 
-    # 텔레그램 API 호출
-    try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-        data = {
-            'chat_id': TELEGRAM_CHAT_ID,
-            'text': msg,
-        }
-        response = requests.post(url, data=data, timeout=10)
+    send_single_telegram(msg3)
 
-        if response.status_code == 200:
-            print("\n✅ 텔레그램 알림 발송 완료")
-            return True
-        else:
-            print(f"\n⚠️ 텔레그램 발송 실패: {response.status_code}")
-            return False
-
-    except Exception as e:
-        print(f"\n⚠️ 텔레그램 발송 오류: {e}")
-        return False
+    print("\n✅ 텔레그램 알림 발송 완료 (3개 메시지)")
+    return True
 
 
 def send_telegram_message(buy, watch, latest_date):
     """텔레그램 메시지 발송 (하위호환)"""
     return send_telegram_message_full(buy, watch, [], latest_date)
-
-    # 텔레그램 API 호출
-    try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-        data = {
-            'chat_id': TELEGRAM_CHAT_ID,
-            'text': msg,
-            'parse_mode': 'Markdown',
-        }
-        response = requests.post(url, data=data, timeout=10)
-
-        if response.status_code == 200:
-            print("\n✅ 텔레그램 알림 발송 완료")
-            return True
-        else:
-            print(f"\n⚠️ 텔레그램 발송 실패: {response.status_code}")
-            return False
-
-    except Exception as e:
-        print(f"\n⚠️ 텔레그램 발송 오류: {e}")
-        return False
 
 
 # ============================================================================
