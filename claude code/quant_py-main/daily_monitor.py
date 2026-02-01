@@ -636,6 +636,68 @@ def get_entry_reason(r):
     return " | ".join(reasons[:4])  # 최대 4개
 
 
+def get_buy_reason(r):
+    """매수 추천 근거 생성"""
+    reasons = []
+
+    # 저평가 근거
+    if r['per'] < 8:
+        reasons.append(f"PER {r['per']:.1f} 초저평가")
+    elif r['per'] < 12:
+        reasons.append(f"PER {r['per']:.1f} 저평가")
+
+    # 급락 근거
+    if r['from_52w_high'] <= -50:
+        reasons.append(f"52주고점 대비 {r['from_52w_high']:.0f}% 급락")
+    elif r['from_52w_high'] <= -30:
+        reasons.append(f"52주고점 대비 {r['from_52w_high']:.0f}% 조정")
+
+    # RSI 근거
+    if r['rsi'] <= 30:
+        reasons.append(f"RSI {r['rsi']:.0f} 과매도")
+    elif r['rsi'] <= 45:
+        reasons.append(f"RSI {r['rsi']:.0f} 저점권")
+
+    return ", ".join(reasons) if reasons else "기술적 저점"
+
+
+def get_watch_reason(r):
+    """관망 근거 생성"""
+    reasons = []
+
+    if r['rsi'] >= 60:
+        reasons.append(f"RSI {r['rsi']:.0f}")
+    if r['from_52w_high'] > -20:
+        reasons.append("고점 근접")
+    if r.get('bb_position', 0.5) > 0.7:
+        reasons.append("단기 과열")
+
+    if not reasons:
+        reasons.append("추가 조정 대기")
+
+    return ", ".join(reasons)
+
+
+def get_hot_reason(r):
+    """과열 근거 생성"""
+    reasons = []
+
+    if r['rsi'] >= 80:
+        reasons.append(f"RSI {r['rsi']:.0f} 극과열")
+    elif r['rsi'] >= 70:
+        reasons.append(f"RSI {r['rsi']:.0f} 과매수")
+
+    if r['from_52w_high'] >= -5:
+        reasons.append("52주 신고가")
+    elif r['from_52w_high'] >= -15:
+        reasons.append("고점 근접")
+
+    if r.get('ma_div_60', 0) >= 20:
+        reasons.append(f"60일선 +{r['ma_div_60']:.0f}% 괴리")
+
+    return ", ".join(reasons) if reasons else "기술적 과열"
+
+
 def send_telegram_message_full(buy, watch, wait, latest_date):
     """텔레그램 메시지 발송 (전체 포트폴리오)"""
 
@@ -655,63 +717,55 @@ def send_telegram_message_full(buy, watch, wait, latest_date):
     msg += f"📅 {latest_date[:4]}.{latest_date[4:6]}.{latest_date[6:]}\n"
     msg += "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
 
+    # 전략 설명
+    msg += "📋 투자 전략 소개\n"
+    msg += "전략A 마법공식: 이익수익률+자본효율이 높은 저평가 우량주\n"
+    msg += "전략B 멀티팩터: 가치+품질+모멘텀 종합점수 상위주\n\n"
+
     # 포트폴리오 구성
-    msg += "📋 오늘의 포트폴리오\n"
-    msg += f"총 {total}개 종목 분석\n"
-    msg += f"• 전략A(마법공식): {a_only + ab_both}개\n"
-    msg += f"• 전략B(멀티팩터): {b_only + ab_both}개\n"
-    msg += f"• 공통선정(A+B): {ab_both}개\n\n"
+    msg += f"📈 오늘의 포트폴리오 ({total}개)\n"
+    msg += f"• 전략A: {a_only + ab_both}개 | 전략B: {b_only + ab_both}개\n"
+    msg += f"• 양쪽 모두 선정(A+B): {ab_both}개\n\n"
 
     # 🟢 매수 적기
     msg += f"🟢 매수 추천 ({len(buy)}개)\n"
+    msg += "가치 높고 현재 저평가된 종목\n"
     if buy:
         for r in buy:
-            chg = "▲" if r['daily_return'] > 0 else "▼" if r['daily_return'] < 0 else "-"
-            msg += f"★ {r['name']} {r['current_price']:,}원\n"
-            msg += f"   점수 {r['entry_score']:.2f} | "
-
-            # 핵심 근거 1줄
-            reasons = []
-            if r['from_52w_high'] <= -50:
-                reasons.append(f"고점比{r['from_52w_high']:.0f}%")
-            if r['per'] < 10:
-                reasons.append(f"PER{r['per']:.1f}")
-            if r['rsi'] <= 40:
-                reasons.append(f"RSI{r['rsi']:.0f}")
-            msg += " | ".join(reasons[:2]) + "\n"
+            reason = get_buy_reason(r)
+            msg += f"\n★ {r['name']} ({r['ticker']})\n"
+            msg += f"   {r['current_price']:,}원 | 점수 {r['entry_score']:.2f}\n"
+            msg += f"   → {reason}\n"
+            msg += f"   [{r['strategy']}전략]\n"
     else:
-        msg += "   없음 (전종목 관망/과열)\n"
+        msg += "   현재 해당 종목 없음\n"
 
-    msg += "\n"
+    msg += "\n━━━━━━━━━━━━━━━━━━━━━━━━━\n"
 
     # 🟡 관망
     msg += f"🟡 조정시 매수 ({len(watch)}개)\n"
-    for r in watch[:6]:
-        chg = "▲" if r['daily_return'] > 0 else "▼" if r['daily_return'] < 0 else "-"
-        msg += f"• {r['name']} {r['current_price']:,}원 ({r['entry_score']:.2f})\n"
-    if len(watch) > 6:
-        others = [r['name'] for r in watch[6:10]]
-        msg += f"  +{', '.join(others)}"
-        if len(watch) > 10:
-            msg += f" 외 {len(watch)-10}개"
-        msg += "\n"
+    msg += "우량주이나 단기 조정 대기 필요\n\n"
+    for r in watch:
+        reason = get_watch_reason(r)
+        msg += f"• {r['name']} {r['current_price']:,}원\n"
+        msg += f"  점수 {r['entry_score']:.2f} | {reason}\n"
 
-    msg += "\n"
+    msg += "\n━━━━━━━━━━━━━━━━━━━━━━━━━\n"
 
     # 🔴 과열 (매수 금지)
     msg += f"🔴 과열 주의 ({len(wait)}개)\n"
+    msg += "우량주이나 현재 고점권, 매수 보류\n\n"
     if wait:
-        hot_names = [r['name'] for r in wait[:5]]
-        msg += f"   {', '.join(hot_names)}"
-        if len(wait) > 5:
-            msg += f" 외 {len(wait)-5}개"
-        msg += "\n"
-        msg += "   → RSI 70↑ 또는 신고가, 추격매수 금지\n"
+        for r in wait:
+            reason = get_hot_reason(r)
+            msg += f"• {r['name']} {r['current_price']:,}원\n"
+            msg += f"  → {reason}\n"
     else:
-        msg += "   없음\n"
+        msg += "   해당 종목 없음\n"
 
     msg += "\n━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-    msg += "📈 Quant Bot | 매일 장마감 후 발송"
+    msg += "💡 매일 장마감 후 자동 분석\n"
+    msg += "📈 Quant Bot by Volume"
 
     # 텔레그램 API 호출
     try:
