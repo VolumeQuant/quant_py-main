@@ -103,31 +103,45 @@ class MultiFactorStrategy:
         Returns:
             data: 모멘텀 팩터가 추가된 데이터프레임
         """
-        lookback_days = 12 * 21  # 12개월
-        skip_days = 1 * 21  # 1개월
+        lookback_days = 12 * 21  # 12개월 (약 252 거래일)
+        skip_days = 1 * 21  # 1개월 (약 21 거래일)
+
+        if price_df is None or price_df.empty:
+            print(f"경고: 가격 데이터가 없습니다.")
+            data['모멘텀'] = np.nan
+            return data
 
         if len(price_df) < lookback_days + skip_days:
-            print(f"경고: 가격 데이터가 부족합니다.")
+            print(f"경고: 가격 데이터가 부족합니다. (현재: {len(price_df)}일, 필요: {lookback_days + skip_days}일)")
             data['모멘텀'] = np.nan
             return data
 
         # 모멘텀 계산
         momentum_dict = {}
+        matched_count = 0
+        min_required = lookback_days + skip_days + 1
+
         for ticker in data['종목코드']:
             if ticker in price_df.columns:
                 prices = price_df[ticker].dropna()
 
-                if len(prices) < lookback_days + skip_days:
+                if len(prices) < min_required:
                     continue
 
-                # 최근 1개월을 제외한 12개월 수익률
-                end_price = prices.iloc[-(skip_days + 1)]
-                start_price = prices.iloc[-(lookback_days + skip_days + 1)]
+                try:
+                    # 최근 1개월을 제외한 12개월 수익률
+                    end_price = prices.iloc[-(skip_days + 1)]
+                    start_price = prices.iloc[-min_required]
 
-                momentum = (end_price / start_price - 1) * 100
-                momentum_dict[ticker] = momentum
+                    if start_price > 0:
+                        momentum = (end_price / start_price - 1) * 100
+                        momentum_dict[ticker] = momentum
+                        matched_count += 1
+                except (IndexError, KeyError):
+                    continue
 
         data['모멘텀'] = data['종목코드'].map(momentum_dict)
+        print(f"모멘텀 계산 완료: {matched_count}/{len(data)}개 종목 매칭")
 
         return data
 
@@ -226,11 +240,24 @@ class MultiFactorStrategy:
         data['퀄리티_점수'] = data[quality_factors].mean(axis=1) if quality_factors else 0
         data['모멘텀_점수'] = data[momentum_factors].mean(axis=1) if momentum_factors else 0
 
-        # 최종 점수 (가중 평균 또는 단순 평균)
-        # 여기서는 단순 평균 사용
-        data['멀티팩터_점수'] = (data['밸류_점수'] +
-                                data['퀄리티_점수'] +
-                                data['모멘텀_점수']) / 3
+        # 최종 점수 (가중 평균: Value 40% + Quality 40% + Momentum 20%)
+        # 모멘텀 데이터가 없는 종목은 제외
+        if momentum_factors:
+            before_count = len(data)
+            data = data[data['모멘텀_점수'].notna()].copy()
+            excluded = before_count - len(data)
+            if excluded > 0:
+                print(f"모멘텀 데이터 없는 종목 제외: {excluded}개 → {len(data)}개 남음")
+
+            data['멀티팩터_점수'] = (data['밸류_점수'] * 0.4 +
+                                    data['퀄리티_점수'] * 0.4 +
+                                    data['모멘텀_점수'] * 0.2)
+            print("멀티팩터 가중치: Value 40% + Quality 40% + Momentum 20%")
+        else:
+            # 모멘텀 팩터 자체가 없는 경우 (price_df가 None)
+            data['멀티팩터_점수'] = (data['밸류_점수'] * 0.5 +
+                                    data['퀄리티_점수'] * 0.5)
+            print("멀티팩터 가중치: Value 50% + Quality 50% (모멘텀 없음)")
 
         # 순위 계산 (높을수록 좋음)
         data['멀티팩터_순위'] = data['멀티팩터_점수'].rank(ascending=False, na_option='bottom')

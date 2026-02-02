@@ -248,15 +248,15 @@ def main():
         print("\n주가 데이터 수집 중 (모멘텀 계산용)...")
         from datetime import datetime, timedelta
         end_date_dt = datetime.strptime(BASE_DATE, '%Y%m%d')
-        start_date_dt = end_date_dt - timedelta(days=400)  # 약 13개월
+        start_date_dt = end_date_dt - timedelta(days=450)  # 약 15개월 (12개월 모멘텀 + 1개월 스킵 + 2개월 여유)
         start_date_str = start_date_dt.strftime('%Y%m%d')
 
-        universe_tickers_list = universe_tickers[:500]  # 상위 500개만 (시간 단축)
-        print(f"  대상 종목: {len(universe_tickers_list)}개 (시가총액 상위)")
+        # 전체 유니버스 종목에 대해 주가 데이터 수집 (모멘텀 정확도를 위해)
+        print(f"  대상 종목: {len(universe_tickers)}개 (전체 유니버스)")
 
         try:
-            price_df = collector.get_all_ohlcv(universe_tickers_list, start_date_str, BASE_DATE)
-            print(f"  주가 데이터 수집 완료: {len(price_df.columns)}개 종목")
+            price_df = collector.get_all_ohlcv(universe_tickers, start_date_str, BASE_DATE)
+            print(f"  주가 데이터 수집 완료: {len(price_df.columns)}개 종목, {len(price_df)}거래일")
         except Exception as e:
             print(f"  주가 데이터 수집 실패: {e}")
             price_df = None
@@ -269,7 +269,7 @@ def main():
             selected_b, scored_b = strategy_b.run(multifactor_df, price_df=price_df, n_stocks=N_STOCKS)
 
             print(f"\n[전략 B 결과] 상위 {N_STOCKS}개 종목:")
-            display_cols = ['종목코드', '종목명', '멀티팩터_점수', '밸류_점수', '퀄리티_점수']
+            display_cols = ['종목코드', '종목명', '멀티팩터_점수', '밸류_점수', '퀄리티_점수', '모멘텀_점수']
             display_cols = [col for col in display_cols if col in selected_b.columns]
             print(selected_b[display_cols].to_string())
 
