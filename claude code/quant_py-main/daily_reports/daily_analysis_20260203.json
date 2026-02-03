@@ -1,0 +1,200 @@
+{
+  "version": "6.4",
+  "date": "20260203",
+  "generated_at": "2026-02-03T12:19:04.692032",
+  "summary": {
+    "total_stocks": 75,
+    "momentum_count": 2,
+    "dip_buy_count": 11,
+    "watch_count": 36,
+    "no_entry_count": 26
+  },
+  "top3": [
+    {
+      "ticker": "041510",
+      "name": "에스엠",
+      "strategy": "A+C",
+      "category": "DIP_BUYING",
+      "quality_score": 71,
+      "price_score": 75,
+      "reasoning": "PER 8.1 저평가 + 볼린저 하단",
+      "conclusion": "우량주 저점 매수 기회"
+    },
+    {
+      "ticker": "419530",
+      "name": "SAMG엔터",
+      "strategy": "A+B",
+      "category": "DIP_BUYING",
+      "quality_score": 67,
+      "price_score": 76,
+      "reasoning": "PER 10.7 저평가 + 고점 대비 61% 급락",
+      "conclusion": "분할 매수로 평균단가 낮추기 유리"
+    },
+    {
+      "ticker": "462870",
+      "name": "시프트업",
+      "strategy": "A",
+      "category": "DIP_BUYING",
+      "quality_score": 66,
+      "price_score": 76,
+      "reasoning": "PER 10.4 저평가 + 고점 대비 51% 급락",
+      "conclusion": "분할 매수로 평균단가 낮추기 유리"
+    }
+  ],
+  "momentum": [
+    {
+      "ticker": "206650",
+      "name": "유바이오로직스",
+      "strategy": "A+B",
+      "price": 13760,
+      "quality_score": 62,
+      "price_score": 54,
+      "rsi": 82.6,
+      "reasoning": "52주 고점 근접 + 거래량 7.5배 폭발"
+    },
+    {
+      "ticker": "160980",
+      "name": "싸이맥스",
+      "strategy": "A",
+      "price": 18010,
+      "quality_score": 70,
+      "price_score": 32,
+      "rsi": 82.5,
+      "reasoning": "52주 고점 근접"
+    }
+  ],
+  "dip_buy": [
+    {
+      "ticker": "041510",
+      "name": "에스엠",
+      "strategy": "A+C",
+      "price": 107900,
+      "quality_score": 71,
+      "price_score": 75,
+      "per": 8.1,
+      "rsi": 44.1,
+      "from_52w_high": -29.5,
+      "reasoning": "PER 8.1 저평가 + 볼린저 하단"
+    },
+    {
+      "ticker": "419530",
+      "name": "SAMG엔터",
+      "strategy": "A+B",
+      "price": 37150,
+      "quality_score": 67,
+      "price_score": 76,
+      "per": 10.7,
+      "rsi": 42.7,
+      "from_52w_high": -60.8,
+      "reasoning": "PER 10.7 저평가 + 고점 대비 61% 급락"
+    },
+    {
+      "ticker": "462870",
+      "name": "시프트업",
+      "strategy": "A",
+      "price": 33750,
+      "quality_score": 66,
+      "price_score": 76,
+      "per": 10.4,
+      "rsi": 42.3,
+      "from_52w_high": -50.9,
+      "reasoning": "PER 10.4 저평가 + 고점 대비 51% 급락"
+    },
+    {
+      "ticker": "018290",
+      "name": "브이티",
+      "strategy": "A+B",
+      "price": 19600,
+      "quality_score": 77,
+      "price_score": 52,
+      "per": 7.6,
+      "rsi": 69.4,
+      "from_52w_high": -55.9,
+      "reasoning": "PER 7.6 초저평가 + 고점 대비 56% 급락"
+    },
+    {
+      "ticker": "204620",
+      "name": "글로벌텍스프리",
+      "strategy": "A+B",
+      "price": 4890,
+      "quality_score": 67,
+      "price_score": 59,
+      "per": 14.4,
+      "rsi": 77.7,
+      "from_52w_high": -36.2,
+      "reasoning": "고점 대비 36% 조정"
+    },
+    {
+      "ticker": "200670",
+      "name": "휴메딕스",
+      "strategy": "A",
+      "price": 41750,
+      "quality_score": 66,
+      "price_score": 56,
+      "per": 8.5,
+      "rsi": 48.0,
+      "from_52w_high": -44.9,
+      "reasoning": "PER 8.5 저평가 + 고점 대비 45% 조정"
+    },
+    {
+      "ticker": "067160",
+      "name": "SOOP",
+      "strategy": "A+B",
+      "price": 71200,
+      "quality_score": 70,
+      "price_score": 50,
+      "per": 8.1,
+      "rsi": 63.0,
+      "from_52w_high": -44.3,
+      "reasoning": "PER 8.1 저평가 + 고점 대비 44% 조정"
+    },
+    {
+      "ticker": "439260",
+      "name": "대한조선",
+      "strategy": "A",
+      "price": 71300,
+      "quality_score": 67,
+      "price_score": 53,
+      "per": 10.3,
+      "rsi": 56.6,
+      "from_52w_high": -34.4,
+      "reasoning": "PER 10.3 저평가 + 고점 대비 34% 조정"
+    },
+    {
+      "ticker": "259960",
+      "name": "크래프톤",
+      "strategy": "A",
+      "price": 245500,
+      "quality_score": 63,
+      "price_score": 56,
+      "per": 9.3,
+      "rsi": 57.7,
+      "from_52w_high": -36.4,
+      "reasoning": "PER 9.3 저평가 + 고점 대비 36% 조정"
+    },
+    {
+      "ticker": "119850",
+      "name": "지엔씨에너지",
+      "strategy": "A+B",
+      "price": 34950,
+      "quality_score": 64,
+      "price_score": 50,
+      "per": 14.2,
+      "rsi": 50.0,
+      "from_52w_high": -20.5,
+      "reasoning": "기술적 저점 매수"
+    },
+    {
+      "ticker": "059210",
+      "name": "메타바이오메드",
+      "strategy": "A",
+      "price": 4955,
+      "quality_score": 64,
+      "price_score": 46,
+      "per": 7.6,
+      "rsi": 63.0,
+      "from_52w_high": -24.0,
+      "reasoning": "PER 7.6 초저평가"
+    }
+  ]
+}
