@@ -1,10 +1,9 @@
 """
-일별 포트폴리오 모니터링 및 진입 타이밍 분석
-- 실시간 밸류에이션 체크
-- 기술적 지표 분석
-- 진입 점수 산출
-- 텔레그램 알림
-- Git 자동 커밋/푸시
+일별 포트폴리오 모니터링 및 진입 타이밍 분석 v6.4
+- Quality(맛) + Price(값) 2축 점수 체계
+- 4분류: 모멘텀/눌림목/관망/금지
+- TOP 3 + 한줄 결론
+- 텔레그램 v6.4 포맷
 """
 
 import pandas as pd
@@ -36,31 +35,34 @@ OUTPUT_DIR = BASE_DIR / 'output'
 DAILY_DIR = BASE_DIR / 'daily_reports'
 DAILY_DIR.mkdir(exist_ok=True)
 
-# 설정 로드 (config.py에서 가져오기)
+# 설정 로드
 try:
-    from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, GIT_AUTO_PUSH, SCORE_BUY, SCORE_WATCH
+    from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, GIT_AUTO_PUSH
 except ImportError:
-    # config.py가 없으면 기본값 사용
     TELEGRAM_BOT_TOKEN = ""
     TELEGRAM_CHAT_ID = ""
     GIT_AUTO_PUSH = True
-    SCORE_BUY = 0.6
-    SCORE_WATCH = 0.3
+
+# v6.4 점수 기준
+QUALITY_EXCELLENT = 75  # 맛 우수
+QUALITY_GOOD = 50       # 맛 양호
+PRICE_EXCELLENT = 75    # 값 우수
+PRICE_GOOD = 50         # 값 양호
 
 # ============================================================================
 # 포트폴리오 종목 로드
 # ============================================================================
 
 def load_portfolio_stocks():
-    """전략 A, B에서 선정된 종목 로드"""
+    """전략 A, B, C에서 선정된 종목 로드"""
 
     stocks = {}
 
-    # 전략 A 종목
+    # 전략 A 종목 (30개)
     strategy_a_file = OUTPUT_DIR / 'portfolio_2026_01_strategy_a.csv'
     if strategy_a_file.exists():
         df_a = pd.read_csv(strategy_a_file, dtype={'종목코드': str})
-        for _, row in df_a.head(20).iterrows():
+        for _, row in df_a.head(30).iterrows():
             ticker = str(row['종목코드']).zfill(6)
             stocks[ticker] = {
                 'name': row.get('종목명', ''),
@@ -71,20 +73,40 @@ def load_portfolio_stocks():
                 'equity': row.get('자본', 0),
             }
 
-    # 전략 B 종목
+    # 전략 B 종목 (30개)
     strategy_b_file = OUTPUT_DIR / 'portfolio_2026_01_strategy_b.csv'
     if strategy_b_file.exists():
         df_b = pd.read_csv(strategy_b_file, dtype={'종목코드': str})
-        for _, row in df_b.head(20).iterrows():
+        for _, row in df_b.head(30).iterrows():
             ticker = str(row['종목코드']).zfill(6)
             if ticker in stocks:
-                stocks[ticker]['strategy'] = 'A+B'  # 공통 종목
+                stocks[ticker]['strategy'] = 'A+B'
                 stocks[ticker]['mf_score'] = row.get('멀티팩터_점수', 0)
             else:
                 stocks[ticker] = {
                     'name': row.get('종목명', ''),
                     'strategy': 'B',
                     'mf_score': row.get('멀티팩터_점수', 0),
+                    'net_income': row.get('당기순이익', 0),
+                    'equity': row.get('자본', 0),
+                }
+
+    # 전략 C 종목 (Forward EPS Hybrid)
+    strategy_c_file = OUTPUT_DIR / 'portfolio_2026_01_strategy_c.csv'
+    if strategy_c_file.exists():
+        df_c = pd.read_csv(strategy_c_file, dtype={'종목코드': str})
+        for _, row in df_c.head(30).iterrows():
+            ticker = str(row['종목코드']).zfill(6)
+            if ticker in stocks:
+                stocks[ticker]['strategy'] += '+C'
+                stocks[ticker]['forward_eps'] = row.get('forward_eps', 0)
+                stocks[ticker]['forward_per'] = row.get('forward_per', 0)
+            else:
+                stocks[ticker] = {
+                    'name': row.get('종목명', ''),
+                    'strategy': 'C',
+                    'forward_eps': row.get('forward_eps', 0),
+                    'forward_per': row.get('forward_per', 0),
                     'net_income': row.get('당기순이익', 0),
                     'equity': row.get('자본', 0),
                 }
@@ -143,7 +165,6 @@ def get_52week_position(prices):
     if len(prices) < 20:
         return 0.5, 0, 0
 
-    # 최근 252 거래일 (약 1년)
     year_prices = prices.tail(252)
 
     high_52w = year_prices.max()
@@ -171,6 +192,43 @@ def calculate_volume_signal(volumes, period=20):
     return current_volume / avg_volume if avg_volume > 0 else 1.0
 
 
+def check_ma_alignment(prices):
+    """이동평균 정배열 체크 (5 > 20 > 60 > 120)"""
+    if len(prices) < 120:
+        return False, 0
+
+    ma5 = prices.tail(5).mean()
+    ma20 = prices.tail(20).mean()
+    ma60 = prices.tail(60).mean()
+    ma120 = prices.tail(120).mean()
+
+    # 정배열: 단기 > 장기
+    is_aligned = ma5 > ma20 > ma60 > ma120
+
+    # 정배열 점수 (0~100)
+    alignment_score = 0
+    if ma5 > ma20:
+        alignment_score += 25
+    if ma20 > ma60:
+        alignment_score += 25
+    if ma60 > ma120:
+        alignment_score += 25
+    if is_aligned:
+        alignment_score += 25  # 완전 정배열 보너스
+
+    return is_aligned, alignment_score
+
+
+def is_near_52w_high(from_high, threshold=-10):
+    """52주 신고가 근처 여부"""
+    return from_high >= threshold
+
+
+def is_volume_breakout(volume_signal, threshold=1.5):
+    """거래량 돌파 여부"""
+    return volume_signal >= threshold
+
+
 # ============================================================================
 # 실시간 밸류에이션
 # ============================================================================
@@ -179,11 +237,8 @@ def calculate_realtime_valuation(ticker, current_price, stock_info):
     """실시간 PER, PBR 계산"""
 
     try:
-        # 시가총액 = 현재가 × 발행주식수
-        # pykrx에서 시가총액 조회
         today = datetime.now().strftime('%Y%m%d')
 
-        # 최근 거래일 찾기
         for i in range(10):
             check_date = (datetime.now() - timedelta(days=i)).strftime('%Y%m%d')
             try:
@@ -201,7 +256,6 @@ def calculate_realtime_valuation(ticker, current_price, stock_info):
         else:
             market_cap = 0
 
-        # PER, PBR 계산
         net_income = stock_info.get('net_income', 0)
         equity = stock_info.get('equity', 0)
 
@@ -219,61 +273,388 @@ def calculate_realtime_valuation(ticker, current_price, stock_info):
 
 
 # ============================================================================
-# 진입 점수 계산
+# v6.4 점수 계산 - Quality(맛) + Price(값) 2축 체계
 # ============================================================================
 
-def calculate_entry_score(indicators):
-    """진입 점수 계산 (0~1, 높을수록 매수 적기)"""
+def calculate_quality_score(stock_info, indicators):
+    """
+    Quality Score (맛) - 펀더멘털 매력도 (0~100)
 
+    구성:
+    - 전략 등급 (25%): A+B > A or B
+    - PER 점수 (25%): 낮을수록 높음
+    - ROE 점수 (20%): 높을수록 높음
+    - 52주 회복 여력 (15%): 고점 대비 하락폭
+    - 정배열 점수 (15%): 추세 건강도
+    """
     scores = {}
 
-    # 1. RSI 점수 (30 이하면 만점, 70 이상이면 0점)
-    rsi = indicators.get('rsi', 50)
-    if rsi <= 30:
-        scores['rsi'] = 1.0
-    elif rsi >= 70:
-        scores['rsi'] = 0.0
+    # 1. 전략 등급 점수 (25%)
+    strategy = stock_info.get('strategy', '')
+    if 'A+B' in strategy or '+C' in strategy:
+        scores['strategy'] = 100  # 복수 전략 선정
+    elif strategy in ['A', 'B', 'C']:
+        scores['strategy'] = 70
     else:
-        scores['rsi'] = (70 - rsi) / 40
+        scores['strategy'] = 50
 
-    # 2. 볼린저밴드 점수 (하단에 가까울수록 높음)
-    bb_pos = indicators.get('bb_position', 0.5)
-    scores['bollinger'] = 1 - bb_pos
-
-    # 3. 52주 위치 점수 (저점에 가까울수록 높음)
-    w52_pos = indicators.get('52w_position', 0.5)
-    scores['52week'] = 1 - w52_pos
-
-    # 4. 이동평균 이격도 점수 (음수면 저평가)
-    ma_div = indicators.get('ma_divergence', 0)
-    if ma_div <= -20:
-        scores['ma'] = 1.0
-    elif ma_div >= 20:
-        scores['ma'] = 0.0
+    # 2. PER 점수 (25%) - 낮을수록 좋음
+    per = indicators.get('per', 999)
+    if per <= 5:
+        scores['per'] = 100
+    elif per <= 8:
+        scores['per'] = 90
+    elif per <= 12:
+        scores['per'] = 75
+    elif per <= 15:
+        scores['per'] = 60
+    elif per <= 20:
+        scores['per'] = 40
+    elif per <= 30:
+        scores['per'] = 20
     else:
-        scores['ma'] = (20 - ma_div) / 40
+        scores['per'] = 10
 
-    # 5. 거래량 신호 (평균 이상이면 가점)
-    vol_signal = indicators.get('volume_signal', 1.0)
-    if vol_signal >= 2.0:
-        scores['volume'] = 1.0
-    elif vol_signal <= 0.5:
-        scores['volume'] = 0.3
+    # 3. ROE 점수 (20%)
+    roc = stock_info.get('roc', 0)
+    ey = stock_info.get('ey', 0)
+    roe_proxy = max(roc, ey * 100) if roc or ey else 0
+
+    if roe_proxy >= 30:
+        scores['roe'] = 100
+    elif roe_proxy >= 20:
+        scores['roe'] = 85
+    elif roe_proxy >= 15:
+        scores['roe'] = 70
+    elif roe_proxy >= 10:
+        scores['roe'] = 55
+    elif roe_proxy >= 5:
+        scores['roe'] = 40
     else:
-        scores['volume'] = 0.5 + (vol_signal - 1) * 0.5
+        scores['roe'] = 25
+
+    # 4. 52주 회복 여력 (15%)
+    from_high = indicators.get('from_52w_high', 0)
+    if from_high <= -50:
+        scores['recovery'] = 100  # 급락 = 반등 여력 큼
+    elif from_high <= -30:
+        scores['recovery'] = 80
+    elif from_high <= -15:
+        scores['recovery'] = 60
+    elif from_high <= -5:
+        scores['recovery'] = 40
+    else:
+        scores['recovery'] = 30  # 이미 고점 근처
+
+    # 5. 정배열 점수 (15%)
+    alignment_score = indicators.get('alignment_score', 50)
+    scores['alignment'] = alignment_score
 
     # 가중 평균
     weights = {
-        'rsi': 0.25,
-        'bollinger': 0.20,
-        '52week': 0.25,
-        'ma': 0.20,
-        'volume': 0.10,
+        'strategy': 0.25,
+        'per': 0.25,
+        'roe': 0.20,
+        'recovery': 0.15,
+        'alignment': 0.15,
     }
 
-    total_score = sum(scores[k] * weights[k] for k in scores)
+    total = sum(scores.get(k, 0) * weights[k] for k in weights)
+    return int(round(total)), scores
 
-    return total_score, scores
+
+def calculate_price_score(indicators):
+    """
+    Price Score (값) - 진입 타이밍 점수 (0~100)
+
+    핵심 변경: RSI 70~80은 "좋은 과열"로 인정 (모멘텀 플레이)
+
+    구성:
+    - RSI 점수 (30%): 30-45(저점) 또는 70-80(모멘텀)이 고득점
+    - BB 위치 (20%): 하단=저점매수, 상단+거래량=돌파매수
+    - 거래량 신호 (20%): 2배 이상 = 관심 신호
+    - 이격도 (15%): -20% = 저평가, +30% = 위험
+    - 52주 위치 (15%): 저점 or 신고가+거래량
+    """
+    scores = {}
+
+    rsi = indicators.get('rsi', 50)
+    bb_pos = indicators.get('bb_position', 0.5)
+    volume_signal = indicators.get('volume_signal', 1.0)
+    ma_div = indicators.get('ma_div_60', 0)
+    from_high = indicators.get('from_52w_high', 0)
+
+    # 1. RSI 점수 (30%) - 모멘텀 플레이 인정
+    if 30 <= rsi <= 45:
+        scores['rsi'] = 100  # 저점 매수 최적
+    elif rsi < 30:
+        scores['rsi'] = 70   # 극과매도 (바닥 확인 필요)
+    elif 70 <= rsi <= 80:
+        scores['rsi'] = 85   # "좋은 과열" - 모멘텀 플레이
+    elif 45 < rsi < 60:
+        scores['rsi'] = 60   # 중립
+    elif 60 <= rsi < 70:
+        scores['rsi'] = 50   # 약간 과열
+    else:  # rsi > 80
+        scores['rsi'] = 20   # 극과열 위험
+
+    # 2. 볼린저밴드 점수 (20%)
+    if bb_pos <= 0.2:
+        scores['bb'] = 100  # 하단 = 저점 매수
+    elif bb_pos <= 0.4:
+        scores['bb'] = 80
+    elif bb_pos >= 0.8 and volume_signal >= 1.5:
+        scores['bb'] = 75   # 상단 돌파 + 거래량 = 모멘텀
+    elif bb_pos >= 0.8:
+        scores['bb'] = 30   # 상단 without 거래량 = 위험
+    else:
+        scores['bb'] = 50   # 중립
+
+    # 3. 거래량 신호 점수 (20%)
+    if volume_signal >= 3.0:
+        scores['volume'] = 100  # 폭발
+    elif volume_signal >= 2.0:
+        scores['volume'] = 85
+    elif volume_signal >= 1.5:
+        scores['volume'] = 70
+    elif volume_signal >= 1.0:
+        scores['volume'] = 50
+    else:
+        scores['volume'] = 30  # 거래량 부족
+
+    # 4. 이격도 점수 (15%)
+    if ma_div <= -20:
+        scores['divergence'] = 100  # 심한 저평가
+    elif ma_div <= -10:
+        scores['divergence'] = 80
+    elif ma_div <= 0:
+        scores['divergence'] = 60
+    elif ma_div <= 15:
+        scores['divergence'] = 40
+    elif ma_div <= 30:
+        scores['divergence'] = 20
+    else:
+        scores['divergence'] = 0  # +30% 이상 = 버블 위험
+
+    # 5. 52주 위치 점수 (15%)
+    if from_high >= -5 and volume_signal >= 1.5:
+        scores['52w'] = 90   # 신고가 + 거래량 = 돌파
+    elif from_high <= -50:
+        scores['52w'] = 100  # 급락 = 반등 기대
+    elif from_high <= -30:
+        scores['52w'] = 85
+    elif from_high <= -15:
+        scores['52w'] = 65
+    elif from_high >= -5:
+        scores['52w'] = 40   # 고점 but 거래량 부족
+    else:
+        scores['52w'] = 50
+
+    # 가중 평균
+    weights = {
+        'rsi': 0.30,
+        'bb': 0.20,
+        'volume': 0.20,
+        'divergence': 0.15,
+        '52w': 0.15,
+    }
+
+    total = sum(scores.get(k, 0) * weights[k] for k in weights)
+    return int(round(total)), scores
+
+
+# ============================================================================
+# v6.4 4분류 시스템
+# ============================================================================
+
+def classify_stock_v64(quality_score, price_score, indicators):
+    """
+    4분류 시스템
+
+    1. STRONG_MOMENTUM (🚀): 신고가 + 거래량 + RSI 70-80
+    2. DIP_BUYING (🛡️): 급락 + 지지선 + RSI 30-50
+    3. WAIT_OBSERVE (🟡): 양호하나 타이밍 대기
+    4. NO_ENTRY (🚫): 버블/과열/저품질
+    """
+
+    rsi = indicators.get('rsi', 50)
+    from_high = indicators.get('from_52w_high', 0)
+    volume_signal = indicators.get('volume_signal', 1.0)
+    ma_div = indicators.get('ma_div_60', 0)
+    is_aligned = indicators.get('is_aligned', False)
+
+    # 1. NO_ENTRY 조건 (먼저 체크)
+    if ma_div >= 30:
+        return 'NO_ENTRY', '🚫', '이격도 과대 (+30%)'
+    if rsi >= 85:
+        return 'NO_ENTRY', '🚫', 'RSI 극과열'
+    if quality_score < 35:
+        return 'NO_ENTRY', '🚫', '펀더멘털 부족'
+
+    # 2. STRONG_MOMENTUM 조건
+    momentum_conditions = [
+        from_high >= -10,           # 52주 고점 근처
+        volume_signal >= 1.5,       # 거래량 증가
+        70 <= rsi <= 85,            # "좋은 과열"
+        quality_score >= 55,        # 기본 펀더멘털
+    ]
+    if sum(momentum_conditions) >= 3:
+        return 'STRONG_MOMENTUM', '🚀', '강세 돌파'
+
+    # 신고가 + 정배열 + 거래량 (대체 조건)
+    if from_high >= -5 and is_aligned and volume_signal >= 2.0:
+        return 'STRONG_MOMENTUM', '🚀', '신고가 돌파'
+
+    # 3. DIP_BUYING 조건
+    dip_conditions = [
+        from_high <= -25,           # 의미있는 하락
+        rsi <= 50,                  # 과매도~중립
+        quality_score >= 50,        # 괜찮은 펀더멘털
+        ma_div <= 10,               # 과열 아님
+    ]
+    if sum(dip_conditions) >= 3:
+        return 'DIP_BUYING', '🛡️', '저점 매수'
+
+    # RSI 과매도 + 퀄리티 OK
+    if rsi <= 35 and quality_score >= 50:
+        return 'DIP_BUYING', '🛡️', 'RSI 과매도'
+
+    # PER 초저평가 + 하락
+    per = indicators.get('per', 999)
+    if per <= 8 and from_high <= -20:
+        return 'DIP_BUYING', '🛡️', 'PER 저평가'
+
+    # 4. WAIT_OBSERVE (기본)
+    if quality_score >= 60 and price_score >= 40:
+        return 'WAIT_OBSERVE', '🟡', '추가 조정 대기'
+    elif quality_score >= 50:
+        return 'WAIT_OBSERVE', '🟡', '타이밍 관망'
+    else:
+        return 'WAIT_OBSERVE', '🟡', '관망'
+
+
+# ============================================================================
+# TOP 3 결론 생성
+# ============================================================================
+
+def generate_reasoning(r):
+    """
+    종목별 한줄 결론 생성
+
+    예시:
+    - "52주 신고가 돌파 + 거래량 2.5배"
+    - "PER 10 저평가 + RSI 35 반등 기대"
+    """
+
+    reasons = []
+    category = r.get('category', '')
+
+    # 모멘텀 종목
+    if category == 'STRONG_MOMENTUM':
+        if r['from_52w_high'] >= -5:
+            reasons.append("52주 신고가 돌파")
+        elif r['from_52w_high'] >= -10:
+            reasons.append("52주 고점 근접")
+
+        if r['volume_signal'] >= 2.5:
+            reasons.append(f"거래량 {r['volume_signal']:.1f}배 폭발")
+        elif r['volume_signal'] >= 1.5:
+            reasons.append(f"거래량 {r['volume_signal']:.1f}배")
+
+        if r.get('is_aligned'):
+            reasons.append("정배열 확산")
+
+        if 70 <= r['rsi'] <= 80:
+            reasons.append("강한 추세 지속")
+
+    # 눌림목 종목
+    elif category == 'DIP_BUYING':
+        if r['per'] <= 8:
+            reasons.append(f"PER {r['per']:.1f} 초저평가")
+        elif r['per'] <= 12:
+            reasons.append(f"PER {r['per']:.1f} 저평가")
+
+        if r['rsi'] <= 30:
+            reasons.append(f"RSI {r['rsi']:.0f} 극과매도")
+        elif r['rsi'] <= 40:
+            reasons.append(f"RSI {r['rsi']:.0f} 과매도")
+
+        if r['from_52w_high'] <= -50:
+            reasons.append(f"고점 대비 {abs(r['from_52w_high']):.0f}% 급락")
+        elif r['from_52w_high'] <= -30:
+            reasons.append(f"고점 대비 {abs(r['from_52w_high']):.0f}% 조정")
+
+        if r.get('bb_position', 0.5) <= 0.2:
+            reasons.append("볼린저 하단")
+
+    # 관망 종목
+    elif category == 'WAIT_OBSERVE':
+        if r['rsi'] >= 60:
+            reasons.append(f"RSI {r['rsi']:.0f} 중립~과열")
+        if r['from_52w_high'] > -15:
+            reasons.append("고점권 부담")
+        if r.get('ma_div_60', 0) >= 15:
+            reasons.append("단기 과열 해소 대기")
+
+    # 금지 종목
+    elif category == 'NO_ENTRY':
+        if r.get('ma_div_60', 0) >= 30:
+            reasons.append(f"60일선 +{r['ma_div_60']:.0f}% 괴리")
+        if r['rsi'] >= 85:
+            reasons.append(f"RSI {r['rsi']:.0f} 극과열")
+        if r.get('quality_score', 100) < 35:
+            reasons.append("펀더멘털 취약")
+
+    # 기본값
+    if not reasons:
+        if category == 'STRONG_MOMENTUM':
+            reasons.append("추세 추종 매매")
+        elif category == 'DIP_BUYING':
+            reasons.append("기술적 저점 매수")
+        else:
+            reasons.append("추가 분석 필요")
+
+    return " + ".join(reasons[:2])
+
+
+def generate_conclusion(r):
+    """
+    투자 결론 한줄 생성 (예: "잃기 힘든 자리", "가는 말이 더 간다")
+    """
+
+    category = r.get('category', '')
+    quality = r.get('quality_score', 50)
+    price = r.get('price_score', 50)
+    per = r.get('per', 999)
+    rsi = r.get('rsi', 50)
+    from_high = r.get('from_52w_high', 0)
+
+    if category == 'STRONG_MOMENTUM':
+        if from_high >= -5 and r.get('volume_signal', 1) >= 2:
+            return "가는 말이 더 간다. 눌림 없는 강력한 모멘텀"
+        elif quality >= 70:
+            return "펀더멘털과 기술적 흐름 모두 양호"
+        else:
+            return "추세 매매 관점에서 유효한 진입 구간"
+
+    elif category == 'DIP_BUYING':
+        if per <= 8 and from_high <= -40:
+            return "잃기 힘든 자리. 가격 메리트 극대화 구간"
+        elif rsi <= 35:
+            return "악재 해소 국면, 기술적 반등 기대"
+        elif quality >= 70:
+            return "우량주 저점 매수 기회"
+        else:
+            return "분할 매수로 평균단가 낮추기 유리"
+
+    elif category == 'NO_ENTRY':
+        return "리스크가 기대수익보다 큼. 진입 금지"
+
+    else:  # WAIT_OBSERVE
+        if quality >= 70:
+            return "좋은 회사지만 지금 사기엔 애매함"
+        else:
+            return "추가 조정 또는 실적 확인 후 진입"
 
 
 # ============================================================================
@@ -284,11 +665,10 @@ def analyze_stocks():
     """전체 종목 분석"""
 
     print("=" * 70)
-    print("📊 일별 포트폴리오 모니터링")
+    print("📊 일별 포트폴리오 모니터링 v6.4")
     print(f"📅 분석 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 70)
 
-    # 포트폴리오 종목 로드
     stocks = load_portfolio_stocks()
     print(f"\n📋 분석 대상: {len(stocks)}개 종목")
 
@@ -308,7 +688,6 @@ def analyze_stocks():
 
     print(f"📆 기준일: {latest_date}")
 
-    # 가격 데이터 수집 기간
     start_date = (datetime.strptime(latest_date, '%Y%m%d') - timedelta(days=400)).strftime('%Y%m%d')
 
     results = []
@@ -317,7 +696,6 @@ def analyze_stocks():
 
     for i, (ticker, info) in enumerate(stocks.items()):
         try:
-            # 가격 데이터 조회
             ohlcv = stock.get_market_ohlcv(start_date, latest_date, ticker)
 
             if ohlcv.empty:
@@ -335,6 +713,7 @@ def analyze_stocks():
             ma_div_60 = calculate_ma_divergence(prices, 60)
             w52_pos, from_high, from_low = get_52week_position(prices)
             vol_signal = calculate_volume_signal(volumes)
+            is_aligned, alignment_score = check_ma_alignment(prices)
 
             # 실시간 밸류에이션
             valuation = calculate_realtime_valuation(ticker, current_price, info)
@@ -344,12 +723,23 @@ def analyze_stocks():
                 'rsi': rsi,
                 'bb_position': bb_pos,
                 '52w_position': w52_pos,
-                'ma_divergence': ma_div_60,
+                'from_52w_high': from_high,
+                'from_52w_low': from_low,
+                'ma_div_20': ma_div_20,
+                'ma_div_60': ma_div_60,
                 'volume_signal': vol_signal,
+                'is_aligned': is_aligned,
+                'alignment_score': alignment_score,
+                'per': valuation['per'],
+                'pbr': valuation['pbr'],
             }
 
-            # 진입 점수 계산
-            entry_score, score_details = calculate_entry_score(indicators)
+            # v6.4 점수 계산
+            quality_score, quality_details = calculate_quality_score(info, indicators)
+            price_score, price_details = calculate_price_score(indicators)
+
+            # 4분류
+            category, emoji, category_reason = classify_stock_v64(quality_score, price_score, indicators)
 
             # 일간 수익률
             daily_return = ((current_price - prev_price) / prev_price) * 100
@@ -372,16 +762,28 @@ def analyze_stocks():
                 'from_52w_high': from_high,
                 'from_52w_low': from_low,
                 'volume_signal': vol_signal,
-                'entry_score': entry_score,
-                'score_details': score_details,
+                'is_aligned': is_aligned,
+                'alignment_score': alignment_score,
+                # v6.4 신규 필드
+                'quality_score': quality_score,
+                'price_score': price_score,
+                'quality_details': quality_details,
+                'price_details': price_details,
+                'category': category,
+                'emoji': emoji,
+                'category_reason': category_reason,
             }
+
+            # 결론 생성
+            result['reasoning'] = generate_reasoning(result)
+            result['conclusion'] = generate_conclusion(result)
+
             results.append(result)
 
-            # 진행 상황
             if (i + 1) % 10 == 0:
                 print(f"   {i + 1}/{len(stocks)} 완료...")
 
-            time.sleep(0.05)  # API 부하 방지
+            time.sleep(0.05)
 
         except Exception as e:
             print(f"   ⚠️ {ticker} 분석 실패: {e}")
@@ -392,143 +794,192 @@ def analyze_stocks():
     return results, latest_date
 
 
-def categorize_results(results):
-    """결과를 카테고리별로 분류"""
+def categorize_results_v64(results):
+    """v6.4 4분류로 결과 분류"""
 
-    buy = []      # 매수 적기
-    watch = []    # 관망
-    wait = []     # 대기
+    momentum = []    # 🚀 강세 돌파
+    dip_buy = []     # 🛡️ 저점 매수
+    watch = []       # 🟡 관망
+    no_entry = []    # 🚫 진입 금지
 
     for r in results:
-        score = r['entry_score']
-        if score >= SCORE_BUY:
-            buy.append(r)
-        elif score >= SCORE_WATCH:
-            watch.append(r)
+        cat = r.get('category', 'WAIT_OBSERVE')
+        if cat == 'STRONG_MOMENTUM':
+            momentum.append(r)
+        elif cat == 'DIP_BUYING':
+            dip_buy.append(r)
+        elif cat == 'NO_ENTRY':
+            no_entry.append(r)
         else:
-            wait.append(r)
+            watch.append(r)
 
-    # 점수순 정렬
-    buy.sort(key=lambda x: x['entry_score'], reverse=True)
-    watch.sort(key=lambda x: x['entry_score'], reverse=True)
-    wait.sort(key=lambda x: x['entry_score'], reverse=True)
+    # 점수순 정렬 (quality + price 합산)
+    def sort_key(x):
+        return x.get('quality_score', 0) + x.get('price_score', 0)
 
-    return buy, watch, wait
+    momentum.sort(key=sort_key, reverse=True)
+    dip_buy.sort(key=sort_key, reverse=True)
+    watch.sort(key=sort_key, reverse=True)
+    no_entry.sort(key=sort_key, reverse=True)
+
+    return momentum, dip_buy, watch, no_entry
+
+
+def get_top3(results):
+    """TOP 3 종목 선정 (모멘텀 + 눌림목 혼합)"""
+
+    # 모멘텀과 눌림목만 대상
+    candidates = [r for r in results if r['category'] in ['STRONG_MOMENTUM', 'DIP_BUYING']]
+
+    if not candidates:
+        # 후보 없으면 전체에서 상위 선정
+        candidates = results
+
+    # 합산 점수 정렬
+    candidates.sort(key=lambda x: x.get('quality_score', 0) + x.get('price_score', 0), reverse=True)
+
+    return candidates[:3]
 
 
 # ============================================================================
 # 출력 및 저장
 # ============================================================================
 
-def format_number(num):
-    """숫자 포맷팅"""
-    if num >= 1000000:
-        return f"{num/1000000:.1f}M"
-    elif num >= 1000:
-        return f"{num/1000:.1f}K"
-    else:
-        return f"{num:.0f}"
-
-
-def print_results(buy, watch, wait, latest_date):
-    """결과 출력"""
+def print_results_v64(momentum, dip_buy, watch, no_entry, latest_date, top3):
+    """v6.4 결과 출력"""
 
     print("\n")
     print("╔" + "═" * 68 + "╗")
-    print("║" + f"  🎯 진입 타이밍 분석 결과 ({latest_date})".ljust(67) + "║")
+    print("║" + f"  📊 퀀트 포트폴리오 v6.4 ({latest_date})".ljust(67) + "║")
     print("╚" + "═" * 68 + "╝")
 
-    # 매수 적기
-    print("\n🟢 매수 적기 (진입점수 ≥ 0.6)")
+    # TOP 3
+    print("\n🏆 TODAY'S TOP 3")
     print("─" * 70)
-    if buy:
-        print(f"{'종목명':<12} {'현재가':>10} {'등락':>7} {'PER':>6} {'RSI':>5} {'52주고점':>8} {'점수':>6}")
-        print("─" * 70)
-        for r in buy:
-            change_icon = "🔺" if r['daily_return'] > 0 else "🔻" if r['daily_return'] < 0 else "➖"
-            print(f"{r['name']:<12} {r['current_price']:>10,} {change_icon}{abs(r['daily_return']):>5.1f}% "
-                  f"{r['per']:>6.1f} {r['rsi']:>5.0f} {r['from_52w_high']:>7.1f}% {r['entry_score']:>5.2f}⭐")
+    for i, r in enumerate(top3, 1):
+        emoji = r.get('emoji', '📊')
+        print(f"\n{i}️⃣ {emoji} {r['name']} ({r['ticker']}) [{r['strategy']}]")
+        print(f"   현재가: {r['current_price']:,}원 | 맛: {r['quality_score']}점 | 값: {r['price_score']}점")
+        print(f"   → {r['reasoning']}")
+        print(f"   💡 {r['conclusion']}")
+
+    # 강세 돌파
+    print(f"\n\n🚀 강세 돌파 ({len(momentum)}개)")
+    print("신고가 + 거래량 = 추세 매수")
+    print("─" * 70)
+    if momentum:
+        for r in momentum[:5]:
+            change = "🔺" if r['daily_return'] > 0 else "🔻" if r['daily_return'] < 0 else "➖"
+            print(f"  • {r['name']}: 맛{r['quality_score']} 값{r['price_score']} | "
+                  f"{r['current_price']:,}원 {change}{abs(r['daily_return']):.1f}%")
+        if len(momentum) > 5:
+            print(f"  ... 외 {len(momentum) - 5}개")
     else:
-        print("   해당 종목 없음")
+        print("  해당 종목 없음")
+
+    # 저점 매수
+    print(f"\n🛡️ 저점 매수 ({len(dip_buy)}개)")
+    print("급락 + 지지선 = 분할 매수")
+    print("─" * 70)
+    if dip_buy:
+        for r in dip_buy[:7]:
+            change = "🔺" if r['daily_return'] > 0 else "🔻" if r['daily_return'] < 0 else "➖"
+            print(f"  • {r['name']}: 맛{r['quality_score']} 값{r['price_score']} | "
+                  f"PER {r['per']:.1f} | RSI {r['rsi']:.0f}")
+        if len(dip_buy) > 7:
+            print(f"  ... 외 {len(dip_buy) - 7}개")
+    else:
+        print("  해당 종목 없음")
 
     # 관망
-    print("\n🟡 관망 (0.3 ≤ 진입점수 < 0.6)")
+    print(f"\n🟡 관망 ({len(watch)}개)")
     print("─" * 70)
     if watch:
-        print(f"{'종목명':<12} {'현재가':>10} {'등락':>7} {'PER':>6} {'RSI':>5} {'52주고점':>8} {'점수':>6}")
-        print("─" * 70)
-        for r in watch[:10]:  # 상위 10개만
-            change_icon = "🔺" if r['daily_return'] > 0 else "🔻" if r['daily_return'] < 0 else "➖"
-            print(f"{r['name']:<12} {r['current_price']:>10,} {change_icon}{abs(r['daily_return']):>5.1f}% "
-                  f"{r['per']:>6.1f} {r['rsi']:>5.0f} {r['from_52w_high']:>7.1f}% {r['entry_score']:>5.2f}")
-        if len(watch) > 10:
-            print(f"   ... 외 {len(watch) - 10}개 종목")
+        for r in watch[:5]:
+            print(f"  • {r['name']}: 맛{r['quality_score']} 값{r['price_score']} | {r['category_reason']}")
+        if len(watch) > 5:
+            print(f"  ... 외 {len(watch) - 5}개")
     else:
-        print("   해당 종목 없음")
+        print("  해당 종목 없음")
 
-    # 대기
-    print("\n🔴 대기 (진입점수 < 0.3)")
+    # 진입 금지
+    print(f"\n🚫 진입 금지 ({len(no_entry)}개)")
     print("─" * 70)
-    if wait:
-        print(f"{'종목명':<12} {'현재가':>10} {'등락':>7} {'PER':>6} {'RSI':>5} {'52주고점':>8} {'점수':>6}")
-        print("─" * 70)
-        for r in wait[:5]:  # 상위 5개만
-            change_icon = "🔺" if r['daily_return'] > 0 else "🔻" if r['daily_return'] < 0 else "➖"
-            print(f"{r['name']:<12} {r['current_price']:>10,} {change_icon}{abs(r['daily_return']):>5.1f}% "
-                  f"{r['per']:>6.1f} {r['rsi']:>5.0f} {r['from_52w_high']:>7.1f}% {r['entry_score']:>5.2f}")
-        if len(wait) > 5:
-            print(f"   ... 외 {len(wait) - 5}개 종목")
+    if no_entry:
+        for r in no_entry[:5]:
+            print(f"  • {r['name']}: {r['category_reason']}")
+        if len(no_entry) > 5:
+            print(f"  ... 외 {len(no_entry) - 5}개")
     else:
-        print("   해당 종목 없음")
+        print("  해당 종목 없음")
 
     print("\n" + "═" * 70)
+    print("💡 맛 = 펀더멘털 매력도 | 값 = 진입 타이밍 점수")
+    print("═" * 70)
 
 
-def save_results(results, buy, watch, wait, latest_date):
-    """결과 저장"""
+def save_results_v64(results, momentum, dip_buy, watch, no_entry, latest_date, top3):
+    """v6.4 결과 저장"""
 
     date_str = latest_date
 
-    # 1. JSON 저장
+    # JSON 저장
     json_file = DAILY_DIR / f'daily_analysis_{date_str}.json'
 
     output_data = {
+        'version': '6.4',
         'date': date_str,
         'generated_at': datetime.now().isoformat(),
         'summary': {
             'total_stocks': len(results),
-            'buy_count': len(buy),
+            'momentum_count': len(momentum),
+            'dip_buy_count': len(dip_buy),
             'watch_count': len(watch),
-            'wait_count': len(wait),
+            'no_entry_count': len(no_entry),
         },
-        'buy': [
+        'top3': [
             {
                 'ticker': r['ticker'],
                 'name': r['name'],
                 'strategy': r['strategy'],
-                'price': r['current_price'],
-                'daily_return': round(r['daily_return'], 2),
-                'per': round(r['per'], 2),
-                'pbr': round(r['pbr'], 2),
+                'category': r['category'],
+                'quality_score': r['quality_score'],
+                'price_score': r['price_score'],
+                'reasoning': r['reasoning'],
+                'conclusion': r['conclusion'],
+            }
+            for r in top3
+        ],
+        'momentum': [
+            {
+                'ticker': r['ticker'],
+                'name': r['name'],
+                'strategy': r['strategy'],
+                'price': int(r['current_price']),
+                'quality_score': r['quality_score'],
+                'price_score': r['price_score'],
+                'rsi': round(r['rsi'], 1),
+                'reasoning': r['reasoning'],
+            }
+            for r in momentum
+        ],
+        'dip_buy': [
+            {
+                'ticker': r['ticker'],
+                'name': r['name'],
+                'strategy': r['strategy'],
+                'price': int(r['current_price']),
+                'quality_score': r['quality_score'],
+                'price_score': r['price_score'],
+                'per': round(r['per'], 1),
                 'rsi': round(r['rsi'], 1),
                 'from_52w_high': round(r['from_52w_high'], 1),
-                'entry_score': round(r['entry_score'], 3),
+                'reasoning': r['reasoning'],
             }
-            for r in buy
-        ],
-        'watch': [
-            {
-                'ticker': r['ticker'],
-                'name': r['name'],
-                'strategy': r['strategy'],
-                'price': r['current_price'],
-                'entry_score': round(r['entry_score'], 3),
-            }
-            for r in watch
+            for r in dip_buy
         ],
     }
 
-    # numpy 타입을 Python 기본 타입으로 변환
     def convert_types(obj):
         if isinstance(obj, np.integer):
             return int(obj)
@@ -547,155 +998,70 @@ def save_results(results, buy, watch, wait, latest_date):
     with open(json_file, 'w', encoding='utf-8') as f:
         json.dump(output_data, f, ensure_ascii=False, indent=2)
 
-    # 2. CSV 저장
+    # CSV 저장
     csv_file = DAILY_DIR / f'daily_analysis_{date_str}.csv'
 
     df = pd.DataFrame(results)
-    df = df.sort_values('entry_score', ascending=False)
-    df.to_csv(csv_file, index=False, encoding='utf-8-sig')
+    df = df.sort_values(['category', 'quality_score'], ascending=[True, False])
 
-    # 3. 텍스트 리포트 저장
-    txt_file = DAILY_DIR / f'daily_report_{date_str}.txt'
-
-    with open(txt_file, 'w', encoding='utf-8') as f:
-        f.write("=" * 70 + "\n")
-        f.write(f"📊 일별 포트폴리오 모니터링 리포트\n")
-        f.write(f"📅 기준일: {date_str}\n")
-        f.write(f"⏰ 생성: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-        f.write("=" * 70 + "\n\n")
-
-        f.write("🟢 매수 적기 (진입점수 ≥ 0.6)\n")
-        f.write("-" * 70 + "\n")
-        if buy:
-            for r in buy:
-                f.write(f"  • {r['name']} ({r['ticker']}) - {r['current_price']:,}원\n")
-                f.write(f"    PER: {r['per']:.1f} | RSI: {r['rsi']:.0f} | 52주고점: {r['from_52w_high']:.1f}% | 점수: {r['entry_score']:.2f}\n")
-        else:
-            f.write("  해당 종목 없음\n")
-
-        f.write("\n🟡 관망 (0.3 ≤ 진입점수 < 0.6)\n")
-        f.write("-" * 70 + "\n")
-        if watch:
-            for r in watch[:10]:
-                f.write(f"  • {r['name']} ({r['ticker']}) - 점수: {r['entry_score']:.2f}\n")
-        else:
-            f.write("  해당 종목 없음\n")
-
-        f.write("\n" + "=" * 70 + "\n")
+    # 저장용 컬럼 선택
+    save_cols = ['ticker', 'name', 'strategy', 'current_price', 'daily_return',
+                 'per', 'rsi', 'from_52w_high', 'volume_signal',
+                 'quality_score', 'price_score', 'category', 'reasoning']
+    df_save = df[[c for c in save_cols if c in df.columns]]
+    df_save.to_csv(csv_file, index=False, encoding='utf-8-sig')
 
     print(f"\n📁 결과 저장 완료:")
     print(f"   - {json_file}")
     print(f"   - {csv_file}")
-    print(f"   - {txt_file}")
 
-    return json_file, csv_file, txt_file
+    return json_file, csv_file
 
 
 # ============================================================================
-# 텔레그램 알림
+# 텔레그램 알림 v6.4
 # ============================================================================
 
-def get_entry_reason(r):
-    """진입 근거 생성"""
-    reasons = []
+def get_market_status():
+    """시장 현황 조회"""
+    try:
+        today = datetime.now()
+        for i in range(10):
+            check_date = (today - timedelta(days=i)).strftime('%Y%m%d')
+            try:
+                kospi = stock.get_index_ohlcv(check_date, check_date, "1001")
+                kosdaq = stock.get_index_ohlcv(check_date, check_date, "2001")
+                if not kospi.empty and not kosdaq.empty:
+                    kospi_close = kospi['종가'].iloc[-1]
+                    kosdaq_close = kosdaq['종가'].iloc[-1]
 
-    # RSI 분석
-    if r['rsi'] <= 30:
-        reasons.append(f"RSI {r['rsi']:.0f} (과매도)")
-    elif r['rsi'] <= 40:
-        reasons.append(f"RSI {r['rsi']:.0f} (저점)")
-    elif r['rsi'] >= 70:
-        reasons.append(f"RSI {r['rsi']:.0f} (과매수)")
-    else:
-        reasons.append(f"RSI {r['rsi']:.0f}")
+                    # 전일 대비
+                    prev_date = (datetime.strptime(check_date, '%Y%m%d') - timedelta(days=7)).strftime('%Y%m%d')
+                    kospi_prev = stock.get_index_ohlcv(prev_date, check_date, "1001")
+                    kosdaq_prev = stock.get_index_ohlcv(prev_date, check_date, "2001")
 
-    # 52주 고점 대비
-    if r['from_52w_high'] <= -50:
-        reasons.append(f"52주高 {r['from_52w_high']:.0f}% (급락)")
-    elif r['from_52w_high'] <= -30:
-        reasons.append(f"52주高 {r['from_52w_high']:.0f}% (조정)")
-    elif r['from_52w_high'] <= -15:
-        reasons.append(f"52주高 {r['from_52w_high']:.0f}%")
+                    if len(kospi_prev) >= 2:
+                        kospi_change = ((kospi_close - kospi_prev['종가'].iloc[-2]) / kospi_prev['종가'].iloc[-2]) * 100
+                    else:
+                        kospi_change = 0
 
-    # PER 분석
-    if r['per'] < 5:
-        reasons.append(f"PER {r['per']:.1f} (초저평가)")
-    elif r['per'] < 10:
-        reasons.append(f"PER {r['per']:.1f} (저평가)")
-    elif r['per'] < 15:
-        reasons.append(f"PER {r['per']:.1f} (적정)")
+                    if len(kosdaq_prev) >= 2:
+                        kosdaq_change = ((kosdaq_close - kosdaq_prev['종가'].iloc[-2]) / kosdaq_prev['종가'].iloc[-2]) * 100
+                    else:
+                        kosdaq_change = 0
 
-    # 볼린저밴드 위치
-    if r['bb_position'] <= 0.2:
-        reasons.append("BB 하단 근접")
+                    return {
+                        'kospi': kospi_close,
+                        'kospi_change': kospi_change,
+                        'kosdaq': kosdaq_close,
+                        'kosdaq_change': kosdaq_change,
+                    }
+            except:
+                continue
+    except:
+        pass
 
-    # 이격도
-    if r['ma_div_60'] <= -15:
-        reasons.append(f"60일선 {r['ma_div_60']:.0f}% (저평가)")
-
-    return " | ".join(reasons[:4])  # 최대 4개
-
-
-def get_buy_reason(r):
-    """매수 추천 근거 생성"""
-    reasons = []
-
-    # 저평가 근거
-    if r['per'] < 8:
-        reasons.append(f"PER {r['per']:.1f} 초저평가")
-    elif r['per'] < 12:
-        reasons.append(f"PER {r['per']:.1f} 저평가")
-
-    # 급락 근거
-    if r['from_52w_high'] <= -50:
-        reasons.append(f"52주고점 대비 {r['from_52w_high']:.0f}% 급락")
-    elif r['from_52w_high'] <= -30:
-        reasons.append(f"52주고점 대비 {r['from_52w_high']:.0f}% 조정")
-
-    # RSI 근거
-    if r['rsi'] <= 30:
-        reasons.append(f"RSI {r['rsi']:.0f} 과매도")
-    elif r['rsi'] <= 45:
-        reasons.append(f"RSI {r['rsi']:.0f} 저점권")
-
-    return ", ".join(reasons) if reasons else "기술적 저점"
-
-
-def get_watch_reason(r):
-    """관망 근거 생성"""
-    reasons = []
-
-    if r['rsi'] >= 60:
-        reasons.append(f"RSI {r['rsi']:.0f}")
-    if r['from_52w_high'] > -20:
-        reasons.append("고점 근접")
-    if r.get('bb_position', 0.5) > 0.7:
-        reasons.append("단기 과열")
-
-    if not reasons:
-        reasons.append("추가 조정 대기")
-
-    return ", ".join(reasons)
-
-
-def get_hot_reason(r):
-    """과열 근거 생성"""
-    reasons = []
-
-    if r['rsi'] >= 80:
-        reasons.append(f"RSI {r['rsi']:.0f} 극과열")
-    elif r['rsi'] >= 70:
-        reasons.append(f"RSI {r['rsi']:.0f} 과매수")
-
-    if r['from_52w_high'] >= -5:
-        reasons.append("52주 신고가")
-    elif r['from_52w_high'] >= -15:
-        reasons.append("고점 근접")
-
-    if r.get('ma_div_60', 0) >= 20:
-        reasons.append(f"60일선 +{r['ma_div_60']:.0f}% 괴리")
-
-    return ", ".join(reasons) if reasons else "기술적 과열"
+    return {'kospi': 0, 'kosdaq': 0, 'kospi_change': 0, 'kosdaq_change': 0}
 
 
 def send_single_telegram(msg):
@@ -709,89 +1075,111 @@ def send_single_telegram(msg):
         return False
 
 
-def send_telegram_message_full(buy, watch, wait, latest_date):
-    """텔레그램 메시지 발송 (전체 포트폴리오 - 여러 메시지)"""
+def send_telegram_v64(momentum, dip_buy, watch, no_entry, latest_date, top3):
+    """텔레그램 v6.4 포맷 발송 (3개 메시지)"""
 
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         print("\n⚠️ 텔레그램 설정이 없어 알림을 건너뜁니다.")
         return False
 
-    total = len(buy) + len(watch) + len(wait)
-    a_only = sum(1 for r in (buy + watch + wait) if r['strategy'] == 'A')
-    b_only = sum(1 for r in (buy + watch + wait) if r['strategy'] == 'B')
-    ab_both = sum(1 for r in (buy + watch + wait) if r['strategy'] == 'A+B')
+    market = get_market_status()
 
-    # ===== 메시지 1: 개요 + 매수 추천 =====
-    msg1 = "📊 퀀트 포트폴리오 일일 리포트\n"
-    msg1 += f"📅 {latest_date[:4]}.{latest_date[4:6]}.{latest_date[6:]}\n"
+    total = len(momentum) + len(dip_buy) + len(watch) + len(no_entry)
+    date_fmt = f"{latest_date[:4]}.{latest_date[4:6]}.{latest_date[6:]}"
+
+    # ===== 메시지 1: 개요 + TOP 3 =====
+    msg1 = f"📊 퀀트 포트폴리오 v6.4\n"
+    msg1 += f"📅 {date_fmt}\n"
     msg1 += "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
 
-    msg1 += "📋 투자 전략\n"
-    msg1 += "• 전략A(마법공식): 이익수익률+자본효율 높은 저평가주\n"
-    msg1 += "• 전략B(멀티팩터): 가치+품질+모멘텀 종합 상위주\n\n"
+    # 시장 현황
+    if market['kospi'] > 0:
+        k_icon = "🔺" if market['kospi_change'] > 0 else "🔻" if market['kospi_change'] < 0 else "➖"
+        d_icon = "🔺" if market['kosdaq_change'] > 0 else "🔻" if market['kosdaq_change'] < 0 else "➖"
+        msg1 += f"📈 시장 현황\n"
+        msg1 += f"• KOSPI: {market['kospi']:,.0f} {k_icon}{abs(market['kospi_change']):.1f}%\n"
+        msg1 += f"• KOSDAQ: {market['kosdaq']:,.0f} {d_icon}{abs(market['kosdaq_change']):.1f}%\n\n"
 
-    msg1 += f"📈 포트폴리오 구성 (총 {total}개)\n"
-    msg1 += f"• 전략A {a_only + ab_both}개 / 전략B {b_only + ab_both}개\n"
-    msg1 += f"• 공통선정(A+B) {ab_both}개\n\n"
+    msg1 += f"📋 전략: 🛡️눌림목(A) + 🚀모멘텀(B) 듀얼 트랙\n"
+    msg1 += f"📊 분석 종목: {total}개\n\n"
 
     msg1 += "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-    msg1 += f"🟢 매수 추천 ({len(buy)}개)\n"
-    msg1 += "펀더멘털 우수 + 현재 저평가\n\n"
+    msg1 += "🏆 TODAY'S TOP 3\n\n"
 
-    if buy:
-        for r in buy:
-            reason = get_buy_reason(r)
-            msg1 += f"★ {r['name']} ({r['ticker']}) [{r['strategy']}]\n"
-            msg1 += f"   현재가: {r['current_price']:,}원\n"
-            msg1 += f"   진입점수: {r['entry_score']:.2f}\n"
-            msg1 += f"   근거: {reason}\n\n"
-    else:
-        msg1 += "현재 매수적기 종목 없음\n"
+    for i, r in enumerate(top3, 1):
+        emoji = r.get('emoji', '📊')
+        msg1 += f"{i}️⃣ {emoji} {r['name']} ({r['ticker']})\n"
+        msg1 += f"   맛: {r['quality_score']}점 | 값: {r['price_score']}점\n"
+        msg1 += f"   → {r['reasoning']}\n"
+        msg1 += f"   💡 {r['conclusion']}\n\n"
 
     send_single_telegram(msg1)
     time.sleep(0.5)
 
-    # ===== 메시지 2: 관망 종목 =====
-    msg2 = f"🟡 조정시 매수 ({len(watch)}개)\n"
-    msg2 += "우량주이나 추가 하락 대기\n"
+    # ===== 메시지 2: 모멘텀 + 눌림목 =====
+    msg2 = f"🚀 강세 돌파 ({len(momentum)}개)\n"
+    msg2 += "신고가 + 거래량 = 추세 매수\n"
     msg2 += "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
 
-    for r in watch:
-        reason = get_watch_reason(r)
-        msg2 += f"• {r['name']} ({r['ticker']}) [{r['strategy']}]\n"
-        msg2 += f"  {r['current_price']:,}원 | 점수 {r['entry_score']:.2f}\n"
-        msg2 += f"  → {reason}\n\n"
+    if momentum:
+        for r in momentum[:5]:
+            msg2 += f"• {r['name']}: 맛{r['quality_score']} 값{r['price_score']}\n"
+            msg2 += f"  {r['current_price']:,}원 | {r['reasoning']}\n\n"
+        if len(momentum) > 5:
+            msg2 += f"... 외 {len(momentum) - 5}개\n\n"
+    else:
+        msg2 += "해당 종목 없음\n\n"
+
+    msg2 += f"🛡️ 저점 매수 ({len(dip_buy)}개)\n"
+    msg2 += "급락 + 지지선 = 분할 매수\n"
+    msg2 += "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+
+    if dip_buy:
+        for r in dip_buy[:7]:
+            msg2 += f"• {r['name']}: 맛{r['quality_score']} 값{r['price_score']}\n"
+            msg2 += f"  PER {r['per']:.1f} | RSI {r['rsi']:.0f} | {r['reasoning']}\n\n"
+        if len(dip_buy) > 7:
+            msg2 += f"... 외 {len(dip_buy) - 7}개\n"
+    else:
+        msg2 += "해당 종목 없음\n"
 
     send_single_telegram(msg2)
     time.sleep(0.5)
 
-    # ===== 메시지 3: 과열 종목 =====
-    msg3 = f"🔴 과열 주의 ({len(wait)}개)\n"
-    msg3 += "우량주이나 고점권, 추격매수 금지\n"
+    # ===== 메시지 3: 관망 + 금지 =====
+    msg3 = f"🟡 관망 ({len(watch)}개)\n"
+    msg3 += "타이밍 대기\n"
     msg3 += "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
 
-    if wait:
-        for r in wait:
-            reason = get_hot_reason(r)
-            msg3 += f"• {r['name']} ({r['ticker']}) [{r['strategy']}]\n"
-            msg3 += f"  {r['current_price']:,}원\n"
-            msg3 += f"  → {reason}\n\n"
+    if watch:
+        for r in watch[:8]:
+            msg3 += f"• {r['name']}: 맛{r['quality_score']} 값{r['price_score']} ({r['category_reason']})\n"
+        if len(watch) > 8:
+            msg3 += f"... 외 {len(watch) - 8}개\n"
+        msg3 += "\n"
+    else:
+        msg3 += "해당 종목 없음\n\n"
+
+    msg3 += f"🚫 진입 금지 ({len(no_entry)}개)\n"
+    msg3 += "버블/과열 경고\n"
+    msg3 += "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+
+    if no_entry:
+        for r in no_entry[:5]:
+            msg3 += f"• {r['name']}: {r['category_reason']}\n"
+        if len(no_entry) > 5:
+            msg3 += f"... 외 {len(no_entry) - 5}개\n"
     else:
         msg3 += "해당 종목 없음\n"
 
-    msg3 += "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-    msg3 += "💡 매일 장마감 후 자동 분석\n"
-    msg3 += "📈 Quant Bot by Volume"
+    msg3 += "\n━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    msg3 += "💡 맛=펀더멘털 | 값=진입타이밍\n"
+    msg3 += "📈 Quant Bot v6.4 by Volume"
 
     send_single_telegram(msg3)
 
     print("\n✅ 텔레그램 알림 발송 완료 (3개 메시지)")
     return True
-
-
-def send_telegram_message(buy, watch, latest_date):
-    """텔레그램 메시지 발송 (하위호환)"""
-    return send_telegram_message_full(buy, watch, [], latest_date)
 
 
 # ============================================================================
@@ -806,10 +1194,8 @@ def git_commit_and_push(latest_date):
         return False
 
     try:
-        # Git 저장소 루트로 이동
-        repo_root = BASE_DIR.parent.parent  # quant_py-main 상위
+        repo_root = BASE_DIR.parent.parent
 
-        # 파일 추가
         subprocess.run(
             ['git', 'add', 'claude code/quant_py-main/daily_reports/'],
             cwd=str(repo_root),
@@ -818,8 +1204,7 @@ def git_commit_and_push(latest_date):
             errors='replace'
         )
 
-        # 커밋
-        commit_msg = f"chore: daily monitoring report ({latest_date})"
+        commit_msg = f"chore: daily monitoring report v6.4 ({latest_date})"
         result = subprocess.run(
             ['git', 'commit', '-m', commit_msg],
             cwd=str(repo_root),
@@ -835,7 +1220,6 @@ def git_commit_and_push(latest_date):
             print("\n⚠️ 커밋할 변경사항이 없습니다.")
             return False
 
-        # 푸시
         result = subprocess.run(
             ['git', 'push'],
             cwd=str(repo_root),
@@ -872,23 +1256,26 @@ def main():
             print("\n❌ 분석 결과가 없습니다.")
             return
 
-        # 2. 결과 분류
-        buy, watch, wait = categorize_results(results)
+        # 2. v6.4 분류
+        momentum, dip_buy, watch, no_entry = categorize_results_v64(results)
 
-        # 3. 결과 출력
-        print_results(buy, watch, wait, latest_date)
+        # 3. TOP 3 선정
+        top3 = get_top3(results)
 
-        # 4. 결과 저장
-        save_results(results, buy, watch, wait, latest_date)
+        # 4. 결과 출력
+        print_results_v64(momentum, dip_buy, watch, no_entry, latest_date, top3)
 
-        # 5. 텔레그램 알림
-        send_telegram_message_full(buy, watch, wait, latest_date)
+        # 5. 결과 저장
+        save_results_v64(results, momentum, dip_buy, watch, no_entry, latest_date, top3)
 
-        # 6. Git 커밋 & 푸시
+        # 6. 텔레그램 알림
+        send_telegram_v64(momentum, dip_buy, watch, no_entry, latest_date, top3)
+
+        # 7. Git 커밋 & 푸시
         git_commit_and_push(latest_date)
 
         print("\n" + "=" * 70)
-        print("✅ 일별 모니터링 완료!")
+        print("✅ 일별 모니터링 v6.4 완료!")
         print("=" * 70)
 
     except Exception as e:

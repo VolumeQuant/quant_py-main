@@ -365,6 +365,127 @@ def extract_magic_formula_data(fs_dict, base_date=None, use_ttm=True):
     return result_df
 
 
+# ============================================================================
+# 컨센서스 데이터 크롤링 (Forward EPS/PER)
+# ============================================================================
+
+def get_consensus_data(ticker):
+    """
+    FnGuide 메인 페이지에서 컨센서스 데이터 추출
+
+    URL: comp.fnguide.com/SVO2/ASP/SVD_Main.asp?gicode=A{ticker}
+    테이블: 투자의견 / 컨센서스 요약
+
+    Returns:
+        dict: forward_eps, forward_per, analyst_count, target_price 등
+    """
+    result = {
+        'ticker': ticker,
+        'forward_eps': None,
+        'forward_per': None,
+        'analyst_count': None,
+        'target_price': None,
+        'has_consensus': False,
+    }
+
+    try:
+        url = f'http://comp.fnguide.com/SVO2/ASP/SVD_Main.asp?pGB=1&gicode=A{ticker}'
+
+        # HTML 테이블 파싱
+        tables = pd.read_html(url, displayed_only=False, encoding='utf-8')
+
+        # 컨센서스 테이블 찾기 (보통 인덱스 7~10 사이)
+        for i, tbl in enumerate(tables):
+            tbl_str = str(tbl.columns.tolist()) + str(tbl.values.tolist())
+
+            # EPS, PER 컬럼이 있는 테이블 찾기
+            if 'EPS' in tbl_str and 'PER' in tbl_str:
+                # EPS 추출
+                if 'EPS' in tbl.columns:
+                    try:
+                        eps_val = tbl['EPS'].iloc[0]
+                        eps_str = str(eps_val).replace(',', '').replace('원', '').strip()
+                        if eps_str and eps_str not in ['nan', '-', '']:
+                            result['forward_eps'] = float(eps_str)
+                            result['has_consensus'] = True
+                    except:
+                        pass
+
+                # PER 추출
+                if 'PER' in tbl.columns:
+                    try:
+                        per_val = tbl['PER'].iloc[0]
+                        per_str = str(per_val).replace('배', '').strip()
+                        if per_str and per_str not in ['nan', '-', '']:
+                            result['forward_per'] = float(per_str)
+                    except:
+                        pass
+
+                # 목표주가 추출
+                for col in tbl.columns:
+                    if '목표' in str(col):
+                        try:
+                            target_val = tbl[col].iloc[0]
+                            target_str = str(target_val).replace(',', '').replace('원', '').strip()
+                            if target_str and target_str not in ['nan', '-', '']:
+                                result['target_price'] = float(target_str)
+                        except:
+                            pass
+                        break
+
+                break
+
+        # 애널리스트 수 추출 시도
+        if result['has_consensus'] and result['analyst_count'] is None:
+            result['analyst_count'] = 1  # 기본값
+
+    except Exception as e:
+        pass
+
+    return result
+
+
+def get_consensus_batch(tickers, delay=1.0):
+    """
+    여러 종목의 컨센서스 데이터 일괄 수집
+
+    Args:
+        tickers: 종목코드 리스트
+        delay: 요청 간 딜레이 (초)
+
+    Returns:
+        pd.DataFrame: 컨센서스 데이터
+    """
+    results = []
+
+    print(f"\n📊 컨센서스 데이터 수집 중... ({len(tickers)}개 종목)")
+
+    for i, ticker in enumerate(tickers):
+        try:
+            data = get_consensus_data(ticker)
+            results.append(data)
+
+            if (i + 1) % 20 == 0:
+                print(f"   {i + 1}/{len(tickers)} 완료...")
+
+            time.sleep(delay)
+
+        except Exception as e:
+            results.append({'ticker': ticker, 'has_consensus': False})
+
+    df = pd.DataFrame(results)
+
+    # 커버리지 통계
+    coverage = df['has_consensus'].sum()
+    print(f"\n✅ 컨센서스 커버리지: {coverage}/{len(tickers)} ({coverage/len(tickers)*100:.1f}%)")
+
+    return df
+
+
+# ============================================================================
+# 메인 테스트
+# ============================================================================
+
 if __name__ == '__main__':
     # 테스트
     print("FnGuide 크롤러 테스트")
@@ -389,3 +510,19 @@ if __name__ == '__main__':
         print(f"\n마법공식 데이터 추출 테스트:")
         magic_data = extract_magic_formula_data({test_ticker: fs_data})
         print(magic_data)
+
+    # 컨센서스 데이터 테스트
+    print(f"\n\n{'='*70}")
+    print("컨센서스 데이터 테스트")
+    print('='*70)
+
+    test_tickers = ['005930', '018290', '419530']  # 삼성전자, 브이티, SAMG엔터
+
+    for ticker in test_tickers:
+        consensus = get_consensus_data(ticker)
+        print(f"\n{ticker}:")
+        print(f"  Forward EPS: {consensus.get('forward_eps')}")
+        print(f"  Forward PER: {consensus.get('forward_per')}")
+        print(f"  목표주가: {consensus.get('target_price')}")
+        print(f"  커버리지: {consensus.get('has_consensus')}")
+        time.sleep(1)
