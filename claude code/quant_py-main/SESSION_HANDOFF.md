@@ -1,570 +1,539 @@
-# 한국 주식 멀티팩터 전략 백테스팅 시스템 - 작업 핸드오프 문서
+# 한국 주식 퀀트 포트폴리오 시스템 - 기술 문서
 
-## 📋 프로젝트 개요
+## 문서 개요
 
-**목표**: 『파이썬을 이용한 퀀트 투자 포트폴리오 만들기』 책의 MySQL 기반 시스템을 API 기반으로 전환하고, 마법공식과 멀티팩터 전략을 구현한 백테스팅 시스템 구축
-
-**데이터 소스**:
-- pykrx API: 시가총액, 기본 재무비율, OHLCV
-- FnGuide 크롤링: 상세 재무제표 (손익계산서, 재무상태표, 현금흐름표)
-- FinanceDataReader: 보조 데이터 (선택적)
-
-**전략**:
-- 전략 A: 마법공식 (Magic Formula) - 이익수익률(EBIT/EV) + 투하자본수익률(EBIT/IC)
-- 전략 B: 멀티팩터 - 밸류(PER/PBR/PCR/PSR) + 퀄리티(ROE/GPA/CFO) + 모멘텀
+**버전**: 5.0
+**최종 업데이트**: 2026-02-03
+**작성자**: Claude Opus 4.5
 
 ---
 
-## ✅ 완료된 작업 (2026-02-02 업데이트)
+## 1. 시스템 아키텍처
 
-### 1. 현재 포트폴리오 생성 완료 ✅
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                         데이터 수집 레이어                            │
+├─────────────────────────────────────────────────────────────────────┤
+│  pykrx API              │  FnGuide Crawler                           │
+│  - 시가총액              │  - 재무제표 (연간/분기)                     │
+│  - OHLCV                │  - 컨센서스 (Forward EPS/PER)              │
+│  - 지수 데이터           │  - TTM 계산                                │
+└─────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                         전략 레이어                                   │
+├─────────────────────────────────────────────────────────────────────┤
+│  Strategy A (마법공식)     │  Strategy B (멀티팩터)    │  Strategy C  │
+│  - 이익수익률 (EBIT/EV)   │  - Value 40%             │  - Growth 40%│
+│  - 투하자본수익률 (ROC)   │  - Quality 40%           │  - Safety 25%│
+│                          │  - Momentum 20%          │  - Value 20% │
+│                          │                          │  - Mom. 15%  │
+└─────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                         모니터링 레이어 (v6.4)                        │
+├─────────────────────────────────────────────────────────────────────┤
+│  Quality Score (맛)        │  Price Score (값)                       │
+│  - 전략등급 25%            │  - RSI 30% (70-80 = "좋은 과열")         │
+│  - PER 25%                │  - 볼린저 20%                            │
+│  - ROE 20%                │  - 거래량 20%                            │
+│  - 회복여력 15%            │  - 이격도 15%                            │
+│  - 정배열 15%              │  - 52주위치 15%                          │
+│                                                                      │
+│  4분류: 🚀모멘텀 | 🛡️눌림목 | 🟡관망 | 🚫금지                         │
+└─────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                         출력 레이어                                   │
+├─────────────────────────────────────────────────────────────────────┤
+│  텔레그램 알림 (3개 메시지)  │  JSON/CSV 저장  │  Git 자동 푸시        │
+└─────────────────────────────────────────────────────────────────────┘
+```
 
-**실행 스크립트**: `create_current_portfolio.py`
-**기준일**: 2026-01-29
-**실행 시간**: 약 50분 (FnGuide 크롤링 1101종목)
+---
 
-**결과**:
-- 전략 A (마법공식): 30종목 선정
-- 전략 B (멀티팩터): 30종목 선정
-- 공통 종목: 1개 (알트 459550)
+## 2. 핵심 모듈 상세
 
-**출력 파일**:
-- `output/portfolio_2026_01_strategy_a.csv`
-- `output/portfolio_2026_01_strategy_b.csv`
-- `output/portfolio_2026_01_report.txt`
+### 2.1 fnguide_crawler.py (529줄)
 
-### 2. 전체 백테스팅 완료 ✅
+FnGuide 웹사이트에서 재무제표와 컨센서스 데이터를 크롤링하는 모듈.
 
-**실행 스크립트**: `full_backtest.py`
-**기간**: 2015-01-01 ~ 2025-12-31 (11년)
-**리밸런싱**: 분기별 (44회)
-**실행 시간**: 약 15분
+#### 주요 함수
 
-**결과 요약**:
+**`get_financial_statement(ticker, use_cache=True)`** (71-152줄)
+```python
+# FnGuide에서 재무제표 크롤링
+# URL: http://comp.fnguide.com/SVO2/ASP/SVD_Finance.asp?pGB=1&gicode=A{ticker}
+#
+# 반환 테이블:
+# - data[0]: 포괄손익계산서 (연간)
+# - data[1]: 포괄손익계산서 (분기)
+# - data[2]: 재무상태표 (연간)
+# - data[3]: 재무상태표 (분기)
+# - data[4]: 현금흐름표 (연간)
+# - data[5]: 현금흐름표 (분기)
+```
 
-| 지표 | KOSPI | 전략 A | 전략 B |
-|------|-------|--------|--------|
-| **총 수익률** | - | 90.77% | 102.36% |
-| **CAGR** | 7.58% | 11.98% | 13.15% |
-| **MDD** | -43.90% | -24.42% | -33.90% |
-| **Sharpe** | 0.27 | 0.53 | 0.53 |
+**`extract_magic_formula_data(fs_dict, base_date, use_ttm=True)`** (188-365줄)
+```python
+# TTM (Trailing Twelve Months) 계산 로직
+#
+# 손익계산서/현금흐름표 항목: 최근 4분기 합산
+flow_accounts = ['당기순이익', '법인세비용', '매출액', '영업이익', ...]
 
-**IS/OOS 비교**:
+# 재무상태표 항목: 최근 분기 스냅샷
+stock_accounts = ['자산', '부채', '유동부채', '유동자산', '자본', ...]
 
-| 구간 | 전략 A CAGR | 전략 B CAGR |
-|------|-------------|-------------|
-| In-Sample (2015-2023) | 3.01% | 7.06% |
-| Out-of-Sample (2024-2025) | **67.50%** | **47.71%** |
+# 공시 시차 반영
+cutoff_date_quarterly = base_dt - timedelta(days=45)   # 분기: 45일
+cutoff_date_annual = base_dt - timedelta(days=90)      # 연간: 90일
+```
 
-**출력 파일**:
-- `backtest_results/backtest_strategy_A_*.csv/json`
-- `backtest_results/backtest_strategy_B_*.csv/json`
-- `backtest_results/backtest_comparison.csv`
-- `backtest_results/backtest_benchmark_returns.csv`
+**`get_consensus_data(ticker)`** (372-445줄)
+```python
+# FnGuide 메인 페이지에서 컨센서스 추출
+# URL: http://comp.fnguide.com/SVO2/ASP/SVD_Main.asp?pGB=1&gicode=A{ticker}
+#
+# 추출 항목:
+# - forward_eps: Forward EPS 컨센서스
+# - forward_per: Forward PER
+# - target_price: 목표주가
+# - analyst_count: 애널리스트 수
+```
 
-### 3. 일별 모니터링 시스템 완료 ✅
+#### 계정 매핑 (330-346줄)
+```python
+account_mapping = {
+    '당기순이익': '당기순이익',
+    '세전계속사업이익': '세전계속사업이익',  # EBIT 대안
+    '부채': '총부채',
+    '현금및현금성자산': '현금',
+    '영업활동으로인한현금흐름': '영업현금흐름',
+}
+```
 
-**실행 스크립트**: `daily_monitor.py`
-**기능**: 매일 장 마감 후 포트폴리오 종목의 진입 타이밍 분석
+---
 
-**주요 기능 (v6.4 - 2026-02-03 업그레이드)**:
-- **Quality(맛) + Price(값) 2축 점수 시스템**
-  - Quality Score (0-100): 펀더멘털 매력도 (전략등급, PER, ROE, 회복잠재력, 정배열)
-  - Price Score (0-100): 진입타이밍 점수 (RSI, 볼린저, 거래량, 다이버전스, 52주위치)
-- **4분류 시스템** (기존 3분류에서 업그레이드):
-  - 🚀 **STRONG_MOMENTUM**: 모멘텀 플레이 (RSI 70-80 = "좋은 과열")
-  - 🛡️ **DIP_BUYING**: 눌림목 매수 기회
-  - 🟡 **WAIT_OBSERVE**: 관망/대기
-  - 🚫 **NO_ENTRY**: 진입 금지
-- **TOP 3 + 한줄 결론** 자동 생성
-  - "잃기 힘든 자리", "가는 말이 더 간다" 등 직관적 투자 판단
-- 종목별 상세 근거 자동 생성
-- 텔레그램 알림 (3개 메시지 분할)
-- Git 자동 커밋/푸시
+### 2.2 strategy_a_magic.py (225줄)
 
-**텔레그램 메시지 구조 (v6.4)**:
+조엘 그린블라트의 마법공식 구현.
+
+#### 핵심 공식
+
+**이익수익률 (Earnings Yield)** (16-47줄)
+```python
+def calculate_earnings_yield(self, data):
+    # EBIT = 법인세차감전순이익 또는 (당기순이익 + 법인세비용)
+    if '법인세차감전순이익' in data.columns:
+        ebit = data['법인세차감전순이익']
+    else:
+        ebit = data['당기순이익'] + data['법인세비용']
+
+    # 여유자금 = 현금 - max(0, 유동부채 - 유동자산 + 현금)
+    excess_cash = data['현금'] - np.maximum(0,
+                   data['유동부채'] - data['유동자산'] + data['현금'])
+
+    # EV = 시가총액 + 총부채 - 여유자금
+    ev = data['시가총액'] + data['총부채'] - excess_cash
+
+    # 이익수익률 = EBIT / EV
+    return ebit / ev
+```
+
+**투하자본수익률 (Return on Capital)** (49-75줄)
+```python
+def calculate_roc(self, data):
+    # 투하자본(IC) = 순운전자본 + 순고정자산
+    # = (유동자산 - 유동부채) + (비유동자산 - 감가상각비)
+    ic = (data['유동자산'] - data['유동부채']) + \
+         (data['비유동자산'] - data['감가상각비'])
+
+    return ebit / ic
+```
+
+**순위 계산** (77-112줄)
+```python
+def calculate_magic_formula_score(self, data):
+    # 1. 이익수익률 순위 (높을수록 좋음)
+    ey_rank = data['이익수익률'].rank(ascending=False)
+
+    # 2. 투하자본수익률 순위 (높을수록 좋음)
+    roc_rank = data['투하자본수익률'].rank(ascending=False)
+
+    # 3. 순위 합산 → 최종 순위
+    combined_rank = ey_rank + roc_rank
+    data['마법공식_순위'] = combined_rank.rank(ascending=True)
+```
+
+---
+
+### 2.3 strategy_b_multifactor.py (341줄)
+
+밸류 + 퀄리티 + 모멘텀 멀티팩터 전략.
+
+#### 팩터 구성
+
+**밸류 팩터** (17-60줄)
+```python
+# 낮을수록 좋음 → Z-Score에 음수 부호
+PER = 시가총액 / 당기순이익       # -Z-Score
+PBR = 시가총액 / 자본            # -Z-Score
+PCR = 시가총액 / 영업현금흐름     # -Z-Score
+PSR = 시가총액 / 매출액          # -Z-Score
+```
+
+**퀄리티 팩터** (62-91줄)
+```python
+# 높을수록 좋음
+ROE = 당기순이익 / 자본 * 100
+GPA = 매출총이익 / 자산 * 100
+CFO = 영업현금흐름 / 자산 * 100
+```
+
+**모멘텀 팩터** (93-146줄)
+```python
+def calculate_momentum(self, data, price_df):
+    lookback_days = 12 * 21  # 12개월 (252 거래일)
+    skip_days = 1 * 21       # 최근 1개월 제외 (21 거래일)
+
+    # 12개월 전 가격 대비 수익률 (최근 1개월 제외)
+    end_price = prices.iloc[-(skip_days + 1)]
+    start_price = prices.iloc[-min_required]
+    momentum = (end_price / start_price - 1) * 100
+```
+
+**종합 점수 계산** (243-264줄)
+```python
+# 가중치: Value 40% + Quality 40% + Momentum 20%
+data['멀티팩터_점수'] = (
+    data['밸류_점수'] * 0.4 +
+    data['퀄리티_점수'] * 0.4 +
+    data['모멘텀_점수'] * 0.2
+)
+
+# 모멘텀 데이터 없는 종목은 자동 제외 (245-250줄)
+data = data[data['모멘텀_점수'].notna()].copy()
+```
+
+---
+
+### 2.4 strategy_c_forward_eps.py (672줄)
+
+Forward EPS 기반 하이브리드 전략.
+
+#### 필터 조건 (32-42줄)
+```python
+DEBT_RATIO_MAX = 200          # 부채비율 < 200%
+INTEREST_COVERAGE_MIN = 1.0   # 이자보상배율 > 1
+FORWARD_PER_MAX = 20          # Forward PER < 20
+MIN_ANALYST_COUNT = 2         # 최소 애널리스트 수
+```
+
+#### 팩터 가중치 (39-43줄)
+```python
+GROWTH_WEIGHT = 0.40   # 성장성 (EPS 수정률)
+SAFETY_WEIGHT = 0.25   # 안전성 (부채비율, 이자보상배율)
+VALUE_WEIGHT = 0.20    # 가치 (Forward PER)
+MOMENTUM_WEIGHT = 0.15 # 모멘텀 (가격 추세)
+```
+
+#### 점수 계산 함수들
+
+**성장점수** (306-326줄)
+```python
+def calculate_growth_score(df):
+    # Forward EPS의 Z-Score (높을수록 좋음)
+    eps_zscore = calculate_zscore(df['forward_eps'])
+    return eps_zscore
+```
+
+**안전점수** (329-354줄)
+```python
+def calculate_safety_score(df):
+    # 부채비율 역수 (낮을수록 좋음) * 0.5
+    debt_inv = 1 / (df['debt_ratio'] / 100 + 0.1)
+
+    # 이자보상배율 (높을수록 좋음, 상한 20) * 0.5
+    ic_clipped = df['interest_coverage'].clip(upper=20)
+```
+
+**가치점수** (357-372줄)
+```python
+def calculate_value_score(df):
+    # Forward PER 역수 (낮을수록 좋음)
+    per_inv = 1 / df['forward_per']
+    return calculate_zscore(per_inv)
+```
+
+---
+
+### 2.5 daily_monitor.py (1289줄)
+
+일별 포트폴리오 모니터링 시스템 v6.4.
+
+#### Quality Score (맛) 계산 (279-363줄)
+
+| 항목 | 가중치 | 점수 기준 |
+|------|--------|-----------|
+| 전략등급 | 25% | A+B=100, 단일전략=70 |
+| PER | 25% | ≤5=100, ≤8=90, ≤12=75 |
+| ROE proxy | 20% | ≥30%=100, ≥20%=85 |
+| 회복여력 | 15% | 52주고점 대비 하락폭 |
+| 정배열 | 15% | MA5>20>60>120 점수 |
+
+```python
+def calculate_quality_score(stock_info, indicators):
+    weights = {
+        'strategy': 0.25,
+        'per': 0.25,
+        'roe': 0.20,
+        'recovery': 0.15,
+        'alignment': 0.15,
+    }
+    return sum(scores[k] * weights[k] for k in weights)
+```
+
+#### Price Score (값) 계산 (366-463줄)
+
+| 항목 | 가중치 | 점수 기준 |
+|------|--------|-----------|
+| RSI | 30% | 30-45=100, **70-80=85** (모멘텀) |
+| 볼린저 | 20% | 하단=100, 상단+거래량=75 |
+| 거래량 | 20% | 3배=100, 2배=85 |
+| 이격도 | 15% | -20%=100, +30%=0 |
+| 52주위치 | 15% | 급락=100, 신고가+거래량=90 |
+
+```python
+def calculate_price_score(indicators):
+    # RSI 70-80 = "좋은 과열" (모멘텀 플레이 인정)
+    if 70 <= rsi <= 80:
+        scores['rsi'] = 85   # ★ v6.4 핵심 변경점
+```
+
+#### 4분류 시스템 (470-533줄)
+
+```python
+def classify_stock_v64(quality_score, price_score, indicators):
+    # 1. NO_ENTRY (먼저 체크)
+    if ma_div >= 30:  return 'NO_ENTRY', '🚫', '이격도 과대'
+    if rsi >= 85:     return 'NO_ENTRY', '🚫', 'RSI 극과열'
+    if quality < 35:  return 'NO_ENTRY', '🚫', '펀더멘털 부족'
+
+    # 2. STRONG_MOMENTUM 조건
+    conditions = [
+        from_high >= -10,      # 52주 고점 근처
+        volume_signal >= 1.5,  # 거래량 증가
+        70 <= rsi <= 85,       # "좋은 과열"
+        quality >= 55,         # 기본 펀더멘털
+    ]
+    if sum(conditions) >= 3:
+        return 'STRONG_MOMENTUM', '🚀', '강세 돌파'
+
+    # 3. DIP_BUYING 조건
+    if from_high <= -25 and rsi <= 50 and quality >= 50:
+        return 'DIP_BUYING', '🛡️', '저점 매수'
+
+    # 4. WAIT_OBSERVE (기본)
+    return 'WAIT_OBSERVE', '🟡', '관망'
+```
+
+#### 결론 자동 생성 (620-657줄)
+
+```python
+def generate_conclusion(r):
+    if category == 'STRONG_MOMENTUM':
+        return "가는 말이 더 간다. 눌림 없는 강력한 모멘텀"
+
+    elif category == 'DIP_BUYING':
+        if per <= 8 and from_high <= -40:
+            return "잃기 힘든 자리. 가격 메리트 극대화 구간"
+        elif rsi <= 35:
+            return "악재 해소 국면, 기술적 반등 기대"
+```
+
+#### 텔레그램 메시지 구조 (1078-1182줄)
+
 | 메시지 | 내용 |
 |--------|------|
-| 메시지 1 | 🏆 TOP 3 + Quality/Price 매트릭스 + 모멘텀 종목 |
-| 메시지 2 | 🛡️ 눌림목 매수 + 🟡 관망 종목 |
-| 메시지 3 | 🚫 진입금지 종목 + 시스템 정보 |
-
-**출력 파일**:
-- `daily_reports/daily_analysis_YYYYMMDD.json`
-- `daily_reports/daily_analysis_YYYYMMDD.csv`
-- `daily_reports/daily_report_YYYYMMDD.txt`
+| 1 | 시장현황 + TOP 3 상세 (맛/값 점수, 결론) |
+| 2 | 🚀 강세돌파 + 🛡️ 저점매수 종목 |
+| 3 | 🟡 관망 + 🚫 금지 종목 + 시스템 정보 |
 
 ---
 
-## 📁 수정된 주요 파일 목록
+## 3. 데이터 흐름
 
-### 이번 세션에서 수정/생성된 파일
+### 3.1 포트폴리오 생성 (create_current_portfolio.py)
 
-#### 1. `data_collector.py` (수정)
-**변경 사항**: FinanceDataReader 의존성 제거 (선택적 import)
-```python
-# 수정 전: import FinanceDataReader as fdr (실패 시 에러)
-# 수정 후:
-try:
-    import FinanceDataReader as fdr
-    HAS_FDR = True
-except ImportError:
-    HAS_FDR = False
 ```
-**위치**: 15-19줄
+1. pykrx에서 전체 종목 시가총액 조회
+   └─ KOSPI + KOSDAQ 약 2,700개
 
-#### 2. `create_current_portfolio.py` (신규)
-**기능**: 현재 포트폴리오 생성 (2026년 1월)
-**핵심 로직**:
-```python
-# 최근 거래일 자동 탐지 (미래 날짜 문제 해결)
-from pykrx import stock as pykrx_stock
-from datetime import datetime as dt, timedelta as td
-_today = dt.now()
-BASE_DATE = None
-for _i in range(10):
-    _date = (_today - td(days=_i)).strftime('%Y%m%d')
-    try:
-        _df = pykrx_stock.get_market_cap(_date, market='KOSPI')
-        if not _df.empty:
-            BASE_DATE = _date
-            break
-    except:
-        continue
-```
-**위치**: 23-36줄
+2. 시가총액 필터 (500억 이상)
+   └─ 약 1,100개 종목
 
-#### 3. `full_backtest.py` (신규)
-**기능**: 2015-2025 전체 백테스팅
-**핵심 로직**:
-```python
-def run_benchmark():
-    """벤치마크 (코스피) 성과 계산 - pykrx 버전 호환"""
-    try:
-        from pykrx import stock
-        kospi = stock.get_index_ohlcv(START_DATE, END_DATE, '1001')
-        # 종가 컬럼명 자동 탐지
-        close_col = None
-        for col in kospi.columns:
-            if '종가' in col or 'close' in col.lower():
-                close_col = col
-                break
-        if close_col is None:
-            close_col = kospi.columns[3]  # 기본값
-        # ...
-    except Exception as e:
-        print(f"벤치마크 스킵: {e}")
-        return pd.Series(dtype=float), {}
-```
-**위치**: 379-414줄
+3. FnGuide 재무제표 크롤링 (~50분)
+   └─ TTM 데이터 추출 (손익: 4분기합산, 재무상태: 최근분기)
 
-#### 4. `visualize_backtest.py` (신규)
-**기능**: 백테스트 결과 시각화 (개발 중)
+4. 전략 A 실행
+   └─ 이익수익률 + ROC 순위 합산 → 상위 30개
 
-#### 5. `PROJECT_REPORT.md` (신규)
-**기능**: 프로젝트 최종 결과 리포트
+5. 전략 B 실행
+   └─ Value*0.4 + Quality*0.4 + Momentum*0.2 → 상위 30개
 
----
+6. 전략 C 실행
+   └─ Growth*0.4 + Safety*0.25 + Value*0.2 + Mom*0.15 → 상위 30개
 
-## 🐛 이번 세션에서 해결된 기술 이슈
-
-### Issue #1: pykrx 버전 충돌
-**증상**: `ModuleNotFoundError: No module named 'FinanceDataReader'`
-**원인**: FinanceDataReader 미설치 + data_collector.py 강제 import
-**해결**:
-```python
-try:
-    import FinanceDataReader as fdr
-    HAS_FDR = True
-except ImportError:
-    HAS_FDR = False
-```
-**파일**: data_collector.py:15-19
-
-### Issue #2: pykrx 1.0.51 인코딩 문제
-**증상**: `KeyError: "None of [Index(['종가', '시가총액', ...])"`
-**원인**: pykrx 1.0.51 버전에서 한글 컬럼명 인코딩 오류
-**해결**: pykrx 1.2.3으로 업그레이드
-```bash
-pip install pykrx --upgrade --no-deps
+7. 결과 저장
+   └─ output/portfolio_YYYY_MM_strategy_a/b/c.csv
 ```
 
-### Issue #3: 캐시 데이터 컬럼명 불일치
-**증상**: 기존 캐시 파일이 새 버전과 호환 안됨
-**해결**: 캐시 파일 삭제 후 재수집
-```python
-from pathlib import Path
-[f.unlink() for f in Path('data_cache').glob('market_cap_*.parquet')]
-```
+### 3.2 일별 모니터링 (daily_monitor.py)
 
-### Issue #4: 미래 날짜 데이터 조회 실패
-**증상**: BASE_DATE='20251231' → 시가총액 0개
-**원인**: 2025년 12월 31일은 아직 오지 않음
-**해결**: 최근 거래일 자동 탐지 로직 추가
-```python
-for _i in range(10):
-    _date = (_today - td(days=_i)).strftime('%Y%m%d')
-    _df = pykrx_stock.get_market_cap(_date, market='KOSPI')
-    if not _df.empty:
-        BASE_DATE = _date
-        break
 ```
-**파일**: create_current_portfolio.py:23-36
+1. 포트폴리오 종목 로드 (A+B+C 합집합 ~75개)
 
-### Issue #5: html5lib 누락 경고
-**증상**: `Couldn't find a tree builder with the features you requested: html5lib`
-**원인**: BeautifulSoup html5lib 파서 미설치
-**해결**:
-```bash
-pip install html5lib
-```
-**참고**: 경고만 발생하며 작동에는 영향 없음 (lxml 대체 사용)
+2. 각 종목별 기술적 지표 계산
+   ├─ RSI (14일)
+   ├─ 볼린저밴드 위치
+   ├─ 이동평균 이격도 (20일, 60일)
+   ├─ 52주 고저점 위치
+   ├─ 거래량 신호 (20일 평균 대비)
+   └─ MA 정배열 체크 (5>20>60>120)
 
----
+3. 실시간 밸류에이션
+   └─ 현재가 기준 PER, PBR 재계산
 
-## 🔧 시스템 환경 정보
+4. Quality(맛) + Price(값) 2축 점수 계산
 
-### Python 환경
-```
-Python: 3.13 (miniconda3)
-경로: C:\Users\jkw88\miniconda3\python.exe
-```
+5. 4분류 시스템 적용
+   ├─ STRONG_MOMENTUM: 신고가+거래량+RSI70-80
+   ├─ DIP_BUYING: 급락+지지선+RSI<50
+   ├─ WAIT_OBSERVE: 양호하나 타이밍 대기
+   └─ NO_ENTRY: 버블/과열/저품질
 
-### 핵심 패키지 버전
-```
-pykrx==1.2.3          # 중요: 1.0.51은 인코딩 문제 있음
-pandas==2.2.3
-numpy==2.1.3
-matplotlib==3.10.0
-requests==2.32.3
-beautifulsoup4>=4.12.0
-html5lib>=1.1         # 선택적, FnGuide 파싱용
-```
+6. TOP 3 선정 및 결론 생성
 
-### 패키지 설치 명령어
-```bash
-pip install pykrx==1.2.3 --upgrade --no-deps
-pip install pandas numpy matplotlib requests beautifulsoup4 lxml html5lib pyarrow tqdm
+7. 텔레그램 발송 (3개 메시지)
+
+8. Git 자동 커밋 & 푸시
 ```
 
 ---
 
-## 📂 프로젝트 구조
+## 4. 파일 구조
 
 ```
 quant_py-main/
 ├── 핵심 모듈
-│   ├── fnguide_crawler.py      # FnGuide 재무제표 크롤링
-│   ├── data_collector.py       # pykrx API 래퍼 (수정됨)
-│   ├── strategy_a_magic.py     # 마법공식 전략
-│   └── strategy_b_multifactor.py # 멀티팩터 전략
+│   ├── fnguide_crawler.py      # 재무제표/컨센서스 크롤링 (529줄)
+│   ├── data_collector.py       # pykrx API 래퍼
+│   ├── strategy_a_magic.py     # 마법공식 (225줄)
+│   ├── strategy_b_multifactor.py # 멀티팩터 (341줄)
+│   └── strategy_c_forward_eps.py # Forward EPS 하이브리드 (672줄)
 │
 ├── 실행 스크립트
-│   ├── create_current_portfolio.py  # 현재 포트폴리오 생성 (신규)
-│   ├── full_backtest.py            # 전체 백테스팅 (신규)
-│   ├── visualize_backtest.py       # 시각화 (신규)
-│   ├── daily_monitor.py            # 일별 모니터링 (v1.2)
-│   ├── generate_report_pdf.py      # PDF 리포트 생성
-│   └── run_backtest.py             # 샘플 백테스트
-│
-├── 설정 파일
-│   ├── config.py                   # 텔레그램/Git 설정 (gitignore)
-│   └── config_template.py          # 설정 템플릿
+│   ├── create_current_portfolio.py  # 포트폴리오 생성 (~50분)
+│   ├── create_portfolio_strategy_c.py # 전략 C 단독 실행
+│   ├── full_backtest.py             # 백테스트 (2015-2025)
+│   └── daily_monitor.py             # 일별 모니터링 v6.4 (1289줄)
 │
 ├── 출력 디렉토리
-│   ├── output/                     # 현재 포트폴리오 결과
-│   │   ├── portfolio_2026_01_strategy_a.csv
-│   │   ├── portfolio_2026_01_strategy_b.csv
-│   │   └── portfolio_2026_01_report.txt
-│   │
-│   ├── backtest_results/           # 백테스팅 결과
-│   │   ├── backtest_strategy_A_metrics.json
-│   │   ├── backtest_strategy_A_returns.csv
-│   │   ├── backtest_strategy_A_cumulative.csv
-│   │   ├── backtest_strategy_A_history.csv
-│   │   ├── backtest_strategy_B_*.csv/json
-│   │   ├── backtest_benchmark_returns.csv
-│   │   └── backtest_comparison.csv
-│   │
-│   └── daily_reports/              # 일별 모니터링 결과
-│       ├── daily_analysis_YYYYMMDD.json
-│       ├── daily_analysis_YYYYMMDD.csv
-│       └── daily_report_YYYYMMDD.txt
+│   ├── output/                      # 포트폴리오 CSV
+│   ├── backtest_results/            # 백테스트 결과
+│   └── daily_reports/               # 일별 분석 JSON/CSV
 │
-├── 캐시 디렉토리
-│   └── data_cache/                 # 데이터 캐시 (parquet)
-│       ├── market_cap_ALL_*.parquet
-│       ├── fundamentals_*.parquet
-│       └── fs_fnguide_*.parquet    # FnGuide 재무제표 캐시
+├── 설정
+│   ├── config.py                    # 텔레그램 설정 (gitignore)
+│   └── config_template.py           # 설정 템플릿
 │
-├── 리포트
-│   └── Quant_Portfolio_Report_2026Q1.pdf  # PDF 포트폴리오 리포트
-│
-├── 문서
-│   ├── README.md                   # 프로젝트 개요
-│   ├── README_BACKTEST.md          # 백테스팅 상세 가이드
-│   ├── CHANGELOG_2026_01.md        # 2026년 1월 변경 로그
-│   ├── SESSION_HANDOFF.md          # 작업 핸드오프 (이 파일)
-│   ├── PROJECT_REPORT.md           # 최종 결과 리포트
-│   ├── BACKTEST_RESULTS.md         # 백테스트 결과 및 TOP 20
-│   └── INVESTMENT_GUIDE_2026_01.md # 투자 가이드
-│
-└── 기타
-    ├── strategy_a_portfolio.csv    # 샘플 결과
-    ├── strategy_b_portfolio.csv    # 샘플 결과
-    └── *.png                       # 분석 차트
+└── 문서
+    ├── README.md                    # 프로젝트 개요
+    ├── SESSION_HANDOFF.md           # 기술 상세 문서 (이 파일)
+    └── PROJECT_REPORT.md            # 결과 리포트
 ```
 
 ---
 
-## 🎯 다음 작업 단계
+## 5. 환경 설정
 
-### 1. 시각화 완성 (우선순위: 높음)
-**파일**: `visualize_backtest.py`
-**작업 내용**:
+### Python 환경
+```
+Python: 3.13+ (miniconda3)
+```
+
+### 필수 패키지
+```bash
+pip install pykrx==1.2.3 pandas numpy scipy matplotlib requests beautifulsoup4 lxml pyarrow tqdm
+```
+
+### 설정 파일 (config.py)
 ```python
-# 구현 필요:
-1. 누적 수익률 차트 (전략 A vs B vs KOSPI)
-2. 드로우다운 차트
-3. 연도별 성과 히트맵
-4. 월별 수익률 분포
+# config.py (gitignore)
+TELEGRAM_BOT_TOKEN = "your_bot_token"
+TELEGRAM_CHAT_ID = "your_chat_id"
+GIT_AUTO_PUSH = True
 ```
-
-### 2. 리포트 자동화 (우선순위: 중간) ✅ 완료
-**완료된 작업**:
-- ✅ PDF 리포트 생성 (`generate_report_pdf.py`)
-- ✅ 일별 텔레그램 리포트 (3개 메시지 분할)
-- ✅ 종목별 투자 사유 자동 작성
-
-### 3. 실시간 모니터링 (우선순위: 낮음) ✅ 대부분 완료
-**완료된 작업**:
-- ✅ 포트폴리오 일일 성과 추적 (`daily_monitor.py`)
-- ✅ 텔레그램 알림 시스템
-- 🔲 Streamlit 대시보드 (선택적)
-
-### 4. 전략 개선 (우선순위: 낮음)
-**작업 내용**:
-- ✅ 모멘텀 팩터 추가 완료 (12개월 수익률, 최근 1개월 제외)
-- 섹터 중립화
-- 거래비용 최적화
 
 ---
 
-## ⚠️ 알려진 제한사항
+## 6. 알려진 제한사항
 
 ### 데이터 관련
-1. **FnGuide 크롤링 속도**: 종목당 ~2초 → 1000종목 시 ~30분
-2. **일부 날짜 데이터 누락**: 연말(12/31) 등 휴장일 캐시 문제
-3. **선호주/우선주 처리**: 일부 종목 재무제표 누락
+1. FnGuide 크롤링 속도: 종목당 ~2초 → 1,000종목 시 ~30분
+2. 컨센서스 커버리지: 대형주 위주 (중소형주 커버리지 낮음)
+3. 선호주/우선주: 일부 종목 재무제표 누락
 
 ### 전략 관련
-1. ~~**모멘텀 미구현**~~: ✅ 완료 (12개월 수익률, 최근 1개월 제외, 모멘텀 없는 종목 자동 제외)
-2. **섹터 분류 없음**: 업종 중립화 미적용
-3. **거래비용**: 0.3% 고정 (실제 슬리피지 미반영)
+1. 섹터 분류 없음: 업종 중립화 미적용
+2. 거래비용: 0.3% 고정 (실제 슬리피지 미반영)
 
 ### 백테스팅 관련
-1. **생존 편향**: 상장폐지 종목 미포함
-2. **Look-ahead bias**: 재무제표 공시 시차 미반영 가능성
-3. **배당 미반영**: 배당 재투자 미구현
+1. 생존 편향: 상장폐지 종목 미포함
+2. Look-ahead bias: 재무제표 공시 시차 반영 (45일/90일)
+3. 배당 미반영: 배당 재투자 미구현
 
 ---
 
-## 🚀 빠른 시작 가이드
+## 7. 작업 로그
+
+| 날짜 | 주요 작업 | 파일 |
+|------|-----------|------|
+| 2026-01-30 | 현재 포트폴리오 생성 시스템 구현 | create_current_portfolio.py |
+| 2026-01-31 | 일별 모니터링 시스템 구현 | daily_monitor.py |
+| 2026-02-01 | 텔레그램 메시지 3분할 | daily_monitor.py |
+| 2026-02-02 | 모멘텀 팩터 완전 구현 | strategy_b_multifactor.py |
+| 2026-02-03 | v6.4 전면 리팩토링 (Quality+Price 2축) | daily_monitor.py |
+| 2026-02-03 | Strategy C: Forward EPS Hybrid 구현 | strategy_c_forward_eps.py |
+| 2026-02-03 | FnGuide 컨센서스 크롤러 추가 | fnguide_crawler.py |
+| 2026-02-03 | 문서 정리 및 최신화 | README.md, SESSION_HANDOFF.md |
+
+---
+
+## 8. 빠른 시작 가이드
 
 ```bash
-# 1. Repository 클론
-git clone https://github.com/VolumeQuant/quant_py-main.git
-cd quant_py-main
+# 1. 패키지 설치
+pip install pykrx==1.2.3 pandas numpy scipy matplotlib requests beautifulsoup4 lxml pyarrow tqdm
 
-# 2. 패키지 설치
-pip install pykrx==1.2.3 --upgrade --no-deps
-pip install pandas numpy matplotlib requests beautifulsoup4 lxml html5lib pyarrow tqdm
+# 2. 설정 파일 생성
+cp config_template.py config.py
+# config.py에 텔레그램 토큰 입력
 
-# 3. 현재 포트폴리오 생성 (~50분 소요)
+# 3. 포트폴리오 생성 (~50분 소요)
 python create_current_portfolio.py
 
-# 4. 전체 백테스팅 (~15분 소요, 캐시 있을 경우)
+# 4. 일별 모니터링 (~3분 소요)
+python daily_monitor.py
+
+# 5. 백테스트 (~15분 소요)
 python full_backtest.py
-
-# 5. 결과 확인
-cat output/portfolio_2026_01_report.txt
-cat backtest_results/backtest_comparison.csv
 ```
 
 ---
 
-## 📝 작업 로그
-
-| 날짜 | 작업자 | 주요 작업 | 파일 |
-|------|--------|-----------|------|
-| 2024-12-31 | Claude | FnGuide 크롤러 구현 | fnguide_crawler.py |
-| 2024-12-31 | Claude | 데이터 수집기 구현 | data_collector.py |
-| 2024-12-31 | Claude | 마법공식/멀티팩터 전략 구현 | strategy_*.py |
-| 2024-12-31 | Claude | 샘플 백테스트 및 시각화 | run_backtest.py, visualize_results.py |
-| **2026-01-30** | **Claude** | **data_collector.py FDR 의존성 제거** | **data_collector.py:15-19** |
-| **2026-01-30** | **Claude** | **현재 포트폴리오 생성 스크립트** | **create_current_portfolio.py** |
-| **2026-01-30** | **Claude** | **전체 백테스팅 시스템 구현** | **full_backtest.py** |
-| **2026-01-30** | **Claude** | **pykrx 1.2.3 업그레이드 및 호환성 수정** | **full_backtest.py:379-414** |
-| **2026-01-30** | **Claude** | **프로젝트 리포트 및 핸드오프 문서** | **PROJECT_REPORT.md, SESSION_HANDOFF.md** |
-| **2026-01-30** | **Claude** | **전략 C 코스닥 성장 전략 구현** | **strategy_c_kosdaq_growth.py** |
-| **2026-01-30** | **Claude** | **전략 C 백테스팅 및 실패 (CAGR -5.33%)** | **backtest_strategy_c.py** |
-| **2026-01-30** | **Claude** | **전략 C 폐기 및 전략 A 코스닥 분석** | **전략 A 코스닥 18개 확인** |
-| **2026-01-30** | **Claude** | **투자 비중 전략 및 코스닥 3000 정책 논의** | **문서 업데이트** |
-| **2026-01-31** | **Claude** | **일별 모니터링 시스템 구현** | **daily_monitor.py** |
-| **2026-01-31** | **Claude** | **텔레그램 설정 분리** | **config.py, config_template.py** |
-| **2026-01-31** | **Claude** | **텔레그램 메시지 전체 포트폴리오 표시** | **daily_monitor.py** |
-| **2026-02-01** | **Claude** | **텔레그램 메시지 3분할 (전략/관망/과열)** | **daily_monitor.py:712-794** |
-| **2026-02-01** | **Claude** | **종목별 상세 근거 시스템 추가** | **daily_monitor.py:598-698** |
-| **2026-02-02** | **Claude** | **모멘텀 팩터 구현 완료** | **strategy_b_multifactor.py** |
-| **2026-02-02** | **Claude** | **모멘텀 없는 종목 자동 제외 로직** | **strategy_b_multifactor.py:245-250** |
-| **2026-02-02** | **Claude** | **전체 유니버스 가격 데이터 수집** | **create_current_portfolio.py** |
-| **2026-02-03** | **Claude** | **daily_monitor.py v6.4 전면 리팩토링** | **daily_monitor.py** |
-| **2026-02-03** | **Claude** | **Quality(맛)+Price(값) 2축 점수 시스템** | **daily_monitor.py** |
-| **2026-02-03** | **Claude** | **4분류 시스템 (모멘텀/눌림목/관망/금지)** | **daily_monitor.py** |
-| **2026-02-03** | **Claude** | **Strategy C: Forward EPS Hybrid 구현** | **strategy_c_forward_eps.py** |
-| **2026-02-03** | **Claude** | **FnGuide 컨센서스 크롤러 추가** | **fnguide_crawler.py** |
-
----
-
-## 🎯 현재 상태 요약
-
-**완료율**: **99%** ✅
-
-**완료된 핵심 기능**:
-- ✅ FnGuide 크롤링 (계정과목 매핑 포함)
-- ✅ FnGuide 컨센서스 크롤러 (Forward EPS/PER)
-- ✅ pykrx 데이터 수집 (버전 호환성 처리)
-- ✅ 마법공식 전략 구현
-- ✅ 멀티팩터 전략 구현
-- ✅ **Forward EPS Hybrid 전략 구현 (전략 C)**
-- ✅ **현재 포트폴리오 생성 (2026년 1월)**
-- ✅ **전체 백테스팅 (2015-2025, 11년)**
-- ✅ **IS/OOS 성과 비교**
-- ✅ **벤치마크 대비 분석**
-- ✅ **일별 모니터링 시스템 v6.4 (Quality+Price 2축)**
-- ✅ **4분류 시스템 (모멘텀/눌림목/관망/금지)**
-- ✅ **텔레그램 알림 (3개 메시지 분할, TOP 3 결론)**
-- ✅ **Git 자동 커밋/푸시**
-- ✅ **PDF 리포트 생성**
-
-**남은 작업**:
-- 🔲 시각화 차트 완성
-- ✅ 모멘텀 팩터 추가 완료
-
----
-
-## 🔬 전략 업그레이드 검토 (2026-02-02)
-
-### 제안: Korea Hybrid Strategy v2.0
-
-사용자가 미국 프로젝트의 "EPS 모멘텀" 철학을 한국 시장에 적용하는 전략 업그레이드를 제안했습니다.
-
-#### 핵심 아이디어
-
-| 구분 | 내용 |
-|------|------|
-| **Growth Filter** | Forward EPS 상향 추세 (컨센서스 리비전) |
-| **Safety Filter** | 부채비율 < 200%, 이자보상배율 > 1 |
-| **Value Filter** | Forward PER < 20 |
-| **Ranking** | 섹터 내 상대평가 (Z-Score) + 수급 |
-
-#### 초기 평가
-
-**우려 사항** (기존 판단):
-1. Forward EPS 컨센서스 데이터 무료 소스 부재
-2. 검증된 전략(A/B) 폐기 리스크
-3. 과적합 위험 증가
-
-#### FnGuide 컨센서스 데이터 크롤링 테스트 ✅
-
-**결과**: Forward EPS/PER 데이터 **수집 가능** 확인!
-
-```
-URL: comp.fnguide.com/SVO2/ASP/SVD_Main.asp?gicode=A{ticker}
-테이블 7: 투자의견 / 컨센서스 요약
-```
-
-**테스트 결과**:
-
-| 종목 | 크기 | Forward EPS | Forward PER | 애널리스트 수 |
-|------|------|-------------|-------------|--------------|
-| 삼성전자 (005930) | 대형 | 20,072원 | 8.0배 | 25명 |
-| 브이티 (018290) | 중형 | 1,716원 | 12.0배 | 2명 |
-| SAMG엔터 (419530) | 소형 | 2,987원 | 12.4배 | 6명 |
-
-**핵심 발견**: 소형주도 애널리스트 커버리지 존재!
-
-#### 수정된 판단
-
-```
-기존: Forward EPS 데이터 없음 → ❌ 구현 불가
-수정: Forward EPS 데이터 있음 → ✅ 구현 가능
-```
-
-#### 구현 완료 (2026-02-03) ✅
-
-**Strategy C: Forward EPS Hybrid 전략**이 구현되었습니다:
-
-```
-전략 A (마법공식) - 유지 ✅
-전략 B (멀티팩터) - 유지 ✅
-전략 C (Forward EPS Hybrid) - 신규 구현 ✅
-```
-
-**파일**: `strategy_c_forward_eps.py`
-
-**필터 조건**:
-- Growth: Forward EPS 상향 수정 (컨센서스 리비전)
-- Safety: 부채비율 < 200%, 이자보상배율 > 1
-- Value: Forward PER < 20
-- Ranking: 섹터 상대평가 Z-Score
-
-**팩터 가중치**:
-- Growth 40%, Safety 25%, Value 20%, Momentum 15%
-
-**FnGuide 컨센서스 크롤러** (`fnguide_crawler.py`):
-```python
-def get_consensus_data(ticker):
-    """Forward EPS/PER 컨센서스 데이터 수집"""
-    url = f'http://comp.fnguide.com/SVO2/ASP/SVD_Main.asp?pGB=1&gicode=A{ticker}'
-    # 메인 페이지에서 Forward EPS/PER 추출
-
-def get_consensus_batch(tickers, delay=1.0):
-    """배치 수집 (rate limiting 포함)"""
-```
-
----
-
-## 📊 Daily Monitor v6.4 상세 스펙
-
-### Quality Score (맛) 계산
-| 항목 | 가중치 | 설명 |
-|------|--------|------|
-| 전략등급 | 25% | A/B/C 전략 순위 기반 |
-| PER 매력도 | 25% | 업종 대비 저평가 |
-| ROE | 20% | 15% 이상 우수 |
-| 회복잠재력 | 15% | 52주 고점 대비 낙폭 |
-| MA 정배열 | 15% | 20/60/120일 정렬 |
-
-### Price Score (값) 계산
-| 항목 | 가중치 | 설명 |
-|------|--------|------|
-| RSI 위치 | 25% | **70-80 = 85점 (좋은 과열)** |
-| 볼린저 위치 | 25% | 하단 접근 = 고점수 |
-| 거래량 | 20% | 평균 대비 급증 감지 |
-| 다이버전스 | 15% | 가격↓ + RSI↑ 신호 |
-| 52주 위치 | 15% | 저점 근처 = 고점수 |
-
-### 4분류 시스템
-| 분류 | 조건 | 의미 |
-|------|------|------|
-| 🚀 STRONG_MOMENTUM | Quality≥70 + Price≥70 + RSI 70-80 | 모멘텀 플레이 |
-| 🛡️ DIP_BUYING | Quality≥60 + Price≥60 + RSI<50 | 눌림목 매수 |
-| 🟡 WAIT_OBSERVE | Quality≥50 or Price≥50 | 관망/대기 |
-| 🚫 NO_ENTRY | Quality<50 + Price<50 | 진입 금지 |
-
----
-
-**문서 버전**: 4.0
+**문서 버전**: 5.0
 **최종 업데이트**: 2026-02-03
-**작성자**: Claude Opus 4.5
