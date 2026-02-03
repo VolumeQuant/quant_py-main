@@ -1,6 +1,6 @@
 """
 일별 포트폴리오 모니터링 및 진입 타이밍 분석 v6.4
-- Quality(맛) + Price(값) 2축 점수 체계
+- Quality(품질) + Price(타이밍) 2축 점수 체계
 - 4분류: 모멘텀/눌림목/관망/금지
 - TOP 3 + 한줄 결론
 - 텔레그램 v6.4 포맷
@@ -44,10 +44,10 @@ except ImportError:
     GIT_AUTO_PUSH = True
 
 # v6.4 점수 기준
-QUALITY_EXCELLENT = 75  # 맛 우수
-QUALITY_GOOD = 50       # 맛 양호
-PRICE_EXCELLENT = 75    # 값 우수
-PRICE_GOOD = 50         # 값 양호
+QUALITY_EXCELLENT = 75  # 품질 우수
+QUALITY_GOOD = 50       # 품질 양호
+PRICE_EXCELLENT = 75    # 타이밍 우수
+PRICE_GOOD = 50         # 타이밍 양호
 
 # ============================================================================
 # 포트폴리오 종목 로드
@@ -273,12 +273,12 @@ def calculate_realtime_valuation(ticker, current_price, stock_info):
 
 
 # ============================================================================
-# v6.4 점수 계산 - Quality(맛) + Price(값) 2축 체계
+# v6.4 점수 계산 - Quality(품질) + Price(타이밍) 2축 체계
 # ============================================================================
 
 def calculate_quality_score(stock_info, indicators):
     """
-    Quality Score (맛) - 펀더멘털 매력도 (0~100)
+    Quality Score (품질) - 펀더멘털 매력도 (0~100)
 
     구성:
     - 전략 등급 (25%): A+B > A or B
@@ -365,7 +365,7 @@ def calculate_quality_score(stock_info, indicators):
 
 def calculate_price_score(indicators):
     """
-    Price Score (값) - 진입 타이밍 점수 (0~100)
+    Price Score (타이밍) - 진입 적정성 점수 (0~100)
 
     핵심 변경: RSI 70~80은 "좋은 과열"로 인정 (모멘텀 플레이)
 
@@ -772,6 +772,9 @@ def analyze_stocks():
                 'category': category,
                 'emoji': emoji,
                 'category_reason': category_reason,
+                # Forward EPS 컨센서스 (추가 정보)
+                'forward_eps': info.get('forward_eps'),
+                'forward_per': info.get('forward_per'),
             }
 
             # 결론 생성
@@ -859,7 +862,7 @@ def print_results_v64(momentum, dip_buy, watch, no_entry, latest_date, top3):
     for i, r in enumerate(top3, 1):
         emoji = r.get('emoji', '📊')
         print(f"\n{i}️⃣ {emoji} {r['name']} ({r['ticker']}) [{r['strategy']}]")
-        print(f"   현재가: {r['current_price']:,}원 | 맛: {r['quality_score']}점 | 값: {r['price_score']}점")
+        print(f"   현재가: {r['current_price']:,}원 | 품질: {r['quality_score']}점 | 타이밍: {r['price_score']}점")
         print(f"   → {r['reasoning']}")
         print(f"   💡 {r['conclusion']}")
 
@@ -870,7 +873,7 @@ def print_results_v64(momentum, dip_buy, watch, no_entry, latest_date, top3):
     if momentum:
         for r in momentum[:5]:
             change = "🔺" if r['daily_return'] > 0 else "🔻" if r['daily_return'] < 0 else "➖"
-            print(f"  • {r['name']}: 맛{r['quality_score']} 값{r['price_score']} | "
+            print(f"  • {r['name']}: 품질{r['quality_score']} 타이밍{r['price_score']} | "
                   f"{r['current_price']:,}원 {change}{abs(r['daily_return']):.1f}%")
         if len(momentum) > 5:
             print(f"  ... 외 {len(momentum) - 5}개")
@@ -884,7 +887,7 @@ def print_results_v64(momentum, dip_buy, watch, no_entry, latest_date, top3):
     if dip_buy:
         for r in dip_buy[:7]:
             change = "🔺" if r['daily_return'] > 0 else "🔻" if r['daily_return'] < 0 else "➖"
-            print(f"  • {r['name']}: 맛{r['quality_score']} 값{r['price_score']} | "
+            print(f"  • {r['name']}: 품질{r['quality_score']} 타이밍{r['price_score']} | "
                   f"PER {r['per']:.1f} | RSI {r['rsi']:.0f}")
         if len(dip_buy) > 7:
             print(f"  ... 외 {len(dip_buy) - 7}개")
@@ -896,7 +899,7 @@ def print_results_v64(momentum, dip_buy, watch, no_entry, latest_date, top3):
     print("─" * 70)
     if watch:
         for r in watch[:5]:
-            print(f"  • {r['name']}: 맛{r['quality_score']} 값{r['price_score']} | {r['category_reason']}")
+            print(f"  • {r['name']}: 품질{r['quality_score']} 타이밍{r['price_score']} | {r['category_reason']}")
         if len(watch) > 5:
             print(f"  ... 외 {len(watch) - 5}개")
     else:
@@ -914,7 +917,7 @@ def print_results_v64(momentum, dip_buy, watch, no_entry, latest_date, top3):
         print("  해당 종목 없음")
 
     print("\n" + "═" * 70)
-    print("💡 맛 = 펀더멘털 매력도 | 값 = 진입 타이밍 점수")
+    print("💡 품질 = 펀더멘털 매력도 | 타이밍 = 진입 적정성")
     print("═" * 70)
 
 
@@ -1109,7 +1112,11 @@ def send_telegram_v64(momentum, dip_buy, watch, no_entry, latest_date, top3):
     for i, r in enumerate(top3, 1):
         emoji = r.get('emoji', '📊')
         msg1 += f"{i}️⃣ {emoji} {r['name']} ({r['ticker']})\n"
-        msg1 += f"   맛: {r['quality_score']}점 | 값: {r['price_score']}점\n"
+        msg1 += f"   품질: {r['quality_score']}점 | 타이밍: {r['price_score']}점\n"
+        # Forward PER 추가 정보
+        fwd_per = r.get('forward_per')
+        if fwd_per and fwd_per > 0:
+            msg1 += f"   [컨센서스] Forward PER: {fwd_per:.1f}x\n"
         msg1 += f"   → {r['reasoning']}\n"
         msg1 += f"   💡 {r['conclusion']}\n\n"
 
@@ -1123,8 +1130,11 @@ def send_telegram_v64(momentum, dip_buy, watch, no_entry, latest_date, top3):
 
     if momentum:
         for r in momentum[:5]:
-            msg2 += f"• {r['name']}: 맛{r['quality_score']} 값{r['price_score']}\n"
-            msg2 += f"  {r['current_price']:,}원 | {r['reasoning']}\n\n"
+            msg2 += f"• {r['name']}: 품질{r['quality_score']} 타이밍{r['price_score']}"
+            fwd_per = r.get('forward_per')
+            if fwd_per and fwd_per > 0:
+                msg2 += f" [F.PER {fwd_per:.1f}]"
+            msg2 += f"\n  {r['current_price']:,}원 | {r['reasoning']}\n\n"
         if len(momentum) > 5:
             msg2 += f"... 외 {len(momentum) - 5}개\n\n"
     else:
@@ -1136,8 +1146,11 @@ def send_telegram_v64(momentum, dip_buy, watch, no_entry, latest_date, top3):
 
     if dip_buy:
         for r in dip_buy[:7]:
-            msg2 += f"• {r['name']}: 맛{r['quality_score']} 값{r['price_score']}\n"
-            msg2 += f"  PER {r['per']:.1f} | RSI {r['rsi']:.0f} | {r['reasoning']}\n\n"
+            msg2 += f"• {r['name']}: 품질{r['quality_score']} 타이밍{r['price_score']}"
+            fwd_per = r.get('forward_per')
+            if fwd_per and fwd_per > 0:
+                msg2 += f" [F.PER {fwd_per:.1f}]"
+            msg2 += f"\n  PER {r['per']:.1f} | RSI {r['rsi']:.0f} | {r['reasoning']}\n\n"
         if len(dip_buy) > 7:
             msg2 += f"... 외 {len(dip_buy) - 7}개\n"
     else:
@@ -1153,7 +1166,7 @@ def send_telegram_v64(momentum, dip_buy, watch, no_entry, latest_date, top3):
 
     if watch:
         for r in watch[:8]:
-            msg3 += f"• {r['name']}: 맛{r['quality_score']} 값{r['price_score']} ({r['category_reason']})\n"
+            msg3 += f"• {r['name']}: 품질{r['quality_score']} 타이밍{r['price_score']} ({r['category_reason']})\n"
         if len(watch) > 8:
             msg3 += f"... 외 {len(watch) - 8}개\n"
         msg3 += "\n"
@@ -1173,7 +1186,8 @@ def send_telegram_v64(momentum, dip_buy, watch, no_entry, latest_date, top3):
         msg3 += "해당 종목 없음\n"
 
     msg3 += "\n━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-    msg3 += "💡 맛=펀더멘털 | 값=진입타이밍\n"
+    msg3 += "💡 품질=펀더멘털 | 타이밍=진입적정성\n"
+    msg3 += "📊 F.PER=Forward PER (애널리스트 컨센서스)\n"
     msg3 += "📈 Quant Bot v6.4 by Volume"
 
     send_single_telegram(msg3)

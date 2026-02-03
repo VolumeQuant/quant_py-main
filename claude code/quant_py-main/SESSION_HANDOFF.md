@@ -2,9 +2,25 @@
 
 ## 문서 개요
 
-**버전**: 5.0
+**버전**: 5.1
 **최종 업데이트**: 2026-02-03
 **작성자**: Claude Opus 4.5
+
+---
+
+## 핵심 결정 사항
+
+### Forward EPS 컨센서스 - 보조 지표로 결정
+
+**배경**: 2026-02-03 테스트 결과
+- Forward EPS 기반 전략 C를 A/B와 비교 테스트
+- A∩C: 2종목, B∩C: 1종목, A∩B∩C: 0종목 (거의 겹치지 않음)
+- 원인: C는 대형주 위주 (커버리지), A/B는 코스닥 중소형주 위주
+
+**결론**:
+- 전략 A/B가 메인 전략 (백테스트 검증됨)
+- Forward EPS는 **추가 정보**로만 활용 (필터링 X)
+- A/B 종목 중 59.2%만 컨센서스 존재 → 필터 시 40% 종목 제외됨
 
 ---
 
@@ -220,53 +236,31 @@ data = data[data['모멘텀_점수'].notna()].copy()
 
 ---
 
-### 2.4 strategy_c_forward_eps.py (672줄)
+### 2.4 strategy_c_forward_eps.py (672줄) - 참고용
 
-Forward EPS 기반 하이브리드 전략.
+Forward EPS 기반 하이브리드 전략 (보조 지표용).
 
-#### 필터 조건 (32-42줄)
+**역할**: 전략 A/B 선정 종목의 Forward 밸류에이션 참고 데이터 생성
+
+#### 컨센서스 크롤링 (fnguide_crawler.py)
 ```python
-DEBT_RATIO_MAX = 200          # 부채비율 < 200%
-INTEREST_COVERAGE_MIN = 1.0   # 이자보상배율 > 1
-FORWARD_PER_MAX = 20          # Forward PER < 20
-MIN_ANALYST_COUNT = 2         # 최소 애널리스트 수
+def get_consensus_data(ticker):
+    """FnGuide에서 Forward EPS/PER 수집"""
+    # URL: http://comp.fnguide.com/SVO2/ASP/SVD_Main.asp?pGB=1&gicode=A{ticker}
+    # tables[7]: 컨센서스 테이블
+    # 추출: Forward EPS, Forward PER, 목표주가
 ```
 
-#### 팩터 가중치 (39-43줄)
-```python
-GROWTH_WEIGHT = 0.40   # 성장성 (EPS 수정률)
-SAFETY_WEIGHT = 0.25   # 안전성 (부채비율, 이자보상배율)
-VALUE_WEIGHT = 0.20    # 가치 (Forward PER)
-MOMENTUM_WEIGHT = 0.15 # 모멘텀 (가격 추세)
+#### 커버리지 현황 (2026-02-03)
+```
+전략 A/B 종목: 49개
+컨센서스 있음: 29개 (59.2%)
+컨센서스 없음: 20개 (40.8%) - 코스닥 중소형주 위주
 ```
 
-#### 점수 계산 함수들
-
-**성장점수** (306-326줄)
-```python
-def calculate_growth_score(df):
-    # Forward EPS의 Z-Score (높을수록 좋음)
-    eps_zscore = calculate_zscore(df['forward_eps'])
-    return eps_zscore
-```
-
-**안전점수** (329-354줄)
-```python
-def calculate_safety_score(df):
-    # 부채비율 역수 (낮을수록 좋음) * 0.5
-    debt_inv = 1 / (df['debt_ratio'] / 100 + 0.1)
-
-    # 이자보상배율 (높을수록 좋음, 상한 20) * 0.5
-    ic_clipped = df['interest_coverage'].clip(upper=20)
-```
-
-**가치점수** (357-372줄)
-```python
-def calculate_value_score(df):
-    # Forward PER 역수 (낮을수록 좋음)
-    per_inv = 1 / df['forward_per']
-    return calculate_zscore(per_inv)
-```
+#### 활용 방식
+- daily_monitor.py에서 텔레그램 메시지에 추가 정보로 표시
+- 투자 결정의 필터 조건으로 사용하지 않음
 
 ---
 
@@ -509,6 +503,8 @@ GIT_AUTO_PUSH = True
 | 2026-02-03 | v6.4 전면 리팩토링 (Quality+Price 2축) | daily_monitor.py |
 | 2026-02-03 | Strategy C: Forward EPS Hybrid 구현 | strategy_c_forward_eps.py |
 | 2026-02-03 | FnGuide 컨센서스 크롤러 추가 | fnguide_crawler.py |
+| 2026-02-03 | Forward EPS를 보조 지표로 결정 | PROJECT_REPORT.md |
+| 2026-02-03 | 텔레그램 메시지에 Forward EPS 추가 정보 표시 | daily_monitor.py |
 | 2026-02-03 | 문서 정리 및 최신화 | README.md, SESSION_HANDOFF.md |
 
 ---
