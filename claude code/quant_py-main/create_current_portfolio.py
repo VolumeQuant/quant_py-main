@@ -209,6 +209,63 @@ def collect_price_data_parallel(
         return pd.DataFrame()
 
 
+def calculate_avg_trading_value_from_cache(days: int = 20) -> pd.DataFrame:
+    """
+    OHLCV 캐시에서 20일 평균 거래대금 계산
+
+    Returns:
+        DataFrame with index=ticker, column='avg_trading_value'
+    """
+    # OHLCV 캐시 로드
+    ohlcv_files = sorted(Path(CACHE_DIR).glob('all_ohlcv_*.parquet'))
+    if not ohlcv_files:
+        print("  OHLCV 캐시 없음")
+        return pd.DataFrame()
+
+    ohlcv_file = ohlcv_files[-1]
+    print(f"  OHLCV 캐시 사용: {ohlcv_file.name}")
+
+    # 종가 데이터 로드
+    price_df = pd.read_parquet(ohlcv_file)
+
+    # 거래량 데이터도 필요 - 별도 로드 필요
+    # 대안: 시가총액 일별 데이터에서 거래대금 직접 조회
+    from pykrx import stock
+
+    # 최근 20거래일 날짜 구하기
+    if len(price_df) < days:
+        print(f"  데이터 부족: {len(price_df)}일")
+        return pd.DataFrame()
+
+    dates = price_df.index[-days:].strftime('%Y%m%d').tolist()
+    print(f"  거래대금 조회: {dates[0]} ~ {dates[-1]} ({len(dates)}일)")
+
+    # 각 날짜별 거래대금 수집
+    trading_values = {}
+    for date in dates:
+        try:
+            df = stock.get_market_cap(date, market='ALL')
+            if not df.empty:
+                for ticker in df.index:
+                    if ticker not in trading_values:
+                        trading_values[ticker] = []
+                    trading_values[ticker].append(df.loc[ticker, '거래대금'])
+        except:
+            continue
+
+    # 평균 계산
+    avg_values = {}
+    for ticker, values in trading_values.items():
+        if values:
+            avg_values[ticker] = np.mean(values) / 100_000_000  # 억원
+
+    result = pd.DataFrame({'avg_trading_value': pd.Series(avg_values)})
+    result.index.name = 'ticker'
+    print(f"  20일 평균 거래대금 계산 완료: {len(result)}개 종목")
+
+    return result
+
+
 def filter_universe_optimized(
     collector: DataCollector,
     market_cap_df: pd.DataFrame,
@@ -229,10 +286,23 @@ def filter_universe_optimized(
     filtered = market_cap_df[market_cap_df['시가총액_억'] >= MIN_MARKET_CAP].copy()
     print(f"시가총액 {MIN_MARKET_CAP}억원 이상: {len(filtered)}개")
 
-    # 2. 거래대금 필터
-    filtered['거래대금_억'] = filtered['거래대금'] / 100_000_000
-    filtered = filtered[filtered['거래대금_억'] >= MIN_TRADING_VALUE].copy()
-    print(f"거래대금 {MIN_TRADING_VALUE}억원 이상: {len(filtered)}개")
+    # 2. 거래대금 필터 (20일 평균)
+    print(f"20일 평균 거래대금 계산 중...")
+    avg_trading_df = calculate_avg_trading_value_from_cache(days=20)
+
+    if not avg_trading_df.empty:
+        filtered = filtered.join(avg_trading_df, how='left')
+        # 평균 거래대금 없는 종목은 당일 거래대금으로 대체
+        filtered['거래대금_억'] = filtered['거래대금'] / 100_000_000
+        filtered['avg_trading_value'] = filtered['avg_trading_value'].fillna(filtered['거래대금_억'])
+        filtered = filtered[filtered['avg_trading_value'] >= MIN_TRADING_VALUE].copy()
+        print(f"20일 평균 거래대금 {MIN_TRADING_VALUE}억원 이상: {len(filtered)}개")
+    else:
+        # 배치 실패시 당일 거래대금으로 대체
+        print("  (배치 실패 - 당일 거래대금 사용)")
+        filtered['거래대금_억'] = filtered['거래대금'] / 100_000_000
+        filtered = filtered[filtered['거래대금_억'] >= MIN_TRADING_VALUE].copy()
+        print(f"당일 거래대금 {MIN_TRADING_VALUE}억원 이상: {len(filtered)}개")
 
     # 3. 종목명 병렬 수집
     print("종목명 수집 중 (병렬)...")
