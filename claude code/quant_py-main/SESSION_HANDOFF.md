@@ -67,19 +67,27 @@
 **실행 스크립트**: `daily_monitor.py`
 **기능**: 매일 장 마감 후 포트폴리오 종목의 진입 타이밍 분석
 
-**주요 기능 (v1.2)**:
-- 기술적 지표 분석 (RSI, 볼린저밴드, 52주 위치, 이격도)
-- 진입 점수 산출 (0~1)
-- 텔레그램 알림 (3개 메시지 분할)
+**주요 기능 (v6.4 - 2026-02-03 업그레이드)**:
+- **Quality(맛) + Price(값) 2축 점수 시스템**
+  - Quality Score (0-100): 펀더멘털 매력도 (전략등급, PER, ROE, 회복잠재력, 정배열)
+  - Price Score (0-100): 진입타이밍 점수 (RSI, 볼린저, 거래량, 다이버전스, 52주위치)
+- **4분류 시스템** (기존 3분류에서 업그레이드):
+  - 🚀 **STRONG_MOMENTUM**: 모멘텀 플레이 (RSI 70-80 = "좋은 과열")
+  - 🛡️ **DIP_BUYING**: 눌림목 매수 기회
+  - 🟡 **WAIT_OBSERVE**: 관망/대기
+  - 🚫 **NO_ENTRY**: 진입 금지
+- **TOP 3 + 한줄 결론** 자동 생성
+  - "잃기 힘든 자리", "가는 말이 더 간다" 등 직관적 투자 판단
 - 종목별 상세 근거 자동 생성
+- 텔레그램 알림 (3개 메시지 분할)
 - Git 자동 커밋/푸시
 
-**텔레그램 메시지 구조**:
+**텔레그램 메시지 구조 (v6.4)**:
 | 메시지 | 내용 |
 |--------|------|
-| 메시지 1 | 전략 설명 + 매수 추천 종목 상세 |
-| 메시지 2 | 관망 종목 전체 (생략 없음) |
-| 메시지 3 | 과열 종목 전체 (생략 없음) |
+| 메시지 1 | 🏆 TOP 3 + Quality/Price 매트릭스 + 모멘텀 종목 |
+| 메시지 2 | 🛡️ 눌림목 매수 + 🟡 관망 종목 |
+| 메시지 3 | 🚫 진입금지 종목 + 시스템 정보 |
 
 **출력 파일**:
 - `daily_reports/daily_analysis_YYYYMMDD.json`
@@ -410,24 +418,32 @@ cat backtest_results/backtest_comparison.csv
 | **2026-02-02** | **Claude** | **모멘텀 팩터 구현 완료** | **strategy_b_multifactor.py** |
 | **2026-02-02** | **Claude** | **모멘텀 없는 종목 자동 제외 로직** | **strategy_b_multifactor.py:245-250** |
 | **2026-02-02** | **Claude** | **전체 유니버스 가격 데이터 수집** | **create_current_portfolio.py** |
+| **2026-02-03** | **Claude** | **daily_monitor.py v6.4 전면 리팩토링** | **daily_monitor.py** |
+| **2026-02-03** | **Claude** | **Quality(맛)+Price(값) 2축 점수 시스템** | **daily_monitor.py** |
+| **2026-02-03** | **Claude** | **4분류 시스템 (모멘텀/눌림목/관망/금지)** | **daily_monitor.py** |
+| **2026-02-03** | **Claude** | **Strategy C: Forward EPS Hybrid 구현** | **strategy_c_forward_eps.py** |
+| **2026-02-03** | **Claude** | **FnGuide 컨센서스 크롤러 추가** | **fnguide_crawler.py** |
 
 ---
 
 ## 🎯 현재 상태 요약
 
-**완료율**: **98%** ✅
+**완료율**: **99%** ✅
 
 **완료된 핵심 기능**:
 - ✅ FnGuide 크롤링 (계정과목 매핑 포함)
+- ✅ FnGuide 컨센서스 크롤러 (Forward EPS/PER)
 - ✅ pykrx 데이터 수집 (버전 호환성 처리)
 - ✅ 마법공식 전략 구현
 - ✅ 멀티팩터 전략 구현
+- ✅ **Forward EPS Hybrid 전략 구현 (전략 C)**
 - ✅ **현재 포트폴리오 생성 (2026년 1월)**
 - ✅ **전체 백테스팅 (2015-2025, 11년)**
 - ✅ **IS/OOS 성과 비교**
 - ✅ **벤치마크 대비 분석**
-- ✅ **일별 모니터링 시스템 (daily_monitor.py)**
-- ✅ **텔레그램 알림 (3개 메시지 분할, 종목별 상세 근거)**
+- ✅ **일별 모니터링 시스템 v6.4 (Quality+Price 2축)**
+- ✅ **4분류 시스템 (모멘텀/눌림목/관망/금지)**
+- ✅ **텔레그램 알림 (3개 메시지 분할, TOP 3 결론)**
 - ✅ **Git 자동 커밋/푸시**
 - ✅ **PDF 리포트 생성**
 
@@ -485,47 +501,70 @@ URL: comp.fnguide.com/SVO2/ASP/SVD_Main.asp?gicode=A{ticker}
 수정: Forward EPS 데이터 있음 → ✅ 구현 가능
 ```
 
-#### 구현 방향 권장
+#### 구현 완료 (2026-02-03) ✅
 
-**전면 교체 (비권장)**:
-- 기존 전략 A/B 폐기
-- 검증되지 않은 새 전략으로 대체
-- 리스크 높음
+**Strategy C: Forward EPS Hybrid 전략**이 구현되었습니다:
 
-**점진적 추가 (권장)** ⭐:
 ```
-현재 전략 A (마법공식) - 유지
-현재 전략 B (멀티팩터) - 유지
-+ 신규 전략 C (Hybrid) - Forward EPS 기반 추가
+전략 A (마법공식) - 유지 ✅
+전략 B (멀티팩터) - 유지 ✅
+전략 C (Forward EPS Hybrid) - 신규 구현 ✅
 ```
 
-#### 남은 과제
+**파일**: `strategy_c_forward_eps.py`
 
-1. **커버리지 테스트**: 668개 유니버스 중 컨센서스 커버리지 비율 확인
-2. **EPS 모멘텀 구현**:
-   - 옵션 A: 히스토리 저장 → 매일 크롤링 후 1개월 비교
-   - 옵션 B: YoY 성장률 → Forward EPS / 전년 실적 EPS
-   - 옵션 C: 분기 영업이익 YoY → 기존 데이터 활용 (즉시 가능)
-3. **Safety Filter 추가**: 부채비율, 이자보상배율 필터 (기존 데이터로 즉시 가능)
+**필터 조건**:
+- Growth: Forward EPS 상향 수정 (컨센서스 리비전)
+- Safety: 부채비율 < 200%, 이자보상배율 > 1
+- Value: Forward PER < 20
+- Ranking: 섹터 상대평가 Z-Score
 
-#### 테스트 코드
+**팩터 가중치**:
+- Growth 40%, Safety 25%, Value 20%, Momentum 15%
 
-**파일**: `test_consensus_crawl.py`
+**FnGuide 컨센서스 크롤러** (`fnguide_crawler.py`):
 ```python
 def get_consensus_data(ticker):
+    """Forward EPS/PER 컨센서스 데이터 수집"""
     url = f'http://comp.fnguide.com/SVO2/ASP/SVD_Main.asp?pGB=1&gicode=A{ticker}'
-    tables = pd.read_html(url, displayed_only=False, encoding='utf-8')
+    # 메인 페이지에서 Forward EPS/PER 추출
 
-    # 테이블 7: 컨센서스 요약
-    if len(tables) > 7:
-        consensus_summary = tables[7]
-        # 컬럼: 투자의견, 목표주가, EPS, PER, 애널리스트수
-        forward_eps = consensus_summary['EPS'].iloc[0]
-        forward_per = consensus_summary['PER'].iloc[0]
+def get_consensus_batch(tickers, delay=1.0):
+    """배치 수집 (rate limiting 포함)"""
 ```
 
 ---
 
-**문서 버전**: 3.2
-**최종 업데이트**: 2026-02-02
+## 📊 Daily Monitor v6.4 상세 스펙
+
+### Quality Score (맛) 계산
+| 항목 | 가중치 | 설명 |
+|------|--------|------|
+| 전략등급 | 25% | A/B/C 전략 순위 기반 |
+| PER 매력도 | 25% | 업종 대비 저평가 |
+| ROE | 20% | 15% 이상 우수 |
+| 회복잠재력 | 15% | 52주 고점 대비 낙폭 |
+| MA 정배열 | 15% | 20/60/120일 정렬 |
+
+### Price Score (값) 계산
+| 항목 | 가중치 | 설명 |
+|------|--------|------|
+| RSI 위치 | 25% | **70-80 = 85점 (좋은 과열)** |
+| 볼린저 위치 | 25% | 하단 접근 = 고점수 |
+| 거래량 | 20% | 평균 대비 급증 감지 |
+| 다이버전스 | 15% | 가격↓ + RSI↑ 신호 |
+| 52주 위치 | 15% | 저점 근처 = 고점수 |
+
+### 4분류 시스템
+| 분류 | 조건 | 의미 |
+|------|------|------|
+| 🚀 STRONG_MOMENTUM | Quality≥70 + Price≥70 + RSI 70-80 | 모멘텀 플레이 |
+| 🛡️ DIP_BUYING | Quality≥60 + Price≥60 + RSI<50 | 눌림목 매수 |
+| 🟡 WAIT_OBSERVE | Quality≥50 or Price≥50 | 관망/대기 |
+| 🚫 NO_ENTRY | Quality<50 + Price<50 | 진입 금지 |
+
+---
+
+**문서 버전**: 4.0
+**최종 업데이트**: 2026-02-03
 **작성자**: Claude Opus 4.5
