@@ -306,9 +306,9 @@ async def run_strategy_b(
         multifactor_df = magic_df.copy()
         multifactor_df['종목명'] = multifactor_df['종목코드'].map(ticker_names)
 
-        # 시가총액 및 섹터 정보 추가
+        # 시가총액 정보 추가
         multifactor_df = multifactor_df.merge(
-            universe_df[['시가총액', '섹터']],
+            universe_df[['시가총액']],
             left_on='종목코드',
             right_index=True,
             how='left'
@@ -430,22 +430,18 @@ async def main_async():
     print(f"최종 유니버스: {len(universe_tickers)}개 종목")
 
     # =========================================================================
-    # 3단계: 재무제표 수집 (DART API)
+    # 3단계: 재무제표 수집 (FnGuide 캐시)
     # =========================================================================
-    print("\n[3단계] 재무제표 수집 (DART API)")
+    print("\n[3단계] 재무제표 수집 (FnGuide 캐시)")
 
-    magic_df = await collect_financial_data_dart(universe_tickers, error_tracker)
-
-    # DART 실패 시 FnGuide 캐시 시도
-    if magic_df.empty:
-        print("  DART 데이터 없음 - FnGuide 캐시 시도")
-        try:
-            from fnguide_crawler import get_all_financial_statements, extract_magic_formula_data
-            fs_data = get_all_financial_statements(universe_tickers, use_cache=True)
-            magic_df = extract_magic_formula_data(fs_data, base_date=BASE_DATE, use_ttm=True)
-            print(f"  FnGuide 캐시에서 {len(magic_df)}개 종목 로드")
-        except Exception as e:
-            error_tracker.log_error("FNGUIDE", ErrorCategory.UNKNOWN, "FnGuide 캐시 로드 실패", e)
+    try:
+        from fnguide_crawler import get_all_financial_statements, extract_magic_formula_data
+        fs_data = get_all_financial_statements(universe_tickers, use_cache=True)
+        magic_df = extract_magic_formula_data(fs_data, base_date=BASE_DATE, use_ttm=True)
+        print(f"  FnGuide 캐시에서 {len(magic_df)}개 종목 로드")
+    except Exception as e:
+        error_tracker.log_error("FNGUIDE", ErrorCategory.UNKNOWN, "FnGuide 캐시 로드 실패", e)
+        magic_df = pd.DataFrame()
 
     # 자본잠식 종목 필터링
     if not magic_df.empty and '자본' in magic_df.columns:
@@ -457,15 +453,25 @@ async def main_async():
     # =========================================================================
     # 4단계: OHLCV 수집 (병렬)
     # =========================================================================
-    print("\n[4단계] OHLCV 데이터 수집 (병렬)")
+    print("\n[4단계] OHLCV 데이터 로드 (캐시)")
 
-    end_date_dt = datetime.strptime(BASE_DATE, '%Y%m%d')
-    start_date_dt = end_date_dt - timedelta(days=450)
-    price_start = start_date_dt.strftime('%Y%m%d')
-
-    price_df = collect_price_data_parallel(
-        collector, universe_tickers, price_start, BASE_DATE, error_tracker
-    )
+    # 기존 OHLCV 캐시 파일 찾기
+    ohlcv_cache_files = list(Path(CACHE_DIR).glob("all_ohlcv_*.parquet"))
+    if ohlcv_cache_files:
+        # 가장 최신 파일 사용
+        ohlcv_cache_file = sorted(ohlcv_cache_files)[-1]
+        print(f"  캐시 파일 로드: {ohlcv_cache_file.name}")
+        price_df = pd.read_parquet(ohlcv_cache_file)
+        print(f"  로드 완료: {len(price_df.columns)}개 종목, {len(price_df)}거래일")
+    else:
+        # 캐시 없으면 수집
+        print("  캐시 없음 - 데이터 수집")
+        end_date_dt = datetime.strptime(BASE_DATE, '%Y%m%d')
+        start_date_dt = end_date_dt - timedelta(days=450)
+        price_start = start_date_dt.strftime('%Y%m%d')
+        price_df = collect_price_data_parallel(
+            collector, universe_tickers, price_start, BASE_DATE, error_tracker
+        )
 
     # =========================================================================
     # 5단계: 전략 실행
