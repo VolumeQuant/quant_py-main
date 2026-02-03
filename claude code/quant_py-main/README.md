@@ -29,14 +29,16 @@ KOSPI/KOSDAQ 대상 멀티팩터 퀀트 전략 백테스팅 및 포트폴리오 
 
 ```bash
 # 1. 패키지 설치
-pip install pykrx==1.2.3 pandas numpy matplotlib requests beautifulsoup4 lxml pyarrow tqdm
+pip install pykrx pandas numpy matplotlib requests beautifulsoup4 lxml pyarrow tqdm aiohttp
 
 # 2. 텔레그램 설정 (선택)
 cp config_template.py config.py
 # config.py에서 TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID 설정
 
-# 3. 현재 포트폴리오 생성 (~50분 소요)
+# 3. 현재 포트폴리오 생성
 python create_current_portfolio.py
+# - 캐시 모드: ~15초
+# - 전체 수집: ~5-10분 (DART API)
 
 # 4. 일별 모니터링 + 텔레그램 알림
 python daily_monitor.py
@@ -53,11 +55,13 @@ python full_backtest.py
 quant_py-main/
 │
 ├── [핵심 모듈] ─────────────────────────────────────────────
-│   ├── fnguide_crawler.py       # FnGuide 재무제표 크롤링
-│   ├── data_collector.py        # pykrx API 데이터 수집
-│   ├── strategy_a_magic.py      # 전략 A: 마법공식
+│   ├── dart_api.py             # OpenDART API 클라이언트 (신규)
+│   ├── error_handler.py        # Skip & Log 에러 처리 (신규)
+│   ├── fnguide_crawler.py      # FnGuide 컨센서스 크롤링
+│   ├── data_collector.py       # pykrx API + 병렬 처리
+│   ├── strategy_a_magic.py     # 전략 A: 마법공식
 │   ├── strategy_b_multifactor.py # 전략 B: 멀티팩터
-│   └── utils.py                 # 유틸리티 함수
+│   └── utils.py                # 유틸리티 함수
 │
 ├── [실행 스크립트] ─────────────────────────────────────────
 │   ├── create_current_portfolio.py  # 현재 포트폴리오 생성 (메인)
@@ -66,7 +70,7 @@ quant_py-main/
 │   └── generate_report_pdf.py       # PDF 리포트 생성
 │
 ├── [설정] ──────────────────────────────────────────────────
-│   ├── config.py                # 텔레그램/Git 설정 (gitignore)
+│   ├── config.py                # API키/텔레그램 설정 (gitignore)
 │   └── config_template.py       # 설정 템플릿
 │
 ├── [출력 디렉토리] ─────────────────────────────────────────
@@ -75,7 +79,7 @@ quant_py-main/
 │   └── daily_reports/           # 일별 분석 JSON/CSV
 │
 ├── [캐시] ──────────────────────────────────────────────────
-│   └── data_cache/              # 재무제표 parquet 캐시
+│   └── data_cache/              # 재무제표/OHLCV parquet 캐시
 │
 └── [문서] ──────────────────────────────────────────────────
     ├── README.md                # 프로젝트 개요 (이 파일)
@@ -87,170 +91,179 @@ quant_py-main/
 
 ## 4. 핵심 모듈 상세
 
-### 4.1 fnguide_crawler.py
+### 4.1 dart_api.py (신규)
 
-FnGuide 웹사이트에서 재무제표 크롤링
+OpenDART API를 통한 재무제표 수집 (비동기)
 
 ```python
 # ═══════════════════════════════════════════════════════════════
-# 주요 함수
+# 주요 클래스
 # ═══════════════════════════════════════════════════════════════
 
-def get_financial_statement(ticker, use_cache=True):
-    """
-    FnGuide에서 연간/분기 재무제표 수집
+class DartConfig:
+    """DART API 설정"""
+    api_key: str              # OpenDART API 키
+    cache_dir: Path           # 캐시 디렉토리
+    max_concurrent: int = 10  # 동시 요청 수
+    timeout: int = 30         # 타임아웃 (초)
 
-    URL: comp.fnguide.com/SVO2/ASP/SVD_Finance.asp?gicode=A{ticker}
+class DartApiClient:
+    """비동기 OpenDART API 클라이언트"""
 
-    Returns:
-        DataFrame: 연간/분기 재무제표 통합 (long format)
+    async def get_financial_statement(ticker, year, report_type):
+        """단일 재무제표 조회"""
 
-    캐시: data_cache/fs_fnguide_{ticker}.parquet
-    """
+    async def get_financial_statements_batch(tickers, years):
+        """배치 재무제표 조회 (병렬)"""
 
-def extract_magic_formula_data(fs_dict, base_date=None, use_ttm=True):
-    """
-    마법공식 계산용 데이터 추출 (TTM 지원)
+def calculate_ttm(df):
+    """TTM (Trailing Twelve Months) 계산"""
+    # Flow 항목: 최근 4분기 합산
+    # Stock 항목: 최근 분기 값
+```
 
-    TTM 로직:
-    - 손익계산서/현금흐름표: 최근 4분기 합산 (Flow)
-    - 재무상태표: 최근 분기 값 사용 (Stock)
+**DART 계정 매핑**:
+```
+DART API              →  시스템 내부
+─────────────────────────────────────
+당기순이익(손실)       →  당기순이익
+매출액                →  매출액
+영업이익(손실)        →  영업이익
+자산총계              →  자산
+부채총계              →  부채
+자본총계              →  자본
+```
 
-    공시 시차:
-    - 분기: 45일
-    - 연간: 90일
+### 4.2 error_handler.py (신규)
 
-    추출 항목:
-    - 손익: 매출액, 영업이익, 당기순이익, 법인세비용, 세전계속사업이익
-    - 재무: 자산, 부채, 자본, 유동자산, 비유동자산, 현금
-    - 현금: 영업현금흐름, 감가상각비
-    """
+Skip & Log 패턴 에러 처리
+
+```python
+# ═══════════════════════════════════════════════════════════════
+# 에러 카테고리
+# ═══════════════════════════════════════════════════════════════
+
+class ErrorCategory(Enum):
+    NETWORK = "network"           # 네트워크 오류
+    API_RATE_LIMIT = "rate_limit" # API 호출 제한
+    DATA_NOT_FOUND = "not_found"  # 데이터 없음
+    PARSE_ERROR = "parse"         # 파싱 실패
+    TIMEOUT = "timeout"           # 타임아웃
+
+# ═══════════════════════════════════════════════════════════════
+# ErrorTracker 사용법
+# ═══════════════════════════════════════════════════════════════
+
+tracker = ErrorTracker(log_dir=Path("logs"))
+
+try:
+    data = fetch_data(ticker)
+except Exception as e:
+    tracker.log_error(ticker, ErrorCategory.NETWORK, "수집 실패", e)
+    continue  # Skip & Log - 실패해도 계속 진행
+
+# 작업 완료 후 요약
+tracker.print_summary()
+tracker.save_error_log()
+```
+
+### 4.3 fnguide_crawler.py
+
+FnGuide 컨센서스 크롤링 (재무제표는 DART API로 이전)
+
+```python
+# ═══════════════════════════════════════════════════════════════
+# 주요 함수 (유지)
+# ═══════════════════════════════════════════════════════════════
 
 def get_consensus_data(ticker):
     """
-    Forward EPS/PER 컨센서스 수집 (추가 정보용)
+    Forward EPS/PER 컨센서스 수집
 
-    URL: comp.fnguide.com/SVO2/ASP/SVD_Main.asp (테이블 7)
+    URL: comp.fnguide.com/SVO2/ASP/SVD_Main.asp
+    Returns: {forward_eps, forward_per, target_price, analyst_count}
+    """
 
-    Returns:
-        dict: {forward_eps, forward_per, target_price, analyst_count, has_consensus}
+async def get_consensus_batch_async(tickers, delay=0.3, max_concurrent=5):
+    """비동기 배치 컨센서스 수집"""
 
-    주의: 필터로 사용하지 않음 (소형주 커버리지 부재)
+# ═══════════════════════════════════════════════════════════════
+# Deprecated 함수 (하위 호환용)
+# ═══════════════════════════════════════════════════════════════
+
+def get_all_financial_statements(tickers, use_cache=True):
+    """
+    [DEPRECATED] DART API 사용 권장
+    캐시가 있으면 로드, 없으면 경고
     """
 ```
 
-**크롤링 데이터 구조**:
-```
-FnGuide SVD_Finance.asp 테이블 구조:
-├── tables[0]: 포괄손익계산서 (연간)
-├── tables[1]: 포괄손익계산서 (분기)
-├── tables[2]: 재무상태표 (연간)
-├── tables[3]: 재무상태표 (분기)
-├── tables[4]: 현금흐름표 (연간)
-└── tables[5]: 현금흐름표 (분기)
-```
+### 4.4 data_collector.py
 
-### 4.2 data_collector.py
-
-pykrx API 래퍼
+pykrx API 래퍼 + 병렬 처리
 
 ```python
 # ═══════════════════════════════════════════════════════════════
-# 주요 함수
+# 병렬 처리 메서드 (신규)
 # ═══════════════════════════════════════════════════════════════
 
-def get_market_data(date, market='ALL'):
+def get_ohlcv_parallel(tickers, start_date, end_date):
     """
-    시가총액, 거래량, 기본 지표 수집
+    ThreadPoolExecutor로 OHLCV 병렬 수집
 
-    pykrx.stock.get_market_cap(date, market)
-    pykrx.stock.get_market_fundamental(date, market)
+    Args:
+        tickers: 종목코드 리스트
+        start_date, end_date: 기간
 
     Returns:
-        DataFrame: 종목코드, 시가총액, 거래량, PER, PBR, 배당수익률
+        DataFrame: 종목별 종가 피벗 테이블
+
+    캐시: data_cache/all_ohlcv_{start}_{end}.parquet
     """
 
-def get_ohlcv_data(ticker, start_date, end_date):
-    """
-    일별 OHLCV 데이터 수집
+def get_ticker_names_parallel(tickers):
+    """종목명 병렬 수집"""
 
-    pykrx.stock.get_market_ohlcv(start_date, end_date, ticker)
+def get_market_cap_batch(date, markets=['KOSPI', 'KOSDAQ']):
+    """
+    KOSPI/KOSDAQ 통합 시가총액 조회
 
     Returns:
-        DataFrame: 시가, 고가, 저가, 종가, 거래량
+        DataFrame: 시가총액, 거래대금, 섹터 정보
     """
 
-def get_universe(base_date, min_market_cap=1000, min_trading_value=50):
+def filter_universe(market_cap_df, min_market_cap=1000, min_trading_value=50):
     """
-    투자 유니버스 구성
+    유니버스 필터링
 
     조건:
     - 시가총액 >= 1000억원
-    - 일평균 거래대금 >= 50억원
-    - 금융업 제외 (은행, 증권, 보험)
-    - 지주회사 제외 (종목명에 '지주' 포함)
-    - 스팩, 리츠 제외
-
-    Returns:
-        DataFrame: 유니버스 종목 리스트 (약 668개)
+    - 거래대금 >= 50억원
+    - 금융업/지주사 제외
     """
 ```
 
-### 4.3 strategy_a_magic.py
+### 4.5 strategy_a_magic.py
 
 마법공식 (Magic Formula) 전략
 
 ```python
 # ═══════════════════════════════════════════════════════════════
-# 전략 개요
-# ═══════════════════════════════════════════════════════════════
-#
-# Joel Greenblatt의 "주식시장을 이기는 작은 책" 기반
-# 저평가(이익수익률) + 고효율(ROIC) 종목 선정
-
-# ═══════════════════════════════════════════════════════════════
 # 핵심 지표 계산
 # ═══════════════════════════════════════════════════════════════
 
-def calculate_earnings_yield(row):
-    """
-    이익수익률 = EBIT / EV
+이익수익률 = EBIT / EV
+# EBIT = 영업이익
+# EV = 시가총액 + 총부채 - 현금
 
-    EBIT = 세전계속사업이익 + 법인세비용
-         = 영업이익 (대안)
+투하자본수익률 = EBIT / Invested Capital
+# IC = 자본 + 유동부채 - 현금 - 유동자산
 
-    EV = 시가총액 + 총부채 - 현금
-
-    의미: 기업 인수 시 연간 수익률
-    높을수록 저평가
-    """
-
-def calculate_roic(row):
-    """
-    투하자본수익률 = EBIT / Invested Capital
-
-    Invested Capital = 자본 + 유동부채 - 현금 - 유동자산
-                     = 순고정자산 + 순운전자본
-
-    의미: 투자 자본 대비 영업 효율
-    높을수록 효율적
-    """
-
-def run_strategy_a(universe_df, fs_data):
-    """
-    마법공식 전략 실행
-
-    1. 이익수익률 순위 산출 (높을수록 좋음)
-    2. 투하자본수익률 순위 산출 (높을수록 좋음)
-    3. 두 순위 합산
-    4. 합산 순위 상위 30종목 선정
-
-    Returns:
-        DataFrame: 상위 30종목 (이익수익률, ROIC, 마법공식_순위)
-    """
+마법공식_순위 = rank(이익수익률) + rank(ROIC)
+# 상위 30종목 선정
 ```
 
-### 4.4 strategy_b_multifactor.py
+### 4.6 strategy_b_multifactor.py
 
 멀티팩터 전략
 
@@ -260,265 +273,64 @@ def run_strategy_a(universe_df, fs_data):
 # ═══════════════════════════════════════════════════════════════
 
 FACTOR_WEIGHTS = {
-    'value': 0.40,      # 가치 팩터
-    'quality': 0.40,    # 품질 팩터
-    'momentum': 0.20    # 모멘텀 팩터
+    'value': 0.40,      # PER, PBR, PCR, PSR 역수
+    'quality': 0.40,    # ROE, GPA, CFO/Assets
+    'momentum': 0.20    # 12개월 수익률 (최근 1개월 제외)
 }
 
-# ═══════════════════════════════════════════════════════════════
-# 가치 팩터 (Value) - 40%
-# ═══════════════════════════════════════════════════════════════
-
-def calculate_value_score(data):
-    """
-    Value = mean(Z-Score of [PER역수, PBR역수, PCR역수, PSR역수])
-
-    PER = 시가총액 / 당기순이익  (낮을수록 저평가)
-    PBR = 시가총액 / 자본       (낮을수록 저평가)
-    PCR = 시가총액 / 영업현금흐름 (낮을수록 저평가)
-    PSR = 시가총액 / 매출액     (낮을수록 저평가)
-
-    Z-Score 변환 후 역수 사용 (낮은 PER = 높은 점수)
-    """
-
-# ═══════════════════════════════════════════════════════════════
-# 품질 팩터 (Quality) - 40%
-# ═══════════════════════════════════════════════════════════════
-
-def calculate_quality_score(data):
-    """
-    Quality = mean(Z-Score of [ROE, GPA, CFO/Assets])
-
-    ROE = 당기순이익 / 자본     (높을수록 효율적)
-    GPA = 매출총이익 / 자산     (높을수록 수익성)
-    CFO = 영업현금흐름 / 자산   (높을수록 현금창출력)
-    """
-
-# ═══════════════════════════════════════════════════════════════
-# 모멘텀 팩터 (Momentum) - 20%
-# ═══════════════════════════════════════════════════════════════
-
-def calculate_momentum_score(data, price_df):
-    """
-    Momentum = 12개월 수익률 (최근 1개월 제외)
-
-    계산: (P[-21] / P[-252-21] - 1) * 100
-
-    최근 1개월 제외 이유: 단기 반전 효과 회피
-
-    모멘텀 데이터 없는 종목: 자동 제외
-    (신규 상장, 거래정지 등)
-    """
-
-# ═══════════════════════════════════════════════════════════════
-# 종합 점수
-# ═══════════════════════════════════════════════════════════════
-
-def run_strategy_b(universe_df, fs_data, price_df):
-    """
-    멀티팩터 전략 실행
-
-    1. Value Z-Score 계산
-    2. Quality Z-Score 계산
-    3. Momentum Z-Score 계산
-    4. 종합점수 = Value*0.4 + Quality*0.4 + Momentum*0.2
-    5. 모멘텀 없는 종목 제외
-    6. 상위 30종목 선정
-
-    Returns:
-        DataFrame: 상위 30종목 (밸류/퀄리티/모멘텀_점수, 멀티팩터_점수)
-    """
+멀티팩터_점수 = Value*0.4 + Quality*0.4 + Momentum*0.2
+# 상위 30종목 선정
 ```
 
-### 4.5 daily_monitor.py
+### 4.7 daily_monitor.py
 
-일별 모니터링 시스템
+일별 모니터링 시스템 v6.4
 
 ```python
 # ═══════════════════════════════════════════════════════════════
-# 진입 점수 시스템
+# Quality(맛) + Price(값) 2축 점수 시스템
 # ═══════════════════════════════════════════════════════════════
 
-ENTRY_WEIGHTS = {
-    'rsi': 0.25,           # RSI 과매도
-    'position_52w': 0.25,  # 52주 위치
-    'bollinger': 0.20,     # 볼린저밴드
-    'ma_deviation': 0.20,  # 이동평균 이격도
-    'volume': 0.10         # 거래량 신호
-}
+Quality Score (펀더멘털 매력도):
+- 전략등급 25% | PER 25% | ROE 20% | 회복여력 15% | MA정배열 15%
 
-def calculate_entry_score(ticker, ohlcv_df):
-    """
-    진입 점수 산출 (0 ~ 1)
-
-    RSI (25%):
-    - RSI ≤ 30: 1.0점 (과매도)
-    - RSI 30~50: 0.5점
-    - RSI ≥ 70: 0.0점
-
-    52주 위치 (25%):
-    - 52주 저점 근처: 1.0점
-    - 52주 고점 근처: 0.0점
-
-    볼린저밴드 (20%):
-    - 하단 터치: 1.0점
-    - 상단 터치: 0.0점
-
-    이동평균 이격도 (20%):
-    - 60일선 대비 -20%: 1.0점
-    - 60일선 대비 +20%: 0.0점
-
-    거래량 (10%):
-    - 평균 2배 이상: 1.0점
-    - 평균 미만: 0.3점
-    """
+Price Score (진입 타이밍):
+- RSI 30% | 볼린저 20% | 거래량 20% | 이격도 15% | 52주위치 15%
 
 # ═══════════════════════════════════════════════════════════════
-# 분류 기준
+# 4분류 시스템
 # ═══════════════════════════════════════════════════════════════
 
-THRESHOLDS = {
-    'buy': 0.6,    # 매수 적기
-    'watch': 0.3   # 관망
-}
-
-def classify_stock(entry_score):
-    """
-    분류:
-    - 매수 적기 (🟢): entry_score >= 0.6
-    - 관망 (🟡): 0.3 <= entry_score < 0.6
-    - 대기 (🔴): entry_score < 0.3
-    """
-
-# ═══════════════════════════════════════════════════════════════
-# 텔레그램 알림
-# ═══════════════════════════════════════════════════════════════
-
-def send_telegram_message(buy_list, watch_list, wait_list):
-    """
-    3개 메시지 분할 발송
-
-    메시지 1: 전략 설명 + 매수 추천 종목 상세
-    - 종목명, 현재가, PER, RSI, 52주고점대비, 진입점수
-    - 매수 근거 자동 생성
-
-    메시지 2: 관망 종목 전체
-    - 관망 이유 표시
-
-    메시지 3: 과열/대기 종목 + Forward EPS 정보
-    - 과열 이유 표시
-    - 컨센서스 보유 종목: Forward PER 표시 (추가 정보)
-    """
-
-# ═══════════════════════════════════════════════════════════════
-# 근거 생성 함수
-# ═══════════════════════════════════════════════════════════════
-
-def get_buy_reason(row):
-    """매수 근거 생성: PER저평가, 52주급락, RSI과매도 등"""
-
-def get_watch_reason(row):
-    """관망 근거 생성: RSI과열, 고점근접, BB상단 등"""
-
-def get_hot_reason(row):
-    """과열 근거 생성: RSI극과열, 신고가, 괴리과다 등"""
+🚀 STRONG_MOMENTUM: 신고가 + 거래량 + RSI 70-80 → 추세매수
+🛡️ DIP_BUYING: 급락 + 지지선 + RSI < 50 → 저점매수
+🟡 WAIT_OBSERVE: 양호 / 타이밍 대기 → 관망
+🚫 NO_ENTRY: 버블 / 과열 / 저품질 → 금지
 ```
 
 ---
 
-## 5. 실행 스크립트 상세
-
-### 5.1 create_current_portfolio.py
-
-```python
-# 메인 포트폴리오 생성 스크립트
-
-# 실행 흐름:
-# 1. 최근 거래일 자동 탐지 (미래 날짜 문제 방지)
-# 2. 유니버스 구성 (약 668개)
-# 3. FnGuide 재무제표 크롤링 (~50분)
-# 4. 가격 데이터 수집 (모멘텀용, 450일)
-# 5. 전략 A 실행 → 30종목
-# 6. 전략 B 실행 → 30종목
-# 7. 결과 저장 (CSV, 리포트)
-
-# 출력:
-# - output/portfolio_YYYY_MM_strategy_a.csv
-# - output/portfolio_YYYY_MM_strategy_b.csv
-# - output/portfolio_YYYY_MM_report.txt
-```
-
-### 5.2 daily_monitor.py
-
-```python
-# 일별 모니터링 스크립트
-
-# 실행 흐름:
-# 1. 전략 A/B 포트폴리오 로드 (49개 종목)
-# 2. 최근 120일 OHLCV 수집
-# 3. 기술적 지표 계산 (RSI, BB, MA)
-# 4. 진입 점수 산출
-# 5. 종목 분류 (매수/관망/대기)
-# 6. Forward EPS 컨센서스 조회 (추가 정보)
-# 7. 텔레그램 발송
-# 8. Git 자동 커밋/푸시 (선택)
-
-# 출력:
-# - daily_reports/daily_analysis_YYYYMMDD.json
-# - daily_reports/daily_analysis_YYYYMMDD.csv
-# - daily_reports/daily_report_YYYYMMDD.txt
-```
-
-### 5.3 full_backtest.py
-
-```python
-# 전체 백테스팅 스크립트
-
-# 설정:
-START_DATE = '20150101'
-END_DATE = '20251231'
-REBALANCE_MONTHS = [3, 6, 9, 12]  # 분기별
-TOP_N = 30
-
-# 실행 흐름:
-# 1. 리밸런싱 날짜 생성 (44회)
-# 2. 각 분기별:
-#    - 유니버스 구성
-#    - 재무제표 수집
-#    - 전략 실행 → 30종목 선정
-#    - 분기 수익률 계산
-# 3. 누적 수익률 계산
-# 4. 성과 지표 산출 (CAGR, MDD, Sharpe)
-# 5. 벤치마크(KOSPI) 비교
-
-# 출력:
-# - backtest_results/backtest_strategy_A_*.csv/json
-# - backtest_results/backtest_strategy_B_*.csv/json
-# - backtest_results/backtest_comparison.csv
-```
-
----
-
-## 6. 데이터 흐름도
+## 5. 데이터 흐름도
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                        데이터 수집                               │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  pykrx API                          FnGuide 크롤링               │
-│  ┌─────────────┐                    ┌─────────────────┐         │
-│  │ 시가총액    │                    │ 재무제표 (TTM)   │         │
-│  │ OHLCV      │                    │ - 손익계산서     │         │
-│  │ 기본지표    │                    │ - 재무상태표     │         │
-│  └──────┬──────┘                    │ - 현금흐름표     │         │
-│         │                          └────────┬────────┘         │
-│         └────────────────┬─────────────────┘                   │
+│  pykrx API                 OpenDART API           FnGuide       │
+│  ┌─────────────┐          ┌─────────────┐     ┌──────────────┐  │
+│  │ 시가총액    │          │ 재무제표    │     │ 컨센서스     │  │
+│  │ OHLCV      │          │ (연간/분기) │     │ Forward EPS  │  │
+│  │ 기본지표    │          │ TTM 계산    │     │ Forward PER  │  │
+│  └──────┬──────┘          └──────┬──────┘     └──────┬───────┘  │
+│         │                        │                   │          │
+│         └────────────────┬───────┴───────────────────┘          │
 │                          │                                      │
 │                          ▼                                      │
 │                   ┌─────────────┐                               │
 │                   │  유니버스   │                               │
-│                   │  (668개)    │                               │
+│                   │  (~608개)   │                               │
+│                   │ 시총1000억+ │                               │
+│                   │ 거래50억+   │                               │
 │                   └──────┬──────┘                               │
 │                          │                                      │
 └──────────────────────────┼──────────────────────────────────────┘
@@ -549,35 +361,7 @@ TOP_N = 30
 │                          ▼                                      │
 │                   ┌─────────────┐                               │
 │                   │ 공통 종목   │                               │
-│                   │  (11개)     │                               │
-│                   └─────────────┘                               │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-                           │
-┌──────────────────────────┼──────────────────────────────────────┐
-│                          │     일별 모니터링                      │
-├──────────────────────────┼──────────────────────────────────────┤
-│                          │                                      │
-│                          ▼                                      │
-│                   ┌─────────────┐                               │
-│                   │ 49개 종목   │                               │
-│                   │ 기술적분석  │                               │
-│                   └──────┬──────┘                               │
-│                          │                                      │
-│         ┌────────────────┼────────────────┐                     │
-│         │                │                │                     │
-│         ▼                ▼                ▼                     │
-│    ┌─────────┐     ┌─────────┐     ┌─────────┐                  │
-│    │ 매수적기│     │  관망   │     │  대기   │                  │
-│    │  (🟢)  │     │  (🟡)  │     │  (🔴)  │                  │
-│    └────┬────┘     └────┬────┘     └────┬────┘                  │
-│         │               │               │                       │
-│         └───────────────┴───────────────┘                       │
-│                          │                                      │
-│                          ▼                                      │
-│                   ┌─────────────┐                               │
-│                   │  텔레그램   │                               │
-│                   │   알림      │                               │
+│                   │  (~8개)     │                               │
 │                   └─────────────┘                               │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
@@ -585,7 +369,7 @@ TOP_N = 30
 
 ---
 
-## 7. 설정 파일
+## 6. 설정 파일
 
 ### config.py (gitignore)
 
@@ -597,6 +381,17 @@ TELEGRAM_CHAT_ID = "your_chat_id"
 # Git 자동 푸시
 GIT_AUTO_PUSH = True
 
+# OpenDART API 설정
+DART_API_KEY = "your_dart_api_key"
+
+# 동시 요청 수 설정
+MAX_CONCURRENT_REQUESTS = 10  # DART API
+PYKRX_WORKERS = 10            # pykrx 병렬 처리
+
+# 유니버스 필터
+MIN_MARKET_CAP = 1000   # 최소 시가총액 (억원)
+MIN_TRADING_VALUE = 50  # 최소 거래대금 (억원)
+
 # 진입 점수 임계값
 SCORE_BUY = 0.6    # 매수 적기 기준
 SCORE_WATCH = 0.3  # 관망 기준
@@ -604,64 +399,59 @@ SCORE_WATCH = 0.3  # 관망 기준
 
 ---
 
-## 8. 출력 파일 설명
+## 7. 성능 개선
 
-### output/
-| 파일 | 설명 |
-|------|------|
-| `portfolio_YYYY_MM_strategy_a.csv` | 전략 A 30종목 (이익수익률, ROIC) |
-| `portfolio_YYYY_MM_strategy_b.csv` | 전략 B 30종목 (밸류/퀄리티/모멘텀) |
-| `portfolio_YYYY_MM_report.txt` | 분석 요약 리포트 |
-| `strategy_ab_with_forward_eps.csv` | Forward EPS 추가 정보 |
+### 리팩토링 전후 비교
 
-### backtest_results/
-| 파일 | 설명 |
-|------|------|
-| `backtest_strategy_A_returns.csv` | 전략 A 일별 수익률 |
-| `backtest_strategy_A_metrics.json` | 전략 A 성과 지표 |
-| `backtest_strategy_B_*.csv/json` | 전략 B 결과 |
-| `backtest_comparison.csv` | A/B/KOSPI 비교 |
+| 단계 | 리팩토링 전 | 리팩토링 후 |
+|------|------------|------------|
+| 시가총액 수집 | ~30초 | ~30초 |
+| 종목명 수집 | ~2분 (순차) | ~30초 (병렬) |
+| 재무제표 수집 | ~50분 (FnGuide 크롤링) | ~2분 (DART API) |
+| OHLCV 수집 | ~4분 (순차) | ~1분 (병렬) |
+| **총 소요시간** | **~50분** | **~5분** |
+| **캐시 모드** | - | **~15초** |
 
-### daily_reports/
-| 파일 | 설명 |
-|------|------|
-| `daily_analysis_YYYYMMDD.json` | JSON 상세 분석 |
-| `daily_analysis_YYYYMMDD.csv` | CSV 전체 데이터 |
-| `daily_report_YYYYMMDD.txt` | 텍스트 요약 |
+### 개선 사항
+
+1. **OpenDART API 도입**: FnGuide 크롤링 → 공식 API (빠르고 안정적)
+2. **비동기 처리**: asyncio + aiohttp로 동시 요청
+3. **병렬 처리**: ThreadPoolExecutor로 OHLCV/종목명 수집
+4. **Skip & Log 패턴**: 실패해도 중단 없이 진행, 에러 로깅
 
 ---
 
-## 9. 기술 스택
+## 8. 기술 스택
 
 | 패키지 | 버전 | 용도 |
 |--------|------|------|
 | **pykrx** | 1.2.3 | 한국 주식 데이터 API |
+| **aiohttp** | 3.9+ | 비동기 HTTP 요청 |
 | **pandas** | 2.2+ | 데이터 처리 |
 | **numpy** | 2.1+ | 수치 연산 |
 | **requests** | 2.32+ | HTTP 요청 |
 | **beautifulsoup4** | 4.12+ | HTML 파싱 |
 | **pyarrow** | - | parquet 캐시 |
-| **tqdm** | - | 진행 표시 |
 
 ---
 
-## 10. 주의사항
+## 9. 주의사항
 
-1. **pykrx 버전**: 반드시 1.2.3 사용 (1.0.x는 인코딩 오류)
-2. **FnGuide 크롤링**: 딜레이 2초 적용 (과도한 요청 시 차단)
-3. **캐시 용량**: data_cache/ 종목당 ~50KB (전체 ~35MB)
-4. **백테스트 한계**:
+1. **DART API 키**: https://opendart.fss.or.kr/ 에서 발급 (무료, 일 10,000건)
+2. **API 호출 제한**: 과도한 요청 시 IP 차단 가능
+3. **캐시 활용**: 재수집 불필요 시 캐시 모드 사용 권장
+4. **FnGuide 크롤링**: 컨센서스만 사용 (재무제표는 DART API로 이전)
+5. **백테스트 한계**:
    - 생존 편향 (상장폐지 종목 미포함)
    - 거래비용 단순화 (0.3% 고정)
    - 슬리피지 미반영
-5. **Forward EPS**: 필터가 아닌 추가 정보로만 활용 (소형주 커버리지 부재)
 
 ---
 
-## 11. 라이선스
+## 10. 라이선스
 
 MIT License
 
 ---
 
-*버전: 2.0 | 최종 업데이트: 2026-02-03 | Generated by Claude Code*
+*버전: 3.0 | 최종 업데이트: 2026-02-03 | Generated by Claude Code*
