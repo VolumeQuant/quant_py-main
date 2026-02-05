@@ -435,16 +435,16 @@ if active_buy:
         msg1 += f"• {s['name']} - 진입{s['entry_score']:.0f}점, 거래량{s['vol_ratio']:.1f}x\n"
     msg1 += "\n"
 
-# 저점 매수 (52주 -30% 이하)
-low_buy = [s for s in stock_analysis if s['w52_pct'] <= -30]
+# 저점 매수 (52주 -30% 이하, RSI 75 미만)
+low_buy = [s for s in stock_analysis if s['w52_pct'] <= -30 and s['rsi'] < 75]
 if low_buy:
     msg1 += "💰 저점 매수 기회 (52주 -30% 이하)\n"
     for s in low_buy[:2]:
-        msg1 += f"• {s['name']} - 52주 {s['w52_pct']:.0f}%\n"
-    msg1 += "  ⚠️ RSI 확인 후 분할매수 권장\n\n"
+        msg1 += f"• {s['name']} - 52주 {s['w52_pct']:.0f}%, RSI {s['rsi']:.0f}\n"
+    msg1 += "\n"
 
-# 조정 대기 (RSI 75+)
-wait_list = [s for s in stock_analysis if s['rsi'] >= 75]
+# 조정 대기 (RSI 75+, 신고가 돌파 아님)
+wait_list = [s for s in stock_analysis if s['rsi'] >= 75 and s['w52_pct'] <= -2]
 if wait_list:
     msg1 += "⏸️ 조정 대기 (RSI 75+ 과매수)\n"
     for s in wait_list[:2]:
