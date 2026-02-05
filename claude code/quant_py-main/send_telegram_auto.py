@@ -324,10 +324,23 @@ except Exception as e:
     print(f"시장 RSI 계산 실패: {e}")
 
 # ============================================================
-# 포트폴리오 결과 로드
+# 포트폴리오 결과 로드 (최신 파일 자동 탐색)
 # ============================================================
-a = pd.read_csv(OUTPUT_DIR / 'portfolio_2026_01_strategy_a.csv', encoding='utf-8-sig')
-b = pd.read_csv(OUTPUT_DIR / 'portfolio_2026_01_strategy_b.csv', encoding='utf-8-sig')
+import glob
+
+# 최신 전략 A/B 파일 찾기
+strategy_a_files = sorted(glob.glob(str(OUTPUT_DIR / 'portfolio_*_strategy_a.csv')), reverse=True)
+strategy_b_files = sorted(glob.glob(str(OUTPUT_DIR / 'portfolio_*_strategy_b.csv')), reverse=True)
+
+if not strategy_a_files or not strategy_b_files:
+    print("포트폴리오 파일을 찾을 수 없습니다. create_current_portfolio.py를 먼저 실행하세요.")
+    sys.exit(1)
+
+print(f"전략A 파일: {Path(strategy_a_files[0]).name}")
+print(f"전략B 파일: {Path(strategy_b_files[0]).name}")
+
+a = pd.read_csv(strategy_a_files[0], encoding='utf-8-sig')
+b = pd.read_csv(strategy_b_files[0], encoding='utf-8-sig')
 
 a['종목코드'] = a['종목코드'].astype(str).str.zfill(6)
 b['종목코드'] = b['종목코드'].astype(str).str.zfill(6)
