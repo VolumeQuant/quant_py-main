@@ -81,8 +81,9 @@ def get_previous_trading_date(date_str):
 
 # 날짜 설정
 TODAY = datetime.now().strftime('%Y%m%d')
-BASE_DATE = get_latest_trading_date()  # 가장 최근 거래일 (분석 기준일)
-print(f"오늘: {TODAY}, 분석 기준일: {BASE_DATE}")
+LATEST_TRADING_DATE = get_latest_trading_date()  # 가장 최근 거래일
+BASE_DATE = get_previous_trading_date(LATEST_TRADING_DATE)  # 전일 거래일 (분석 기준일)
+print(f"오늘: {TODAY}, 최근거래일: {LATEST_TRADING_DATE}, 분석기준일(전일): {BASE_DATE}")
 
 if BASE_DATE is None:
     print("거래일을 찾을 수 없습니다.")
@@ -145,18 +146,23 @@ def calc_entry_score(rsi, w52_pct, vol_ratio):
     """
     진입점수 계산 (100점 만점)
 
+    철학: 좋은 사과를 싸게 사자!
+    - RSI 낮을수록 좋음 (싸게)
+    - 52주 고점 대비 할인 클수록 좋음 (싸게)
+    - 신고가 돌파는 감점 안 함 (중립), 보너스도 없음
+
     구성:
-    - RSI (40점): 과매도일수록 좋음, 단 신고가 돌파시 과매수도 OK
-    - 52주 위치 (30점): 할인 or 돌파 모멘텀
+    - RSI (40점): 과매도일수록 좋음
+    - 52주 위치 (30점): 할인 클수록 좋음
     - 거래량 (20점): 스파이크 확인
     - 기본 점수 (10점): 통과 종목 기본
     """
     # 신고가 돌파 판단 (52주 고점 -2% 이내)
     is_breakout = w52_pct > -2
 
-    # RSI (40점)
+    # RSI (40점) - 낮을수록 좋음
     if rsi <= 30:
-        rsi_score = 40  # 과매도 - 매수 기회
+        rsi_score = 40  # 과매도 - 최고 매수 기회
     elif rsi <= 50:
         rsi_score = 30  # 양호
     elif rsi <= 70:
@@ -164,19 +170,19 @@ def calc_entry_score(rsi, w52_pct, vol_ratio):
     else:
         # RSI > 70
         if is_breakout:
-            rsi_score = 35  # 신고가 돌파 모멘텀 OK
+            rsi_score = 20  # 신고가 돌파시 감점 안 함 (중립)
         else:
             rsi_score = 10  # 일반 과매수 위험
 
-    # 52주 고점 대비 (30점)
-    if is_breakout:  # -2% 이내 (신고가)
-        w52_score = 30  # 돌파 모멘텀
-    elif w52_pct <= -20:
-        w52_score = 30  # 큰 할인
+    # 52주 고점 대비 (30점) - 할인 클수록 좋음
+    if w52_pct <= -20:
+        w52_score = 30  # 큰 할인 - 최고
     elif w52_pct <= -10:
         w52_score = 25  # 의미있는 할인
     elif w52_pct <= -5:
         w52_score = 20  # 적당한 조정
+    elif is_breakout:
+        w52_score = 15  # 신고가 돌파 - 감점 안 함 (중립)
     else:
         w52_score = 15  # 소폭 조정
 
@@ -304,6 +310,19 @@ try:
 except:
     pass
 
+# 시장 RSI 계산 (KOSPI 기준)
+market_rsi = 50  # 기본값
+try:
+    kospi_30d = stock.get_index_ohlcv(
+        (datetime.strptime(BASE_DATE, '%Y%m%d') - timedelta(days=45)).strftime('%Y%m%d'),
+        BASE_DATE, '1001'
+    )
+    if len(kospi_30d) >= 15:
+        market_rsi = calc_rsi(kospi_30d.iloc[:, 3])  # 종가 컬럼
+        print(f"시장 RSI (KOSPI): {market_rsi:.1f}")
+except Exception as e:
+    print(f"시장 RSI 계산 실패: {e}")
+
 # ============================================================
 # 포트폴리오 결과 로드
 # ============================================================
@@ -348,6 +367,7 @@ for ticker in common_today:
     rank_b = b_ranks.get(ticker, 31)
 
     entry_score = calc_entry_score(tech['rsi'], tech['w52_pct'], tech['vol_ratio'])
+    relative_rsi = tech['rsi'] - market_rsi  # 상대 RSI 계산
 
     stock_analysis.append({
         'ticker': ticker,
@@ -356,11 +376,12 @@ for ticker in common_today:
         'rank_b': rank_b,
         'entry_score': entry_score,
         'sector': SECTOR_DB.get(ticker, '기타'),
+        'relative_rsi': relative_rsi,
         **tech,
         'reasons': generate_reasons(ticker, tech, rank_a, rank_b),
         'risk': generate_risk(tech, rank_a, rank_b),
     })
-    print(f"  {name}: 진입 {entry_score}점, RSI {tech['rsi']:.0f}, 52주 {tech['w52_pct']:.0f}%")
+    print(f"  {name}: 진입 {entry_score}점, RSI {tech['rsi']:.0f} (상대 {relative_rsi:+.0f}), 52주 {tech['w52_pct']:.0f}%")
 
 # 진입점수 기준 정렬
 stock_analysis.sort(key=lambda x: x['entry_score'], reverse=True)
@@ -424,33 +445,6 @@ for s in stock_analysis:
     msg1 += f"⚠️ 리스크: {s['risk']}\n"
     msg1 += "━━━━━━━━━━━━━━━━━━━\n"
 
-# 핵심 추천 섹션 (자동 생성)
-msg1 += "\n🎯 핵심 추천\n\n"
-
-# 적극 매수 (진입점수 70+, 거래량 1.5x+)
-active_buy = [s for s in stock_analysis if s['entry_score'] >= 70 and s['vol_ratio'] >= 1.5]
-if active_buy:
-    msg1 += "✅ 적극 매수 (진입점수 70+, 거래량↑)\n"
-    for s in active_buy[:2]:
-        msg1 += f"• {s['name']} - 진입{s['entry_score']:.0f}점, 거래량{s['vol_ratio']:.1f}x\n"
-    msg1 += "\n"
-
-# 저점 매수 (52주 -30% 이하, RSI 75 미만)
-low_buy = [s for s in stock_analysis if s['w52_pct'] <= -30 and s['rsi'] < 75]
-if low_buy:
-    msg1 += "💰 저점 매수 기회 (52주 -30% 이하)\n"
-    for s in low_buy[:2]:
-        msg1 += f"• {s['name']} - 52주 {s['w52_pct']:.0f}%, RSI {s['rsi']:.0f}\n"
-    msg1 += "\n"
-
-# 조정 대기 (RSI 75+, 신고가 돌파 아님)
-wait_list = [s for s in stock_analysis if s['rsi'] >= 75 and s['w52_pct'] <= -2]
-if wait_list:
-    msg1 += "⏸️ 조정 대기 (RSI 75+ 과매수)\n"
-    for s in wait_list[:2]:
-        msg1 += f"• {s['name']} (RSI {s['rsi']:.0f})\n"
-
-msg1 += "\n━━━━━━━━━━━━━━━━━━━\n"
 
 # 메시지 2: 전략A TOP 15
 msg2 = f"""🔴 전략A 마법공식 TOP 15
