@@ -1,0 +1,50 @@
+name: Daily Telegram Report
+
+on:
+  schedule:
+    # UTC 21:00 = KST 06:00 (다음날)
+    # 일-목 21:00 UTC = 월-금 06:00 KST
+    - cron: '0 21 * * 0-4'
+
+  # 수동 실행 가능
+  workflow_dispatch:
+
+jobs:
+  send-telegram:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install pykrx pandas numpy requests beautifulsoup4 lxml pyarrow
+
+      - name: Create config.py from secrets
+        run: |
+          cat << EOF > config.py
+          TELEGRAM_BOT_TOKEN = "${{ secrets.TELEGRAM_BOT_TOKEN }}"
+          TELEGRAM_CHAT_ID = "${{ secrets.TELEGRAM_CHAT_ID }}"
+          DART_API_KEY = "${{ secrets.DART_API_KEY }}"
+          EOF
+
+      - name: Run portfolio generator
+        run: python create_current_portfolio.py
+        continue-on-error: true  # 포트폴리오 생성 실패해도 기존 파일로 진행
+
+      - name: Send Telegram message
+        run: python send_telegram_auto.py
+
+      - name: Commit updated files
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add -A
+          git diff --staged --quiet || git commit -m "chore: daily portfolio update $(date +'%Y%m%d')"
+          git push
