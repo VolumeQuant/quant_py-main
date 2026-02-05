@@ -2,9 +2,56 @@
 
 ## 문서 개요
 
-**버전**: 6.5
-**최종 업데이트**: 2026-02-05
+**버전**: 7.0
+**최종 업데이트**: 2026-02-06
 **작성자**: Claude Opus 4.5
+
+---
+
+## 핵심 변경사항 (v7.0 GitHub Actions 완전 자동화)
+
+### 2026-02-06 GitHub Actions 수정
+
+**문제**: GitHub Actions에서 모듈 누락 및 타임존 문제
+
+| 수정 항목 | 문제 | 해결 |
+|----------|------|------|
+| DART 코드 | `ModuleNotFoundError: dart_api` | **DART 관련 코드 완전 삭제** |
+| 타임존 | UTC로 실행되어 날짜 오류 | **KST 타임존 명시적 처리** |
+| 워크플로우 | CSV 생성 단계 누락 | **create_current_portfolio.py 단계 추가** |
+| 의존성 | tqdm, scipy 누락 | **pip install에 추가** |
+| 파일 누락 | error_handler.py 미커밋 | **GitHub에 추가** |
+| 리밸런싱 월 | 3/6/9/12월 (잘못됨) | **4/5/8/11월로 수정** |
+
+**KST 타임존 처리**:
+```python
+from zoneinfo import ZoneInfo
+KST = ZoneInfo('Asia/Seoul')
+
+def get_korea_now():
+    return datetime.now(KST)
+
+TODAY = get_korea_now().strftime('%Y%m%d')
+BASE_DATE = get_previous_trading_date(TODAY)
+```
+
+**GitHub Actions 워크플로우** (telegram_daily.yml):
+```yaml
+- name: Install dependencies
+  run: |
+    pip install pykrx pandas numpy requests beautifulsoup4 lxml pyarrow aiohttp tqdm scipy
+
+- name: Generate portfolio (create CSV)
+  run: python create_current_portfolio.py
+
+- name: Send Telegram message
+  run: python send_telegram_auto.py
+```
+
+**데이터 소스 (DART 제거 후)**:
+- 재무제표: FnGuide 캐시 (Q3 2025 고정)
+- 시가총액: pykrx 실시간
+- OHLCV: pykrx 실시간
 
 ---
 
@@ -644,8 +691,14 @@ quant_py-main/
 | **2026-02-05** | **채널/봇 이중 전송 로직 구현** | **send_telegram_auto.py** |
 | **2026-02-05** | **OHLCV 캐시 검증 로직 추가 (BASE_DATE 확인)** | **create_current_portfolio.py** |
 | **2026-02-05** | **CSV 파일 커밋 필수 문서화** | **SESSION_HANDOFF.md** |
+| **2026-02-06** | **DART 코드 완전 삭제 (FnGuide만 사용)** | **create_current_portfolio.py** |
+| **2026-02-06** | **KST 타임존 명시적 처리 추가** | **create_current_portfolio.py, send_telegram_auto.py** |
+| **2026-02-06** | **GitHub Actions에 포트폴리오 생성 단계 추가** | **.github/workflows/telegram_daily.yml** |
+| **2026-02-06** | **GitHub Actions 의존성 추가 (tqdm, scipy)** | **.github/workflows/telegram_daily.yml** |
+| **2026-02-06** | **error_handler.py 누락 파일 커밋** | **error_handler.py** |
+| **2026-02-06** | **리밸런싱 권장 월 수정 (4/5/8/11월)** | **send_telegram_auto.py** |
 
 ---
 
-**문서 버전**: 6.9
-**최종 업데이트**: 2026-02-05
+**문서 버전**: 7.0
+**최종 업데이트**: 2026-02-06
