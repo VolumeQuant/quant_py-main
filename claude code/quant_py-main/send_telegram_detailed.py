@@ -29,59 +29,64 @@ HISTORY_FILE = CACHE_DIR / 'portfolio_history.json'
 # 5. 리스크 요인
 
 CLAUDE_FINAL_RANKING = {
-    '402340': {  # SK스퀘어
+    # 2026-02-05 기준 (2월 4일 데이터 기반)
+    # Claude 종합 판단: 진입점수(RSI+52주위치+거래량+일봉) + 뉴스조정 + 전략순위
+
+    '119850': {  # 지엔씨에너지 ★1위
         'rank': 1,
         'grade': 'S',
-        'reason': '[모멘텀 폭발] 52주 신고가 97.6% 도달! 20일간 +32% 급등. MA 정배열. 거래량 +38%. SK하이닉스 2026년 영업이익 112조 상향. 전략A 11위/B 14위로 균형 좋음.',
-        'risk': 'RSI 70.5로 과열 임박, 단기 조정 가능'
+        'entry_score': 75,
+        'reason': '[최적 진입타이밍] 거래량 2.75배 급증! RSI 62.8 적정구간. 52주고점대비 -14.8%. 당일 +9.78% 급등! AI 데이터센터 비상발전기 국내 1위. SK울산 수주.',
+        'risk': '중소형주 변동성, 전략순위 중위권 (A 21위/B 23위)'
     },
-    '119850': {  # 지엔씨에너지
+    '204620': {  # 글로벌텍스프리 ★2위 (신규편입)
         'rank': 2,
         'grade': 'S',
-        'reason': '[오늘 수급 폭발] 오늘 +9.78% 급등! 거래량 +175% (20일 평균 대비 2.75배). MA 정배열. RSI 62.5(적정). 52주고점 대비 -15%로 상승여력 있음. AI 데이터센터 수혜.',
-        'risk': '전략순위 낮음(A24/B27), 단기급등 후 되돌림 주의'
+        'entry_score': 75,
+        'reason': '[신규편입] 거래량 3.05배 폭발! 52주고점대비 -33.8% 저점매수 기회. 당일 +5.07% 급등. 면세사업 회복, 중국 관광객 증가 기대.',
+        'risk': 'RSI 83.9 과매수 주의, 단기 차익실현 가능'
     },
-    '033500': {  # 동성화인텍
+    '123330': {  # 제닉 ★3위 (신규편입)
         'rank': 3,
-        'grade': 'A',
-        'reason': '[가장 안정적] RSI 57.3(중립), MA 정배열, 거래량 +12%. 52주고점 84.3%로 고점권이나 과열 아님. 20일 +9.3% 상승. LNG 조선 슈퍼사이클 지속.',
-        'risk': '전략B 30위로 멀티팩터 점수 낮음'
+        'grade': 'S',
+        'entry_score': 75,
+        'reason': '[신규편입] 전략A 2위! 52주고점대비 -50.1% 역대급 저점! 거래량 2.09배 급증. K-뷰티 화장품/마스크팩 전문. ROE 52.4% 초고수익.',
+        'risk': 'RSI 69.7 과열 접근, 당일 -2.65% 조정'
     },
-    '039130': {  # 하나투어
+    '018290': {  # 브이티 ★4위
         'rank': 4,
         'grade': 'A',
-        'reason': '[저점 반등] 52주 위치 21.7%(저점권)에서 반등 시작. 거래량 +51%. RSI 63.0(적정). 2025년 역대 최대 실적. 전략B 12위. 회복여력 큼.',
-        'risk': '52주고점 대비 -19%로 아직 회복 초기'
+        'entry_score': 60,
+        'reason': '[전략A 1위] 52주고점대비 -55.9% 역대급 저점 매수기회! K-뷰티 대장주. 당일 +0.90% 상승. 마법공식 최고 수익률.',
+        'risk': 'RSI 74.3 과매수, 거래량 평균 이하(0.71x), KS인더스트리 투자 우려'
     },
-    '204620': {  # 글로벌텍스프리
+    '402340': {  # SK스퀘어 ★5위
         'rank': 5,
         'grade': 'A',
-        'reason': '[호재+거래량] 2/4 플래닛 파트너십 발표! 거래량 +204% (3배!). 20일 +19.9% 상승. 전략B 9위. 일본 면세제도 개편 기대.',
-        'risk': 'RSI 81.8 과매수! 분할매수 권장'
+        'entry_score': 55,
+        'reason': '[AI반도체 간접투자] SK하이닉스 20% 지분! 거래량 1.67배 증가. 당일 +4.21% 급등. 정배열 완벽. 주주환원 확대 기대.',
+        'risk': 'RSI 71.8 과매수, 52주고점 근접(-2.1%), 지주사 디스카운트'
     },
-    '018290': {  # 브이티
+    '001060': {  # JW중외제약 ★6위
         'rank': 6,
-        'grade': 'B+',
-        'reason': '[전략A 1위] 퀀트 최고점수! 52주 위치 14.5%(최저점권)로 저점매수 기회. 20일 +12.6% 반등 중. 영업이익률 29% 고마진.',
-        'risk': 'RSI 72.5 과매수, 거래량 -29% 감소로 상승동력 약함'
+        'grade': 'A',
+        'entry_score': 55,
+        'reason': '[바이오 안정주] 거래량 1.60배 증가. 당일 +6.48% 급등! 52주고점 근처(-1.8%). 영업이익 971억, ROE 17.7%.',
+        'risk': 'RSI 75.6 과매수 주의, 전략순위 중하위 (A 18위/B 28위)'
     },
-    '383220': {  # F&F
+    '124500': {  # 아이티센글로벌 ★7위
         'rank': 7,
         'grade': 'B+',
-        'reason': '[전략A 3위] 52주 위치 59.7%(중간). 20일 +13.6% 상승. 전략A 3위로 퀀트 점수 높음. 중국 MLB 저평가 매력.',
-        'risk': 'RSI 71.8 과매수 임박, 전략B 29위로 모멘텀 약함. 중국 리스크'
+        'entry_score': 45,
+        'reason': '[금값 수혜] 전략B 3위! 한국금거래소 운영. 52주고점대비 -8.4%. 당일 +0.79% 소폭 상승.',
+        'risk': 'RSI 72.7 과매수, 거래량 평균 이하(0.36x), 진입 모멘텀 약함'
     },
-    '124500': {  # 아이티센글로벌
+    '000660': {  # SK하이닉스 ★8위
         'rank': 8,
         'grade': 'B',
-        'reason': '[급등 피로] 20일간 +60% 폭등 후 조정 국면. 52주 위치 90.8%(고점). 전략B 4위로 퀀트 점수 양호. 금값 상승 수혜.',
-        'risk': '거래량 -64% 급감 = 차익실현 진행 중. RSI 72.8 과매수'
-    },
-    '419530': {  # SAMG엔터
-        'rank': 9,
-        'grade': 'B',
-        'reason': '[전략점수↑ 기술↓] 전략A 7.5위/B 5위로 퀀트 점수 우수. 티니핑 IP 가치. 하지만 MA 역배열, 20일 수익률 0%, RSI 49.5(중립).',
-        'risk': '거래량 -48% 급감, MA 역배열로 기술적 약세. 추세 전환 필요'
+        'entry_score': 40,
+        'reason': '[AI반도체 대장] HBM 글로벌 1위. 2026년 영업이익 100조+ 전망. 실적 확실성 최고.',
+        'risk': '진입타이밍 비추! RSI 67.4에 당일 -0.77% 하락. 거래량 평균 이하(0.80x). 52주고점 근접(-3.3%). 고가 부담 90만원대.'
     },
 }
 
@@ -152,6 +157,27 @@ STOCK_INSIGHTS = {
         'summary': '한국금거래소 운영, 디지털 금 플랫폼',
         'highlight': '영업이익 293%↑, 금값 상승 수혜',
         'why_selected': '금 안전자산 수요 + 스테이블코인 사업'
+    },
+    '123330': {
+        'name': '제닉',
+        'sector': 'K-뷰티/화장품',
+        'summary': '마스크팩/화장품 ODM 전문기업, 글로벌 수출',
+        'highlight': 'ROE 52.4%, 영업이익률 21.7%',
+        'why_selected': '전략A 2위! 52주 저점 -50% 역발상 매수 기회'
+    },
+    '000660': {
+        'name': 'SK하이닉스',
+        'sector': 'AI반도체/메모리',
+        'summary': 'HBM 글로벌 1위, AI 반도체 대장주',
+        'highlight': '2026년 영업이익 100조+ 전망',
+        'why_selected': 'AI 슈퍼사이클 최대 수혜, 실적 확실성'
+    },
+    '001060': {
+        'name': 'JW중외제약',
+        'sector': '바이오/제약',
+        'summary': '제네릭의약품 전문, 안정적 실적',
+        'highlight': '영업이익 971억, ROE 17.7%',
+        'why_selected': '바이오 섹터 안정주, 배당 매력'
     },
 
     # ===== 전략 A TOP 10 =====
@@ -248,12 +274,46 @@ STOCK_INSIGHTS = {
         'highlight': '영업이익 341%↑ 전망, 손실사업 정리',
         'why_selected': '방한 외국인 증가 + 수익성 개선'
     },
+    '336570': {
+        'name': '원텍',
+        'sector': '의료기기',
+        'summary': '레이저 의료기기 전문, 피부과/성형외과 시장',
+        'highlight': '레이저 치료기 수출 확대',
+        'why_selected': '의료미용 시장 성장'
+    },
+    '402340': {
+        'name': 'SK스퀘어',
+        'sector': '투자지주',
+        'summary': 'SK하이닉스 20% 지분 보유 투자회사',
+        'highlight': 'SK하이닉스 사상최대 실적 수혜',
+        'why_selected': 'AI 반도체 호황으로 NAV 급증'
+    },
+    '001060': {
+        'name': 'JW중외제약',
+        'sector': '바이오/제약',
+        'summary': '국내 중견 제약사, 다양한 의약품 포트폴리오',
+        'highlight': '영업이익 971억, ROE 17.7%',
+        'why_selected': '안정적 실적 + 바이오 성장동력'
+    },
 }
 
 # ============================================================
-# 날짜 자동 감지
+# 날짜 자동 감지 (최신 거래일 찾기)
 # ============================================================
-today = stock.get_nearest_business_day_in_a_week()
+def get_latest_trading_date():
+    """최근 거래일 찾기"""
+    now = datetime.now()
+    for i in range(10):
+        date = (now - timedelta(days=i)).strftime('%Y%m%d')
+        try:
+            df = stock.get_market_cap(date, market='KOSPI')
+            if not df.empty and df.iloc[:, 0].sum() > 0:
+                return date
+        except:
+            continue
+    return stock.get_nearest_business_day_in_a_week()
+
+today = get_latest_trading_date()
 print(f"기준일: {today}")
 
 # 시장 지수
@@ -385,22 +445,43 @@ def calc_52week_position(prices):
     return from_high
 
 def get_stock_info(ticker):
-    """종목 정보 조회"""
+    """종목 정보 조회 - pykrx 실시간 조회"""
     ticker_str = str(ticker).zfill(6)
 
+    # pykrx에서 실시간 시세 조회
     try:
-        price = market_cap.loc[ticker_str].iloc[0]
-        cap = market_cap.loc[ticker_str].iloc[1] / 100000000
-        market_type = market_cap.loc[ticker_str]['market']
-    except:
-        price, cap, market_type = 0, 0, 'KOSDAQ'
+        # 최근 1년 OHLCV 조회
+        start = (datetime.strptime(today, '%Y%m%d') - timedelta(days=365)).strftime('%Y%m%d')
+        ohlcv_data = stock.get_market_ohlcv(start, today, ticker_str)
 
-    if ticker_str in ohlcv.columns:
-        prices = ohlcv[ticker_str].dropna()
-        rsi = calc_rsi(prices)
-        from_high = calc_52week_position(prices)
-    else:
-        rsi, from_high = np.nan, np.nan
+        if not ohlcv_data.empty:
+            price = ohlcv_data.iloc[-1, 3]  # 종가
+
+            # 시가총액 조회
+            cap_df = stock.get_market_cap(today, today, ticker_str)
+            if not cap_df.empty:
+                cap = cap_df.iloc[0, 0] / 100000000  # 시가총액 (억원)
+            else:
+                cap = 0
+
+            # RSI 계산
+            prices = ohlcv_data.iloc[:, 3]  # 종가
+            rsi = calc_rsi(prices)
+
+            # 52주 고점 대비
+            high_52w = ohlcv_data.iloc[:, 1].max()  # 고가
+            from_high = (price / high_52w - 1) * 100 if high_52w > 0 else 0
+        else:
+            price, cap, rsi, from_high = 0, 0, np.nan, 0
+    except Exception as e:
+        print(f"  시세 조회 실패 {ticker_str}: {e}")
+        price, cap, rsi, from_high = 0, 0, np.nan, 0
+
+    # 시장 구분
+    try:
+        market_type = 'KOSPI' if ticker_str in stock.get_market_ticker_list(today, market='KOSPI') else 'KOSDAQ'
+    except:
+        market_type = 'KOSDAQ'
 
     rsi_str = f"RSI {rsi:.0f}" if pd.notna(rsi) else "RSI -"
     from_high = from_high if pd.notna(from_high) else 0

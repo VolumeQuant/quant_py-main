@@ -618,6 +618,9 @@ GIT_AUTO_PUSH = True
 | **2026-02-05** | **핵심추천 섹션 제거 (순위만 표시)** | **send_telegram_auto.py** |
 | **2026-02-05** | **뉴스 자동 크롤링 및 센티먼트 분석 추가** | **send_telegram_auto.py** |
 | **2026-02-05** | **뉴스 헤드라인 요약 개선 (시세뉴스 필터링)** | **send_telegram_auto.py** |
+| **2026-02-05** | **GitHub Actions 자동화 (매일 06:00 KST)** | **.github/workflows/telegram_daily.yml (NEW)** |
+| **2026-02-05** | **텔레그램 공개채널 연동 (kr_dailyquant)** | **config.py, send_telegram_auto.py** |
+| **2026-02-05** | **채널/봇 이중 전송 로직 구현** | **send_telegram_auto.py** |
 
 ---
 
@@ -643,5 +646,96 @@ python full_backtest.py
 
 ---
 
-**문서 버전**: 6.5
+---
+
+## 9. GitHub Actions 자동화
+
+### 매일 06:00 KST 자동 전송
+
+**파일**: `.github/workflows/telegram_daily.yml`
+
+```yaml
+name: Daily Telegram Report
+
+on:
+  schedule:
+    - cron: '0 21 * * 0-4'  # UTC 21:00 = KST 06:00 (다음날)
+  workflow_dispatch:        # 수동 실행
+
+jobs:
+  send-telegram:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./claude code/quant_py-main
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pykrx pandas numpy requests beautifulsoup4 lxml pyarrow
+      - name: Create config.py from secrets
+        run: |
+          cat << EOF > config.py
+          TELEGRAM_BOT_TOKEN = "${{ secrets.TELEGRAM_BOT_TOKEN }}"
+          TELEGRAM_CHAT_ID = "${{ secrets.TELEGRAM_CHAT_ID }}"
+          TELEGRAM_PRIVATE_ID = "${{ secrets.TELEGRAM_PRIVATE_ID }}"
+          EOF
+      - run: python send_telegram_auto.py
+```
+
+### GitHub Secrets 설정
+
+Repository Settings → Secrets and variables → Actions → New repository secret:
+- `TELEGRAM_BOT_TOKEN`: 봇 토큰
+- `TELEGRAM_CHAT_ID`: 채널 ID (-1003817272553)
+- `TELEGRAM_PRIVATE_ID`: 개인 채팅 ID (7580571403)
+
+---
+
+## 10. 텔레그램 채널 및 메시지 분배
+
+### 채널 정보
+
+| 항목 | 값 |
+|------|-----|
+| 채널명 | kr_dailyquant |
+| 채널 URL | https://t.me/kr_dailyquant |
+| 채널 ID | -1003817272553 |
+| 용도 | 공개 고객용 (공통종목만) |
+
+### 메시지 분배 로직
+
+```
+GitHub Actions 실행 시:
+├── 채널 (kr_dailyquant): 공통종목 메시지 1개만
+└── 봇 (개인채팅): 전체 메시지 3개 (공통종목 + 전략A + 전략B)
+
+로컬 테스트 실행 시:
+└── 봇 (개인채팅): 전체 메시지 3개
+```
+
+### 환경 감지 코드
+
+```python
+IS_GITHUB_ACTIONS = os.environ.get('GITHUB_ACTIONS') == 'true'
+
+if IS_GITHUB_ACTIONS:
+    # 채널에 공통종목 메시지 전송
+    requests.post(url, data={'chat_id': TELEGRAM_CHAT_ID, 'text': msg1})
+    # 개인채팅에 전체 메시지 전송
+    if PRIVATE_CHAT_ID:
+        requests.post(url, data={'chat_id': PRIVATE_CHAT_ID, 'text': msg1})
+        requests.post(url, data={'chat_id': PRIVATE_CHAT_ID, 'text': msg2})
+        requests.post(url, data={'chat_id': PRIVATE_CHAT_ID, 'text': msg3})
+else:
+    # 로컬: 개인채팅에만 전체 메시지
+    target_id = PRIVATE_CHAT_ID or TELEGRAM_CHAT_ID
+    for msg in [msg1, msg2, msg3]:
+        requests.post(url, data={'chat_id': target_id, 'text': msg})
+```
+
+---
+
+**문서 버전**: 6.6
 **최종 업데이트**: 2026-02-05
