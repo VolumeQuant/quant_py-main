@@ -1,12 +1,9 @@
 """
-2026년 1월 현재 포트폴리오 생성 (리팩토링 버전)
+2026년 1월 현재 포트폴리오 생성
 
-개선사항:
-- OpenDART API를 통한 재무제표 수집 (빠르고 안정적)
-- 비동기 처리 (asyncio + aiohttp)
-- 병렬 처리 (ThreadPoolExecutor)
+- FnGuide 캐시에서 재무제표 로드
+- pykrx에서 시가총액/OHLCV 실시간 수집
 - Skip & Log 에러 처리 패턴
-- 런타임: ~50분 → ~5-10분
 """
 
 import pandas as pd
@@ -26,27 +23,16 @@ from error_handler import ErrorTracker, ErrorCategory
 from strategy_a_magic import MagicFormulaStrategy
 from strategy_b_multifactor import MultiFactorStrategy
 
-# DART API는 선택적 (없으면 FnGuide 캐시 사용)
-try:
-    from dart_api import DartApiClient, DartConfig, calculate_ttm
-    DART_AVAILABLE = True
-except ImportError:
-    DART_AVAILABLE = False
-    DartApiClient = None
-    DartConfig = None
-    calculate_ttm = None
-
 # 설정
 try:
     from config import (
-        MIN_MARKET_CAP, MIN_TRADING_VALUE, DART_API_KEY,
+        MIN_MARKET_CAP, MIN_TRADING_VALUE,
         MAX_CONCURRENT_REQUESTS, PYKRX_WORKERS, CACHE_DIR
     )
 except ImportError:
     # 기본값
     MIN_MARKET_CAP = 1000
-    MIN_TRADING_VALUE = 50
-    DART_API_KEY = None
+    MIN_TRADING_VALUE = 30
     MAX_CONCURRENT_REQUESTS = 10
     PYKRX_WORKERS = 10
     CACHE_DIR = "data_cache"
@@ -77,96 +63,6 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 # 제외 키워드 (금융업/지주사)
 EXCLUDE_KEYWORDS = ['금융', '은행', '증권', '보험', '캐피탈', '카드', '저축',
                    '지주', '홀딩스', 'SPAC', '스팩', '리츠', 'REIT']
-
-
-async def collect_financial_data_dart(
-    tickers: List[str],
-    error_tracker: ErrorTracker
-) -> pd.DataFrame:
-    """
-    OpenDART API를 통한 재무제표 수집
-
-    Returns:
-        마법공식용 재무 데이터 DataFrame
-    """
-    print("\n[DART API] 재무제표 수집 시작")
-    print(f"  대상 종목: {len(tickers)}개")
-
-    if not DART_AVAILABLE or not DART_API_KEY:
-        error_tracker.log_warning("SYSTEM", "DART API 사용 안 함. FnGuide 캐시 사용")
-        return pd.DataFrame()
-
-    # DartConfig 생성
-    config = DartConfig(
-        api_key=DART_API_KEY,
-        cache_dir=Path(CACHE_DIR),
-        max_concurrent=MAX_CONCURRENT_REQUESTS
-    )
-
-    async with DartApiClient(config) as client:
-        # 배치로 재무제표 수집 (연간 + 분기)
-        fs_data = await client.get_financial_statements_batch(
-            tickers=tickers,
-            years=[2024, 2025, 2026]  # 최근 3년
-        )
-
-    if not fs_data:
-        print("  [경고] DART API로 수집된 데이터 없음")
-        return pd.DataFrame()
-
-    print(f"  수집 완료: {len(fs_data)}개 종목")
-
-    # TTM 계산 및 마법공식 데이터 추출
-    result_data = []
-
-    for ticker, df in fs_data.items():
-        if df is None or df.empty:
-            error_tracker.log_warning(ticker, "재무데이터 없음")
-            continue
-
-        try:
-            # TTM 계산
-            ttm_df = calculate_ttm(df)
-
-            if ttm_df.empty:
-                continue
-
-            # 최신 TTM 데이터 추출
-            latest = ttm_df.iloc[-1]
-
-            # 마법공식에 필요한 지표 추출
-            row = {
-                '종목코드': ticker,
-                '매출액': latest.get('매출액', np.nan),
-                '영업이익': latest.get('영업이익', np.nan),
-                '당기순이익': latest.get('당기순이익', np.nan),
-                '자산': latest.get('자산', np.nan),
-                '부채': latest.get('부채', np.nan),
-                '자본': latest.get('자본', np.nan),
-            }
-
-            # 마법공식 지표 계산
-            # EBIT = 영업이익
-            ebit = row['영업이익']
-
-            # 투하자본 = 자산 - 부채 (간소화된 계산)
-            # 또는: 영업자산 - 영업부채
-            invested_capital = row['자산'] - row['부채'] if pd.notna(row['자산']) and pd.notna(row['부채']) else np.nan
-
-            row['EBIT'] = ebit
-            row['투하자본'] = invested_capital
-
-            result_data.append(row)
-            error_tracker.mark_success(ticker)
-
-        except Exception as e:
-            error_tracker.log_error(ticker, ErrorCategory.PARSE_ERROR, "TTM 계산 실패", e)
-            continue
-
-    if not result_data:
-        return pd.DataFrame()
-
-    return pd.DataFrame(result_data)
 
 
 def collect_consensus_data(
@@ -481,9 +377,9 @@ async def main_async():
     start_time = datetime.now()
 
     print("=" * 80)
-    print("2026년 1월 현재 포트폴리오 생성 (리팩토링 버전)")
+    print("포트폴리오 생성")
     print(f"기준일: {BASE_DATE}")
-    print(f"데이터 소스: OpenDART API + FnGuide (컨센서스)")
+    print(f"데이터 소스: FnGuide 캐시 + pykrx")
     print("=" * 80)
 
     # 에러 추적기 초기화
