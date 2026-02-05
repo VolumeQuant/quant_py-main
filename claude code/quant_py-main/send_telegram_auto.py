@@ -13,6 +13,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import requests
 import json
+import re
+from bs4 import BeautifulSoup
 from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 
 # ============================================================
@@ -49,6 +51,88 @@ SECTOR_DB = {
     '084670': '자동차부품',
     '036620': '아웃도어패션',
 }
+
+# ============================================================
+# 뉴스 크롤링 및 센티먼트 분석 (구글 뉴스 RSS)
+# ============================================================
+import urllib.parse
+
+# 긍정/부정 키워드
+POSITIVE_KEYWORDS = [
+    '호실적', '상향', '흑자', '신고가', '계약', '수주', '성장', '개선',
+    '증가', '확대', '돌파', '상승', '최대', '신규', '진출', '협력',
+    '투자', '기대', '긍정', '매수', '목표가', '상향조정', '실적개선',
+    '급등', '강세', '호재', '수혜', '낙관'
+]
+NEGATIVE_KEYWORDS = [
+    '하향', '적자', '감소', '하락', '소송', '리콜', '손실', '감자',
+    '위기', '우려', '부진', '악화', '철수', '중단', '폐쇄', '매도',
+    '목표가하향', '실적악화', '경고', '조사', '제재', '급락', '약세',
+    '악재', '피해', '비관'
+]
+
+def get_stock_news(ticker, stock_name, max_news=10):
+    """
+    구글 뉴스 RSS에서 종목 뉴스 크롤링
+
+    Returns:
+        {
+            'headlines': [뉴스 제목 리스트],
+            'positive': 긍정 키워드 개수,
+            'negative': 부정 키워드 개수,
+            'summary': 요약 문자열
+        }
+    """
+    try:
+        query = urllib.parse.quote(stock_name)
+        url = f'https://news.google.com/rss/search?q={query}&hl=ko&gl=KR&ceid=KR:ko'
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        response = requests.get(url, headers=headers, timeout=10)
+
+        soup = BeautifulSoup(response.text, 'xml')
+        items = soup.find_all('item')
+
+        # 뉴스 제목 추출
+        headlines = []
+        for item in items[:max_news]:
+            title = item.find('title')
+            if title:
+                text = title.get_text(strip=True)
+                if text and len(text) > 5:
+                    headlines.append(text)
+
+        # 센티먼트 분석
+        all_text = ' '.join(headlines)
+        positive_count = sum(1 for kw in POSITIVE_KEYWORDS if kw in all_text)
+        negative_count = sum(1 for kw in NEGATIVE_KEYWORDS if kw in all_text)
+
+        # 요약 생성
+        if not headlines:
+            summary = None
+        elif positive_count > negative_count:
+            summary = f"📰 뉴스 긍정적 ({positive_count}건)"
+        elif negative_count > positive_count:
+            summary = f"📰 뉴스 부정적 ({negative_count}건) ⚠️"
+        elif positive_count > 0 or negative_count > 0:
+            summary = f"📰 뉴스 중립 (+{positive_count}/-{negative_count})"
+        else:
+            summary = None
+
+        return {
+            'headlines': headlines,
+            'positive': positive_count,
+            'negative': negative_count,
+            'summary': summary
+        }
+    except Exception as e:
+        return {
+            'headlines': [],
+            'positive': 0,
+            'negative': 0,
+            'summary': None
+        }
 
 # ============================================================
 # 날짜 자동 계산
@@ -197,12 +281,16 @@ def calc_entry_score(rsi, w52_pct, vol_ratio):
 
     return rsi_score + w52_score + vol_score + base_score
 
-def generate_reasons(ticker, tech, rank_a, rank_b):
-    """선정이유 자동 생성"""
+def generate_reasons(ticker, tech, rank_a, rank_b, news=None):
+    """선정이유 자동 생성 (뉴스 포함)"""
     reasons = []
     is_breakout = tech['w52_pct'] > -2  # 신고가 돌파
 
-    # 신고가 돌파 모멘텀 (최우선)
+    # 뉴스 긍정적이면 추가 (최우선)
+    if news and news.get('positive', 0) > news.get('negative', 0):
+        reasons.append(news['summary'])
+
+    # 신고가 돌파 모멘텀
     if is_breakout:
         reasons.append(f"52주 신고가 돌파 모멘텀! ({tech['w52_pct']:+.1f}%)")
 
@@ -241,10 +329,14 @@ def generate_reasons(ticker, tech, rank_a, rank_b):
 
     return reasons[:3]  # 최대 3개
 
-def generate_risk(tech, rank_a, rank_b):
-    """리스크 자동 생성"""
+def generate_risk(tech, rank_a, rank_b, news=None):
+    """리스크 자동 생성 (뉴스 포함)"""
     risks = []
     is_breakout = tech['w52_pct'] > -2  # 신고가 돌파
+
+    # 뉴스 부정적이면 경고 (최우선)
+    if news and news.get('negative', 0) > news.get('positive', 0):
+        risks.append(news['summary'])
 
     # RSI 과매수 (신고가 돌파가 아닐 때만 경고)
     if tech['rsi'] >= 75:
@@ -382,6 +474,12 @@ for ticker in common_today:
     entry_score = calc_entry_score(tech['rsi'], tech['w52_pct'], tech['vol_ratio'])
     relative_rsi = tech['rsi'] - market_rsi  # 상대 RSI 계산
 
+    # 뉴스 크롤링
+    news = get_stock_news(ticker, name)
+    news_str = ""
+    if news['positive'] > 0 or news['negative'] > 0:
+        news_str = f" | 뉴스 +{news['positive']}/-{news['negative']}"
+
     stock_analysis.append({
         'ticker': ticker,
         'name': name,
@@ -390,11 +488,12 @@ for ticker in common_today:
         'entry_score': entry_score,
         'sector': SECTOR_DB.get(ticker, '기타'),
         'relative_rsi': relative_rsi,
+        'news': news,
         **tech,
-        'reasons': generate_reasons(ticker, tech, rank_a, rank_b),
-        'risk': generate_risk(tech, rank_a, rank_b),
+        'reasons': generate_reasons(ticker, tech, rank_a, rank_b, news),
+        'risk': generate_risk(tech, rank_a, rank_b, news),
     })
-    print(f"  {name}: 진입 {entry_score}점, RSI {tech['rsi']:.0f} (상대 {relative_rsi:+.0f}), 52주 {tech['w52_pct']:.0f}%")
+    print(f"  {name}: 진입 {entry_score}점, RSI {tech['rsi']:.0f} (상대 {relative_rsi:+.0f}), 52주 {tech['w52_pct']:.0f}%{news_str}")
 
 # 진입점수 기준 정렬
 stock_analysis.sort(key=lambda x: x['entry_score'], reverse=True)
