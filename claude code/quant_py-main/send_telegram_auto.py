@@ -141,63 +141,70 @@ def get_stock_technical(ticker):
         print(f"  기술지표 계산 실패 {ticker_str}: {e}")
         return None
 
-def calc_entry_score(rsi, w52_pct, vol_ratio, daily_chg):
-    """진입점수 계산 (100점 만점)"""
+def calc_entry_score(rsi, w52_pct, vol_ratio):
+    """
+    진입점수 계산 (100점 만점)
+
+    구성:
+    - RSI (40점): 과매도일수록 좋음, 단 신고가 돌파시 과매수도 OK
+    - 52주 위치 (30점): 할인 or 돌파 모멘텀
+    - 거래량 (20점): 스파이크 확인
+    - 기본 점수 (10점): 통과 종목 기본
+    """
+    # 신고가 돌파 판단 (52주 고점 -2% 이내)
+    is_breakout = w52_pct > -2
+
     # RSI (40점)
     if rsi <= 30:
-        rsi_score = 40
+        rsi_score = 40  # 과매도 - 매수 기회
     elif rsi <= 50:
-        rsi_score = 30
+        rsi_score = 30  # 양호
     elif rsi <= 70:
-        rsi_score = 20
+        rsi_score = 20  # 중립
     else:
-        rsi_score = 10
+        # RSI > 70
+        if is_breakout:
+            rsi_score = 35  # 신고가 돌파 모멘텀 OK
+        else:
+            rsi_score = 10  # 일반 과매수 위험
 
     # 52주 고점 대비 (30점)
-    if w52_pct <= -20:
-        w52_score = 30
+    if is_breakout:  # -2% 이내 (신고가)
+        w52_score = 30  # 돌파 모멘텀
+    elif w52_pct <= -20:
+        w52_score = 30  # 큰 할인
     elif w52_pct <= -10:
-        w52_score = 25
+        w52_score = 25  # 의미있는 할인
     elif w52_pct <= -5:
-        w52_score = 20
+        w52_score = 20  # 적당한 조정
     else:
-        w52_score = 15
+        w52_score = 15  # 소폭 조정
 
     # 거래량 (20점)
-    if vol_ratio >= 2.0:
-        vol_score = 20
-    elif vol_ratio >= 1.5:
-        vol_score = 15
-    elif vol_ratio >= 1.2:
-        vol_score = 10
+    if vol_ratio >= 1.5:
+        vol_score = 20  # 거래량 스파이크
     else:
-        vol_score = 5
+        vol_score = 10  # 일반
 
-    # 일봉 (10점)
-    if daily_chg > 0:
-        daily_score = 10
-    elif daily_chg == 0:
-        daily_score = 5
-    else:
-        daily_score = 0
+    # 기본 점수 (10점) - 통과 종목 기본
+    base_score = 10
 
-    return rsi_score + w52_score + vol_score + daily_score
+    return rsi_score + w52_score + vol_score + base_score
 
 def generate_reasons(ticker, tech, rank_a, rank_b):
     """선정이유 자동 생성"""
     reasons = []
+    is_breakout = tech['w52_pct'] > -2  # 신고가 돌파
+
+    # 신고가 돌파 모멘텀 (최우선)
+    if is_breakout:
+        reasons.append(f"52주 신고가 돌파 모멘텀! ({tech['w52_pct']:+.1f}%)")
 
     # 거래량 급증
     if tech['vol_ratio'] >= 2.0:
         reasons.append(f"거래량 {tech['vol_ratio']:.1f}배 급증!")
     elif tech['vol_ratio'] >= 1.5:
-        reasons.append(f"거래량 {tech['vol_ratio']:.1f}배 증가")
-
-    # 당일 급등/급락
-    if tech['daily_chg'] >= 5:
-        reasons.append(f"당일 {tech['daily_chg']:+.1f}% 급등")
-    elif tech['daily_chg'] <= -5:
-        reasons.append(f"당일 {tech['daily_chg']:+.1f}% 급락")
+        reasons.append(f"거래량 {tech['vol_ratio']:.1f}배 스파이크")
 
     # 전략 순위
     if rank_a <= 5:
@@ -205,20 +212,25 @@ def generate_reasons(ticker, tech, rank_a, rank_b):
     if rank_b <= 5:
         reasons.append(f"전략B {rank_b:.0f}위 최상위")
 
-    # 52주 저점
-    if tech['w52_pct'] <= -40:
-        reasons.append(f"52주고점 대비 {tech['w52_pct']:.0f}% 역대급 저점")
-    elif tech['w52_pct'] <= -20:
-        reasons.append(f"52주고점 대비 {tech['w52_pct']:.0f}% 저점매수 기회")
+    # 52주 저점 (신고가 돌파가 아닐 때만)
+    if not is_breakout:
+        if tech['w52_pct'] <= -40:
+            reasons.append(f"52주고점 -40% 역대급 저점 할인")
+        elif tech['w52_pct'] <= -20:
+            reasons.append(f"52주고점 -20% 큰 할인 기회")
+        elif tech['w52_pct'] <= -10:
+            reasons.append(f"52주고점 대비 {tech['w52_pct']:.0f}% 할인")
 
     # RSI 과매도
     if tech['rsi'] <= 30:
         reasons.append(f"RSI {tech['rsi']:.0f} 과매도 반등 기회")
 
+    # 당일 급등/급락
+    if tech['daily_chg'] >= 5:
+        reasons.append(f"당일 {tech['daily_chg']:+.1f}% 급등")
+
     # 최소 2개 이유 보장
     if len(reasons) < 2:
-        if tech['w52_pct'] <= -10:
-            reasons.append(f"52주고점 대비 {tech['w52_pct']:.0f}%")
         reasons.append(f"공통종목 선정 (A+B 통과)")
 
     return reasons[:3]  # 최대 3개
@@ -226,23 +238,28 @@ def generate_reasons(ticker, tech, rank_a, rank_b):
 def generate_risk(tech, rank_a, rank_b):
     """리스크 자동 생성"""
     risks = []
+    is_breakout = tech['w52_pct'] > -2  # 신고가 돌파
 
+    # RSI 과매수 (신고가 돌파가 아닐 때만 경고)
     if tech['rsi'] >= 75:
-        risks.append(f"RSI {tech['rsi']:.0f} 과매수!")
-    elif tech['rsi'] >= 70:
+        if is_breakout:
+            risks.append(f"RSI {tech['rsi']:.0f} 고점, 돌파 추세 확인 필요")
+        else:
+            risks.append(f"RSI {tech['rsi']:.0f} 과매수!")
+    elif tech['rsi'] >= 70 and not is_breakout:
         risks.append(f"RSI {tech['rsi']:.0f} 과열")
 
+    # 거래량 부족
     if tech['vol_ratio'] < 0.8:
         risks.append(f"거래량 {tech['vol_ratio']:.1f}x 약함")
 
-    if tech['w52_pct'] > -3:
-        risks.append("52주고점 근접")
-
+    # 전략순위
     if rank_a > 20 and rank_b > 20:
         risks.append("전략순위 하위권")
     elif rank_a > 20 or rank_b > 20:
         risks.append("전략순위 중위권")
 
+    # 단기 조정
     if tech['daily_chg'] < -3:
         risks.append("단기 조정 중")
 
@@ -330,7 +347,7 @@ for ticker in common_today:
     rank_a = a_ranks.get(ticker, 31)
     rank_b = b_ranks.get(ticker, 31)
 
-    entry_score = calc_entry_score(tech['rsi'], tech['w52_pct'], tech['vol_ratio'], tech['daily_chg'])
+    entry_score = calc_entry_score(tech['rsi'], tech['w52_pct'], tech['vol_ratio'])
 
     stock_analysis.append({
         'ticker': ticker,
