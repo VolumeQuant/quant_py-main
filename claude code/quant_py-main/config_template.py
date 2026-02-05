@@ -20,7 +20,3 @@ TELEGRAM_CHAT_ID = "YOUR_CHAT_ID_HERE"       # 예: "123456789"
 
 # Git 설정
 GIT_AUTO_PUSH = True  # 자동 커밋/푸시 활성화
-
-# 진입 점수 임계값
-SCORE_BUY = 0.6      # 이 점수 이상이면 "매수 적기"
-SCORE_WATCH = 0.3    # 이 점수 이상이면 "관망"

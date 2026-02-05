@@ -2,9 +2,43 @@
 
 ## 문서 개요
 
-**버전**: 6.4
+**버전**: 6.5
 **최종 업데이트**: 2026-02-05
 **작성자**: Claude Opus 4.5
+
+---
+
+## 핵심 변경사항 (v6.5 OHLCV 캐시 로직 개선)
+
+### 2026-02-05 버그 수정
+
+**수정된 파일**: `create_current_portfolio.py`
+
+| 수정 항목 | Before | After |
+|----------|--------|-------|
+| OHLCV 메서드 | `get_ohlcv_parallel` (없는 메서드) | `get_all_ohlcv` |
+| 캐시 검증 | 캐시 있으면 무조건 사용 | **BASE_DATE 데이터 존재 확인** |
+
+**OHLCV 캐시 로직 개선**:
+```python
+# Before: 캐시 있으면 그냥 사용 (BASE_DATE 데이터 없어도)
+if ohlcv_cache_files:
+    price_df = pd.read_parquet(ohlcv_cache_file)
+
+# After: BASE_DATE 데이터가 캐시에 있는지 확인
+if ohlcv_cache_files:
+    price_df = pd.read_parquet(ohlcv_cache_file)
+    base_date_dt = pd.Timestamp(datetime.strptime(BASE_DATE, '%Y%m%d'))
+    if base_date_dt in price_df.index:
+        # 캐시 사용
+    else:
+        # 새로 수집
+```
+
+**효과**:
+- 매일 실행 시 BASE_DATE 데이터가 캐시에 없으면 자동으로 새로 수집
+- 일관된 결과 보장 (같은 BASE_DATE면 같은 결과)
+- GitHub Actions와 로컬 실행 결과 동일
 
 ---
 
@@ -60,11 +94,12 @@ BASE_DATE = 전일 거래일 (분석 기준)
 
 **2단계 전략 시스템**:
 ```
-[1단계] 밸류 - 뭘 살까? (630개 → 8개)
-• 유니버스: 거래대금 30억↑ 약 630개
+[1단계] 밸류 - 뭘 살까?
+• 유니버스: 거래대금 30억↑ (20일 평균)
 • 전략A 마법공식 30개 ∩ 전략B 멀티팩터 30개
+• 공통종목 선정 (동적으로 변동)
 
-[2단계] 가격 - 언제 살까? (8개 → 순위)
+[2단계] 가격 - 언제 살까?
 • 진입점수로 정렬 (RSI↓ 52주저점↓ 거래량↑)
 ```
 
@@ -383,14 +418,14 @@ def filter_universe(
     self,
     market_cap_df: pd.DataFrame,
     min_market_cap: int = 1000,    # 억원
-    min_trading_value: int = 50,   # 억원
+    min_trading_value: int = 30,   # 억원 (20일 평균)
 ) -> pd.DataFrame:
     """
     유니버스 필터링
 
     조건:
     - 시가총액 >= 1000억원
-    - 거래대금 >= 30억원
+    - 거래대금 >= 30억원 (20일 평균)
     - 금융업/지주사 제외
     """
 ```
@@ -514,6 +549,7 @@ quant_py-main/
 ├── 실행 스크립트
 │   ├── create_current_portfolio.py  # [MOD] async main() (525줄)
 │   ├── daily_monitor.py             # 일별 모니터링 v6.4 (1289줄)
+│   ├── send_telegram_auto.py        # [NEW] 자동화 텔레그램 (GitHub Actions)
 │   └── full_backtest.py             # 백테스트
 │
 ├── 설정
@@ -539,42 +575,7 @@ quant_py-main/
 
 ---
 
-## 5. 환경 설정
-
-### Python 환경
-```
-Python: 3.13+ (miniconda3)
-```
-
-### 필수 패키지
-```bash
-pip install pykrx pandas numpy scipy matplotlib requests beautifulsoup4 lxml pyarrow tqdm aiohttp
-```
-
-### 설정 파일 (config.py)
-```python
-# 텔레그램 설정
-TELEGRAM_BOT_TOKEN = "your_bot_token"
-TELEGRAM_CHAT_ID = "your_chat_id"
-
-# OpenDART API
-DART_API_KEY = "your_dart_api_key"
-
-# 병렬 처리
-MAX_CONCURRENT_REQUESTS = 10  # DART API
-PYKRX_WORKERS = 10            # pykrx
-
-# 유니버스 필터
-MIN_MARKET_CAP = 1000   # 억원
-MIN_TRADING_VALUE = 30  # 억원
-
-# Git 자동 푸시
-GIT_AUTO_PUSH = True
-```
-
----
-
-## 6. 알려진 제한사항
+## 5. 알려진 제한사항
 
 ### 데이터 관련
 1. **DART API 호출 제한**: 일 10,000건 (과도한 요청 시 IP 차단)
@@ -592,7 +593,7 @@ GIT_AUTO_PUSH = True
 
 ---
 
-## 7. 작업 로그
+## 6. 작업 로그
 
 | 날짜 | 주요 작업 | 파일 |
 |------|-----------|------|
@@ -606,12 +607,8 @@ GIT_AUTO_PUSH = True
 | **2026-02-03** | **병렬 처리 추가** | **data_collector.py** |
 | **2026-02-03** | **async main() 구조 전환** | **create_current_portfolio.py** |
 | **2026-02-03** | **거래대금 필터 30억으로 조정** | **config.py** |
-| **2026-02-03** | **문서 전면 업데이트** | **README.md, PROJECT_REPORT.md** |
+| **2026-02-03** | **문서 전면 업데이트** | **README.md** |
 | **2026-02-04** | **20일 평균 거래대금 필터 적용** | **create_current_portfolio.py** |
-| **2026-02-04** | **텔레그램 편입/편출 사유 표시** | **send_telegram_detailed.py** |
-| **2026-02-04** | **종목별 인사이트 추가 (섹터/요약/선정이유)** | **send_telegram_detailed.py** |
-| **2026-02-04** | **고객 친화적 메시지 형식 개선** | **send_telegram_detailed.py** |
-| **2026-02-05** | **Claude 종합 순위 시스템 구현 (전략+기술+거래량+뉴스)** | **send_telegram_detailed.py** |
 | **2026-02-05** | **텔레그램 완전 자동화 (send_telegram_auto.py)** | **send_telegram_auto.py (NEW)** |
 | **2026-02-05** | **분석 기준일 전일 거래일로 변경** | **send_telegram_auto.py** |
 | **2026-02-05** | **진입점수 개선: 신고가 보너스 제거 (싸게 사자 철학)** | **send_telegram_auto.py** |
@@ -624,118 +621,5 @@ GIT_AUTO_PUSH = True
 
 ---
 
-## 8. 빠른 시작 가이드
-
-```bash
-# 1. 패키지 설치
-pip install pykrx pandas numpy scipy matplotlib requests beautifulsoup4 lxml pyarrow tqdm aiohttp
-
-# 2. 설정 파일 생성
-cp config_template.py config.py
-# DART_API_KEY, TELEGRAM 설정 입력
-
-# 3. 포트폴리오 생성 (캐시 모드: ~15초)
-python create_current_portfolio.py
-
-# 4. 일별 모니터링 (~3분)
-python daily_monitor.py
-
-# 5. 백테스트 (~15분)
-python full_backtest.py
-```
-
----
-
----
-
-## 9. GitHub Actions 자동화
-
-### 매일 06:00 KST 자동 전송
-
-**파일**: `.github/workflows/telegram_daily.yml`
-
-```yaml
-name: Daily Telegram Report
-
-on:
-  schedule:
-    - cron: '0 21 * * 0-4'  # UTC 21:00 = KST 06:00 (다음날)
-  workflow_dispatch:        # 수동 실행
-
-jobs:
-  send-telegram:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./claude code/quant_py-main
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - run: pip install pykrx pandas numpy requests beautifulsoup4 lxml pyarrow
-      - name: Create config.py from secrets
-        run: |
-          cat << EOF > config.py
-          TELEGRAM_BOT_TOKEN = "${{ secrets.TELEGRAM_BOT_TOKEN }}"
-          TELEGRAM_CHAT_ID = "${{ secrets.TELEGRAM_CHAT_ID }}"
-          TELEGRAM_PRIVATE_ID = "${{ secrets.TELEGRAM_PRIVATE_ID }}"
-          EOF
-      - run: python send_telegram_auto.py
-```
-
-### GitHub Secrets 설정
-
-Repository Settings → Secrets and variables → Actions → New repository secret:
-- `TELEGRAM_BOT_TOKEN`: 봇 토큰
-- `TELEGRAM_CHAT_ID`: 채널 ID (-1003817272553)
-- `TELEGRAM_PRIVATE_ID`: 개인 채팅 ID (7580571403)
-
----
-
-## 10. 텔레그램 채널 및 메시지 분배
-
-### 채널 정보
-
-| 항목 | 값 |
-|------|-----|
-| 채널명 | kr_dailyquant |
-| 채널 URL | https://t.me/kr_dailyquant |
-| 채널 ID | -1003817272553 |
-| 용도 | 공개 고객용 (공통종목만) |
-
-### 메시지 분배 로직
-
-```
-GitHub Actions 실행 시:
-├── 채널 (kr_dailyquant): 공통종목 메시지 1개만
-└── 봇 (개인채팅): 전체 메시지 3개 (공통종목 + 전략A + 전략B)
-
-로컬 테스트 실행 시:
-└── 봇 (개인채팅): 전체 메시지 3개
-```
-
-### 환경 감지 코드
-
-```python
-IS_GITHUB_ACTIONS = os.environ.get('GITHUB_ACTIONS') == 'true'
-
-if IS_GITHUB_ACTIONS:
-    # 채널에 공통종목 메시지 전송
-    requests.post(url, data={'chat_id': TELEGRAM_CHAT_ID, 'text': msg1})
-    # 개인채팅에 전체 메시지 전송
-    if PRIVATE_CHAT_ID:
-        requests.post(url, data={'chat_id': PRIVATE_CHAT_ID, 'text': msg1})
-        requests.post(url, data={'chat_id': PRIVATE_CHAT_ID, 'text': msg2})
-        requests.post(url, data={'chat_id': PRIVATE_CHAT_ID, 'text': msg3})
-else:
-    # 로컬: 개인채팅에만 전체 메시지
-    target_id = PRIVATE_CHAT_ID or TELEGRAM_CHAT_ID
-    for msg in [msg1, msg2, msg3]:
-        requests.post(url, data={'chat_id': target_id, 'text': msg})
-```
-
----
-
-**문서 버전**: 6.6
+**문서 버전**: 6.8
 **최종 업데이트**: 2026-02-05

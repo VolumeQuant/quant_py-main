@@ -22,7 +22,7 @@ warnings.filterwarnings('ignore')
 # 내부 모듈
 from data_collector import DataCollector
 from dart_api import DartApiClient, DartConfig, calculate_ttm
-from fnguide_crawler import get_consensus_batch_async
+from fnguide_crawler import get_consensus_batch
 from error_handler import ErrorTracker, ErrorCategory
 from strategy_a_magic import MagicFormulaStrategy
 from strategy_b_multifactor import MultiFactorStrategy
@@ -158,22 +158,20 @@ async def collect_financial_data_dart(
     return pd.DataFrame(result_data)
 
 
-async def collect_consensus_data(
+def collect_consensus_data(
     tickers: List[str],
     error_tracker: ErrorTracker
 ) -> pd.DataFrame:
     """
-    FnGuide 컨센서스 데이터 수집 (비동기)
+    FnGuide 컨센서스 데이터 수집
     """
     print("\n[FnGuide] 컨센서스 데이터 수집")
     print(f"  대상 종목: {len(tickers)}개")
 
     try:
-        consensus_df = await get_consensus_batch_async(
+        consensus_df = get_consensus_batch(
             tickers=tickers,
-            delay=0.3,
-            max_concurrent=5,
-            timeout=30
+            delay=0.5
         )
         print(f"  수집 완료: {len(consensus_df)}개 종목")
         return consensus_df
@@ -197,7 +195,7 @@ def collect_price_data_parallel(
     print(f"  기간: {start_date} ~ {end_date}")
 
     try:
-        price_df = collector.get_ohlcv_parallel(
+        price_df = collector.get_all_ohlcv(
             tickers=tickers,
             start_date=start_date,
             end_date=end_date
@@ -304,11 +302,15 @@ def filter_universe_optimized(
         filtered = filtered[filtered['거래대금_억'] >= MIN_TRADING_VALUE].copy()
         print(f"당일 거래대금 {MIN_TRADING_VALUE}억원 이상: {len(filtered)}개")
 
-    # 3. 종목명 병렬 수집
-    print("종목명 수집 중 (병렬)...")
-    ticker_names = collector.get_ticker_names_parallel(
-        filtered.index.tolist()
-    )
+    # 3. 종목명 수집
+    print("종목명 수집 중...")
+    ticker_names = {}
+    for ticker in filtered.index.tolist():
+        try:
+            name = pykrx_stock.get_market_ticker_name(ticker)
+            ticker_names[ticker] = name
+        except:
+            ticker_names[ticker] = ticker
     filtered['종목명'] = filtered.index.map(ticker_names)
 
     # 4. 금융업/지주사 제외
@@ -485,7 +487,7 @@ async def main_async():
     # =========================================================================
     print("\n[1단계] 시가총액 데이터 수집")
 
-    market_cap_df = collector.get_market_cap_batch(BASE_DATE, markets=['KOSPI', 'KOSDAQ'])
+    market_cap_df = collector.get_market_cap(BASE_DATE, market='ALL')
     print(f"전체 종목 수: {len(market_cap_df)}")
 
     # =========================================================================
@@ -527,15 +529,27 @@ async def main_async():
 
     # 기존 OHLCV 캐시 파일 찾기
     ohlcv_cache_files = list(Path(CACHE_DIR).glob("all_ohlcv_*.parquet"))
+    price_df = pd.DataFrame()
+    need_refresh = True
+
     if ohlcv_cache_files:
         # 가장 최신 파일 사용
         ohlcv_cache_file = sorted(ohlcv_cache_files)[-1]
-        print(f"  캐시 파일 로드: {ohlcv_cache_file.name}")
+        print(f"  캐시 파일 확인: {ohlcv_cache_file.name}")
         price_df = pd.read_parquet(ohlcv_cache_file)
-        print(f"  로드 완료: {len(price_df.columns)}개 종목, {len(price_df)}거래일")
-    else:
-        # 캐시 없으면 수집
-        print("  캐시 없음 - 데이터 수집")
+
+        # BASE_DATE 데이터가 캐시에 있는지 확인
+        base_date_dt = pd.Timestamp(datetime.strptime(BASE_DATE, '%Y%m%d'))
+        if not price_df.empty and base_date_dt in price_df.index:
+            print(f"  캐시에 {BASE_DATE} 데이터 있음 - 캐시 사용")
+            print(f"  로드 완료: {len(price_df.columns)}개 종목, {len(price_df)}거래일")
+            need_refresh = False
+        else:
+            print(f"  캐시에 {BASE_DATE} 데이터 없음 - 새로 수집 필요")
+
+    if need_refresh:
+        # 캐시 없거나 BASE_DATE 데이터 없으면 수집
+        print("  OHLCV 데이터 수집 시작...")
         end_date_dt = datetime.strptime(BASE_DATE, '%Y%m%d')
         start_date_dt = end_date_dt - timedelta(days=450)
         price_start = start_date_dt.strftime('%Y%m%d')
