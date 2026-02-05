@@ -40,6 +40,30 @@ if ohlcv_cache_files:
 - 일관된 결과 보장 (같은 BASE_DATE면 같은 결과)
 - GitHub Actions와 로컬 실행 결과 동일
 
+### GitHub Actions 주의사항
+
+**중요**: `send_telegram_auto.py`는 CSV 파일을 **읽기만** 합니다.
+
+```
+GitHub Actions 실행 흐름:
+1. checkout → 최신 코드 + CSV 파일 pull
+2. send_telegram_auto.py 실행
+3. output/portfolio_*_strategy_a.csv 읽기
+4. output/portfolio_*_strategy_b.csv 읽기
+5. 텔레그램 전송
+```
+
+**따라서**:
+- 로컬에서 `create_current_portfolio.py` 실행 후
+- **반드시 CSV 파일도 커밋/푸시** 해야 GitHub Actions 결과가 동일
+
+```bash
+# 로컬 실행 후 필수 커밋
+git add output/portfolio_*_strategy_*.csv
+git commit -m "update: 포트폴리오 CSV 업데이트"
+git push
+```
+
 ---
 
 ## 핵심 변경사항 (v3.2 진입점수 개선)
@@ -618,8 +642,10 @@ quant_py-main/
 | **2026-02-05** | **GitHub Actions 자동화 (매일 06:00 KST)** | **.github/workflows/telegram_daily.yml (NEW)** |
 | **2026-02-05** | **텔레그램 공개채널 연동 (kr_dailyquant)** | **config.py, send_telegram_auto.py** |
 | **2026-02-05** | **채널/봇 이중 전송 로직 구현** | **send_telegram_auto.py** |
+| **2026-02-05** | **OHLCV 캐시 검증 로직 추가 (BASE_DATE 확인)** | **create_current_portfolio.py** |
+| **2026-02-05** | **CSV 파일 커밋 필수 문서화** | **SESSION_HANDOFF.md** |
 
 ---
 
-**문서 버전**: 6.8
+**문서 버전**: 6.9
 **최종 업데이트**: 2026-02-05
