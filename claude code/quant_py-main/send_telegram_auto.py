@@ -217,22 +217,12 @@ def get_previous_trading_date(date_str):
     return None
 
 # 날짜 설정
+# 인사: 오늘 날짜
+# 분석: 오늘 기준 직전 영업일 (오늘 제외)
 TODAY = datetime.now().strftime('%Y%m%d')
-LATEST_TRADING_DATE = get_latest_trading_date()  # 가장 최근 거래일 (완성된 데이터)
+BASE_DATE = get_previous_trading_date(TODAY)  # 오늘 기준 직전 영업일
 
-# 6am 실행 시: LATEST_TRADING_DATE = 어제 (완성된 데이터) → 그대로 사용
-# 장중 실행 시: LATEST_TRADING_DATE = 오늘 (미완성) → 전일로 변경
-current_hour = datetime.now().hour
-if current_hour < 16:  # 장 마감(15:30) 전이면
-    # 오늘 데이터가 LATEST면 전일로 변경, 아니면 그대로
-    if LATEST_TRADING_DATE == TODAY:
-        BASE_DATE = get_previous_trading_date(LATEST_TRADING_DATE)
-    else:
-        BASE_DATE = LATEST_TRADING_DATE  # 이미 어제 데이터
-else:
-    BASE_DATE = LATEST_TRADING_DATE  # 장 마감 후면 오늘 데이터 사용 가능
-
-print(f"오늘: {TODAY}, 최근거래일: {LATEST_TRADING_DATE}, 분석기준일: {BASE_DATE}")
+print(f"오늘: {TODAY}, 분석기준일: {BASE_DATE}")
 
 if BASE_DATE is None:
     print("거래일을 찾을 수 없습니다.")
