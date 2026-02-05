@@ -691,25 +691,13 @@ msg3 += """━━━━━━━━━━━━━━━━━━━
 # ============================================================
 url = f'https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage'
 
-print("\n=== 메시지 1 미리보기 ===")
+print("\n=== 메시지 미리보기 ===")
 print(msg1[:2000])
 print("\n... (생략)")
 
-print("\n=== 메시지 2 (전략A) 미리보기 ===")
-print(msg2)
-
-print("\n=== 메시지 3 (전략B) 미리보기 ===")
-print(msg3)
-
-# 전송
+# 전송 (공통종목 메시지만)
 r1 = requests.post(url, data={'chat_id': TELEGRAM_CHAT_ID, 'text': msg1})
-print(f'\n메시지 1 전송: {r1.status_code}')
-
-r2 = requests.post(url, data={'chat_id': TELEGRAM_CHAT_ID, 'text': msg2})
-print(f'메시지 2 전송: {r2.status_code}')
-
-r3 = requests.post(url, data={'chat_id': TELEGRAM_CHAT_ID, 'text': msg3})
-print(f'메시지 3 전송: {r3.status_code}')
+print(f'\n메시지 전송: {r1.status_code}')
 
 # 히스토리 저장
 history = {
