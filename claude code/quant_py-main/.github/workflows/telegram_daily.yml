@@ -31,12 +31,7 @@ jobs:
           cat << EOF > config.py
           TELEGRAM_BOT_TOKEN = "${{ secrets.TELEGRAM_BOT_TOKEN }}"
           TELEGRAM_CHAT_ID = "${{ secrets.TELEGRAM_CHAT_ID }}"
-          DART_API_KEY = "${{ secrets.DART_API_KEY }}"
           EOF
-
-      - name: Run portfolio generator
-        run: python create_current_portfolio.py
-        continue-on-error: true  # 포트폴리오 생성 실패해도 기존 파일로 진행
 
       - name: Send Telegram message
         run: python send_telegram_auto.py
