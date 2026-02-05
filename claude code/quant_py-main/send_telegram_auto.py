@@ -105,25 +105,66 @@ def get_stock_news(ticker, stock_name, max_news=10):
 
         # 센티먼트 분석
         all_text = ' '.join(headlines)
-        positive_count = sum(1 for kw in POSITIVE_KEYWORDS if kw in all_text)
-        negative_count = sum(1 for kw in NEGATIVE_KEYWORDS if kw in all_text)
+        positive_found = [kw for kw in POSITIVE_KEYWORDS if kw in all_text]
+        negative_found = [kw for kw in NEGATIVE_KEYWORDS if kw in all_text]
 
-        # 요약 생성
-        if not headlines:
-            summary = None
-        elif positive_count > negative_count:
-            summary = f"📰 뉴스 긍정적 ({positive_count}건)"
-        elif negative_count > positive_count:
-            summary = f"📰 뉴스 부정적 ({negative_count}건) ⚠️"
-        elif positive_count > 0 or negative_count > 0:
-            summary = f"📰 뉴스 중립 (+{positive_count}/-{negative_count})"
-        else:
-            summary = None
+        positive_count = len(positive_found)
+        negative_count = len(negative_found)
+
+        # 헤드라인에서 종목명 제거하고 핵심 내용만 추출
+        def clean_headline(headline, stock_name):
+            import re
+            clean = headline
+
+            # 종목명 제거 (앞뒤 쉼표/공백 포함)
+            clean = re.sub(rf',?\s*{re.escape(stock_name)}\s*,?', '', clean)
+
+            # " - 언론사" 패턴 제거
+            if ' - ' in clean:
+                clean = clean.split(' - ')[0].strip()
+
+            # [단독], [속보], [클릭 e종목] 등 태그 제거
+            clean = re.sub(r'\[[^\]]+\]', '', clean)
+
+            # 무의미한 시세 뉴스 필터
+            if re.search(r'주가.*장중|장중.*주가', clean):
+                return None
+            # "+X.X% 상승/하락" 패턴 필터
+            if re.search(r'^[+\-]?\d+\.?\d*%\s*(상승|하락|급등|급락|VI|발동)', clean):
+                return None
+            # "상승폭 확대/축소" 패턴 필터
+            if re.search(r'상승폭\s*(확대|축소)|하락폭\s*(확대|축소)', clean):
+                return None
+
+            # 빈 따옴표 '' "" 제거
+            clean = re.sub(r"''\s*|''\s*", '', clean)
+            clean = re.sub(r'""\s*|""\s*', '', clean)
+
+            # 앞뒤 특수문자, 쉼표, 공백 정리
+            clean = clean.strip('[]()…·""\'\'", ')
+            clean = re.sub(r'^[,\s]+', '', clean)
+
+            return clean if len(clean) > 5 else None
+
+        # 의미있는 헤드라인 찾기 (시세 뉴스 제외)
+        summary = None
+        for hl in headlines[:5]:  # 최대 5개까지 확인
+            cleaned = clean_headline(hl, stock_name)
+            if cleaned:
+                if len(cleaned) > 25:
+                    cleaned = cleaned[:24] + '..'
+                if negative_count > positive_count:
+                    summary = f"📰⚠️ {cleaned}"
+                else:
+                    summary = f"📰 {cleaned}"
+                break
 
         return {
             'headlines': headlines,
             'positive': positive_count,
             'negative': negative_count,
+            'positive_keywords': positive_found,
+            'negative_keywords': negative_found,
             'summary': summary
         }
     except Exception as e:
@@ -131,6 +172,8 @@ def get_stock_news(ticker, stock_name, max_news=10):
             'headlines': [],
             'positive': 0,
             'negative': 0,
+            'positive_keywords': [],
+            'negative_keywords': [],
             'summary': None
         }
 
@@ -286,10 +329,6 @@ def generate_reasons(ticker, tech, rank_a, rank_b, news=None):
     reasons = []
     is_breakout = tech['w52_pct'] > -2  # 신고가 돌파
 
-    # 뉴스 긍정적이면 추가 (최우선)
-    if news and news.get('positive', 0) > news.get('negative', 0):
-        reasons.append(news['summary'])
-
     # 신고가 돌파 모멘텀
     if is_breakout:
         reasons.append(f"52주 신고가 돌파 모멘텀! ({tech['w52_pct']:+.1f}%)")
@@ -334,9 +373,9 @@ def generate_risk(tech, rank_a, rank_b, news=None):
     risks = []
     is_breakout = tech['w52_pct'] > -2  # 신고가 돌파
 
-    # 뉴스 부정적이면 경고 (최우선)
+    # 뉴스 부정적이면 경고 (간략하게)
     if news and news.get('negative', 0) > news.get('positive', 0):
-        risks.append(news['summary'])
+        risks.append("뉴스 부정적⚠️")
 
     # RSI 과매수 (신고가 돌파가 아닐 때만 경고)
     if tech['rsi'] >= 75:
@@ -477,8 +516,10 @@ for ticker in common_today:
     # 뉴스 크롤링
     news = get_stock_news(ticker, name)
     news_str = ""
-    if news['positive'] > 0 or news['negative'] > 0:
-        news_str = f" | 뉴스 +{news['positive']}/-{news['negative']}"
+    if news.get('headlines'):
+        first_headline = news['headlines'][0][:30] + '..' if len(news['headlines'][0]) > 30 else news['headlines'][0]
+        sentiment = "⚠️" if news['negative'] > news['positive'] else ""
+        news_str = f" | {sentiment}{first_headline}"
 
     stock_analysis.append({
         'ticker': ticker,
@@ -549,10 +590,13 @@ for s in stock_analysis:
 💰 {s['price']:,.0f}원 ({s['daily_chg']:+.2f}%)
 📊 진입 {s['entry_score']:.0f}점 | A순위 {s['rank_a']:.0f}위 | B순위 {s['rank_b']:.0f}위
 📈 진입타이밍: RSI {s['rsi']:.0f} | 52주 {s['w52_pct']:+.0f}%
-📝 선정이유:
 """
-    for reason in s['reasons']:
-        msg1 += f"• {reason}\n"
+    # 주요 뉴스 (있을 경우만)
+    if s.get('news') and s['news'].get('summary'):
+        msg1 += f"📰 주요뉴스: {s['news']['summary'].replace('📰 ', '').replace('📰⚠️ ', '⚠️')}\n"
+
+    msg1 += "📝 선정이유: "
+    msg1 += ' / '.join(s['reasons']) + "\n"
 
     msg1 += f"⚠️ 리스크: {s['risk']}\n"
     msg1 += "━━━━━━━━━━━━━━━━━━━\n"
