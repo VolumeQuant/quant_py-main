@@ -188,11 +188,18 @@ def get_stock_news(ticker, stock_name, max_news=10):
         }
 
 # ============================================================
-# 날짜 자동 계산
+# 날짜 자동 계산 (한국 시간 기준)
 # ============================================================
+from zoneinfo import ZoneInfo
+KST = ZoneInfo('Asia/Seoul')
+
+def get_korea_now():
+    """한국 시간 기준 현재 시각"""
+    return datetime.now(KST)
+
 def get_latest_trading_date():
     """최근 거래일 찾기 (오늘 또는 어제)"""
-    now = datetime.now()
+    now = get_korea_now()
     for i in range(10):
         date = (now - timedelta(days=i)).strftime('%Y%m%d')
         try:
@@ -216,10 +223,10 @@ def get_previous_trading_date(date_str):
             continue
     return None
 
-# 날짜 설정
-# 인사: 오늘 날짜
+# 날짜 설정 (한국 시간 기준)
+# 인사: 오늘 날짜 (KST)
 # 분석: 오늘 기준 직전 영업일 (오늘 제외)
-TODAY = datetime.now().strftime('%Y%m%d')
+TODAY = get_korea_now().strftime('%Y%m%d')
 BASE_DATE = get_previous_trading_date(TODAY)  # 오늘 기준 직전 영업일
 
 print(f"오늘: {TODAY}, 분석기준일: {BASE_DATE}")
