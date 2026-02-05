@@ -116,8 +116,8 @@ def get_stock_news(ticker, stock_name, max_news=10):
             import re
             clean = headline
 
-            # 종목명 제거 (앞뒤 쉼표/공백 포함)
-            clean = re.sub(rf',?\s*{re.escape(stock_name)}\s*,?', '', clean)
+            # 종목명 제거 (앞뒤 구분자 + 조사 포함: 도, 는, 가, 이, 을, 를, 의 등)
+            clean = re.sub(rf'[,·|\s]*{re.escape(stock_name)}(도|는|가|이|을|를|의|에|와|과)?[,·|\s]*', ' ', clean)
 
             # " - 언론사" 패턴 제거
             if ' - ' in clean:
@@ -129,8 +129,14 @@ def get_stock_news(ticker, stock_name, max_news=10):
             # 무의미한 시세 뉴스 필터
             if re.search(r'주가.*장중|장중.*주가', clean):
                 return None
+            # "주가 X월 X일" 패턴 필터
+            if re.search(r'주가\s*\d+월\s*\d+일', clean):
+                return None
             # "+X.X% 상승/하락" 패턴 필터
             if re.search(r'^[+\-]?\d+\.?\d*%\s*(상승|하락|급등|급락|VI|발동)', clean):
+                return None
+            # "X.XX% 상승/하락 마감" 패턴 필터
+            if re.search(r'\d+\.?\d*%\s*(상승|하락)\s*마감', clean):
                 return None
             # "상승폭 확대/축소" 패턴 필터
             if re.search(r'상승폭\s*(확대|축소)|하락폭\s*(확대|축소)', clean):
@@ -140,9 +146,12 @@ def get_stock_news(ticker, stock_name, max_news=10):
             clean = re.sub(r"''\s*|''\s*", '', clean)
             clean = re.sub(r'""\s*|""\s*', '', clean)
 
+            # 연속 특수문자 정리 (··, ,,  등)
+            clean = re.sub(r'[·,\s]{2,}', ' ', clean)
+
             # 앞뒤 특수문자, 쉼표, 공백 정리
             clean = clean.strip('[]()…·""\'\'", ')
-            clean = re.sub(r'^[,\s]+', '', clean)
+            clean = re.sub(r'^[,·\s]+', '', clean)
 
             return clean if len(clean) > 5 else None
 
@@ -151,8 +160,9 @@ def get_stock_news(ticker, stock_name, max_news=10):
         for hl in headlines[:5]:  # 최대 5개까지 확인
             cleaned = clean_headline(hl, stock_name)
             if cleaned:
-                if len(cleaned) > 25:
-                    cleaned = cleaned[:24] + '..'
+                # 35자로 늘림 (더 많은 맥락 제공)
+                if len(cleaned) > 35:
+                    cleaned = cleaned[:34] + '..'
                 if negative_count > positive_count:
                     summary = f"📰⚠️ {cleaned}"
                 else:
