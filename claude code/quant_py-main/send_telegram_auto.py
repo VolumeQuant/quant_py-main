@@ -689,25 +689,36 @@ msg3 += """━━━━━━━━━━━━━━━━━━━
 # ============================================================
 # 텔레그램 전송
 # ============================================================
+import os
 url = f'https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage'
 
 # 개인 채팅 ID (전체 메시지)
 PRIVATE_CHAT_ID = getattr(__import__('config'), 'TELEGRAM_PRIVATE_ID', None)
 
+# GitHub Actions 환경인지 확인
+IS_GITHUB_ACTIONS = os.environ.get('GITHUB_ACTIONS') == 'true'
+
 print("\n=== 메시지 미리보기 ===")
 print(msg1[:2000])
 print("\n... (생략)")
 
-# 1. 채널 전송 (공통종목 메시지만)
-r1 = requests.post(url, data={'chat_id': TELEGRAM_CHAT_ID, 'text': msg1})
-print(f'\n채널 메시지 전송: {r1.status_code}')
+if IS_GITHUB_ACTIONS:
+    # GitHub Actions: 채널(공통종목) + 개인(전체)
+    r1 = requests.post(url, data={'chat_id': TELEGRAM_CHAT_ID, 'text': msg1})
+    print(f'\n채널 메시지 전송: {r1.status_code}')
 
-# 2. 개인 채팅 전송 (전체 메시지)
-if PRIVATE_CHAT_ID:
-    r_p1 = requests.post(url, data={'chat_id': PRIVATE_CHAT_ID, 'text': msg1})
-    r_p2 = requests.post(url, data={'chat_id': PRIVATE_CHAT_ID, 'text': msg2})
-    r_p3 = requests.post(url, data={'chat_id': PRIVATE_CHAT_ID, 'text': msg3})
-    print(f'개인 메시지 전송: {r_p1.status_code}, {r_p2.status_code}, {r_p3.status_code}')
+    if PRIVATE_CHAT_ID:
+        r_p1 = requests.post(url, data={'chat_id': PRIVATE_CHAT_ID, 'text': msg1})
+        r_p2 = requests.post(url, data={'chat_id': PRIVATE_CHAT_ID, 'text': msg2})
+        r_p3 = requests.post(url, data={'chat_id': PRIVATE_CHAT_ID, 'text': msg3})
+        print(f'개인 메시지 전송: {r_p1.status_code}, {r_p2.status_code}, {r_p3.status_code}')
+else:
+    # 로컬 테스트: 개인채팅만 (전체 메시지)
+    target_id = PRIVATE_CHAT_ID or TELEGRAM_CHAT_ID
+    r1 = requests.post(url, data={'chat_id': target_id, 'text': msg1})
+    r2 = requests.post(url, data={'chat_id': target_id, 'text': msg2})
+    r3 = requests.post(url, data={'chat_id': target_id, 'text': msg3})
+    print(f'\n테스트 메시지 전송: {r1.status_code}, {r2.status_code}, {r3.status_code}')
 
 # 히스토리 저장
 history = {
