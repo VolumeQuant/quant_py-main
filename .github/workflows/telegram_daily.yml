@@ -28,7 +28,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install pykrx pandas numpy requests beautifulsoup4 lxml pyarrow
+          pip install pykrx pandas numpy requests beautifulsoup4 lxml pyarrow aiohttp
 
       - name: Create config.py from secrets
         run: |
@@ -36,7 +36,16 @@ jobs:
           TELEGRAM_BOT_TOKEN = "${{ secrets.TELEGRAM_BOT_TOKEN }}"
           TELEGRAM_CHAT_ID = "${{ secrets.TELEGRAM_CHAT_ID }}"
           TELEGRAM_PRIVATE_ID = "${{ secrets.TELEGRAM_PRIVATE_ID }}"
+          DART_API_KEY = "${{ secrets.DART_API_KEY }}"
+          MIN_MARKET_CAP = 1000
+          MIN_TRADING_VALUE = 30
+          MAX_CONCURRENT_REQUESTS = 10
+          PYKRX_WORKERS = 10
+          CACHE_DIR = "data_cache"
           EOF
+
+      - name: Generate portfolio (create CSV)
+        run: python create_current_portfolio.py
 
       - name: Send Telegram message
         run: python send_telegram_auto.py

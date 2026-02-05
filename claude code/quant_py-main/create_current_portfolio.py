@@ -42,12 +42,14 @@ except ImportError:
     PYKRX_WORKERS = 10
     CACHE_DIR = "data_cache"
 
-# 최근 거래일 자동 탐지
+# 최근 거래일 자동 탐지 (한국 시간 기준)
 from pykrx import stock as pykrx_stock
+from zoneinfo import ZoneInfo
+KST = ZoneInfo('Asia/Seoul')
 
 def get_latest_trading_date() -> str:
-    """최근 거래일 찾기"""
-    today = datetime.now()
+    """최근 거래일 찾기 (한국 시간 기준)"""
+    today = datetime.now(KST)
     for i in range(1, 20):
         date = (today - timedelta(days=i)).strftime('%Y%m%d')
         try:
