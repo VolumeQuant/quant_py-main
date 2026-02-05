@@ -21,11 +21,20 @@ warnings.filterwarnings('ignore')
 
 # 내부 모듈
 from data_collector import DataCollector
-from dart_api import DartApiClient, DartConfig, calculate_ttm
 from fnguide_crawler import get_consensus_batch
 from error_handler import ErrorTracker, ErrorCategory
 from strategy_a_magic import MagicFormulaStrategy
 from strategy_b_multifactor import MultiFactorStrategy
+
+# DART API는 선택적 (없으면 FnGuide 캐시 사용)
+try:
+    from dart_api import DartApiClient, DartConfig, calculate_ttm
+    DART_AVAILABLE = True
+except ImportError:
+    DART_AVAILABLE = False
+    DartApiClient = None
+    DartConfig = None
+    calculate_ttm = None
 
 # 설정
 try:
@@ -83,8 +92,8 @@ async def collect_financial_data_dart(
     print("\n[DART API] 재무제표 수집 시작")
     print(f"  대상 종목: {len(tickers)}개")
 
-    if not DART_API_KEY:
-        error_tracker.log_warning("SYSTEM", "DART API 키가 설정되지 않음. FnGuide 캐시 사용")
+    if not DART_AVAILABLE or not DART_API_KEY:
+        error_tracker.log_warning("SYSTEM", "DART API 사용 안 함. FnGuide 캐시 사용")
         return pd.DataFrame()
 
     # DartConfig 생성
