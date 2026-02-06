@@ -192,6 +192,36 @@ class DataCollector:
         print(f"펀더멘털 수집 완료: {len(fundamental_data)}개 종목")
         return df
 
+    def get_market_fundamental_batch(self, date, market='ALL'):
+        """전체 시장 펀더멘털 일괄 조회 (PER/PBR/EPS/BPS/DIV)
+
+        pykrx stock.get_market_fundamental()을 사용하여
+        한 번의 호출로 전체 시장 데이터를 반환합니다.
+        """
+        cache_file = DATA_DIR / f'fundamental_batch_{market}_{date}.parquet'
+
+        if cache_file.exists():
+            print(f"캐시에서 펀더멘털 배치 로드: {cache_file}")
+            return pd.read_parquet(cache_file)
+
+        print(f"{date} 전체 시장 펀더멘털 일괄 수집 중...")
+
+        try:
+            if market == 'ALL':
+                df_kospi = stock.get_market_fundamental(date, market='KOSPI')
+                df_kosdaq = stock.get_market_fundamental(date, market='KOSDAQ')
+                df = pd.concat([df_kospi, df_kosdaq])
+            else:
+                df = stock.get_market_fundamental(date, market=market)
+
+            df.to_parquet(cache_file)
+            time.sleep(0.1)
+            print(f"펀더멘털 배치 수집 완료: {len(df)}개 종목")
+            return df
+        except Exception as e:
+            print(f"펀더멘털 배치 수집 실패: {e}")
+            return pd.DataFrame()
+
     def get_krx_sector(self, date):
         """KRX 섹터 정보 조회"""
         cache_file = DATA_DIR / f'krx_sector_{date}.parquet'

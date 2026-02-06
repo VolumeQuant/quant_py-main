@@ -21,38 +21,53 @@ class MultiFactorStrategy:
         - PER, PBR, PCR, PSR: 낮을수록 좋음
         - 배당수익률: 높을수록 좋음
 
+        pykrx 실시간 데이터(PER_live, PBR_live, DIV_live)가 있으면 우선 사용,
+        없으면 FnGuide 캐시에서 계산 (fallback).
+
         Args:
             data: 재무 데이터프레임
 
         Returns:
             data: 밸류 팩터가 추가된 데이터프레임
         """
-        # PER (Price to Earnings Ratio)
-        # 시가총액 / 당기순이익
-        if '당기순이익' in data.columns:
+        # PER (Price to Earnings Ratio) — pykrx 실시간 우선
+        if 'PER_live' in data.columns:
+            data['PER'] = data['PER_live']
+            # pykrx PER이 0이거나 음수인 경우 캐시 fallback
+            mask = (data['PER'] <= 0) | data['PER'].isna()
+            if mask.any() and '당기순이익' in data.columns:
+                data.loc[mask, 'PER'] = data.loc[mask, '시가총액'] / data.loc[mask, '당기순이익']
+        elif '당기순이익' in data.columns:
             data['PER'] = data['시가총액'] / data['당기순이익']
         elif 'EPS' in data.columns and '주가' in data.columns:
             data['PER'] = data['주가'] / data['EPS']
 
-        # PBR (Price to Book Ratio)
-        # 시가총액 / 순자산 (자본)
-        if '자본' in data.columns:
+        # PBR (Price to Book Ratio) — pykrx 실시간 우선
+        if 'PBR_live' in data.columns:
+            data['PBR'] = data['PBR_live']
+            mask = (data['PBR'] <= 0) | data['PBR'].isna()
+            if mask.any() and '자본' in data.columns:
+                data.loc[mask, 'PBR'] = data.loc[mask, '시가총액'] / data.loc[mask, '자본']
+        elif '자본' in data.columns:
             data['PBR'] = data['시가총액'] / data['자본']
         elif 'BPS' in data.columns and '주가' in data.columns:
             data['PBR'] = data['주가'] / data['BPS']
 
-        # PCR (Price to Cashflow Ratio)
-        # 시가총액 / 영업현금흐름
+        # PCR (Price to Cashflow Ratio) — 캐시 유지 (pykrx 미제공)
         if '영업현금흐름' in data.columns:
             data['PCR'] = data['시가총액'] / data['영업현금흐름']
 
-        # PSR (Price to Sales Ratio)
-        # 시가총액 / 매출액
+        # PSR (Price to Sales Ratio) — 캐시 유지 (pykrx 미제공)
         if '매출액' in data.columns:
             data['PSR'] = data['시가총액'] / data['매출액']
 
-        # 배당수익률
-        if '배당금' in data.columns:
+        # 배당수익률 — pykrx 실시간 우선
+        if 'DIV_live' in data.columns:
+            data['배당수익률'] = data['DIV_live']
+            mask = data['배당수익률'].isna()
+            if mask.any() and '배당금' in data.columns:
+                data.loc[mask, '배당수익률'] = data.loc[mask, '배당금'] / data.loc[mask, '시가총액'] * 100
+        elif '배당금' in data.columns:
             data['배당수익률'] = data['배당금'] / data['시가총액'] * 100
         elif 'DPS' in data.columns and '주가' in data.columns:
             data['배당수익률'] = data['DPS'] / data['주가'] * 100

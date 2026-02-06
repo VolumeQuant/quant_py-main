@@ -1,9 +1,12 @@
 """
-2026년 1월 현재 포트폴리오 생성
+퀀트 포트폴리오 생성 v3.0
 
-- FnGuide 캐시에서 재무제표 로드
-- pykrx에서 시가총액/OHLCV 실시간 수집
-- Skip & Log 에러 처리 패턴
+파이프라인:
+  유니버스(~600) → A 사전필터(150) → pykrx 실시간 PER/PBR/DIV → B 최종선정(30)
+
+데이터 소스:
+  - FnGuide 캐시: 재무제표 (Quality 팩터, PCR/PSR용)
+  - pykrx 실시간: 시가총액, OHLCV, PER/PBR/DIV (Value 팩터)
 """
 
 import pandas as pd
@@ -27,15 +30,17 @@ from strategy_b_multifactor import MultiFactorStrategy
 try:
     from config import (
         MIN_MARKET_CAP, MIN_TRADING_VALUE,
-        MAX_CONCURRENT_REQUESTS, PYKRX_WORKERS, CACHE_DIR
+        MAX_CONCURRENT_REQUESTS, PYKRX_WORKERS, CACHE_DIR,
+        PREFILTER_N, N_STOCKS
     )
 except ImportError:
-    # 기본값
     MIN_MARKET_CAP = 1000
     MIN_TRADING_VALUE = 30
     MAX_CONCURRENT_REQUESTS = 10
     PYKRX_WORKERS = 10
     CACHE_DIR = "data_cache"
+    PREFILTER_N = 150
+    N_STOCKS = 30
 
 # 최근 거래일 자동 탐지 (한국 시간 기준)
 from pykrx import stock as pykrx_stock
@@ -53,10 +58,9 @@ def get_latest_trading_date() -> str:
                 return date
         except:
             continue
-    return '20260129'  # 기본값
+    return '20260129'
 
 BASE_DATE = get_latest_trading_date()
-N_STOCKS = 30
 OUTPUT_DIR = Path(__file__).parent / 'output'
 OUTPUT_DIR.mkdir(exist_ok=True)
 
@@ -69,17 +73,12 @@ def collect_consensus_data(
     tickers: List[str],
     error_tracker: ErrorTracker
 ) -> pd.DataFrame:
-    """
-    FnGuide 컨센서스 데이터 수집
-    """
+    """FnGuide 컨센서스 데이터 수집"""
     print("\n[FnGuide] 컨센서스 데이터 수집")
     print(f"  대상 종목: {len(tickers)}개")
 
     try:
-        consensus_df = get_consensus_batch(
-            tickers=tickers,
-            delay=0.5
-        )
+        consensus_df = get_consensus_batch(tickers=tickers, delay=0.5)
         print(f"  수집 완료: {len(consensus_df)}개 종목")
         return consensus_df
     except Exception as e:
@@ -94,9 +93,7 @@ def collect_price_data_parallel(
     end_date: str,
     error_tracker: ErrorTracker
 ) -> pd.DataFrame:
-    """
-    병렬 처리로 OHLCV 데이터 수집
-    """
+    """병렬 처리로 OHLCV 데이터 수집"""
     print("\n[OHLCV] 주가 데이터 수집 (병렬)")
     print(f"  대상 종목: {len(tickers)}개")
     print(f"  기간: {start_date} ~ {end_date}")
@@ -115,13 +112,7 @@ def collect_price_data_parallel(
 
 
 def calculate_avg_trading_value_from_cache(days: int = 20) -> pd.DataFrame:
-    """
-    OHLCV 캐시에서 20일 평균 거래대금 계산
-
-    Returns:
-        DataFrame with index=ticker, column='avg_trading_value'
-    """
-    # OHLCV 캐시 로드
+    """OHLCV 캐시에서 20일 평균 거래대금 계산"""
     ohlcv_files = sorted(Path(CACHE_DIR).glob('all_ohlcv_*.parquet'))
     if not ohlcv_files:
         print("  OHLCV 캐시 없음")
@@ -130,14 +121,9 @@ def calculate_avg_trading_value_from_cache(days: int = 20) -> pd.DataFrame:
     ohlcv_file = ohlcv_files[-1]
     print(f"  OHLCV 캐시 사용: {ohlcv_file.name}")
 
-    # 종가 데이터 로드
     price_df = pd.read_parquet(ohlcv_file)
-
-    # 거래량 데이터도 필요 - 별도 로드 필요
-    # 대안: 시가총액 일별 데이터에서 거래대금 직접 조회
     from pykrx import stock
 
-    # 최근 20거래일 날짜 구하기
     if len(price_df) < days:
         print(f"  데이터 부족: {len(price_df)}일")
         return pd.DataFrame()
@@ -145,7 +131,6 @@ def calculate_avg_trading_value_from_cache(days: int = 20) -> pd.DataFrame:
     dates = price_df.index[-days:].strftime('%Y%m%d').tolist()
     print(f"  거래대금 조회: {dates[0]} ~ {dates[-1]} ({len(dates)}일)")
 
-    # 각 날짜별 거래대금 수집
     trading_values = {}
     for date in dates:
         try:
@@ -158,16 +143,14 @@ def calculate_avg_trading_value_from_cache(days: int = 20) -> pd.DataFrame:
         except:
             continue
 
-    # 평균 계산
     avg_values = {}
     for ticker, values in trading_values.items():
         if values:
-            avg_values[ticker] = np.mean(values) / 100_000_000  # 억원
+            avg_values[ticker] = np.mean(values) / 100_000_000
 
     result = pd.DataFrame({'avg_trading_value': pd.Series(avg_values)})
     result.index.name = 'ticker'
     print(f"  20일 평균 거래대금 계산 완료: {len(result)}개 종목")
-
     return result
 
 
@@ -176,12 +159,7 @@ def filter_universe_optimized(
     market_cap_df: pd.DataFrame,
     error_tracker: ErrorTracker
 ) -> Tuple[pd.DataFrame, Dict[str, str]]:
-    """
-    유니버스 필터링 (최적화 버전)
-
-    Returns:
-        (필터링된 DataFrame, 종목명 딕셔너리)
-    """
+    """유니버스 필터링 (최적화 버전)"""
     print("\n[유니버스 필터링]")
     print(f"전체 종목 수: {len(market_cap_df)}")
 
@@ -197,13 +175,11 @@ def filter_universe_optimized(
 
     if not avg_trading_df.empty:
         filtered = filtered.join(avg_trading_df, how='left')
-        # 평균 거래대금 없는 종목은 당일 거래대금으로 대체
         filtered['거래대금_억'] = filtered['거래대금'] / 100_000_000
         filtered['avg_trading_value'] = filtered['avg_trading_value'].fillna(filtered['거래대금_억'])
         filtered = filtered[filtered['avg_trading_value'] >= MIN_TRADING_VALUE].copy()
         print(f"20일 평균 거래대금 {MIN_TRADING_VALUE}억원 이상: {len(filtered)}개")
     else:
-        # 배치 실패시 당일 거래대금으로 대체
         print("  (배치 실패 - 당일 거래대금 사용)")
         filtered['거래대금_억'] = filtered['거래대금'] / 100_000_000
         filtered = filtered[filtered['거래대금_억'] >= MIN_TRADING_VALUE].copy()
@@ -228,22 +204,19 @@ def filter_universe_optimized(
     return filtered, ticker_names
 
 
-async def run_strategy_a(
+async def run_strategy_a_prefilter(
     magic_df: pd.DataFrame,
     universe_df: pd.DataFrame,
     error_tracker: ErrorTracker
 ) -> pd.DataFrame:
-    """
-    전략 A (마법공식) 실행
-    """
-    print("\n[전략 A] 마법공식 실행")
+    """전략 A (마법공식) - 사전 필터 (상위 PREFILTER_N개)"""
+    print(f"\n[전략 A] 마법공식 사전 필터 (상위 {PREFILTER_N}개)")
 
     if magic_df.empty:
         print("  데이터 없음 - 스킵")
         return pd.DataFrame()
 
     try:
-        # 시가총액 데이터 추가
         magic_df_with_mcap = magic_df.merge(
             universe_df[['시가총액', '종목명']],
             left_on='종목코드',
@@ -252,82 +225,83 @@ async def run_strategy_a(
         )
         magic_df_with_mcap['시가총액'] = magic_df_with_mcap['시가총액'] / 100_000_000
 
-        # 전략 실행
         strategy = MagicFormulaStrategy()
-        selected, scored = strategy.run(magic_df_with_mcap, n_stocks=N_STOCKS)
+        selected, scored = strategy.run(magic_df_with_mcap, n_stocks=PREFILTER_N)
 
-        print(f"  선정 종목: {len(selected)}개")
+        print(f"  사전 필터 통과: {len(selected)}개 종목")
         return selected
 
     except Exception as e:
-        error_tracker.log_error("STRATEGY_A", ErrorCategory.UNKNOWN, "마법공식 실행 실패", e)
+        error_tracker.log_error("STRATEGY_A", ErrorCategory.UNKNOWN, "마법공식 사전 필터 실패", e)
         return pd.DataFrame()
 
 
-async def run_strategy_b(
-    magic_df: pd.DataFrame,
+async def run_strategy_b_final(
+    prefiltered_df: pd.DataFrame,
+    fundamental_df: pd.DataFrame,
     price_df: pd.DataFrame,
-    universe_df: pd.DataFrame,
     ticker_names: Dict[str, str],
     error_tracker: ErrorTracker
 ) -> pd.DataFrame:
-    """
-    전략 B (멀티팩터) 실행
-    """
-    print("\n[전략 B] 멀티팩터 실행")
+    """전략 B (멀티팩터) - 최종 선정 (pykrx 실시간 PER/PBR/DIV 포함)"""
+    print(f"\n[전략 B] 멀티팩터 최종 선정 (상위 {N_STOCKS}개)")
 
-    if magic_df.empty:
-        print("  데이터 없음 - 스킵")
+    if prefiltered_df.empty:
+        print("  사전 필터 데이터 없음 - 스킵")
         return pd.DataFrame()
 
     try:
-        # 데이터 준비
-        multifactor_df = magic_df.copy()
+        multifactor_df = prefiltered_df.copy()
         multifactor_df['종목명'] = multifactor_df['종목코드'].map(ticker_names)
 
-        # 시가총액 정보 추가
-        multifactor_df = multifactor_df.merge(
-            universe_df[['시가총액']],
-            left_on='종목코드',
-            right_index=True,
-            how='left'
-        )
-        multifactor_df['시가총액'] = multifactor_df['시가총액'] / 100_000_000
+        # pykrx 실시간 PER/PBR/DIV 병합
+        if not fundamental_df.empty:
+            live_cols = {}
+            if 'PER' in fundamental_df.columns:
+                live_cols['PER'] = 'PER_live'
+            if 'PBR' in fundamental_df.columns:
+                live_cols['PBR'] = 'PBR_live'
+            if 'DIV' in fundamental_df.columns:
+                live_cols['DIV'] = 'DIV_live'
 
-        # 전략 실행
+            if live_cols:
+                fund_subset = fundamental_df[list(live_cols.keys())].rename(columns=live_cols)
+                multifactor_df = multifactor_df.merge(
+                    fund_subset,
+                    left_on='종목코드',
+                    right_index=True,
+                    how='left'
+                )
+                live_count = multifactor_df['PER_live'].notna().sum() if 'PER_live' in multifactor_df.columns else 0
+                print(f"  pykrx 실시간 데이터 병합: {live_count}/{len(multifactor_df)}개 종목")
+
         strategy = MultiFactorStrategy()
         selected, scored = strategy.run(multifactor_df, price_df=price_df, n_stocks=N_STOCKS)
 
-        print(f"  선정 종목: {len(selected)}개")
+        print(f"  최종 선정: {len(selected)}개 종목")
         return selected
 
     except Exception as e:
-        error_tracker.log_error("STRATEGY_B", ErrorCategory.UNKNOWN, "멀티팩터 실행 실패", e)
+        error_tracker.log_error("STRATEGY_B", ErrorCategory.UNKNOWN, "멀티팩터 최종 선정 실패", e)
         return pd.DataFrame()
 
 
 def generate_report(
-    selected_a: pd.DataFrame,
-    selected_b: pd.DataFrame,
+    prefiltered: pd.DataFrame,
+    selected: pd.DataFrame,
     universe_df: pd.DataFrame,
     market_cap_df: pd.DataFrame,
     ticker_names: Dict[str, str],
     error_tracker: ErrorTracker
 ) -> str:
-    """
-    최종 리포트 생성
-    """
-    # 공통 종목 찾기
-    tickers_a = set(selected_a['종목코드'].tolist()) if not selected_a.empty else set()
-    tickers_b = set(selected_b['종목코드'].tolist()) if not selected_b.empty else set()
-    common_tickers = tickers_a & tickers_b
-
-    # 에러 요약
+    """최종 리포트 생성"""
     error_summary = error_tracker.get_summary()
+
+    base_dt = datetime.strptime(BASE_DATE, '%Y%m%d')
 
     report = f"""
 ================================================================================
-2026년 1월 포트폴리오 분석 리포트 (리팩토링 버전)
+퀀트 포트폴리오 리포트 v3.0
 기준일: {BASE_DATE}
 생성일: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 ================================================================================
@@ -340,26 +314,27 @@ def generate_report(
   * 거래대금 >= {MIN_TRADING_VALUE}억원
   * 금융업/지주사 제외
 
-[전략 A - 마법공식]
-- 선정 종목 수: {len(selected_a)}개
+[사전 필터 - 마법공식 상위 {PREFILTER_N}개]
+- 통과 종목 수: {len(prefiltered)}개
 """
 
-    if not selected_a.empty and '종목명' in selected_a.columns:
-        report += f"- 상위 10종목:\n{selected_a.head(10)[['종목코드', '종목명', '마법공식_순위']].to_string()}\n"
+    if not prefiltered.empty and '종목명' in prefiltered.columns:
+        report += f"- 상위 10종목:\n{prefiltered.head(10)[['종목코드', '종목명', '마법공식_순위']].to_string()}\n"
 
     report += f"""
-[전략 B - 멀티팩터]
-- 선정 종목 수: {len(selected_b)}개
+[최종 포트폴리오 - 멀티팩터 상위 {N_STOCKS}개]
+- 선정 종목 수: {len(selected)}개
+- Value 팩터: PER(실시간) + PBR(실시간) + PCR + PSR + DIV(실시간)
+- Quality 팩터: ROE + GPA + CFO
+- Momentum 팩터: 12M-1M 수익률
 """
 
-    if not selected_b.empty and '종목명' in selected_b.columns:
-        report += f"- 상위 10종목:\n{selected_b.head(10)[['종목코드', '종목명', '멀티팩터_순위']].to_string()}\n"
+    if not selected.empty and '종목명' in selected.columns:
+        cols = ['종목코드', '종목명', '멀티팩터_순위']
+        available_cols = [c for c in cols if c in selected.columns]
+        report += f"- 상위 10종목:\n{selected.head(10)[available_cols].to_string()}\n"
 
     report += f"""
-[공통 종목]
-- 공통 선정: {len(common_tickers)}개
-- 종목: {', '.join([f"{ticker_names.get(t, t)}({t})" for t in common_tickers])}
-
 [에러 요약]
 - 총 에러: {error_summary['total_errors']}건
 - 실패 종목: {error_summary['failed_ticker_count']}개
@@ -371,29 +346,26 @@ def generate_report(
 
 
 async def main_async():
-    """
-    메인 함수 (비동기)
-    """
+    """메인 함수 (비동기)"""
     start_time = datetime.now()
+    base_dt = datetime.strptime(BASE_DATE, '%Y%m%d')
 
     print("=" * 80)
-    print("포트폴리오 생성")
+    print("퀀트 포트폴리오 생성 v3.0")
     print(f"기준일: {BASE_DATE}")
-    print(f"데이터 소스: FnGuide 캐시 + pykrx")
+    print(f"파이프라인: 유니버스 → A 사전필터({PREFILTER_N}) → B 최종선정({N_STOCKS})")
+    print(f"데이터 소스: FnGuide 캐시 + pykrx 실시간 PER/PBR/DIV")
     print("=" * 80)
 
-    # 에러 추적기 초기화
     error_tracker = ErrorTracker(log_dir=Path("logs"), name="portfolio")
     error_tracker.log_info(f"포트폴리오 생성 시작 - 기준일: {BASE_DATE}")
 
-    # DataCollector 초기화
     collector = DataCollector(start_date='20150101', end_date='20261231')
 
     # =========================================================================
     # 1단계: 시가총액 데이터 수집
     # =========================================================================
     print("\n[1단계] 시가총액 데이터 수집")
-
     market_cap_df = collector.get_market_cap(BASE_DATE, market='ALL')
     print(f"전체 종목 수: {len(market_cap_df)}")
 
@@ -401,7 +373,6 @@ async def main_async():
     # 2단계: 유니버스 필터링
     # =========================================================================
     print("\n[2단계] 유니버스 필터링")
-
     universe_df, ticker_names = filter_universe_optimized(
         collector, market_cap_df, error_tracker
     )
@@ -412,7 +383,6 @@ async def main_async():
     # 3단계: 재무제표 수집 (FnGuide 캐시)
     # =========================================================================
     print("\n[3단계] 재무제표 수집 (FnGuide 캐시)")
-
     try:
         from fnguide_crawler import get_all_financial_statements, extract_magic_formula_data
         fs_data = get_all_financial_statements(universe_tickers, use_cache=True)
@@ -430,22 +400,29 @@ async def main_async():
         print(f"자본잠식 종목 제외: {filtered_count}개 → {len(magic_df)}개 남음")
 
     # =========================================================================
+    # 3.5단계: pykrx 실시간 펀더멘털 수집 (PER/PBR/DIV)
+    # =========================================================================
+    print("\n[3.5단계] pykrx 실시간 펀더멘털 수집 (PER/PBR/DIV)")
+    fundamental_df = collector.get_market_fundamental_batch(BASE_DATE)
+    if not fundamental_df.empty:
+        print(f"  pykrx 펀더멘털: {len(fundamental_df)}개 종목 (PER/PBR/EPS/BPS/DIV)")
+    else:
+        print("  pykrx 펀더멘털 수집 실패 - FnGuide 캐시로 fallback")
+
+    # =========================================================================
     # 4단계: OHLCV 수집 (병렬)
     # =========================================================================
     print("\n[4단계] OHLCV 데이터 로드 (캐시)")
 
-    # 기존 OHLCV 캐시 파일 찾기
     ohlcv_cache_files = list(Path(CACHE_DIR).glob("all_ohlcv_*.parquet"))
     price_df = pd.DataFrame()
     need_refresh = True
 
     if ohlcv_cache_files:
-        # 가장 최신 파일 사용
         ohlcv_cache_file = sorted(ohlcv_cache_files)[-1]
         print(f"  캐시 파일 확인: {ohlcv_cache_file.name}")
         price_df = pd.read_parquet(ohlcv_cache_file)
 
-        # BASE_DATE 데이터가 캐시에 있는지 확인
         base_date_dt = pd.Timestamp(datetime.strptime(BASE_DATE, '%Y%m%d'))
         if not price_df.empty and base_date_dt in price_df.index:
             print(f"  캐시에 {BASE_DATE} 데이터 있음 - 캐시 사용")
@@ -455,7 +432,6 @@ async def main_async():
             print(f"  캐시에 {BASE_DATE} 데이터 없음 - 새로 수집 필요")
 
     if need_refresh:
-        # 캐시 없거나 BASE_DATE 데이터 없으면 수집
         print("  OHLCV 데이터 수집 시작...")
         end_date_dt = datetime.strptime(BASE_DATE, '%Y%m%d')
         start_date_dt = end_date_dt - timedelta(days=450)
@@ -465,38 +441,36 @@ async def main_async():
         )
 
     # =========================================================================
-    # 5단계: 전략 실행
+    # 5단계: 전략 실행 (A 사전필터 → B 최종선정)
     # =========================================================================
-    selected_a = await run_strategy_a(magic_df, universe_df, error_tracker)
-    selected_b = await run_strategy_b(magic_df, price_df, universe_df, ticker_names, error_tracker)
+    prefiltered = await run_strategy_a_prefilter(magic_df, universe_df, error_tracker)
+    selected = await run_strategy_b_final(
+        prefiltered, fundamental_df, price_df, ticker_names, error_tracker
+    )
 
     # =========================================================================
-    # 6단계: 결과 저장
+    # 6단계: 결과 저장 (통합 CSV 1개)
     # =========================================================================
     print("\n[6단계] 결과 저장")
 
-    if not selected_a.empty:
-        output_path_a = OUTPUT_DIR / 'portfolio_2026_01_strategy_a.csv'
-        selected_a.to_csv(output_path_a, index=False, encoding='utf-8-sig')
-        print(f"  전략 A: {output_path_a}")
+    year_month = f"{base_dt.year}_{base_dt.month:02d}"
 
-    if not selected_b.empty:
-        output_path_b = OUTPUT_DIR / 'portfolio_2026_01_strategy_b.csv'
-        selected_b.to_csv(output_path_b, index=False, encoding='utf-8-sig')
-        print(f"  전략 B: {output_path_b}")
+    if not selected.empty:
+        output_path = OUTPUT_DIR / f'portfolio_{year_month}.csv'
+        selected.to_csv(output_path, index=False, encoding='utf-8-sig')
+        print(f"  포트폴리오: {output_path}")
 
     # 리포트 생성
     report = generate_report(
-        selected_a, selected_b, universe_df, market_cap_df,
+        prefiltered, selected, universe_df, market_cap_df,
         ticker_names, error_tracker
     )
 
-    report_path = OUTPUT_DIR / 'portfolio_2026_01_report.txt'
+    report_path = OUTPUT_DIR / f'portfolio_{year_month}_report.txt'
     with open(report_path, 'w', encoding='utf-8') as f:
         f.write(report)
     print(f"  리포트: {report_path}")
 
-    # 에러 로그 저장
     if error_tracker.errors:
         error_tracker.save_error_log()
 
@@ -508,16 +482,15 @@ async def main_async():
     print("\n" + "=" * 80)
     print("포트폴리오 생성 완료!")
     print(f"소요 시간: {elapsed.total_seconds():.1f}초 ({elapsed.total_seconds()/60:.1f}분)")
+    print(f"사전 필터(A): {len(prefiltered)}개 → 최종 선정(B): {len(selected)}개")
     error_tracker.print_summary()
     print("=" * 80)
 
-    return selected_a, selected_b
+    return selected
 
 
 def main():
-    """
-    동기 래퍼 (호환성)
-    """
+    """동기 래퍼 (호환성)"""
     return asyncio.run(main_async())
 
 

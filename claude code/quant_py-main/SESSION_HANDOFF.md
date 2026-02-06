@@ -2,9 +2,72 @@
 
 ## 문서 개요
 
-**버전**: 7.0
-**최종 업데이트**: 2026-02-06
-**작성자**: Claude Opus 4.5
+**버전**: 7.1
+**최종 업데이트**: 2026-02-07
+**작성자**: Claude Opus 4.6
+
+---
+
+## 핵심 변경사항 (v7.1 코드 정리 + 데이터 최신성 분석)
+
+### 2026-02-07 코드 정리 및 문제점 분석
+
+**1. Git 캐시 정리**
+
+| 항목 | 상세 |
+|------|------|
+| 제거 파일 | 2,261개 (ohlcv, dart_fs, market_cap 등) |
+| 유지 파일 | 743개 (fs_fnguide_*.parquet) |
+| 이유 | GitHub Actions에서 재무제표 캐시 필요 |
+
+`.gitignore` 업데이트:
+```
+data_cache/all_ohlcv_*.parquet
+data_cache/ohlcv_*.parquet
+data_cache/market_cap_*.parquet
+data_cache/dart_fs_*.parquet
+data_cache/dart_corp_codes.parquet
+data_cache/logs/
+data_cache/portfolio_history.json
+```
+
+**2. DART API 완전 제거**
+
+| 삭제/수정 | 파일 | 내용 |
+|-----------|------|------|
+| 삭제 | `dart_api.py` | 614줄 전체 삭제 |
+| 수정 | `config.py` | DART_API_KEY 설정 제거 |
+| 수정 | `fnguide_crawler.py` | DART TODO 주석 제거 |
+| 수정 | `README.md` | DART 관련 섹션 제거 |
+| 수정 | `SESSION_HANDOFF.md` | DART 모듈 문서 제거 |
+| 삭제 | 254개 로컬 파일 | dart_fs_*.parquet, dart_corp_codes.parquet |
+
+**의존성 확인**: `error_handler.py`와 `MAX_CONCURRENT_REQUESTS`는 다른 모듈에서 사용 중이므로 유지.
+
+**3. 데이터 최신성 문제 분석 (핵심 이슈)**
+
+현재 FnGuide 캐시(`fs_fnguide_*.parquet`)는 **Q3 2025 고정**으로 갱신 메커니즘이 없음.
+
+| 전략 | 정적 비율 | 원인 |
+|------|----------|------|
+| **Strategy A** | ~75% | EBIT(캐시) + IC(캐시) = ROC 100% 정적. EV에서 시가총액만 실시간 |
+| **Strategy B** | ~85% | Value(40%, 캐시) + Quality(40%, 캐시). Momentum(20%)만 동적 |
+
+**상세 분석**:
+- **Strategy A (마법공식)**: 같은 분기 내 ROC 순위는 완전히 동일. 이익수익률(EBIT/EV)에서 EV의 시가총액 부분만 변동하므로 순위 변화 극히 미미
+- **Strategy B (멀티팩터)**: Value 팩터(PER/PBR/PCR/PSR)의 분자(이익/자본 등)가 캐시 고정. Quality 팩터(ROE/GPA/CFO)도 100% 캐시 의존
+
+**pykrx 미활용 데이터**:
+```python
+# pykrx가 제공하지만 전략에서 사용하지 않는 실시간 데이터
+stock.get_market_fundamental(date, market="ALL")
+→ PER, PBR, EPS, BPS, DIV (실시간 업데이트)
+```
+
+**개선 로드맵** (다음 세션 과제):
+1. pykrx `get_market_fundamental()`의 PER/PBR 등을 Strategy B Value 팩터에 통합
+2. Strategy A 개선안 검토 (캐시 의존도 축소)
+3. FnGuide 캐시 갱신 주기 설정 또는 대안 데이터 소스 검토
 
 ---
 
@@ -562,13 +625,12 @@ quant_py-main/
 │
 ├── 캐시
 │   └── data_cache/                  # Parquet 캐시
-│       ├── fs_fnguide_{ticker}.parquet    # 재무제표
-│       ├── all_ohlcv_{start}_{end}.parquet # OHLCV
-│       └── market_cap_ALL_{date}.parquet   # 시가총액
+│       ├── fs_fnguide_{ticker}.parquet    # 재무제표 (git 추적 - GitHub Actions용)
+│       ├── all_ohlcv_{start}_{end}.parquet # OHLCV (gitignore - 로컬 전용)
+│       └── market_cap_ALL_{date}.parquet   # 시가총액 (gitignore - 로컬 전용)
 │
 └── 문서
     ├── README.md                    # 프로젝트 개요
-    ├── PROJECT_REPORT.md            # 결과 리포트
     └── SESSION_HANDOFF.md           # 기술 문서 (이 파일)
 ```
 
@@ -618,14 +680,16 @@ quant_py-main/
 | **2026-02-05** | **채널/봇 이중 전송 로직 구현** | **send_telegram_auto.py** |
 | **2026-02-05** | **OHLCV 캐시 검증 로직 추가 (BASE_DATE 확인)** | **create_current_portfolio.py** |
 | **2026-02-05** | **CSV 파일 커밋 필수 문서화** | **SESSION_HANDOFF.md** |
-| **2026-02-07** | **DART 관련 코드/문서 완전 정리** | **dart_api.py 삭제, 문서 업데이트** |
 | **2026-02-06** | **KST 타임존 명시적 처리 추가** | **create_current_portfolio.py, send_telegram_auto.py** |
 | **2026-02-06** | **GitHub Actions에 포트폴리오 생성 단계 추가** | **.github/workflows/telegram_daily.yml** |
 | **2026-02-06** | **GitHub Actions 의존성 추가 (tqdm, scipy)** | **.github/workflows/telegram_daily.yml** |
 | **2026-02-06** | **error_handler.py 누락 파일 커밋** | **error_handler.py** |
 | **2026-02-06** | **리밸런싱 권장 월 수정 (4/5/8/11월)** | **send_telegram_auto.py** |
+| **2026-02-07** | **Git 캐시 정리 (2,261개 제거, fs_fnguide 743개 유지)** | **.gitignore** |
+| **2026-02-07** | **DART API 완전 제거 (dart_api.py 삭제)** | **dart_api.py, config.py, README.md** |
+| **2026-02-07** | **데이터 최신성 문제 분석 (Strategy A 75%, B 85% 정적)** | **분석 결과 문서화** |
 
 ---
 
-**문서 버전**: 7.0
-**최종 업데이트**: 2026-02-06
+**문서 버전**: 7.1
+**최종 업데이트**: 2026-02-07
