@@ -236,15 +236,15 @@ async def run_strategy_a_prefilter(
         return pd.DataFrame()
 
 
-async def run_strategy_b_final(
+async def run_strategy_b_scoring(
     prefiltered_df: pd.DataFrame,
     fundamental_df: pd.DataFrame,
     price_df: pd.DataFrame,
     ticker_names: Dict[str, str],
     error_tracker: ErrorTracker
 ) -> pd.DataFrame:
-    """전략 B (멀티팩터) - 최종 선정 (pykrx 실시간 PER/PBR/DIV 포함)"""
-    print(f"\n[전략 B] 멀티팩터 최종 선정 (상위 {N_STOCKS}개)")
+    """전략 B (멀티팩터) - 150개 전체 스코어링 (pykrx 실시간 PER/PBR/DIV 포함)"""
+    print(f"\n[전략 B] 멀티팩터 전체 스코어링 ({len(prefiltered_df)}개)")
 
     if prefiltered_df.empty:
         print("  사전 필터 데이터 없음 - 스킵")
@@ -276,13 +276,13 @@ async def run_strategy_b_final(
                 print(f"  pykrx 실시간 데이터 병합: {live_count}/{len(multifactor_df)}개 종목")
 
         strategy = MultiFactorStrategy()
-        selected, scored = strategy.run(multifactor_df, price_df=price_df, n_stocks=N_STOCKS)
+        selected, scored = strategy.run(multifactor_df, price_df=price_df, n_stocks=len(multifactor_df))
 
-        print(f"  최종 선정: {len(selected)}개 종목")
-        return selected
+        print(f"  스코어링 완료: {len(scored)}개 종목")
+        return scored
 
     except Exception as e:
-        error_tracker.log_error("STRATEGY_B", ErrorCategory.UNKNOWN, "멀티팩터 최종 선정 실패", e)
+        error_tracker.log_error("STRATEGY_B", ErrorCategory.UNKNOWN, "멀티팩터 스코어링 실패", e)
         return pd.DataFrame()
 
 
@@ -322,15 +322,16 @@ def generate_report(
         report += f"- 상위 10종목:\n{prefiltered.head(10)[['종목코드', '종목명', '마법공식_순위']].to_string()}\n"
 
     report += f"""
-[최종 포트폴리오 - 멀티팩터 상위 {N_STOCKS}개]
+[최종 포트폴리오 - 통합순위 상위 {N_STOCKS}개]
 - 선정 종목 수: {len(selected)}개
+- 통합순위: 마법공식 50% + 멀티팩터 50%
 - Value 팩터: PER(실시간) + PBR(실시간) + PCR + PSR + DIV(실시간)
 - Quality 팩터: ROE + GPA + CFO
 - Momentum 팩터: 12M-1M 수익률
 """
 
     if not selected.empty and '종목명' in selected.columns:
-        cols = ['종목코드', '종목명', '멀티팩터_순위']
+        cols = ['종목코드', '종목명', '통합순위', '마법공식_순위', '멀티팩터_순위']
         available_cols = [c for c in cols if c in selected.columns]
         report += f"- 상위 10종목:\n{selected.head(10)[available_cols].to_string()}\n"
 
@@ -353,7 +354,7 @@ async def main_async():
     print("=" * 80)
     print("퀀트 포트폴리오 생성 v3.0")
     print(f"기준일: {BASE_DATE}")
-    print(f"파이프라인: 유니버스 → A 사전필터({PREFILTER_N}) → B 최종선정({N_STOCKS})")
+    print(f"파이프라인: 유니버스 → A 사전필터({PREFILTER_N}) → A50%+B50% 통합순위 → 최종{N_STOCKS}개")
     print(f"데이터 소스: FnGuide 캐시 + pykrx 실시간 PER/PBR/DIV")
     print("=" * 80)
 
@@ -441,12 +442,24 @@ async def main_async():
         )
 
     # =========================================================================
-    # 5단계: 전략 실행 (A 사전필터 → B 최종선정)
+    # 5단계: 전략 실행 (A 사전필터 → B 스코어링 → A+B 통합순위)
     # =========================================================================
     prefiltered = await run_strategy_a_prefilter(magic_df, universe_df, error_tracker)
-    selected = await run_strategy_b_final(
+    scored_b = await run_strategy_b_scoring(
         prefiltered, fundamental_df, price_df, ticker_names, error_tracker
     )
+
+    # A 50% + B 50% 통합순위로 최종 30개 선정
+    print(f"\n[통합순위] 마법공식 50% + 멀티팩터 50%")
+    if not scored_b.empty and '마법공식_순위' in scored_b.columns and '멀티팩터_순위' in scored_b.columns:
+        scored_b['통합순위_점수'] = scored_b['마법공식_순위'] * 0.5 + scored_b['멀티팩터_순위'] * 0.5
+        scored_b['통합순위'] = scored_b['통합순위_점수'].rank(ascending=True, method='min')
+        scored_b = scored_b.sort_values('통합순위')
+        selected = scored_b.head(N_STOCKS).copy()
+        print(f"  최종 선정: {len(selected)}개 종목")
+    else:
+        selected = scored_b.head(N_STOCKS).copy() if not scored_b.empty else pd.DataFrame()
+        print(f"  순위 컬럼 부족 - 멀티팩터 순위로 대체: {len(selected)}개")
 
     # =========================================================================
     # 6단계: 결과 저장 (통합 CSV 1개)

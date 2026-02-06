@@ -222,87 +222,6 @@ def get_stock_technical(ticker):
         print(f"  기술지표 계산 실패 {ticker_str}: {e}")
         return None
 
-def calc_entry_score(rsi, w52_pct, vol_ratio):
-    """진입점수 계산 (100점 만점) — 좋은 사과를 싸게 사자"""
-    is_breakout = w52_pct > -2
-
-    if rsi <= 30:
-        rsi_score = 40
-    elif rsi <= 50:
-        rsi_score = 30
-    elif rsi <= 70:
-        rsi_score = 20
-    else:
-        rsi_score = 20 if is_breakout else 10
-
-    if w52_pct <= -20:
-        w52_score = 30
-    elif w52_pct <= -10:
-        w52_score = 25
-    elif w52_pct <= -5:
-        w52_score = 20
-    elif is_breakout:
-        w52_score = 15
-    else:
-        w52_score = 15
-
-    vol_score = 20 if vol_ratio >= 1.5 else 10
-    base_score = 10
-
-    return rsi_score + w52_score + vol_score + base_score
-
-def generate_reasons(ticker, tech, rank):
-    """선정이유 자동 생성"""
-    reasons = []
-    is_breakout = tech['w52_pct'] > -2
-
-    if is_breakout:
-        reasons.append(f"52주 신고가 돌파 모멘텀! ({tech['w52_pct']:+.1f}%)")
-    if tech['vol_ratio'] >= 2.0:
-        reasons.append(f"거래량 {tech['vol_ratio']:.1f}배 급증!")
-    elif tech['vol_ratio'] >= 1.5:
-        reasons.append(f"거래량 {tech['vol_ratio']:.1f}배 스파이크")
-    if rank <= 5:
-        reasons.append(f"멀티팩터 {rank:.0f}위 최상위")
-    if not is_breakout:
-        if tech['w52_pct'] <= -40:
-            reasons.append(f"52주고점 -40% 역대급 저점 할인")
-        elif tech['w52_pct'] <= -20:
-            reasons.append(f"52주고점 -20% 큰 할인 기회")
-        elif tech['w52_pct'] <= -10:
-            reasons.append(f"52주고점 대비 {tech['w52_pct']:.0f}% 할인")
-    if tech['rsi'] <= 30:
-        reasons.append(f"RSI {tech['rsi']:.0f} 과매도 반등 기회")
-    if tech['daily_chg'] >= 5:
-        reasons.append(f"당일 {tech['daily_chg']:+.1f}% 급등")
-
-    if len(reasons) < 2:
-        reasons.append("마법공식+멀티팩터 통과 우량주")
-
-    return reasons[:3]
-
-def generate_risk(tech, rank, news=None):
-    """리스크 자동 생성"""
-    risks = []
-    is_breakout = tech['w52_pct'] > -2
-
-    if news and news.get('negative', 0) > news.get('positive', 0):
-        risks.append("뉴스 부정적⚠️")
-    if tech['rsi'] >= 75:
-        if is_breakout:
-            risks.append(f"RSI {tech['rsi']:.0f} 고점, 돌파 추세 확인 필요")
-        else:
-            risks.append(f"RSI {tech['rsi']:.0f} 과매수!")
-    elif tech['rsi'] >= 70 and not is_breakout:
-        risks.append(f"RSI {tech['rsi']:.0f} 과열")
-    if tech['vol_ratio'] < 0.8:
-        risks.append(f"거래량 {tech['vol_ratio']:.1f}x 약함")
-    if rank > 20:
-        risks.append("멀티팩터 순위 하위권")
-    if tech['daily_chg'] < -3:
-        risks.append("단기 조정 중")
-
-    return ', '.join(risks[:2]) if risks else '특이사항 없음'
 
 # ============================================================
 # 시장 지수 가져오기
@@ -374,15 +293,27 @@ portfolio['종목코드'] = portfolio['종목코드'].astype(str).str.zfill(6)
 
 # 종목명/순위 딕셔너리
 ticker_names = dict(zip(portfolio['종목코드'], portfolio['종목명']))
-if '멀티팩터_순위' in portfolio.columns:
+
+# 통합순위 우선, 없으면 멀티팩터_순위 사용
+if '통합순위' in portfolio.columns:
+    portfolio_ranks = dict(zip(portfolio['종목코드'], portfolio['통합순위']))
+    rank_label = '통합순위'
+elif '멀티팩터_순위' in portfolio.columns:
     portfolio_ranks = dict(zip(portfolio['종목코드'], portfolio['멀티팩터_순위']))
+    rank_label = '멀티팩터_순위'
 else:
     portfolio_ranks = {t: i+1 for i, t in enumerate(portfolio['종목코드'])}
+    rank_label = '순위'
 
-print(f"포트폴리오: {len(portfolio)}개 종목")
+# PER/PBR/ROE 정보
+portfolio_per = dict(zip(portfolio['종목코드'], portfolio.get('PER', pd.Series()))) if 'PER' in portfolio.columns else {}
+portfolio_pbr = dict(zip(portfolio['종목코드'], portfolio.get('PBR', pd.Series()))) if 'PBR' in portfolio.columns else {}
+portfolio_roe = dict(zip(portfolio['종목코드'], portfolio.get('ROE', pd.Series()))) if 'ROE' in portfolio.columns else {}
+
+print(f"포트폴리오: {len(portfolio)}개 종목 ({rank_label} 기준)")
 
 # ============================================================
-# 전 종목 기술지표 분석 및 진입점수 계산
+# 전 종목 기술지표 분석 (참고 정보)
 # ============================================================
 print("\n포트폴리오 기술지표 계산 중...")
 stock_analysis = []
@@ -397,9 +328,6 @@ for _, row in portfolio.iterrows():
         continue
 
     rank = portfolio_ranks.get(ticker, 31)
-    entry_score = calc_entry_score(tech['rsi'], tech['w52_pct'], tech['vol_ratio'])
-    relative_rsi = tech['rsi'] - market_rsi
-
     news = get_stock_news(ticker, name)
     news_str = ""
     if news.get('headlines'):
@@ -410,21 +338,18 @@ for _, row in portfolio.iterrows():
     stock_analysis.append({
         'ticker': ticker,
         'name': name,
-        'multifactor_rank': rank,
-        'entry_score': entry_score,
+        'rank': rank,
+        'per': portfolio_per.get(ticker, None),
+        'pbr': portfolio_pbr.get(ticker, None),
+        'roe': portfolio_roe.get(ticker, None),
         'sector': SECTOR_DB.get(ticker, '기타'),
-        'relative_rsi': relative_rsi,
         'news': news,
         **tech,
-        'reasons': generate_reasons(ticker, tech, rank),
-        'risk': generate_risk(tech, rank, news),
     })
-    print(f"  {name}: 진입 {entry_score}점, RSI {tech['rsi']:.0f} (상대 {relative_rsi:+.0f}), 52주 {tech['w52_pct']:.0f}%{news_str}")
+    print(f"  {name}: {rank_label} {rank:.0f}위, RSI {tech['rsi']:.0f}, 52주 {tech['w52_pct']:.0f}%{news_str}")
 
-# 진입점수 기준 정렬
-stock_analysis.sort(key=lambda x: x['entry_score'], reverse=True)
-for i, s in enumerate(stock_analysis):
-    s['rank'] = i + 1
+# 통합순위 기준 정렬
+stock_analysis.sort(key=lambda x: x['rank'])
 
 # ============================================================
 # 메시지 1: 시장개황 + TOP 10 상세분석
@@ -442,28 +367,26 @@ msg1 = f"""안녕하세요! 오늘({today_str}) 한국주식 퀀트 포트폴리
 • 코스닥 {kosdaq_close:,.0f} ({kosdaq_chg:+.2f}%)
 ━━━━━━━━━━━━━━━━━━━
 
-💡 전략 v3.0
+💡 전략 v3.1
 
 • 유니버스: 시총1000억↑ 거래대금30억↑ 약 600개
 
 [1단계] 마법공식 사전필터 → 상위 150개
 • 이익수익률↑ + ROIC↑ = 근본 우량주 선별
 
-[2단계] 멀티팩터 최종선정 → {n_total}개
-• Value(PER·PBR·PCR·PSR) + Quality(ROE·GPA·CFO) + Momentum
-• PER/PBR: pykrx 실시간 데이터 사용
-
-[3단계] 진입점수 순위 → 언제 살까?
-• RSI↓ 52주저점↓ 거래량↑ = 싸게 사자!
+[2단계] 통합순위 → 최종 {n_total}개
+• 마법공식 50% + 멀티팩터 50%
+• 멀티팩터: Value + Quality + Momentum
+• PER/PBR: pykrx 실시간 데이터
 
 ━━━━━━━━━━━━━━━━━━━
-🏆 진입점수 기준 TOP 10
+🏆 통합순위 TOP 10
 ━━━━━━━━━━━━━━━━━━━
 """
 
 top_n = min(10, len(stock_analysis))
 for s in stock_analysis[:top_n]:
-    rank = s['rank']
+    rank = int(s['rank'])
     if rank == 1:
         medal = "🥇"
     elif rank == 2:
@@ -473,28 +396,36 @@ for s in stock_analysis[:top_n]:
     else:
         medal = "📌"
 
+    # PER/PBR/ROE 표시
+    factor_parts = []
+    if s.get('per') and not pd.isna(s['per']):
+        factor_parts.append(f"PER {s['per']:.1f}")
+    if s.get('pbr') and not pd.isna(s['pbr']):
+        factor_parts.append(f"PBR {s['pbr']:.1f}")
+    if s.get('roe') and not pd.isna(s['roe']):
+        factor_parts.append(f"ROE {s['roe']:.1f}%")
+    factor_str = ' | '.join(factor_parts) if factor_parts else ''
+
     msg1 += f"""
 {medal} {rank}위 {s['name']} ({s['ticker']}) {s['sector']}
 💰 {s['price']:,.0f}원 ({s['daily_chg']:+.2f}%)
-📊 진입 {s['entry_score']:.0f}점 | 팩터순위 {s['multifactor_rank']:.0f}위
+📊 {factor_str}
 📈 RSI {s['rsi']:.0f} | 52주 {s['w52_pct']:+.0f}%
 """
     if s.get('news') and s['news'].get('summary'):
         msg1 += f"📰 {s['news']['summary'].replace('📰 ', '').replace('📰⚠️ ', '⚠️')}\n"
 
-    msg1 += "📝 " + ' / '.join(s['reasons']) + "\n"
-    msg1 += f"⚠️ {s['risk']}\n"
     msg1 += "━━━━━━━━━━━━━━━━━━━\n"
 
 # ============================================================
 # 메시지 2: 전체 30종목 간략 순위
 # ============================================================
-msg2 = f"""📋 전체 {n_total}종목 진입점수 순위
+msg2 = f"""📋 전체 {n_total}종목 통합순위
 ━━━━━━━━━━━━━━━━━━━
 """
 
 for s in stock_analysis:
-    rank = s['rank']
+    rank = int(s['rank'])
     if rank == 1:
         rank_icon = "🥇"
     elif rank == 2:
@@ -504,14 +435,13 @@ for s in stock_analysis:
     else:
         rank_icon = f"{rank:2d}."
 
-    msg2 += f"{rank_icon} {s['name']} | {s['price']:,.0f}원 ({s['daily_chg']:+.1f}%) | 진입 {s['entry_score']:.0f}점\n"
+    msg2 += f"{rank_icon} {s['name']} | {s['price']:,.0f}원 ({s['daily_chg']:+.1f}%) | RSI {s['rsi']:.0f} | 52주 {s['w52_pct']:+.0f}%\n"
 
 msg2 += f"""━━━━━━━━━━━━━━━━━━━
 
 📌 투자 유의사항
 • 본 정보는 투자 권유가 아닙니다
 • 투자 결정은 본인 판단하에
-• 분기별 리밸런싱 권장 (4/5/8/11월)
 ━━━━━━━━━━━━━━━━━━━
 📊 Quant Portfolio v3.0
 """

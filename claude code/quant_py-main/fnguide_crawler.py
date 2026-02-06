@@ -264,9 +264,19 @@ def extract_magic_formula_data(fs_dict, base_date=None, use_ttm=True):
             # 최근 4분기 데이터 추출
             ttm_data = quarterly_data[quarterly_data['기준일'].isin(recent_dates)]
 
-            # 손익계산서/현금흐름표: 4분기 합산
-            flow_data = ttm_data[ttm_data['계정'].isin(flow_accounts)]
-            flow_sum = flow_data.groupby(['종목코드', '계정'])['값'].sum().reset_index()
+            # 손익계산서/현금흐름표: 가중 TTM (최신분기 가중치 높음)
+            # 가중치: 최신 40%, 2번째 30%, 3번째 20%, 4번째 10%
+            # 합=4 스케일(1.6/1.2/0.8/0.4)로 기존 TTM 합산과 동일 스케일 유지
+            weight_map = {}
+            for i, d in enumerate(sorted(recent_dates, reverse=True)):
+                weights = [1.6, 1.2, 0.8, 0.4]  # 최신→과거 순
+                weight_map[d] = weights[i] if i < len(weights) else weights[-1]
+
+            flow_data = ttm_data[ttm_data['계정'].isin(flow_accounts)].copy()
+            flow_data['가중치'] = flow_data['기준일'].map(weight_map)
+            flow_data['가중값'] = flow_data['값'] * flow_data['가중치']
+            flow_sum = flow_data.groupby(['종목코드', '계정'])['가중값'].sum().reset_index()
+            flow_sum = flow_sum.rename(columns={'가중값': '값'})
             flow_pivot = flow_sum.pivot_table(
                 index='종목코드', columns='계정', values='값', aggfunc='first'
             )
