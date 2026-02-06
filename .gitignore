@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Claude Code
+.claude/
+
+# Root-level data files (not part of quant project)
+eps_momentum_*.csv
+eps_data/
+screener_data/
+synergy_*.csv
+sp500_*.csv
+nasdaq_*.csv
+us_indices_*.csv
+*.db
+
+# Windows artifacts
+nul
