@@ -2,13 +2,6 @@
 FnGuide Company Guide 재무제표 크롤링 모듈
 기존 책의 코드를 기반으로 구현
 
-TODO Task #8: DART API 통합
-- FnGuide 크롤링을 DART Open API로 대체
-- 법적 리스크 제거 및 안정성 향상
-- API 키 발급: https://opendart.fss.or.kr/
-- 재무제표 API: /api/fnlttSinglAcntAll.json
-- 구현 우선순위: 높음
-
 TODO Task #9: 생존 편향 제거
 - 과거 상장폐지 종목 DB 구축
 - 상장폐지 시점의 손실 반영 (-100% 또는 최종 거래가)

@@ -48,7 +48,7 @@ cp config_template.py config.py
 # 3. 현재 포트폴리오 생성
 python create_current_portfolio.py
 # - 캐시 모드: ~15초
-# - 전체 수집: ~5-10분 (DART API)
+# - 전체 수집: ~5-10분
 
 # 4. 일별 모니터링 + 텔레그램 알림
 python daily_monitor.py
@@ -65,8 +65,7 @@ python full_backtest.py
 quant_py-main/
 │
 ├── [핵심 모듈] ─────────────────────────────────────────────
-│   ├── dart_api.py             # OpenDART API 클라이언트 (신규)
-│   ├── error_handler.py        # Skip & Log 에러 처리 (신규)
+│   ├── error_handler.py        # Skip & Log 에러 처리
 │   ├── fnguide_crawler.py      # FnGuide 컨센서스 크롤링
 │   ├── data_collector.py       # pykrx API + 병렬 처리
 │   ├── strategy_a_magic.py     # 전략 A: 마법공식
@@ -101,50 +100,7 @@ quant_py-main/
 
 ## 4. 핵심 모듈 상세
 
-### 4.1 dart_api.py (신규)
-
-OpenDART API를 통한 재무제표 수집 (비동기)
-
-```python
-# ═══════════════════════════════════════════════════════════════
-# 주요 클래스
-# ═══════════════════════════════════════════════════════════════
-
-class DartConfig:
-    """DART API 설정"""
-    api_key: str              # OpenDART API 키
-    cache_dir: Path           # 캐시 디렉토리
-    max_concurrent: int = 10  # 동시 요청 수
-    timeout: int = 30         # 타임아웃 (초)
-
-class DartApiClient:
-    """비동기 OpenDART API 클라이언트"""
-
-    async def get_financial_statement(ticker, year, report_type):
-        """단일 재무제표 조회"""
-
-    async def get_financial_statements_batch(tickers, years):
-        """배치 재무제표 조회 (병렬)"""
-
-def calculate_ttm(df):
-    """TTM (Trailing Twelve Months) 계산"""
-    # Flow 항목: 최근 4분기 합산
-    # Stock 항목: 최근 분기 값
-```
-
-**DART 계정 매핑**:
-```
-DART API              →  시스템 내부
-─────────────────────────────────────
-당기순이익(손실)       →  당기순이익
-매출액                →  매출액
-영업이익(손실)        →  영업이익
-자산총계              →  자산
-부채총계              →  부채
-자본총계              →  자본
-```
-
-### 4.2 error_handler.py (신규)
+### 4.1 error_handler.py
 
 Skip & Log 패턴 에러 처리
 
@@ -177,9 +133,9 @@ tracker.print_summary()
 tracker.save_error_log()
 ```
 
-### 4.3 fnguide_crawler.py
+### 4.2 fnguide_crawler.py
 
-FnGuide 컨센서스 크롤링 (재무제표는 DART API로 이전)
+FnGuide 재무제표 캐시 + 컨센서스 크롤링
 
 ```python
 # ═══════════════════════════════════════════════════════════════
@@ -203,12 +159,11 @@ async def get_consensus_batch_async(tickers, delay=0.3, max_concurrent=5):
 
 def get_all_financial_statements(tickers, use_cache=True):
     """
-    [DEPRECATED] DART API 사용 권장
     캐시가 있으면 로드, 없으면 경고
     """
 ```
 
-### 4.4 data_collector.py
+### 4.3 data_collector.py
 
 pykrx API 래퍼 + 병렬 처리
 
@@ -253,7 +208,7 @@ def filter_universe(market_cap_df, min_market_cap=1000, min_trading_value=30):
     """
 ```
 
-### 4.5 strategy_a_magic.py
+### 4.4 strategy_a_magic.py
 
 마법공식 (Magic Formula) 전략
 
@@ -273,7 +228,7 @@ def filter_universe(market_cap_df, min_market_cap=1000, min_trading_value=30):
 # 상위 30종목 선정
 ```
 
-### 4.6 strategy_b_multifactor.py
+### 4.5 strategy_b_multifactor.py
 
 멀티팩터 전략
 
@@ -292,7 +247,7 @@ FACTOR_WEIGHTS = {
 # 상위 30종목 선정
 ```
 
-### 4.7 send_telegram_auto.py (신규)
+### 4.6 send_telegram_auto.py
 
 완전 자동화 텔레그램 메시지 전송 - **"딸깍" 한 번 실행**
 
@@ -363,7 +318,7 @@ python send_telegram_auto.py
 # - 봇: 전체 메시지 3개
 ```
 
-### 4.8 daily_monitor.py
+### 4.7 daily_monitor.py
 
 일별 모니터링 시스템 v6.4
 
@@ -397,14 +352,14 @@ Price Score (진입 타이밍):
 │                        데이터 수집                               │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  pykrx API                 OpenDART API           FnGuide       │
-│  ┌─────────────┐          ┌─────────────┐     ┌──────────────┐  │
-│  │ 시가총액    │          │ 재무제표    │     │ 컨센서스     │  │
-│  │ OHLCV      │          │ (연간/분기) │     │ Forward EPS  │  │
-│  │ 기본지표    │          │ TTM 계산    │     │ Forward PER  │  │
-│  └──────┬──────┘          └──────┬──────┘     └──────┬───────┘  │
-│         │                        │                   │          │
-│         └────────────────┬───────┴───────────────────┘          │
+│  pykrx API                          FnGuide                     │
+│  ┌─────────────┐               ┌──────────────┐                │
+│  │ 시가총액    │               │ 재무제표     │                │
+│  │ OHLCV      │               │ (캐시)       │                │
+│  │ 기본지표    │               │ 컨센서스     │                │
+│  └──────┬──────┘               └──────┬───────┘                │
+│         │                             │                        │
+│         └──────────────┬──────────────┘                        │
 │                          │                                      │
 │                          ▼                                      │
 │                   ┌─────────────┐                               │
@@ -460,11 +415,8 @@ TELEGRAM_CHAT_ID = "your_chat_id"
 # Git 자동 푸시
 GIT_AUTO_PUSH = True
 
-# OpenDART API 설정
-DART_API_KEY = "your_dart_api_key"
-
 # 동시 요청 수 설정
-MAX_CONCURRENT_REQUESTS = 10  # DART API
+MAX_CONCURRENT_REQUESTS = 10
 PYKRX_WORKERS = 10            # pykrx 병렬 처리
 
 # 유니버스 필터
@@ -482,17 +434,16 @@ MIN_TRADING_VALUE = 30  # 최소 거래대금 (억원, 20일 평균)
 |------|------------|------------|
 | 시가총액 수집 | ~30초 | ~30초 |
 | 종목명 수집 | ~2분 (순차) | ~30초 (병렬) |
-| 재무제표 수집 | ~50분 (FnGuide 크롤링) | ~2분 (DART API) |
+| 재무제표 수집 | ~50분 (FnGuide 크롤링) | ~1초 (캐시) |
 | OHLCV 수집 | ~4분 (순차) | ~1분 (병렬) |
 | **총 소요시간** | **~50분** | **~5분** |
 | **캐시 모드** | - | **~15초** |
 
 ### 개선 사항
 
-1. **OpenDART API 도입**: FnGuide 크롤링 → 공식 API (빠르고 안정적)
-2. **비동기 처리**: asyncio + aiohttp로 동시 요청
-3. **병렬 처리**: ThreadPoolExecutor로 OHLCV/종목명 수집
-4. **Skip & Log 패턴**: 실패해도 중단 없이 진행, 에러 로깅
+1. **FnGuide 캐시 활용**: 재무제표 parquet 캐시로 즉시 로드
+2. **병렬 처리**: ThreadPoolExecutor로 OHLCV/종목명 수집
+3. **Skip & Log 패턴**: 실패해도 중단 없이 진행, 에러 로깅
 
 ---
 
@@ -512,11 +463,9 @@ MIN_TRADING_VALUE = 30  # 최소 거래대금 (억원, 20일 평균)
 
 ## 9. 주의사항
 
-1. **DART API 키**: https://opendart.fss.or.kr/ 에서 발급 (무료, 일 10,000건)
-2. **API 호출 제한**: 과도한 요청 시 IP 차단 가능
-3. **캐시 활용**: 재수집 불필요 시 캐시 모드 사용 권장
-4. **FnGuide 크롤링**: 컨센서스만 사용 (재무제표는 DART API로 이전)
-5. **백테스트 한계**:
+1. **캐시 활용**: 재수집 불필요 시 캐시 모드 사용 권장
+2. **FnGuide**: 재무제표 캐시 + 컨센서스 크롤링
+3. **백테스트 한계**:
    - 생존 편향 (상장폐지 종목 미포함)
    - 거래비용 단순화 (0.3% 고정)
    - 슬리피지 미반영

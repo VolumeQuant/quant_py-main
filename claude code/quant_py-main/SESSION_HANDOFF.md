@@ -16,7 +16,6 @@
 
 | 수정 항목 | 문제 | 해결 |
 |----------|------|------|
-| DART 코드 | `ModuleNotFoundError: dart_api` | **DART 관련 코드 완전 삭제** |
 | 타임존 | UTC로 실행되어 날짜 오류 | **KST 타임존 명시적 처리** |
 | 워크플로우 | CSV 생성 단계 누락 | **create_current_portfolio.py 단계 추가** |
 | 의존성 | tqdm, scipy 누락 | **pip install에 추가** |
@@ -48,7 +47,7 @@ BASE_DATE = get_previous_trading_date(TODAY)
   run: python send_telegram_auto.py
 ```
 
-**데이터 소스 (DART 제거 후)**:
+**데이터 소스**:
 - 재무제표: FnGuide 캐시 (Q3 2025 고정)
 - 시가총액: pykrx 실시간
 - OHLCV: pykrx 실시간
@@ -207,14 +206,13 @@ RSI (40점): 낮을수록 좋음
 
 | 변경 항목 | Before | After |
 |----------|--------|-------|
-| 재무제표 소스 | FnGuide 크롤링 | **OpenDART API** |
+| 재무제표 소스 | FnGuide 크롤링 | **FnGuide 캐시** |
 | 처리 방식 | 순차 처리 | **비동기 + 병렬** |
 | 에러 처리 | print + 무시 | **Skip & Log 패턴** |
 | 거래대금 필터 | 10억원 (당일) | **30억원 (20일 평균)** |
 | 총 소요시간 | ~50분 | **~35초 (캐시)** |
 
 **신규 모듈**:
-- `dart_api.py` - OpenDART API 비동기 클라이언트
 - `error_handler.py` - Skip & Log 에러 처리
 
 **수정 모듈**:
@@ -230,10 +228,10 @@ RSI (40점): 낮을수록 좋음
 ┌─────────────────────────────────────────────────────────────────────┐
 │                         데이터 수집 레이어                            │
 ├─────────────────────────────────────────────────────────────────────┤
-│  pykrx API              │  OpenDART API         │  FnGuide          │
-│  - 시가총액 (병렬)       │  - 재무제표 (비동기)   │  - 컨센서스       │
-│  - OHLCV (병렬)         │  - TTM 계산           │  - Forward EPS    │
-│  ThreadPoolExecutor     │  aiohttp + asyncio    │  requests         │
+│  pykrx API                        │  FnGuide                          │
+│  - 시가총액 (병렬)                 │  - 재무제표 (캐시)                 │
+│  - OHLCV (병렬)                   │  - 컨센서스                       │
+│  ThreadPoolExecutor               │  requests + parquet 캐시          │
 └─────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
@@ -269,72 +267,7 @@ RSI (40점): 낮을수록 좋음
 
 ## 2. 핵심 모듈 상세
 
-### 2.1 dart_api.py (신규, 450줄)
-
-OpenDART API 비동기 클라이언트
-
-#### 주요 클래스
-
-**DartConfig** (35-50줄)
-```python
-@dataclass
-class DartConfig:
-    api_key: str                          # OpenDART API 키
-    cache_dir: Path = Path("data_cache")  # 캐시 디렉토리
-    max_concurrent: int = 10              # 동시 요청 수
-    timeout: int = 30                     # 타임아웃 (초)
-    retry_count: int = 3                  # 재시도 횟수
-    cache_max_age_days: int = 7           # 캐시 유효 기간
-```
-
-**DartApiClient** (195-420줄)
-```python
-class DartApiClient:
-    """비동기 OpenDART API 클라이언트"""
-
-    async def __aenter__(self):
-        """Context manager - 세션 초기화, 기업코드 로드"""
-
-    async def get_financial_statement(ticker, year, report_type):
-        """단일 재무제표 조회"""
-
-    async def get_financial_statements_multi_year(ticker, years):
-        """다년도 재무제표 조회 (연간 + 분기)"""
-
-    async def get_financial_statements_batch(tickers, years):
-        """배치 재무제표 조회"""
-```
-
-**calculate_ttm()** (438-490줄)
-```python
-def calculate_ttm(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    TTM (Trailing Twelve Months) 계산
-
-    Flow 항목 (손익/현금): 최근 4분기 합산
-    - 매출액, 영업이익, 당기순이익
-
-    Stock 항목 (재무상태): 최근 분기 값
-    - 자산, 부채, 자본
-    """
-```
-
-#### DART 계정 매핑
-
-```python
-DART_ACCOUNT_MAPPING = {
-    '당기순이익(손실)': '당기순이익',
-    '매출액': '매출액',
-    '영업이익(손실)': '영업이익',
-    '자산총계': '자산',
-    '부채총계': '부채',
-    '자본총계': '자본',
-}
-```
-
----
-
-### 2.2 error_handler.py (신규, 400줄)
+### 2.1 error_handler.py (400줄)
 
 Skip & Log 패턴 에러 처리
 
@@ -393,7 +326,7 @@ tracker.save_error_log()
 
 ---
 
-### 2.3 fnguide_crawler.py (수정, 529줄)
+### 2.2 fnguide_crawler.py (수정, 529줄)
 
 **변경사항**: 재무제표 크롤링 deprecated, 컨센서스만 유지
 
@@ -427,7 +360,7 @@ async def get_consensus_batch_async(
 
 ```python
 def get_financial_statement(ticker, use_cache=True):
-    """[DEPRECATED] dart_api.DartApiClient 사용 권장"""
+    """캐시 전용"""
     warnings.warn("get_financial_statement()는 deprecated입니다.")
     # 캐시가 있으면 로드, 없으면 빈 DataFrame 반환
 
@@ -438,7 +371,7 @@ def get_all_financial_statements(tickers, use_cache=True):
 
 ---
 
-### 2.4 data_collector.py (수정, 544줄)
+### 2.3 data_collector.py (수정, 544줄)
 
 **변경사항**: 병렬 처리 메서드 추가
 
@@ -503,7 +436,7 @@ def filter_universe(
 
 ---
 
-### 2.5 create_current_portfolio.py (수정, 525줄)
+### 2.4 create_current_portfolio.py (수정, 525줄)
 
 **변경사항**: async main() 구조로 전환
 
@@ -520,12 +453,9 @@ async def main_async():
     # 2. 유니버스 필터링
     universe_df, ticker_names = filter_universe_optimized(...)
 
-    # 3. 재무제표 수집 (DART API)
-    magic_df = await collect_financial_data_dart(tickers)
-
-    # DART 실패 시 FnGuide 캐시 fallback
-    if magic_df.empty:
-        magic_df = extract_magic_formula_data(fs_data, use_ttm=True)
+    # 3. 재무제표 수집 (FnGuide 캐시)
+    fs_data = get_all_financial_statements(tickers, use_cache=True)
+    magic_df = extract_magic_formula_data(fs_data, use_ttm=True)
 
     # 4. OHLCV 수집 (병렬)
     price_df = collect_price_data_parallel(...)
@@ -561,8 +491,7 @@ def main():
    └─ 금융/지주 제외 → 608개
 
 3. 재무제표 수집
-   ├─ DART API 시도 (비동기)
-   └─ 실패 시 FnGuide 캐시 fallback
+   └─ FnGuide 캐시 로드 (parquet)
 
 4. TTM 계산
    ├─ Flow: 최근 4분기 합산
@@ -610,8 +539,7 @@ def main():
 ```
 quant_py-main/
 ├── 핵심 모듈 (신규/수정)
-│   ├── dart_api.py           # [NEW] OpenDART API 클라이언트 (450줄)
-│   ├── error_handler.py      # [NEW] Skip & Log 에러 처리 (400줄)
+│   ├── error_handler.py      # Skip & Log 에러 처리 (400줄)
 │   ├── fnguide_crawler.py    # [MOD] 컨센서스만 유지 (529줄)
 │   ├── data_collector.py     # [MOD] 병렬 처리 추가 (544줄)
 │   ├── strategy_a_magic.py   # 마법공식 (225줄)
@@ -649,8 +577,7 @@ quant_py-main/
 ## 5. 알려진 제한사항
 
 ### 데이터 관련
-1. **DART API 호출 제한**: 일 10,000건 (과도한 요청 시 IP 차단)
-2. **FnGuide 컨센서스**: 대형주 위주 커버리지 (~60%)
+1. **FnGuide 컨센서스**: 대형주 위주 커버리지 (~60%)
 3. **선호주/우선주**: 일부 재무제표 누락 가능
 
 ### 전략 관련
@@ -673,7 +600,7 @@ quant_py-main/
 | 2026-02-01 | 텔레그램 메시지 3분할 | daily_monitor.py |
 | 2026-02-02 | 모멘텀 팩터 구현 | strategy_b_multifactor.py |
 | 2026-02-03 | v6.4 리팩토링 (Quality+Price 2축) | daily_monitor.py |
-| **2026-02-03** | **OpenDART API 도입** | **dart_api.py (NEW)** |
+| **2026-02-03** | **Skip & Log 에러 처리 도입** | **error_handler.py (NEW)** |
 | **2026-02-03** | **Skip & Log 에러 처리** | **error_handler.py (NEW)** |
 | **2026-02-03** | **병렬 처리 추가** | **data_collector.py** |
 | **2026-02-03** | **async main() 구조 전환** | **create_current_portfolio.py** |
@@ -691,7 +618,7 @@ quant_py-main/
 | **2026-02-05** | **채널/봇 이중 전송 로직 구현** | **send_telegram_auto.py** |
 | **2026-02-05** | **OHLCV 캐시 검증 로직 추가 (BASE_DATE 확인)** | **create_current_portfolio.py** |
 | **2026-02-05** | **CSV 파일 커밋 필수 문서화** | **SESSION_HANDOFF.md** |
-| **2026-02-06** | **DART 코드 완전 삭제 (FnGuide만 사용)** | **create_current_portfolio.py** |
+| **2026-02-07** | **DART 관련 코드/문서 완전 정리** | **dart_api.py 삭제, 문서 업데이트** |
 | **2026-02-06** | **KST 타임존 명시적 처리 추가** | **create_current_portfolio.py, send_telegram_auto.py** |
 | **2026-02-06** | **GitHub Actions에 포트폴리오 생성 단계 추가** | **.github/workflows/telegram_daily.yml** |
 | **2026-02-06** | **GitHub Actions 의존성 추가 (tqdm, scipy)** | **.github/workflows/telegram_daily.yml** |
