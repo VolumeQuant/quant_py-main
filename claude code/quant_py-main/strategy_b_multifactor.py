@@ -275,7 +275,7 @@ class MultiFactorStrategy:
             print("멀티팩터 가중치: Value 50% + Quality 50% (모멘텀 없음)")
 
         # 순위 계산 (높을수록 좋음)
-        data['멀티팩터_순위'] = data['멀티팩터_점수'].rank(ascending=False, na_option='bottom')
+        data['멀티팩터_순위'] = data['멀티팩터_점수'].rank(ascending=False, method='first', na_option='bottom')
 
         return data
 

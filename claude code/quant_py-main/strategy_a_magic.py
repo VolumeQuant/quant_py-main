@@ -100,14 +100,14 @@ class MagicFormulaStrategy:
         data['투하자본수익률'] = data['투하자본수익률'].replace([np.inf, -np.inf], np.nan)
 
         # 순위 계산 (높을수록 좋으므로 ascending=False)
-        ey_rank = data['이익수익률'].rank(ascending=False, na_option='bottom')
-        roc_rank = data['투하자본수익률'].rank(ascending=False, na_option='bottom')
+        ey_rank = data['이익수익률'].rank(ascending=False, method='first', na_option='bottom')
+        roc_rank = data['투하자본수익률'].rank(ascending=False, method='first', na_option='bottom')
 
         # 순위 합산
         combined_rank = ey_rank + roc_rank
 
         # 최종 순위 (낮을수록 좋음)
-        data['마법공식_순위'] = combined_rank.rank(ascending=True, na_option='bottom')
+        data['마법공식_순위'] = combined_rank.rank(ascending=True, method='first', na_option='bottom')
 
         return data
 

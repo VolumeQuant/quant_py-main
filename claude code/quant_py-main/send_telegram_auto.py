@@ -30,28 +30,46 @@ HISTORY_FILE = CACHE_DIR / 'portfolio_history.json'
 SECTOR_DB = {
     '000660': 'AI반도체/메모리',
     '001060': '바이오/제약',
+    '002380': '건자재/도료',
+    '005180': '식품',
+    '006910': '원전/발전설비',
+    '008770': '면세점/호텔',
+    '017800': '승강기/기계',
     '018290': 'K-뷰티',
+    '019180': '자동차부품/와이어링',
+    '033100': '변압기/전력',
     '033500': 'LNG단열재',
+    '033530': '건설/플랜트',
     '035900': '엔터/K-POP',
+    '036620': '아웃도어패션',
     '039130': '여행',
+    '041510': '엔터/K-POP',
+    '043260': '전자부품',
+    '052400': '디지털화폐/핀테크',
     '067160': '스트리밍',
+    '067290': '바이오/제약',
+    '084670': '자동차부품',
+    '088130': '디스플레이장비',
+    '098120': '반도체/패키징',
+    '100840': '방산/에너지',
     '119850': '에너지/발전설비',
     '123330': 'K-뷰티/화장품',
+    '123410': '자동차부품',
     '124500': 'IT/금거래',
+    '190510': '로봇/센서',
+    '200670': '의료기기/필러',
     '204620': '택스리펀드/면세',
+    '206650': '바이오/백신',
+    '223250': 'IT서비스',
+    '250060': 'AI/핵융합',
+    '259630': '2차전지장비',
+    '259960': '게임',
+    '278470': '뷰티디바이스',
+    '336570': '의료기기',
     '383220': '패션/브랜드',
     '402340': '투자지주/AI반도체',
     '419530': '애니/캐릭터',
-    '278470': '뷰티디바이스',
-    '336570': '의료기기',
-    '033100': '변압기/전력',
-    '250060': 'AI/핵융합',
-    '041510': '엔터/K-POP',
-    '259960': '게임',
-    '043260': '전자부품',
-    '008770': '면세점/호텔',
-    '084670': '자동차부품',
-    '036620': '아웃도어패션',
+    '462870': '게임',
 }
 
 # ============================================================
@@ -99,7 +117,7 @@ def get_stock_news(ticker, stock_name, max_news=10):
 
         def clean_headline(headline, stock_name):
             clean = headline
-            clean = re.sub(rf'[,·|\s]*{re.escape(stock_name)}(도|는|가|이|을|를|의|에|와|과)?[,·|\s]*', ' ', clean)
+            clean = re.sub(rf'[,·|\s\-]*{re.escape(stock_name)}(도|는|가|이|을|를|의|에|와|과)?[,·|\s\-]*', ' ', clean)
             if ' - ' in clean:
                 clean = clean.split(' - ')[0].strip()
             clean = re.sub(r'\[[^\]]+\]', '', clean)
@@ -118,13 +136,31 @@ def get_stock_news(ticker, stock_name, max_news=10):
             clean = re.sub(r"''\s*|''\s*", '', clean)
             clean = re.sub(r'""\s*|""\s*', '', clean)
             clean = re.sub(r'[·,\s]{2,}', ' ', clean)
-            clean = clean.strip('[]()…·""\'\'", ')
+            clean = clean.strip('[]()…·""\'\'", -')
             clean = re.sub(r'^[,·\s]+', '', clean)
 
             return clean if len(clean) > 5 else None
 
+        def is_relevant(headline, stock_name):
+            """헤드라인이 해당 종목과 관련있는지 확인"""
+            # 채용공고 필터
+            if re.search(r'채용|고용24|채용정보|구인|입사', headline):
+                return False
+            # 다종목 나열 필터 (·로 3개 이상 회사명 나열)
+            if headline.count('·') >= 3:
+                return False
+            # 종목명이 원본에 없으면 무관한 뉴스
+            if stock_name not in headline:
+                return False
+            # "vs" 패턴으로 다른 종목과 비교하는 기사 (종목 자체 분석이 아님)
+            if re.search(r'vs\s+\S+\s+vs', headline, re.IGNORECASE):
+                return False
+            return True
+
         summary = None
-        for hl in headlines[:5]:
+        for hl in headlines[:8]:
+            if not is_relevant(hl, stock_name):
+                continue
             cleaned = clean_headline(hl, stock_name)
             if cleaned:
                 if len(cleaned) > 35:
@@ -375,17 +411,17 @@ msg1 = f"""안녕하세요! 오늘({today_str}) 한국주식 퀀트 포트폴리
 • 이익수익률↑ + ROIC↑ = 근본 우량주 선별
 
 [2단계] 통합순위 → 최종 {n_total}개
-• 마법공식 50% + 멀티팩터 50%
+• 마법공식 30% + 멀티팩터 70%
 • 멀티팩터: Value + Quality + Momentum
 • PER/PBR: pykrx 실시간 데이터
 
 ━━━━━━━━━━━━━━━━━━━
-🏆 통합순위 TOP 10
+🏆 통합순위 TOP 20
 ━━━━━━━━━━━━━━━━━━━
 """
 
-top_n = min(10, len(stock_analysis))
-for s in stock_analysis[:top_n]:
+def format_stock_detail(s):
+    """종목 상세 포맷"""
     rank = int(s['rank'])
     if rank == 1:
         medal = "🥇"
@@ -396,7 +432,6 @@ for s in stock_analysis[:top_n]:
     else:
         medal = "📌"
 
-    # PER/PBR/ROE 표시
     factor_parts = []
     if s.get('per') and not pd.isna(s['per']):
         factor_parts.append(f"PER {s['per']:.1f}")
@@ -406,45 +441,38 @@ for s in stock_analysis[:top_n]:
         factor_parts.append(f"ROE {s['roe']:.1f}%")
     factor_str = ' | '.join(factor_parts) if factor_parts else ''
 
-    msg1 += f"""
+    block = f"""
 {medal} {rank}위 {s['name']} ({s['ticker']}) {s['sector']}
 💰 {s['price']:,.0f}원 ({s['daily_chg']:+.2f}%)
 📊 {factor_str}
 📈 RSI {s['rsi']:.0f} | 52주 {s['w52_pct']:+.0f}%
 """
     if s.get('news') and s['news'].get('summary'):
-        msg1 += f"📰 {s['news']['summary'].replace('📰 ', '').replace('📰⚠️ ', '⚠️')}\n"
+        block += f"📰 {s['news']['summary'].replace('📰 ', '').replace('📰⚠️ ', '⚠️')}\n"
+    block += "━━━━━━━━━━━━━━━━━━━\n"
+    return block
 
-    msg1 += "━━━━━━━━━━━━━━━━━━━\n"
+# TOP 20을 msg1, msg1b로 분할 (텔레그램 4096자 제한)
+top_n = min(20, len(stock_analysis))
+msg1b = None
+
+for i, s in enumerate(stock_analysis[:top_n]):
+    block = format_stock_detail(s)
+    # 4000자 근처에서 msg1b로 분할
+    if msg1b is None and len(msg1) + len(block) > 3800 and i > 0:
+        msg1b = f"🏆 통합순위 TOP 20 (계속)\n━━━━━━━━━━━━━━━━━━━\n"
+    if msg1b is not None:
+        msg1b += block
+    else:
+        msg1 += block
 
 # ============================================================
 # 메시지 2: 전체 30종목 간략 순위
 # ============================================================
-msg2 = f"""📋 전체 {n_total}종목 통합순위
-━━━━━━━━━━━━━━━━━━━
-"""
-
-for s in stock_analysis:
-    rank = int(s['rank'])
-    if rank == 1:
-        rank_icon = "🥇"
-    elif rank == 2:
-        rank_icon = "🥈"
-    elif rank == 3:
-        rank_icon = "🥉"
-    else:
-        rank_icon = f"{rank:2d}."
-
-    msg2 += f"{rank_icon} {s['name']} | {s['price']:,.0f}원 ({s['daily_chg']:+.1f}%) | RSI {s['rsi']:.0f} | 52주 {s['w52_pct']:+.0f}%\n"
-
-msg2 += f"""━━━━━━━━━━━━━━━━━━━
-
-📌 투자 유의사항
-• 본 정보는 투자 권유가 아닙니다
-• 투자 결정은 본인 판단하에
-━━━━━━━━━━━━━━━━━━━
-📊 Quant Portfolio v3.0
-"""
+# 전송할 메시지 목록 구성
+messages = [msg1]
+if msg1b:
+    messages.append(msg1b)
 
 # ============================================================
 # 텔레그램 전송
@@ -457,24 +485,34 @@ IS_GITHUB_ACTIONS = os.environ.get('GITHUB_ACTIONS') == 'true'
 
 print("\n=== 메시지 미리보기 ===")
 print(msg1[:2000])
+if msg1b:
+    print("\n--- msg1b ---")
+    print(msg1b[:1000])
 print("\n... (생략)")
+print(f"메시지 수: {len(messages)}개 (msg1: {len(msg1)}자{f', msg1b: {len(msg1b)}자' if msg1b else ''})")
 
 if IS_GITHUB_ACTIONS:
-    # GitHub Actions: 채널(msg1+msg2) + 개인(msg1+msg2)
-    r1 = requests.post(url, data={'chat_id': TELEGRAM_CHAT_ID, 'text': msg1})
-    r2 = requests.post(url, data={'chat_id': TELEGRAM_CHAT_ID, 'text': msg2})
-    print(f'\n채널 메시지 전송: {r1.status_code}, {r2.status_code}')
+    # GitHub Actions: 채널 + 개인
+    results = []
+    for msg in messages:
+        r = requests.post(url, data={'chat_id': TELEGRAM_CHAT_ID, 'text': msg})
+        results.append(r.status_code)
+    print(f'\n채널 메시지 전송: {", ".join(map(str, results))}')
 
     if PRIVATE_CHAT_ID:
-        r_p1 = requests.post(url, data={'chat_id': PRIVATE_CHAT_ID, 'text': msg1})
-        r_p2 = requests.post(url, data={'chat_id': PRIVATE_CHAT_ID, 'text': msg2})
-        print(f'개인 메시지 전송: {r_p1.status_code}, {r_p2.status_code}')
+        results_p = []
+        for msg in messages:
+            r = requests.post(url, data={'chat_id': PRIVATE_CHAT_ID, 'text': msg})
+            results_p.append(r.status_code)
+        print(f'개인 메시지 전송: {", ".join(map(str, results_p))}')
 else:
     # 로컬 테스트: 개인채팅만
     target_id = PRIVATE_CHAT_ID or TELEGRAM_CHAT_ID
-    r1 = requests.post(url, data={'chat_id': target_id, 'text': msg1})
-    r2 = requests.post(url, data={'chat_id': target_id, 'text': msg2})
-    print(f'\n테스트 메시지 전송: {r1.status_code}, {r2.status_code}')
+    results = []
+    for msg in messages:
+        r = requests.post(url, data={'chat_id': target_id, 'text': msg})
+        results.append(r.status_code)
+    print(f'\n테스트 메시지 전송: {", ".join(map(str, results))}')
 
 # 히스토리 저장
 history = {

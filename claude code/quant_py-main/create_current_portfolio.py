@@ -324,7 +324,7 @@ def generate_report(
     report += f"""
 [최종 포트폴리오 - 통합순위 상위 {N_STOCKS}개]
 - 선정 종목 수: {len(selected)}개
-- 통합순위: 마법공식 50% + 멀티팩터 50%
+- 통합순위: 마법공식 30% + 멀티팩터 70%
 - Value 팩터: PER(실시간) + PBR(실시간) + PCR + PSR + DIV(실시간)
 - Quality 팩터: ROE + GPA + CFO
 - Momentum 팩터: 12M-1M 수익률
@@ -449,11 +449,11 @@ async def main_async():
         prefiltered, fundamental_df, price_df, ticker_names, error_tracker
     )
 
-    # A 50% + B 50% 통합순위로 최종 30개 선정
-    print(f"\n[통합순위] 마법공식 50% + 멀티팩터 50%")
+    # A 30% + B 70% 통합순위로 최종 30개 선정
+    print(f"\n[통합순위] 마법공식 30% + 멀티팩터 70%")
     if not scored_b.empty and '마법공식_순위' in scored_b.columns and '멀티팩터_순위' in scored_b.columns:
-        scored_b['통합순위_점수'] = scored_b['마법공식_순위'] * 0.5 + scored_b['멀티팩터_순위'] * 0.5
-        scored_b['통합순위'] = scored_b['통합순위_점수'].rank(ascending=True, method='min')
+        scored_b['통합순위_점수'] = scored_b['마법공식_순위'] * 0.3 + scored_b['멀티팩터_순위'] * 0.7
+        scored_b['통합순위'] = scored_b['통합순위_점수'].rank(ascending=True, method='first')
         scored_b = scored_b.sort_values('통합순위')
         selected = scored_b.head(N_STOCKS).copy()
         print(f"  최종 선정: {len(selected)}개 종목")
