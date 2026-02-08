@@ -382,33 +382,24 @@ def main():
         print(f'\n테스트 메시지 전송: {", ".join(map(str, results))}')
 
     # ============================================================
-    # AI 리스크 분석 (Gemini)
+    # AI 브리핑 (Gemini) — 개인봇에만 전송
     # ============================================================
     try:
         from gemini_analysis import run_ai_analysis
-        full_msg = msg1 + ('\n' + msg1b if msg1b else '')
-        ai_msg = run_ai_analysis(full_msg, stock_analysis)
+        ai_msg = run_ai_analysis(None, stock_analysis)
 
         if ai_msg:
-            print(f"\n=== AI 리스크 분석 ({len(ai_msg)}자) ===")
+            print(f"\n=== AI 브리핑 ({len(ai_msg)}자) ===")
             print(ai_msg[:500] + '...' if len(ai_msg) > 500 else ai_msg)
 
-            if IS_GITHUB_ACTIONS:
-                # GitHub Actions: 채널 + 개인봇 모두 전송
-                r = requests.post(url, data={'chat_id': TELEGRAM_CHAT_ID, 'text': ai_msg})
-                print(f'AI 분석 채널 전송: {r.status_code}')
-                if PRIVATE_CHAT_ID:
-                    r = requests.post(url, data={'chat_id': PRIVATE_CHAT_ID, 'text': ai_msg})
-                    print(f'AI 분석 개인봇 전송: {r.status_code}')
-            else:
-                # 로컬: 개인봇만 전송
-                target_id = PRIVATE_CHAT_ID or TELEGRAM_CHAT_ID
-                r = requests.post(url, data={'chat_id': target_id, 'text': ai_msg})
-                print(f'AI 분석 전송: {r.status_code}')
+            # 개인봇에만 전송 (채널 제외)
+            target_id = PRIVATE_CHAT_ID or TELEGRAM_CHAT_ID
+            r = requests.post(url, data={'chat_id': target_id, 'text': ai_msg})
+            print(f'AI 브리핑 전송: {r.status_code}')
         else:
-            print("\nAI 리스크 분석 스킵 (결과 없음)")
+            print("\nAI 브리핑 스킵 (결과 없음)")
     except Exception as e:
-        print(f"\nAI 리스크 분석 실패 (계속 진행): {e}")
+        print(f"\nAI 브리핑 실패 (계속 진행): {e}")
 
     # 히스토리 저장
     history = {

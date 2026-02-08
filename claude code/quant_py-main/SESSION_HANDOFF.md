@@ -2,36 +2,70 @@
 
 ## 문서 개요
 
-**버전**: 10.0
+**버전**: 10.1
 **최종 업데이트**: 2026-02-08
 **작성자**: Claude Opus 4.6
 
 ---
 
-## 핵심 변경사항 (v9.0 — Gemini AI 리스크 분석)
+## 핵심 변경사항 (v9.0 — Gemini AI 브리핑)
 
-### 2026-02-08 Gemini AI 리스크 스캐너 추가
+### 2026-02-08 AI 리스크 스캐너 → AI 브리핑 전환
 
-**1. gemini_analysis.py 신규 모듈**
+**교훈: Gemini Search Grounding 한계**
 
-| 항목 | 내용 |
-|------|------|
-| AI 모델 | Gemini 2.5 Flash (temperature=0.2) |
-| 검색 | Google Search Grounding (실시간 뉴스) |
-| 프롬프트 | 소거법 리스크 스캐너 (1500자 이내) |
-| 출력 | 📰시장/🚫주의/📅실적임박/✅미발견 |
-| 실패 처리 | None 반환 → 텔레그램 전송 계속 (graceful) |
+| 시도 | 방식 | 결과 |
+|------|------|------|
+| 1차 | 30종목 개별 검색 요청 | 5-8개만 실제 검색, 나머지 할루시네이션 |
+| 2차 | 5종목씩 배치 | 여전히 일부만 검색 |
+| 3차 | temperature 0.2 | 빈 응답 빈번 |
+| 4차 | temperature 0.5 | 검색 안 되면 할루시네이션 |
+| **최종** | **"검색은 코드가, 분석은 AI가"** | **안정적 작동** |
+
+**근본 원인**: Google Search Grounding은 요청당 5-8개 검색 쿼리만 생성. 30개 종목 개별 검색은 구조적으로 불가능.
+
+**해결 원칙: "검색은 코드가, 분석은 AI가"**
+
+| 역할 | 담당 | 내용 |
+|------|------|------|
+| 데이터 수집 | 코드 | PER/PBR/ROE/RSI/52주위치/전일비 |
+| 주의 신호 감지 | 코드 | RSI ≥80/≤25, 52주 ≤-40%, 전일 ≤-7%/≥10% |
+| 시장 동향 | AI (1개 검색) | Google Search 1회 (광범위 쿼리 → 안정적) |
+| 데이터 해석 | AI | 섹터 편중, 밸류에이션, 모멘텀 패턴 분석 |
+
+**1. gemini_analysis.py (v2 — 브리핑 모듈)**
+
+| 항목 | Before (리스크 스캐너) | After (AI 브리핑) |
+|------|----------------------|-------------------|
+| AI 모델 | Gemini 2.5 Flash (temp=0.2) | Gemini 2.5 Flash (**temp=0.3**) |
+| 검색 | 30종목 개별 뉴스 검색 | **시장 동향 1회만 검색** |
+| 데이터 | AI가 검색으로 수집 | **코드가 구성해서 전달** |
+| 주의 감지 | AI 판단 | **코드 기반 (RSI/52주/전일비)** |
+| 프롬프트 | 소거법 리스크 스캐너 | **데이터 해석 브리핑** |
+| 출력 | 📰시장/🚫주의/📅실적/✅미발견 | **📰시장/⚠️주의/📊특징** |
+| 빈 응답 | 미처리 | **재시도 1회 + finish_reason 로그** |
+| 전송 대상 | 채널+개인봇 | **개인봇에만** |
 
 **2. 연동 구조**
 
 ```
 create_current_portfolio.py → portfolio CSV
-send_telegram_auto.py → 포트폴리오 메시지 전송
-  → gemini_analysis.run_ai_analysis(msg, stock_list)
-  → AI 분석 결과 텔레그램 전송
+send_telegram_auto.py → 포트폴리오 메시지 전송 (채널+개인봇)
+  → gemini_analysis.run_ai_analysis(None, stock_list)
+  → 코드가 데이터 구성 → AI가 해석
+  → AI 브리핑 개인봇에만 전송
 ```
 
-**3. GitHub Actions 연동**
+**3. 종목별 뉴스 제거**
+
+| 항목 | Before | After |
+|------|--------|-------|
+| Google News RSS | 종목별 크롤링 (30회) | **완전 제거** |
+| 센티먼트 분석 | 키워드 기반 (부정확) | **제거** |
+| 부분 매칭 문제 | "제닉"→"키토제닉" 오매칭 | **해결 (제거)** |
+| 메시지 크기 | 3389자 (분할 필요) | **2838자 (단일)** |
+
+**4. GitHub Actions 연동**
 
 - `GEMINI_API_KEY` GitHub Secret 추가
 - `google-genai` pip install 추가
@@ -314,7 +348,7 @@ RSI (40점): 낮을수록 좋음
 ┌─────────────────────────────────────────────────────────────────────┐
 │                         출력 레이어                                   │
 ├─────────────────────────────────────────────────────────────────────┤
-│  텔레그램 (1~2개 메시지, TOP20)  │  AI 리스크 분석 (Gemini)             │
+│  텔레그램 (1~2개 메시지, TOP20)  │  AI 브리핑 (Gemini, 개인봇)            │
 │  통합 CSV 저장                   │                                     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -463,9 +497,9 @@ def run_strategy_b_scoring(magic_df, price_df, universe_df, fund_df, prefiltered
 
 ---
 
-### 2.5 gemini_analysis.py (~244줄)
+### 2.5 gemini_analysis.py (~242줄)
 
-Gemini 2.5 Flash + Google Search Grounding 리스크 스캐너
+Gemini 2.5 Flash AI 포트폴리오 브리핑 ("검색은 코드가, 분석은 AI가")
 
 #### 주요 함수
 
@@ -473,31 +507,33 @@ Gemini 2.5 Flash + Google Search Grounding 리스크 스캐너
 def get_gemini_api_key():
     """API 키 로드 (환경변수 → config.py 순)"""
 
-def build_prompt(portfolio_message, stock_list):
-    """리스크 스캐너 프롬프트 구성 (소거법)"""
+def build_prompt(stock_list):
+    """AI 브리핑 프롬프트 구성 (코드 데이터 + 주의 신호)"""
+    # 종목별 데이터: PER/PBR/ROE/RSI/52주위치/전일비
+    # 코드 감지 주의 신호: RSI ≥80/≤25, 52주 ≤-40%, 전일 ≤-7%/≥10%
+    # AI 작업: (1) 시장 동향 검색 (2) 주의 신호 해석 (3) 포트폴리오 특징
 
 def convert_markdown_to_text(text):
     """마크다운 → 텔레그램 텍스트 변환"""
 
-def format_risk_sections(text):
-    """🚫 리스크 섹션 구분선 추가"""
-
 def run_ai_analysis(portfolio_message, stock_list):
-    """Gemini API 호출 → 포맷된 분석 결과 반환 (실패 시 None)"""
+    """Gemini API 호출 → 포맷된 브리핑 반환 (실패 시 None)"""
+    # 빈 응답 방어: finish_reason 로그 + 1회 재시도
+    # temperature=0.3 (0.2=빈응답, 0.5=할루시네이션)
 ```
 
-#### 리스크 카테고리
-- 소송/법적 분쟁, 규제 조사/제재, 제품 리콜/결함
-- 대주주/내부자 대량 매도, 공매도 리포트
-- 실적 미스/가이던스 하향, 신용등급 하락
-- 유동성 위기, 정책/관세/규제 영향, 경영권 분쟁
+#### AI 브리핑 출력 구조
+- 📰 이번 주 시장: Google Search 1회 (시장 전반 이벤트)
+- ⚠️ 주의 종목: 코드 감지 신호 해석 (없으면 생략)
+- 📊 포트폴리오 특징: 섹터 편중, 밸류에이션, 모멘텀 패턴
 
 #### 연동 흐름
 ```
-send_telegram_auto.py → run_ai_analysis(msg, stock_list)
-  → genai.Client → Gemini 2.5 Flash (temperature=0.2)
-  → Google Search Grounding (실시간 뉴스 검색)
-  → 마크다운→텍스트 변환 → 텔레그램 전송
+send_telegram_auto.py → run_ai_analysis(None, stock_list)
+  → build_prompt(stock_list)  # 코드가 데이터+주의신호 구성
+  → genai.Client → Gemini 2.5 Flash (temperature=0.3)
+  → Google Search Grounding (시장 동향 1회만)
+  → 마크다운→텍스트 변환 → 개인봇에만 전송
 ```
 
 ---
@@ -551,11 +587,11 @@ quant_py-main/
 │   ├── data_collector.py         # pykrx API + 병렬 처리 + 펀더멘털 배치
 │   ├── strategy_a_magic.py       # 전략 A: 마법공식 (사전 필터)
 │   ├── strategy_b_multifactor.py # 전략 B: 멀티팩터 (pykrx live 우선)
-│   └── gemini_analysis.py         # Gemini AI 리스크 분석 (Google Search Grounding)
+│   └── gemini_analysis.py         # Gemini AI 브리핑 ("검색은 코드가, 분석은 AI가")
 │
 ├── 실행 스크립트
 │   ├── create_current_portfolio.py  # 포트폴리오 생성 (A→필터, B→스코어, 통합순위)
-│   ├── send_telegram_auto.py        # 텔레그램 자동 전송 (TOP20, 뉴스필터링)
+│   ├── send_telegram_auto.py        # 텔레그램 자동 전송 (TOP20, AI 브리핑 개인봇)
 │   ├── full_backtest.py             # 전체 백테스팅
 │   └── generate_report_pdf.py       # PDF 리포트 생성
 │
@@ -652,8 +688,11 @@ quant_py-main/
 | **2026-02-08** | **Gemini AI 리스크 스캐너 구현 (Google Search Grounding)** | **gemini_analysis.py (NEW)** |
 | **2026-02-08** | **send_telegram_auto에 AI 분석 통합 (포트폴리오→Gemini→전송)** | **send_telegram_auto.py** |
 | **2026-02-08** | **GitHub Actions에 Gemini 연동 (secret + google-genai)** | **telegram_daily.yml, config_template.py** |
+| **2026-02-08** | **종목별 뉴스 크롤링 제거 (RSS 30회 → 0, 부분매칭 문제 해결)** | **send_telegram_auto.py** |
+| **2026-02-08** | **AI 리스크 스캐너 → AI 브리핑 전환 ("검색은 코드가, 분석은 AI가")** | **gemini_analysis.py** |
+| **2026-02-08** | **AI 브리핑 개인봇에만 전송 (채널 제외)** | **send_telegram_auto.py** |
 
 ---
 
-**문서 버전**: 10.0
+**문서 버전**: 10.1
 **최종 업데이트**: 2026-02-08
