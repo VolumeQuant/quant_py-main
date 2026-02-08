@@ -9,6 +9,9 @@ on:
   # 수동 실행 가능
   workflow_dispatch:
 
+env:
+  GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
 jobs:
   send-telegram:
     runs-on: ubuntu-latest
@@ -28,7 +31,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install pykrx pandas numpy requests beautifulsoup4 lxml pyarrow tqdm scipy html5lib
+          pip install pykrx pandas numpy requests beautifulsoup4 lxml pyarrow tqdm scipy html5lib google-genai
 
       - name: Create config.py from secrets
         run: |
@@ -43,6 +46,7 @@ jobs:
           CACHE_DIR = "data_cache"
           PREFILTER_N = 150
           N_STOCKS = 30
+          GEMINI_API_KEY = "${{ secrets.GEMINI_API_KEY }}"
           EOF
 
       - name: Generate portfolio (create CSV)

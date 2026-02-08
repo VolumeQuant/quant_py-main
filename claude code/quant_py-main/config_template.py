@@ -32,3 +32,7 @@ N_STOCKS = 30               # 최종 선정 종목 수
 MAX_CONCURRENT_REQUESTS = 10  # 최대 동시 요청 수
 PYKRX_WORKERS = 10            # pykrx 병렬 워커 수
 CACHE_DIR = "data_cache"      # 캐시 디렉토리 경로
+
+# Gemini AI 설정 (AI 리스크 분석용)
+# Google AI Studio에서 API 키 발급: https://aistudio.google.com/apikey
+GEMINI_API_KEY = "YOUR_GEMINI_API_KEY_HERE"

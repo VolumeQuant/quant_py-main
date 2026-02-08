@@ -40,7 +40,7 @@ C:\Users\user\miniconda3\envs\volumequant\python.exe
 
 ```bash
 # 1. 패키지 설치
-pip install pykrx pandas numpy requests beautifulsoup4 lxml pyarrow tqdm scipy html5lib
+pip install pykrx pandas numpy requests beautifulsoup4 lxml pyarrow tqdm scipy html5lib google-genai
 
 # 2. 텔레그램 설정 (선택)
 cp config_template.py config.py
@@ -70,7 +70,8 @@ quant_py-main/
 │   ├── fnguide_crawler.py      # FnGuide 재무제표 캐시 + 가중TTM
 │   ├── data_collector.py       # pykrx API + 병렬 처리
 │   ├── strategy_a_magic.py     # 전략 A: 마법공식 (사전 필터)
-│   └── strategy_b_multifactor.py # 전략 B: 멀티팩터 (최종 스코어링)
+│   ├── strategy_b_multifactor.py # 전략 B: 멀티팩터 (최종 스코어링)
+│   └── gemini_analysis.py      # Gemini AI 리스크 분석
 │
 ├── [실행 스크립트] ─────────────────────────────────────────
 │   ├── create_current_portfolio.py  # 포트폴리오 생성 (메인)
@@ -188,6 +189,21 @@ Momentum 20%: 12개월 수익률 (최근 1개월 제외)
   - 시세 뉴스 (상승/하락/VI발동) 제외
 ```
 
+### 4.6 AI 리스크 분석 (Gemini)
+
+```
+Gemini 2.5 Flash + Google Search Grounding
+→ 포트폴리오 30종목의 최근 1~2주 뉴스를 실시간 검색
+→ 리스크 카테고리별 스캔 (소송/규제/리콜/내부자매도/실적미스 등)
+→ 소거법으로 매수 후보에서 제외할 종목 식별
+
+출력 형식:
+  📰 이번 주 시장 (시장 전반 이벤트 2~3줄)
+  🚫 주의 (구체적 리스크 발견 종목)
+  📅 실적발표 임박 (변동성 주의)
+  ✅ 리스크 미발견 (나머지 종목)
+```
+
 ---
 
 ## 5. 설정 파일
@@ -204,6 +220,7 @@ MAX_CONCURRENT_REQUESTS = 10
 PYKRX_WORKERS = 10
 PREFILTER_N = 150
 N_STOCKS = 30
+GEMINI_API_KEY = "your_gemini_api_key"
 ```
 
 ---
@@ -228,7 +245,7 @@ on:
 3. pip install (의존성)
 4. config.py 생성 (GitHub Secrets에서)
 5. create_current_portfolio.py → CSV 생성
-6. send_telegram_auto.py → 텔레그램 전송
+6. send_telegram_auto.py → 포트폴리오 전송 + AI 리스크 분석
 ```
 
 ### GitHub Secrets
@@ -237,6 +254,7 @@ Repository → Settings → Secrets → Actions:
 - `TELEGRAM_BOT_TOKEN`: 봇 토큰
 - `TELEGRAM_CHAT_ID`: 채널 ID
 - `TELEGRAM_PRIVATE_ID`: 개인 채팅 ID
+- `GEMINI_API_KEY`: Gemini API 키 (AI 리스크 분석용)
 
 ---
 

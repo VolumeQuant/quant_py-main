@@ -2,9 +2,40 @@
 
 ## 문서 개요
 
-**버전**: 9.0
+**버전**: 10.0
 **최종 업데이트**: 2026-02-08
 **작성자**: Claude Opus 4.6
+
+---
+
+## 핵심 변경사항 (v9.0 — Gemini AI 리스크 분석)
+
+### 2026-02-08 Gemini AI 리스크 스캐너 추가
+
+**1. gemini_analysis.py 신규 모듈**
+
+| 항목 | 내용 |
+|------|------|
+| AI 모델 | Gemini 2.5 Flash (temperature=0.2) |
+| 검색 | Google Search Grounding (실시간 뉴스) |
+| 프롬프트 | 소거법 리스크 스캐너 (1500자 이내) |
+| 출력 | 📰시장/🚫주의/📅실적임박/✅미발견 |
+| 실패 처리 | None 반환 → 텔레그램 전송 계속 (graceful) |
+
+**2. 연동 구조**
+
+```
+create_current_portfolio.py → portfolio CSV
+send_telegram_auto.py → 포트폴리오 메시지 전송
+  → gemini_analysis.run_ai_analysis(msg, stock_list)
+  → AI 분석 결과 텔레그램 전송
+```
+
+**3. GitHub Actions 연동**
+
+- `GEMINI_API_KEY` GitHub Secret 추가
+- `google-genai` pip install 추가
+- config.py 생성 시 GEMINI_API_KEY 포함
 
 ---
 
@@ -82,7 +113,7 @@ BASE_DATE = get_previous_trading_date(TODAY)
 ```yaml
 - name: Install dependencies
   run: |
-    pip install pykrx pandas numpy requests beautifulsoup4 lxml pyarrow tqdm scipy html5lib
+    pip install pykrx pandas numpy requests beautifulsoup4 lxml pyarrow tqdm scipy html5lib google-genai
 
 - name: Generate portfolio (create CSV)
   run: python create_current_portfolio.py
@@ -283,7 +314,8 @@ RSI (40점): 낮을수록 좋음
 ┌─────────────────────────────────────────────────────────────────────┐
 │                         출력 레이어                                   │
 ├─────────────────────────────────────────────────────────────────────┤
-│  텔레그램 (1~2개 메시지, TOP20)  │  통합 CSV 저장                     │
+│  텔레그램 (1~2개 메시지, TOP20)  │  AI 리스크 분석 (Gemini)             │
+│  통합 CSV 저장                   │                                     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -431,6 +463,45 @@ def run_strategy_b_scoring(magic_df, price_df, universe_df, fund_df, prefiltered
 
 ---
 
+### 2.5 gemini_analysis.py (~244줄)
+
+Gemini 2.5 Flash + Google Search Grounding 리스크 스캐너
+
+#### 주요 함수
+
+```python
+def get_gemini_api_key():
+    """API 키 로드 (환경변수 → config.py 순)"""
+
+def build_prompt(portfolio_message, stock_list):
+    """리스크 스캐너 프롬프트 구성 (소거법)"""
+
+def convert_markdown_to_text(text):
+    """마크다운 → 텔레그램 텍스트 변환"""
+
+def format_risk_sections(text):
+    """🚫 리스크 섹션 구분선 추가"""
+
+def run_ai_analysis(portfolio_message, stock_list):
+    """Gemini API 호출 → 포맷된 분석 결과 반환 (실패 시 None)"""
+```
+
+#### 리스크 카테고리
+- 소송/법적 분쟁, 규제 조사/제재, 제품 리콜/결함
+- 대주주/내부자 대량 매도, 공매도 리포트
+- 실적 미스/가이던스 하향, 신용등급 하락
+- 유동성 위기, 정책/관세/규제 영향, 경영권 분쟁
+
+#### 연동 흐름
+```
+send_telegram_auto.py → run_ai_analysis(msg, stock_list)
+  → genai.Client → Gemini 2.5 Flash (temperature=0.2)
+  → Google Search Grounding (실시간 뉴스 검색)
+  → 마크다운→텍스트 변환 → 텔레그램 전송
+```
+
+---
+
 ## 3. 데이터 흐름
 
 ### 포트폴리오 생성 (create_current_portfolio.py)
@@ -479,7 +550,8 @@ quant_py-main/
 │   ├── fnguide_crawler.py        # FnGuide 재무제표 캐시 + 가중TTM
 │   ├── data_collector.py         # pykrx API + 병렬 처리 + 펀더멘털 배치
 │   ├── strategy_a_magic.py       # 전략 A: 마법공식 (사전 필터)
-│   └── strategy_b_multifactor.py # 전략 B: 멀티팩터 (pykrx live 우선)
+│   ├── strategy_b_multifactor.py # 전략 B: 멀티팩터 (pykrx live 우선)
+│   └── gemini_analysis.py         # Gemini AI 리스크 분석 (Google Search Grounding)
 │
 ├── 실행 스크립트
 │   ├── create_current_portfolio.py  # 포트폴리오 생성 (A→필터, B→스코어, 통합순위)
@@ -577,8 +649,11 @@ quant_py-main/
 | **2026-02-08** | **불필요 파일 삭제 (utils.py, backtest_main.py 등 7개)** | **프로젝트 정리** |
 | **2026-02-08** | **dead code 제거 (async decorator, prepare_data 함수)** | **error_handler.py, strategy_a_magic.py** |
 | **2026-02-08** | **문서 현행화 (README.md, SESSION_HANDOFF.md)** | **MD 파일** |
+| **2026-02-08** | **Gemini AI 리스크 스캐너 구현 (Google Search Grounding)** | **gemini_analysis.py (NEW)** |
+| **2026-02-08** | **send_telegram_auto에 AI 분석 통합 (포트폴리오→Gemini→전송)** | **send_telegram_auto.py** |
+| **2026-02-08** | **GitHub Actions에 Gemini 연동 (secret + google-genai)** | **telegram_daily.yml, config_template.py** |
 
 ---
 
-**문서 버전**: 9.0
+**문서 버전**: 10.0
 **최종 업데이트**: 2026-02-08
