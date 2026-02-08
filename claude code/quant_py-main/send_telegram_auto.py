@@ -15,11 +15,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import requests
 import json
-import re
 import glob
 import os
-import urllib.parse
-from bs4 import BeautifulSoup
 from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 from zoneinfo import ZoneInfo
 
@@ -76,19 +73,6 @@ SECTOR_DB = {
     '419530': '애니/캐릭터',
     '462870': '게임',
 }
-
-POSITIVE_KEYWORDS = [
-    '호실적', '상향', '흑자', '신고가', '계약', '수주', '성장', '개선',
-    '증가', '확대', '돌파', '상승', '최대', '신규', '진출', '협력',
-    '투자', '기대', '긍정', '매수', '목표가', '상향조정', '실적개선',
-    '급등', '강세', '호재', '수혜', '낙관'
-]
-NEGATIVE_KEYWORDS = [
-    '하향', '적자', '감소', '하락', '소송', '리콜', '손실', '감자',
-    '위기', '우려', '부진', '악화', '철수', '중단', '폐쇄', '매도',
-    '목표가하향', '실적악화', '경고', '조사', '제재', '급락', '약세',
-    '악재', '피해', '비관'
-]
 
 
 # ============================================================
@@ -152,98 +136,6 @@ def get_stock_technical(ticker, base_date):
         return None
 
 
-def get_stock_news(ticker, stock_name, max_news=10):
-    """구글 뉴스 RSS에서 종목 뉴스 크롤링"""
-    try:
-        query = urllib.parse.quote(stock_name)
-        url = f'https://news.google.com/rss/search?q={query}&hl=ko&gl=KR&ceid=KR:ko'
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-        response = requests.get(url, headers=headers, timeout=10)
-
-        soup = BeautifulSoup(response.text, 'xml')
-        items = soup.find_all('item')
-
-        headlines = []
-        for item in items[:max_news]:
-            title = item.find('title')
-            if title:
-                text = title.get_text(strip=True)
-                if text and len(text) > 5:
-                    headlines.append(text)
-
-        all_text = ' '.join(headlines)
-        positive_found = [kw for kw in POSITIVE_KEYWORDS if kw in all_text]
-        negative_found = [kw for kw in NEGATIVE_KEYWORDS if kw in all_text]
-
-        def clean_headline(headline, sname):
-            clean = headline
-            clean = re.sub(rf'[,·|\s\-]*{re.escape(sname)}(도|는|가|이|을|를|의|에|와|과)?[,·|\s\-]*', ' ', clean)
-            if ' - ' in clean:
-                clean = clean.split(' - ')[0].strip()
-            clean = re.sub(r'\[[^\]]+\]', '', clean)
-
-            if re.search(r'주가.*장중|장중.*주가', clean):
-                return None
-            if re.search(r'주가\s*\d+월\s*\d+일', clean):
-                return None
-            if re.search(r'^[+\-]?\d+\.?\d*%\s*(상승|하락|급등|급락|VI|발동)', clean):
-                return None
-            if re.search(r'\d+\.?\d*%\s*(상승|하락)\s*마감', clean):
-                return None
-            if re.search(r'상승폭\s*(확대|축소)|하락폭\s*(확대|축소)', clean):
-                return None
-
-            clean = re.sub(r"''\s*|''\s*", '', clean)
-            clean = re.sub(r'""\s*|""\s*', '', clean)
-            clean = re.sub(r'[·,\s]{2,}', ' ', clean)
-            clean = clean.strip('[]()…·""\'\'", -')
-            clean = re.sub(r'^[,·\s]+', '', clean)
-
-            return clean if len(clean) > 5 else None
-
-        def is_relevant(headline, sname):
-            """헤드라인이 해당 종목과 관련있는지 확인"""
-            if re.search(r'채용|고용24|채용정보|구인|입사', headline):
-                return False
-            if headline.count('·') >= 3:
-                return False
-            if sname not in headline:
-                return False
-            if re.search(r'vs\s+\S+\s+vs', headline, re.IGNORECASE):
-                return False
-            return True
-
-        summary = None
-        for hl in headlines[:8]:
-            if not is_relevant(hl, stock_name):
-                continue
-            cleaned = clean_headline(hl, stock_name)
-            if cleaned:
-                if len(cleaned) > 35:
-                    cleaned = cleaned[:34] + '..'
-                if len(negative_found) > len(positive_found):
-                    summary = f"📰⚠️ {cleaned}"
-                else:
-                    summary = f"📰 {cleaned}"
-                break
-
-        return {
-            'headlines': headlines,
-            'positive': len(positive_found),
-            'negative': len(negative_found),
-            'positive_keywords': positive_found,
-            'negative_keywords': negative_found,
-            'summary': summary
-        }
-    except Exception:
-        return {
-            'headlines': [], 'positive': 0, 'negative': 0,
-            'positive_keywords': [], 'negative_keywords': [],
-            'summary': None
-        }
-
 
 def format_stock_detail(s):
     """종목 상세 포맷"""
@@ -271,10 +163,8 @@ def format_stock_detail(s):
 💰 {s['price']:,.0f}원 ({s['daily_chg']:+.2f}%)
 📊 {factor_str}
 📈 RSI {s['rsi']:.0f} | 52주 {s['w52_pct']:+.0f}%
+━━━━━━━━━━━━━━━━━━━
 """
-    if s.get('news') and s['news'].get('summary'):
-        block += f"📰 {s['news']['summary'].replace('📰 ', '').replace('📰⚠️ ', '⚠️')}\n"
-    block += "━━━━━━━━━━━━━━━━━━━\n"
     return block
 
 
@@ -390,12 +280,6 @@ def main():
             continue
 
         rank = portfolio_ranks.get(ticker, 31)
-        news = get_stock_news(ticker, name)
-        news_str = ""
-        if news.get('headlines'):
-            first_headline = news['headlines'][0][:30] + '..' if len(news['headlines'][0]) > 30 else news['headlines'][0]
-            sentiment = "⚠️" if news['negative'] > news['positive'] else ""
-            news_str = f" | {sentiment}{first_headline}"
 
         stock_analysis.append({
             'ticker': ticker,
@@ -405,10 +289,9 @@ def main():
             'pbr': portfolio_pbr.get(ticker, None),
             'roe': portfolio_roe.get(ticker, None),
             'sector': SECTOR_DB.get(ticker, '기타'),
-            'news': news,
             **tech,
         })
-        print(f"  {name}: {rank_label} {rank:.0f}위, RSI {tech['rsi']:.0f}, 52주 {tech['w52_pct']:.0f}%{news_str}")
+        print(f"  {name}: {rank_label} {rank:.0f}위, RSI {tech['rsi']:.0f}, 52주 {tech['w52_pct']:.0f}%")
 
     stock_analysis.sort(key=lambda x: x['rank'])
 
