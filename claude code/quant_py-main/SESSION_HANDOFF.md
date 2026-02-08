@@ -337,8 +337,8 @@ RSI (40점): 낮을수록 좋음
 │  - 이익수익률 (EBIT/EV) + 투하자본수익률 (ROC)                       │
 │                                                                      │
 │  Strategy B (멀티팩터) → 150종목 전체 스코어링                        │
-│  - Value 40% (PER/PBR 실시간, PCR, PSR, DIV 실시간)                  │
-│  - Quality 40% (ROE, GPA, CFO)                                       │
+│  - Value 50% (PER/PBR 실시간, PCR, PSR, DIV 실시간)                  │
+│  - Quality 30% (ROE, GPA, CFO)                                       │
 │  - Momentum 20% (12M-1M)                                            │
 │                                                                      │
 │  통합순위 = 마법공식 30% + 멀티팩터 70% → TOP 30                      │

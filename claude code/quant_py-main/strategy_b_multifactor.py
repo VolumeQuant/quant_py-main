@@ -279,7 +279,7 @@ class MultiFactorStrategy:
         data['퀄리티_점수'] = data[quality_factors].mean(axis=1) if quality_factors else 0
         data['모멘텀_점수'] = data[momentum_factors].mean(axis=1) if momentum_factors else 0
 
-        # 최종 점수 (가중 평균: Value 40% + Quality 40% + Momentum 20%)
+        # 최종 점수 (가중 평균: Value 50% + Quality 30% + Momentum 20%)
         # 모멘텀 데이터가 없는 종목은 제외
         if momentum_factors:
             before_count = len(data)
@@ -288,15 +288,15 @@ class MultiFactorStrategy:
             if excluded > 0:
                 print(f"모멘텀 데이터 없는 종목 제외: {excluded}개 → {len(data)}개 남음")
 
-            data['멀티팩터_점수'] = (data['밸류_점수'] * 0.4 +
-                                    data['퀄리티_점수'] * 0.4 +
+            data['멀티팩터_점수'] = (data['밸류_점수'] * 0.5 +
+                                    data['퀄리티_점수'] * 0.3 +
                                     data['모멘텀_점수'] * 0.2)
-            print("멀티팩터 가중치: Value 40% + Quality 40% + Momentum 20%")
+            print("멀티팩터 가중치: Value 50% + Quality 30% + Momentum 20%")
         else:
             # 모멘텀 팩터 자체가 없는 경우 (price_df가 None)
-            data['멀티팩터_점수'] = (data['밸류_점수'] * 0.5 +
-                                    data['퀄리티_점수'] * 0.5)
-            print("멀티팩터 가중치: Value 50% + Quality 50% (모멘텀 없음)")
+            data['멀티팩터_점수'] = (data['밸류_점수'] * 0.6 +
+                                    data['퀄리티_점수'] * 0.4)
+            print("멀티팩터 가중치: Value 60% + Quality 40% (모멘텀 없음)")
 
         # 순위 계산 (높을수록 좋음)
         data['멀티팩터_순위'] = data['멀티팩터_점수'].rank(ascending=False, method='first', na_option='bottom')

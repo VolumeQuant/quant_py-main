@@ -1,8 +1,9 @@
 """
-퀀트 포트폴리오 생성 v3.1
+퀀트 포트폴리오 생성 v3.2
 
 파이프라인:
-  유니버스(~600) → A 사전필터(150) → pykrx PER/PBR/DIV → B 스코어링(150)
+  유니버스(시총3000억+,거래대금50억+) → PER/PBR 상한 필터
+  → A 사전필터(150) → B 스코어링(Value50%+Quality30%+Momentum20%)
   → A30%+B70% 통합순위 → 최종30 → 통합 CSV
 
 데이터 소스:
@@ -31,16 +32,18 @@ try:
     from config import (
         MIN_MARKET_CAP, MIN_TRADING_VALUE,
         MAX_CONCURRENT_REQUESTS, PYKRX_WORKERS, CACHE_DIR,
-        PREFILTER_N, N_STOCKS
+        PREFILTER_N, N_STOCKS, PER_MAX_LIMIT, PBR_MAX_LIMIT
     )
 except ImportError:
-    MIN_MARKET_CAP = 1000
-    MIN_TRADING_VALUE = 30
+    MIN_MARKET_CAP = 3000
+    MIN_TRADING_VALUE = 50
     MAX_CONCURRENT_REQUESTS = 10
     PYKRX_WORKERS = 10
     CACHE_DIR = "data_cache"
     PREFILTER_N = 150
     N_STOCKS = 30
+    PER_MAX_LIMIT = 60
+    PBR_MAX_LIMIT = 10
 
 # 최근 거래일 자동 탐지 (한국 시간 기준)
 from pykrx import stock as pykrx_stock
@@ -310,6 +313,7 @@ def generate_report(
 - 필터 조건:
   * 시가총액 >= {MIN_MARKET_CAP}억원
   * 거래대금 >= {MIN_TRADING_VALUE}억원
+  * PER <= {PER_MAX_LIMIT}, PBR <= {PBR_MAX_LIMIT}
   * 금융업/지주사 제외
 
 [사전 필터 - 마법공식 상위 {PREFILTER_N}개]
@@ -323,9 +327,9 @@ def generate_report(
 [최종 포트폴리오 - 통합순위 상위 {N_STOCKS}개]
 - 선정 종목 수: {len(selected)}개
 - 통합순위: 마법공식 30% + 멀티팩터 70%
-- Value 팩터: PER(실시간) + PBR(실시간) + PCR + PSR + DIV(실시간)
-- Quality 팩터: ROE + GPA + CFO
-- Momentum 팩터: 12M-1M 수익률
+- Value 팩터 50%: PER(실시간) + PBR(실시간) + PCR + PSR + DIV(실시간)
+- Quality 팩터 30%: ROE + GPA + CFO
+- Momentum 팩터 20%: 12M-1M 수익률
 """
 
     if not selected.empty and '종목명' in selected.columns:
@@ -350,7 +354,7 @@ def main():
     base_dt = datetime.strptime(BASE_DATE, '%Y%m%d')
 
     print("=" * 80)
-    print("퀀트 포트폴리오 생성 v3.1")
+    print("퀀트 포트폴리오 생성 v3.2")
     print(f"기준일: {BASE_DATE}")
     print(f"파이프라인: 유니버스 → A 사전필터({PREFILTER_N}) → A30%+B70% 통합순위 → 최종{N_STOCKS}개")
     print(f"데이터 소스: FnGuide 캐시 + pykrx 실시간 PER/PBR/DIV")
@@ -407,6 +411,25 @@ def main():
         print(f"  pykrx 펀더멘털: {len(fundamental_df)}개 종목 (PER/PBR/EPS/BPS/DIV)")
     else:
         print("  pykrx 펀더멘털 수집 실패 - FnGuide 캐시로 fallback")
+
+    # =========================================================================
+    # 3.6단계: PER/PBR 상한 필터 (고평가 잡주 제거)
+    # =========================================================================
+    if not fundamental_df.empty and not magic_df.empty:
+        print(f"\n[3.6단계] PER/PBR 상한 필터 (PER>{PER_MAX_LIMIT}, PBR>{PBR_MAX_LIMIT} 제외)")
+        before_count = len(magic_df)
+        exclude_tickers = set()
+        for ticker in magic_df['종목코드']:
+            if ticker in fundamental_df.index:
+                per = fundamental_df.loc[ticker, 'PER'] if 'PER' in fundamental_df.columns else 0
+                pbr = fundamental_df.loc[ticker, 'PBR'] if 'PBR' in fundamental_df.columns else 0
+                if (per > PER_MAX_LIMIT and per > 0) or (pbr > PBR_MAX_LIMIT and pbr > 0):
+                    exclude_tickers.add(ticker)
+        if exclude_tickers:
+            magic_df = magic_df[~magic_df['종목코드'].isin(exclude_tickers)].copy()
+            print(f"  고평가 종목 제외: {len(exclude_tickers)}개 → {len(magic_df)}개 남음")
+        else:
+            print(f"  제외 종목 없음 ({before_count}개 유지)")
 
     # =========================================================================
     # 4단계: OHLCV 수집 (병렬)

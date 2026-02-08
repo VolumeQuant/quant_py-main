@@ -311,16 +311,16 @@ def main():
 • 코스닥 {kosdaq_close:,.0f} ({kosdaq_chg:+.2f}%)
 ━━━━━━━━━━━━━━━━━━━
 
-💡 전략 v3.1
+💡 전략 v3.2
 
-• 유니버스: 시총1000억↑ 거래대금30억↑ 약 600개
+• 유니버스: 시총3000억↑ 거래대금50억↑ PER≤60 PBR≤10
 
 [1단계] 마법공식 사전필터 → 상위 150개
 • 이익수익률↑ + ROIC↑ = 근본 우량주 선별
 
 [2단계] 통합순위 → 최종 {n_total}개
 • 마법공식 30% + 멀티팩터 70%
-• 멀티팩터: Value + Quality + Momentum
+• 멀티팩터: Value 50% + Quality 30% + Momentum 20%
 • PER/PBR: pykrx 실시간 데이터
 
 ━━━━━━━━━━━━━━━━━━━
@@ -382,7 +382,7 @@ def main():
         print(f'\n테스트 메시지 전송: {", ".join(map(str, results))}')
 
     # ============================================================
-    # AI 브리핑 (Gemini) — 개인봇에만 전송
+    # AI 브리핑 (Gemini) — 채널+개인봇 전송
     # ============================================================
     try:
         from gemini_analysis import run_ai_analysis
@@ -392,10 +392,16 @@ def main():
             print(f"\n=== AI 브리핑 ({len(ai_msg)}자) ===")
             print(ai_msg[:500] + '...' if len(ai_msg) > 500 else ai_msg)
 
-            # 개인봇에만 전송 (채널 제외)
-            target_id = PRIVATE_CHAT_ID or TELEGRAM_CHAT_ID
-            r = requests.post(url, data={'chat_id': target_id, 'text': ai_msg})
-            print(f'AI 브리핑 전송: {r.status_code}')
+            if IS_GITHUB_ACTIONS:
+                r = requests.post(url, data={'chat_id': TELEGRAM_CHAT_ID, 'text': ai_msg})
+                print(f'AI 브리핑 채널 전송: {r.status_code}')
+                if PRIVATE_CHAT_ID:
+                    r = requests.post(url, data={'chat_id': PRIVATE_CHAT_ID, 'text': ai_msg})
+                    print(f'AI 브리핑 개인 전송: {r.status_code}')
+            else:
+                target_id = PRIVATE_CHAT_ID or TELEGRAM_CHAT_ID
+                r = requests.post(url, data={'chat_id': target_id, 'text': ai_msg})
+                print(f'AI 브리핑 전송: {r.status_code}')
         else:
             print("\nAI 브리핑 스킵 (결과 없음)")
     except Exception as e:

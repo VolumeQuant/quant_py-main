@@ -11,7 +11,7 @@ KOSPI/KOSDAQ 대상 멀티팩터 퀀트 전략 백테스팅 및 포트폴리오 
 | **전략 A** | 마법공식 (Magic Formula) - 이익수익률 + ROIC → 사전 필터 150개 |
 | **전략 B** | 멀티팩터 - Value(40%) + Quality(40%) + Momentum(20%) → 스코어링 |
 | **통합순위** | 마법공식 30% + 멀티팩터 70% → 최종 30종목 |
-| **유니버스** | 시가총액 1000억+, 20일평균 거래대금 30억+, 금융/지주사 제외 |
+| **유니버스** | 시가총액 3000억+, 20일평균 거래대금 50억+, PER≤60, PBR≤10, 금융/지주사 제외 |
 | **리밸런싱** | 분기별 (4/5/8/11월 - 실적 공시 후) |
 | **텔레그램** | 매일 06:00 KST 자동 전송 (TOP 20 상세분석) |
 
@@ -156,11 +156,11 @@ quant_py-main/
 ### 4.3 전략 B - 멀티팩터 (최종 스코어링)
 
 ```
-Value   40%: PER(실시간) + PBR(실시간) + PCR + PSR + DIV(실시간)
-Quality 40%: ROE + GPA + CFO/Assets
+Value   50%: PER(실시간) + PBR(실시간) + PCR + PSR + DIV(실시간)
+Quality 30%: ROE + GPA + CFO/Assets
 Momentum 20%: 12개월 수익률 (최근 1개월 제외)
 
-멀티팩터_점수 = Value*0.4 + Quality*0.4 + Momentum*0.2
+멀티팩터_점수 = Value*0.5 + Quality*0.3 + Momentum*0.2
 ```
 
 ### 4.4 가중 TTM (Weighted Trailing Twelve Months)
@@ -202,7 +202,7 @@ Gemini 2.5 Flash + Google Search Grounding (temperature 0.3)
   📰 이번 주 시장 (AI가 검색, 시장 전반 이벤트 2~3줄)
   ⚠️ 주의 종목 (코드가 감지한 RSI 과매수/과매도, 52주 급락, 급등락)
   📊 포트폴리오 특징 (섹터 편중, 밸류에이션, 모멘텀 패턴)
-개인봇에만 전송 (채널 제외)
+채널+개인봇 전송
 ```
 
 ---
@@ -215,8 +215,10 @@ Gemini 2.5 Flash + Google Search Grounding (temperature 0.3)
 TELEGRAM_BOT_TOKEN = "your_bot_token"
 TELEGRAM_CHAT_ID = "your_chat_id"
 TELEGRAM_PRIVATE_ID = "your_private_id"
-MIN_MARKET_CAP = 1000
-MIN_TRADING_VALUE = 30
+MIN_MARKET_CAP = 3000
+MIN_TRADING_VALUE = 50
+PER_MAX_LIMIT = 60
+PBR_MAX_LIMIT = 10
 MAX_CONCURRENT_REQUESTS = 10
 PYKRX_WORKERS = 10
 PREFILTER_N = 150

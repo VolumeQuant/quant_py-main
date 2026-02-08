@@ -21,8 +21,10 @@ TELEGRAM_CHAT_ID = "YOUR_CHAT_ID_HERE"       # 예: "123456789" (채널 ID)
 TELEGRAM_PRIVATE_ID = "YOUR_PRIVATE_ID_HERE"  # 예: "123456789" (개인 채팅 ID)
 
 # 유니버스 필터 설정
-MIN_MARKET_CAP = 1000       # 최소 시가총액 (억원)
-MIN_TRADING_VALUE = 30      # 최소 20일 평균 거래대금 (억원)
+MIN_MARKET_CAP = 3000       # 최소 시가총액 (억원)
+MIN_TRADING_VALUE = 50      # 최소 20일 평균 거래대금 (억원)
+PER_MAX_LIMIT = 60          # PER 상한 (초과 시 유니버스 제외)
+PBR_MAX_LIMIT = 10          # PBR 상한 (초과 시 유니버스 제외)
 
 # 전략 설정
 PREFILTER_N = 150           # 마법공식 사전필터 종목 수
