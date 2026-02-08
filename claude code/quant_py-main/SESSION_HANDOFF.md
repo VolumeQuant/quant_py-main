@@ -2,9 +2,38 @@
 
 ## 문서 개요
 
-**버전**: 10.1
-**최종 업데이트**: 2026-02-08
+**버전**: 10.2
+**최종 업데이트**: 2026-02-09
 **작성자**: Claude Opus 4.6
+
+---
+
+## 핵심 변경사항 (v10.2 — 포트폴리오 품질 개선)
+
+### 2026-02-09 유니버스 강화 + 멀티팩터 비중 조정 + AI 브리핑 채널 전송
+
+**문제**: 잡주(제닉 PBR 8.2, 아이티센글로벌 PER 247)가 TOP 10에 진입
+**근본 원인**: Quality(ROE) 40%가 Value 40%를 상쇄 → "비싸지만 ROE 높은" 종목이 상위 진입
+
+| 항목 | Before (v3.1) | After (v3.2) |
+|------|---------------|--------------|
+| 시가총액 하한 | 1000억 | **3000억** |
+| 거래대금 하한 | 30억 | **50억** |
+| PER 상한 | 없음 | **60** |
+| PBR 상한 | 없음 | **10** |
+| Value 비중 | 40% | **50%** |
+| Quality 비중 | 40% | **30%** |
+| Momentum 비중 | 20% | 20% |
+| Fallback (V/Q) | 50/50 | **60/40** |
+| AI 브리핑 전송 | 개인봇에만 | **채널+개인봇** |
+
+**효과**: 유니버스 ~775개 → ~450개, PER/PBR 필터로 152종목 추가 제거, 잡주 전부 탈락
+
+**수정 파일**:
+1. `create_current_portfolio.py` — 유니버스 defaults + 3.6단계 PER/PBR 필터
+2. `strategy_b_multifactor.py` — Value 50% / Quality 30% / Momentum 20%
+3. `config_template.py` — PER_MAX_LIMIT, PBR_MAX_LIMIT 추가
+4. `send_telegram_auto.py` — AI 브리핑 채널+개인봇 전송 + SECTOR_DB 19종목 추가
 
 ---
 
@@ -44,7 +73,7 @@
 | 프롬프트 | 소거법 리스크 스캐너 | **데이터 해석 브리핑** |
 | 출력 | 📰시장/🚫주의/📅실적/✅미발견 | **📰시장/⚠️주의/📊특징** |
 | 빈 응답 | 미처리 | **재시도 1회 + finish_reason 로그** |
-| 전송 대상 | 채널+개인봇 | **개인봇에만** |
+| 전송 대상 | 채널+개인봇 | **채널+개인봇** (v10.2에서 복원) |
 
 **2. 연동 구조**
 
@@ -53,7 +82,7 @@ create_current_portfolio.py → portfolio CSV
 send_telegram_auto.py → 포트폴리오 메시지 전송 (채널+개인봇)
   → gemini_analysis.run_ai_analysis(None, stock_list)
   → 코드가 데이터 구성 → AI가 해석
-  → AI 브리핑 개인봇에만 전송
+  → AI 브리핑 채널+개인봇 전송
 ```
 
 **3. 종목별 뉴스 제거**
@@ -348,7 +377,7 @@ RSI (40점): 낮을수록 좋음
 ┌─────────────────────────────────────────────────────────────────────┐
 │                         출력 레이어                                   │
 ├─────────────────────────────────────────────────────────────────────┤
-│  텔레그램 (1~2개 메시지, TOP20)  │  AI 브리핑 (Gemini, 개인봇)            │
+│  텔레그램 (1~2개 메시지, TOP20)  │  AI 브리핑 (Gemini, 채널+개인봇)       │
 │  통합 CSV 저장                   │                                     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -533,7 +562,7 @@ send_telegram_auto.py → run_ai_analysis(None, stock_list)
   → build_prompt(stock_list)  # 코드가 데이터+주의신호 구성
   → genai.Client → Gemini 2.5 Flash (temperature=0.3)
   → Google Search Grounding (시장 동향 1회만)
-  → 마크다운→텍스트 변환 → 개인봇에만 전송
+  → 마크다운→텍스트 변환 → 채널+개인봇 전송
 ```
 
 ---
@@ -547,9 +576,9 @@ send_telegram_auto.py → run_ai_analysis(None, stock_list)
    └─ KOSPI + KOSDAQ = ~2,773개
 
 2. 유니버스 필터링
-   ├─ 시가총액 >= 1000억원
-   ├─ 거래대금 >= 30억원 (20일 평균)
-   └─ 금융/지주 제외 → ~775개
+   ├─ 시가총액 >= 3000억원
+   ├─ 거래대금 >= 50억원 (20일 평균)
+   └─ 금융/지주 제외 → ~450개
 
 3. 재무제표 수집
    └─ FnGuide 캐시 로드 (parquet)
@@ -564,8 +593,11 @@ send_telegram_auto.py → run_ai_analysis(None, stock_list)
 5. 전략 A 사전 필터 → 150종목
    └─ 이익수익률 + ROC 순위 합산
 
+3.6. PER/PBR 상한 필터 (PER>60, PBR>10 제외)
+   └─ 고평가 잡주 제거 → ~290개
+
 6. 전략 B 스코어링 → 150종목 전체
-   └─ Value*0.4 + Quality*0.4 + Momentum*0.2
+   └─ Value*0.5 + Quality*0.3 + Momentum*0.2
    └─ PER/PBR/DIV: pykrx 실시간 우선
 
 7. 통합순위 → TOP 30
@@ -591,7 +623,7 @@ quant_py-main/
 │
 ├── 실행 스크립트
 │   ├── create_current_portfolio.py  # 포트폴리오 생성 (A→필터, B→스코어, 통합순위)
-│   ├── send_telegram_auto.py        # 텔레그램 자동 전송 (TOP20, AI 브리핑 개인봇)
+│   ├── send_telegram_auto.py        # 텔레그램 자동 전송 (TOP20, AI 브리핑 채널+개인봇)
 │   ├── full_backtest.py             # 전체 백테스팅
 │   └── generate_report_pdf.py       # PDF 리포트 생성
 │
@@ -691,8 +723,12 @@ quant_py-main/
 | **2026-02-08** | **종목별 뉴스 크롤링 제거 (RSS 30회 → 0, 부분매칭 문제 해결)** | **send_telegram_auto.py** |
 | **2026-02-08** | **AI 리스크 스캐너 → AI 브리핑 전환 ("검색은 코드가, 분석은 AI가")** | **gemini_analysis.py** |
 | **2026-02-08** | **AI 브리핑 개인봇에만 전송 (채널 제외)** | **send_telegram_auto.py** |
+| **2026-02-09** | **v3.2: 유니버스 강화 (시총3000억, 거래50억, PER≤60, PBR≤10)** | **create_current_portfolio.py** |
+| **2026-02-09** | **멀티팩터 비중 조정 (Value50/Quality30/Momentum20)** | **strategy_b_multifactor.py** |
+| **2026-02-09** | **AI 브리핑 채널+개인봇 전송 복원** | **send_telegram_auto.py** |
+| **2026-02-09** | **SECTOR_DB 19종목 추가 (기타→구체적 업종명)** | **send_telegram_auto.py** |
 
 ---
 
-**문서 버전**: 10.1
-**최종 업데이트**: 2026-02-08
+**문서 버전**: 10.2
+**최종 업데이트**: 2026-02-09
