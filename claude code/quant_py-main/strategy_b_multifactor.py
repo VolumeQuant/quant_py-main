@@ -160,6 +160,12 @@ class MultiFactorStrategy:
 
         return data
 
+    def _winsorize(self, series, lower=0.01, upper=0.99):
+        """상하위 극단값 클리핑 (윈저라이징)"""
+        q_low = series.quantile(lower)
+        q_high = series.quantile(upper)
+        return series.clip(q_low, q_high)
+
     def calculate_zscore_by_sector(self, data, factor_col, sector_col='섹터'):
         """
         섹터별 Z-Score 계산
@@ -173,15 +179,18 @@ class MultiFactorStrategy:
             zscore_series: Z-Score 시리즈
         """
         if sector_col not in data.columns:
-            # 섹터 정보가 없으면 전체 평균으로 계산
             mean = data[factor_col].mean()
             std = data[factor_col].std()
+            if std == 0 or pd.isna(std):
+                return pd.Series(0.0, index=data.index)
             return (data[factor_col] - mean) / std
         else:
-            # 섹터별 Z-Score
-            return data.groupby(sector_col)[factor_col].transform(
-                lambda x: (x - x.mean()) / x.std()
-            )
+            def safe_zscore(x):
+                std = x.std()
+                if std == 0 or pd.isna(std):
+                    return pd.Series(0.0, index=x.index)
+                return (x - x.mean()) / std
+            return data.groupby(sector_col)[factor_col].transform(safe_zscore)
 
     def calculate_multifactor_score(self, data, price_df=None, has_sector=False):
         """
@@ -204,6 +213,21 @@ class MultiFactorStrategy:
         # 3. 모멘텀 팩터 계산
         if price_df is not None:
             data = self.calculate_momentum(data, price_df)
+
+        # 3.5. 이상치 전처리 (Z-Score 왜곡 방지)
+        # PER/PBR: 0 이하(적자/자본잠식) → NaN, 극단값 윈저라이징
+        for col in ['PER', 'PBR', 'PCR', 'PSR']:
+            if col in data.columns:
+                data.loc[data[col] <= 0, col] = np.nan
+                valid_mask = data[col].notna()
+                if valid_mask.sum() > 0:
+                    data.loc[valid_mask, col] = self._winsorize(data.loc[valid_mask, col])
+        # ROE/GPA/CFO 극단값 윈저라이징
+        for col in ['ROE', 'GPA', 'CFO']:
+            if col in data.columns:
+                valid_mask = data[col].notna()
+                if valid_mask.sum() > 0:
+                    data.loc[valid_mask, col] = self._winsorize(data.loc[valid_mask, col])
 
         # 4. 각 팩터별 Z-Score 계산
         value_factors = []

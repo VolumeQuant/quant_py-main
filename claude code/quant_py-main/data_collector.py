@@ -246,7 +246,7 @@ class DataCollector:
                         '종목명': df.loc[ticker]
                     })
                     time.sleep(0.03)
-                except:
+                except Exception:
                     continue
 
             sector_df = pd.DataFrame(sectors)

@@ -17,7 +17,7 @@ class MagicFormulaStrategy:
         """
         이익수익률 계산 = EBIT / EV
 
-        EBIT = 법인세차감전순이익 (FnGuide에서 직접 제공)
+        EBIT = 영업이익 (이자비용/법인세 차감 전)
         EV = 시가총액 + 총부채 - 여유자금
         여유자금 = 현금 - max(0, 유동부채 - 유동자산 + 현금)
 
@@ -27,11 +27,12 @@ class MagicFormulaStrategy:
         Returns:
             earnings_yield: 이익수익률 시리즈
         """
-        # EBIT 계산 (FnGuide는 법인세차감전순이익으로 제공)
-        if '법인세차감전순이익' in data.columns:
-            ebit = data['법인세차감전순이익']
+        # EBIT = 영업이익 (이자비용·법인세 차감 전 이익)
+        if '영업이익' in data.columns:
+            ebit = data['영업이익']
+        elif '세전계속사업이익' in data.columns:
+            ebit = data['세전계속사업이익']
         else:
-            # 대안: 당기순이익 + 법인세비용
             ebit = data['당기순이익'] + data['법인세비용']
 
         # 여유자금 계산
@@ -50,7 +51,8 @@ class MagicFormulaStrategy:
         """
         투하자본수익률 계산 = EBIT / IC
 
-        IC (투하자본) = (유동자산 - 유동부채) + (비유동자산 - 감가상각비)
+        IC (투하자본) = (유동자산 - 유동부채) + 비유동자산
+        ※ 비유동자산은 재무상태표 기준 순장부가 (감가상각누계액 차감 후)
 
         Args:
             data: 재무 데이터프레임
@@ -58,16 +60,16 @@ class MagicFormulaStrategy:
         Returns:
             roc: 투하자본수익률 시리즈
         """
-        # EBIT 계산 (FnGuide는 법인세차감전순이익으로 제공)
-        if '법인세차감전순이익' in data.columns:
-            ebit = data['법인세차감전순이익']
+        # EBIT = 영업이익 (이자비용·법인세 차감 전 이익)
+        if '영업이익' in data.columns:
+            ebit = data['영업이익']
+        elif '세전계속사업이익' in data.columns:
+            ebit = data['세전계속사업이익']
         else:
-            # 대안: 당기순이익 + 법인세비용
             ebit = data['당기순이익'] + data['법인세비용']
 
-        # 투하자본 계산
-        ic = ((data['유동자산'] - data['유동부채']) +
-              (data['비유동자산'] - data['감가상각비']))
+        # 투하자본 계산 (비유동자산은 BS상 순장부가이므로 감가상각비 별도 차감 불필요)
+        ic = (data['유동자산'] - data['유동부채']) + data['비유동자산']
 
         # 투하자본수익률
         roc = ebit / ic
@@ -152,44 +154,6 @@ class MagicFormulaStrategy:
         selected_stocks = self.select_top_stocks(scored_data, n_stocks)
 
         return selected_stocks, scored_data
-
-
-def prepare_financial_data_for_magic(market_cap_df, financial_statements):
-    """
-    마법공식 계산을 위한 재무 데이터 준비
-
-    Args:
-        market_cap_df: 시가총액 데이터
-        financial_statements: 재무제표 데이터 (딕셔너리 또는 데이터프레임)
-
-    Returns:
-        prepared_data: 준비된 데이터프레임
-    """
-    # 시가총액 데이터 준비
-    if '시가총액' in market_cap_df.columns:
-        mcap_data = market_cap_df[['시가총액']].copy()
-    else:
-        # 인덱스에서 시가총액 추출 (필요 시)
-        mcap_data = market_cap_df.copy()
-
-    # 재무제표 데이터와 결합
-    # 실제 구현 시 재무제표 구조에 맞게 조정 필요
-    # 여기서는 기본 구조만 제시
-
-    # TODO: 실제 재무제표 데이터에서 필요한 항목 추출
-    # - 손익계산서: 당기순이익, 법인세비용, 이자비용
-    # - 재무상태표: 총부채, 유동부채, 유동자산, 현금, 비유동자산
-    # - 현금흐름표: 감가상각비
-
-    required_columns = [
-        '종목코드', '시가총액', '당기순이익', '법인세비용', '이자비용',
-        '총부채', '유동부채', '유동자산', '현금', '비유동자산', '감가상각비'
-    ]
-
-    # 임시로 빈 데이터프레임 반환 (실제로는 재무제표에서 추출)
-    print("주의: 재무제표 데이터 준비 로직이 필요합니다.")
-
-    return pd.DataFrame(columns=required_columns)
 
 
 if __name__ == '__main__':

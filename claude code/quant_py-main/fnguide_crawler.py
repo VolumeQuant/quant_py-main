@@ -267,10 +267,15 @@ def extract_magic_formula_data(fs_dict, base_date=None, use_ttm=True):
             # 손익계산서/현금흐름표: 가중 TTM (최신분기 가중치 높음)
             # 가중치: 최신 40%, 2번째 30%, 3번째 20%, 4번째 10%
             # 합=4 스케일(1.6/1.2/0.8/0.4)로 기존 TTM 합산과 동일 스케일 유지
+            # 4분기 미만 시 합이 4.0이 되도록 정규화
+            base_weights = [1.6, 1.2, 0.8, 0.4]  # 최신→과거 순
+            n_quarters = len(recent_dates)
+            raw_weights = base_weights[:n_quarters]
+            scale = 4.0 / sum(raw_weights)  # 합이 4.0이 되도록 정규화
+
             weight_map = {}
             for i, d in enumerate(sorted(recent_dates, reverse=True)):
-                weights = [1.6, 1.2, 0.8, 0.4]  # 최신→과거 순
-                weight_map[d] = weights[i] if i < len(weights) else weights[-1]
+                weight_map[d] = raw_weights[i] * scale if i < n_quarters else base_weights[-1]
 
             flow_data = ttm_data[ttm_data['계정'].isin(flow_accounts)].copy()
             flow_data['가중치'] = flow_data['기준일'].map(weight_map)
@@ -411,7 +416,7 @@ def get_consensus_data(ticker):
                         if eps_str and eps_str not in ['nan', '-', '']:
                             result['forward_eps'] = float(eps_str)
                             result['has_consensus'] = True
-                    except:
+                    except Exception:
                         pass
 
                 # PER 추출
@@ -421,7 +426,7 @@ def get_consensus_data(ticker):
                         per_str = str(per_val).replace('배', '').strip()
                         if per_str and per_str not in ['nan', '-', '']:
                             result['forward_per'] = float(per_str)
-                    except:
+                    except Exception:
                         pass
 
                 # 목표주가 추출
@@ -432,7 +437,7 @@ def get_consensus_data(ticker):
                             target_str = str(target_val).replace(',', '').replace('원', '').strip()
                             if target_str and target_str not in ['nan', '-', '']:
                                 result['target_price'] = float(target_str)
-                        except:
+                        except Exception:
                             pass
                         break
 

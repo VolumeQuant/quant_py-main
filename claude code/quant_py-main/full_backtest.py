@@ -141,7 +141,7 @@ def get_universe_for_date(collector, date, min_market_cap=MIN_MARKET_CAP, min_tr
                 name = stock.get_market_ticker_name(ticker)
                 if not any(kw in name for kw in exclude_keywords):
                     valid_tickers.append(ticker)
-            except:
+            except Exception:
                 continue
 
         return filtered.loc[filtered.index.isin(valid_tickers)], valid_tickers
@@ -208,7 +208,7 @@ def run_strategy_for_date(collector, date, universe_tickers, universe_df, strate
                     right_index=True,
                     how='left'
                 )
-            except:
+            except Exception:
                 # 섹터 정보 실패 시 시가총액만 추가
                 magic_df = magic_df.merge(
                     universe_df[['시가총액']],
@@ -266,7 +266,7 @@ def get_dividend_yield(ticker, year):
             div_yield = div_data['DIV'].iloc[0]
             return div_yield / 100 if div_yield > 0 else 0
         return 0
-    except:
+    except Exception:
         return 0
 
 

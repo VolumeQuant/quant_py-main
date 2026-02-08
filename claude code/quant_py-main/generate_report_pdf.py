@@ -33,7 +33,7 @@ try:
     pdfmetrics.registerFont(TTFont('MalgunGothicBold', 'C:/Windows/Fonts/malgunbd.ttf'))
     FONT_NAME = 'MalgunGothic'
     FONT_BOLD = 'MalgunGothicBold'
-except:
+except Exception:
     FONT_NAME = 'Helvetica'
     FONT_BOLD = 'Helvetica-Bold'
 

@@ -2,8 +2,8 @@
 
 ## 문서 개요
 
-**버전**: 8.0
-**최종 업데이트**: 2026-02-07
+**버전**: 9.0
+**최종 업데이트**: 2026-02-08
 **작성자**: Claude Opus 4.6
 
 ---
@@ -82,7 +82,7 @@ BASE_DATE = get_previous_trading_date(TODAY)
 ```yaml
 - name: Install dependencies
   run: |
-    pip install pykrx pandas numpy requests beautifulsoup4 lxml pyarrow aiohttp tqdm scipy
+    pip install pykrx pandas numpy requests beautifulsoup4 lxml pyarrow tqdm scipy html5lib
 
 - name: Generate portfolio (create CSV)
   run: python create_current_portfolio.py
@@ -237,7 +237,7 @@ RSI (40점): 낮을수록 좋음
 | 변경 항목 | Before | After |
 |----------|--------|-------|
 | 재무제표 소스 | FnGuide 크롤링 | **FnGuide 캐시** |
-| 처리 방식 | 순차 처리 | **비동기 + 병렬** |
+| 처리 방식 | 순차 처리 | **ThreadPool 병렬** |
 | 에러 처리 | print + 무시 | **Skip & Log 패턴** |
 | 거래대금 필터 | 10억원 (당일) | **30억원 (20일 평균)** |
 | 총 소요시간 | ~50분 | **~35초 (캐시)** |
@@ -246,9 +246,9 @@ RSI (40점): 낮을수록 좋음
 - `error_handler.py` - Skip & Log 에러 처리
 
 **수정 모듈**:
-- `fnguide_crawler.py` - 재무제표 크롤링 deprecated, 컨센서스만 유지
-- `data_collector.py` - 병렬 처리 추가
-- `create_current_portfolio.py` - async main() 구조로 전환
+- `fnguide_crawler.py` - 재무제표 캐시 + 가중TTM + 컨센서스
+- `data_collector.py` - ThreadPool 병렬 처리 추가
+- `create_current_portfolio.py` - 동기 main() 구조
 
 ---
 
@@ -291,7 +291,7 @@ RSI (40점): 낮을수록 좋음
 
 ## 2. 핵심 모듈 상세
 
-### 2.1 error_handler.py (400줄)
+### 2.1 error_handler.py (~315줄)
 
 Skip & Log 패턴 에러 처리
 
@@ -338,7 +338,7 @@ tracker = ErrorTracker(log_dir=Path("logs"), name="portfolio")
 
 for ticker in tickers:
     try:
-        data = await client.get_financial_statement(ticker)
+        data = get_financial_statement(ticker)
         tracker.mark_success(ticker)
     except Exception as e:
         tracker.log_error(ticker, ErrorCategory.NETWORK, "수집 실패", e)
@@ -350,153 +350,83 @@ tracker.save_error_log()
 
 ---
 
-### 2.2 fnguide_crawler.py (수정, 529줄)
+### 2.2 fnguide_crawler.py (~490줄)
 
-**변경사항**: 재무제표 크롤링 deprecated, 컨센서스만 유지
+FnGuide 재무제표 캐시 + 가중TTM + 컨센서스
 
-#### 유지 함수
-
-**get_consensus_data()** (372-445줄)
-```python
-def get_consensus_data(ticker: str) -> Dict:
-    """
-    Forward EPS/PER 컨센서스 수집
-
-    URL: comp.fnguide.com/SVO2/ASP/SVD_Main.asp
-    테이블: tables[7]
-
-    Returns:
-        {forward_eps, forward_per, target_price, analyst_count}
-    """
-```
-
-**get_consensus_batch_async()** (480-529줄)
-```python
-async def get_consensus_batch_async(
-    tickers: List[str],
-    delay: float = 0.5,
-    max_concurrent: int = 5,
-) -> pd.DataFrame:
-    """비동기 배치 컨센서스 수집"""
-```
-
-#### Deprecated 함수 (하위 호환용)
+#### 주요 함수
 
 ```python
 def get_financial_statement(ticker, use_cache=True):
-    """캐시 전용"""
-    warnings.warn("get_financial_statement()는 deprecated입니다.")
-    # 캐시가 있으면 로드, 없으면 빈 DataFrame 반환
+    """재무제표 캐시 로드 (parquet)"""
 
 def get_all_financial_statements(tickers, use_cache=True):
-    """[DEPRECATED] 캐시 전용"""
-    # 기존 캐시 파일만 로드
+    """전체 종목 재무제표 캐시 일괄 로드"""
+
+def extract_magic_formula_data(fs_dict, base_date=None, use_ttm=True):
+    """재무제표에서 마법공식/멀티팩터 지표 추출 (가중TTM 적용)"""
+
+def get_consensus_data(ticker):
+    """Forward EPS/PER 컨센서스 수집 (FnGuide)"""
+
+def get_consensus_batch(tickers, delay=1.0):
+    """배치 컨센서스 수집 (동기)"""
 ```
 
 ---
 
-### 2.3 data_collector.py (수정, 544줄)
+### 2.3 data_collector.py (~340줄)
 
-**변경사항**: 병렬 처리 메서드 추가
+pykrx API 래퍼 + 병렬 처리
 
-#### 신규 메서드
+#### 주요 메서드 (DataCollector 클래스)
 
-**get_ohlcv_parallel()** (67-140줄)
 ```python
-def get_ohlcv_parallel(
-    self,
-    tickers: List[str],
-    start_date: str = None,
-    end_date: str = None,
-) -> pd.DataFrame:
-    """
-    ThreadPoolExecutor로 OHLCV 병렬 수집
+def get_ticker_list(self, date, market='ALL'):
+    """종목코드 목록 조회"""
 
-    캐시: data_cache/all_ohlcv_{start}_{end}.parquet
-    Workers: self.max_workers (기본 10)
-    """
-```
+def get_market_cap(self, date, market='ALL'):
+    """시가총액 조회 (KOSPI/KOSDAQ)"""
 
-**get_ticker_names_parallel()** (142-184줄)
-```python
-def get_ticker_names_parallel(
-    self,
-    tickers: List[str],
-) -> Dict[str, str]:
-    """종목명 병렬 수집"""
-```
+def get_all_ohlcv(self, tickers, start_date=None, end_date=None):
+    """OHLCV 병렬 수집 (ThreadPoolExecutor)"""
 
-**get_market_cap_batch()** (186-230줄)
-```python
-def get_market_cap_batch(
-    self,
-    date: str,
-    markets: List[str] = ['KOSPI', 'KOSDAQ'],
-) -> pd.DataFrame:
-    """
-    KOSPI/KOSDAQ 통합 시가총액 조회
+def get_market_fundamental_batch(self, date, market='ALL'):
+    """pykrx PER/PBR/DIV 일괄 조회 (캐시)"""
 
-    캐시: data_cache/market_cap_ALL_{date}.parquet
-    """
-```
+def get_krx_sector(self, date):
+    """KRX 업종 정보 조회"""
 
-**filter_universe()** (232-280줄)
-```python
-def filter_universe(
-    self,
-    market_cap_df: pd.DataFrame,
-    min_market_cap: int = 1000,    # 억원
-    min_trading_value: int = 30,   # 억원 (20일 평균)
-) -> pd.DataFrame:
-    """
-    유니버스 필터링
-
-    조건:
-    - 시가총액 >= 1000억원
-    - 거래대금 >= 30억원 (20일 평균)
-    - 금융업/지주사 제외
-    """
+def get_index_ohlcv(self, start_date=None, end_date=None, ticker='1001'):
+    """지수 OHLCV 조회"""
 ```
 
 ---
 
-### 2.4 create_current_portfolio.py (수정, 525줄)
+### 2.4 create_current_portfolio.py (~400줄)
 
-**변경사항**: async main() 구조로 전환
+포트폴리오 생성 메인 스크립트 (동기)
 
 #### 핵심 함수
 
-**main_async()** (390-513줄)
-```python
-async def main_async():
-    """비동기 메인 함수"""
-
-    # 1. 시가총액 수집
-    market_cap_df = collector.get_market_cap_batch(BASE_DATE)
-
-    # 2. 유니버스 필터링
-    universe_df, ticker_names = filter_universe_optimized(...)
-
-    # 3. 재무제표 수집 (FnGuide 캐시)
-    fs_data = get_all_financial_statements(tickers, use_cache=True)
-    magic_df = extract_magic_formula_data(fs_data, use_ttm=True)
-
-    # 4. OHLCV 수집 (병렬)
-    price_df = collect_price_data_parallel(...)
-
-    # 5. 전략 실행
-    selected_a = await run_strategy_a(magic_df, universe_df)
-    selected_b = await run_strategy_b(magic_df, price_df, universe_df)
-
-    # 6. 결과 저장
-    ...
-```
-
-**main()** (516-520줄)
 ```python
 def main():
-    """동기 래퍼 (호환성)"""
-    return asyncio.run(main_async())
+    """메인 실행 함수 (동기)"""
+    # 1. 시가총액 수집 (pykrx)
+    # 2. 유니버스 필터링 (시총/거래대금/금융업)
+    # 3. 재무제표 수집 (FnGuide 캐시, 가중TTM)
+    # 4. pykrx 실시간 PER/PBR/DIV
+    # 5. OHLCV 수집 (ThreadPool 병렬)
+    # 6. 전략 A 사전 필터 → 150종목
+    # 7. 전략 B 스코어링 → 150종목 전체
+    # 8. 통합순위 (A30% + B70%) → TOP 30
+    # 9. 결과 저장 (CSV + 리포트)
+
+def run_strategy_a_prefilter(magic_df, universe_df, n=150):
+    """마법공식 사전 필터"""
+
+def run_strategy_b_scoring(magic_df, price_df, universe_df, fund_df, prefiltered, n=30):
+    """멀티팩터 스코어링 (pykrx live PER/PBR/DIV 우선)"""
 ```
 
 ---
@@ -549,8 +479,7 @@ quant_py-main/
 │   ├── fnguide_crawler.py        # FnGuide 재무제표 캐시 + 가중TTM
 │   ├── data_collector.py         # pykrx API + 병렬 처리 + 펀더멘털 배치
 │   ├── strategy_a_magic.py       # 전략 A: 마법공식 (사전 필터)
-│   ├── strategy_b_multifactor.py # 전략 B: 멀티팩터 (pykrx live 우선)
-│   └── utils.py                  # 유틸리티 함수
+│   └── strategy_b_multifactor.py # 전략 B: 멀티팩터 (pykrx live 우선)
 │
 ├── 실행 스크립트
 │   ├── create_current_portfolio.py  # 포트폴리오 생성 (A→필터, B→스코어, 통합순위)
@@ -609,7 +538,7 @@ quant_py-main/
 | **2026-02-03** | **Skip & Log 에러 처리 도입** | **error_handler.py (NEW)** |
 | **2026-02-03** | **Skip & Log 에러 처리** | **error_handler.py (NEW)** |
 | **2026-02-03** | **병렬 처리 추가** | **data_collector.py** |
-| **2026-02-03** | **async main() 구조 전환** | **create_current_portfolio.py** |
+| **2026-02-03** | **main() 구조 전환 (동기)** | **create_current_portfolio.py** |
 | **2026-02-03** | **거래대금 필터 30억으로 조정** | **config.py** |
 | **2026-02-03** | **문서 전면 업데이트** | **README.md** |
 | **2026-02-04** | **20일 평균 거래대금 필터 적용** | **create_current_portfolio.py** |
@@ -638,8 +567,18 @@ quant_py-main/
 | **2026-02-07** | **TOP20 상세 + 뉴스 필터링 + SECTOR_DB 확장** | **send_telegram_auto.py** |
 | **2026-02-07** | **공동순위 제거 (method='first')** | **strategy_a/b, create_current_portfolio.py** |
 | **2026-02-07** | **msg2(전체30간략) 삭제 → 1~2개 메시지만** | **send_telegram_auto.py** |
+| **2026-02-08** | **EBIT 수정: EBT→영업이익 사용** | **strategy_a_magic.py** |
+| **2026-02-08** | **IC 수정: 비유동자산만 (이미 순액)** | **strategy_a_magic.py** |
+| **2026-02-08** | **가중TTM 정규화: <4분기시 weights scale** | **fnguide_crawler.py** |
+| **2026-02-08** | **Z-Score: Winsorizing(1%/99%), std=0 가드** | **strategy_b_multifactor.py** |
+| **2026-02-08** | **async/await 완전 제거 (동기화)** | **create_current_portfolio.py** |
+| **2026-02-08** | **모듈 구조화: main() 함수화** | **send_telegram_auto.py** |
+| **2026-02-08** | **bare except → except Exception: 통일** | **전체 파일** |
+| **2026-02-08** | **불필요 파일 삭제 (utils.py, backtest_main.py 등 7개)** | **프로젝트 정리** |
+| **2026-02-08** | **dead code 제거 (async decorator, prepare_data 함수)** | **error_handler.py, strategy_a_magic.py** |
+| **2026-02-08** | **문서 현행화 (README.md, SESSION_HANDOFF.md)** | **MD 파일** |
 
 ---
 
-**문서 버전**: 8.0
-**최종 업데이트**: 2026-02-07
+**문서 버전**: 9.0
+**최종 업데이트**: 2026-02-08

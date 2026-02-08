@@ -1,8 +1,9 @@
 """
-퀀트 포트폴리오 생성 v3.0
+퀀트 포트폴리오 생성 v3.1
 
 파이프라인:
-  유니버스(~600) → A 사전필터(150) → pykrx 실시간 PER/PBR/DIV → B 최종선정(30)
+  유니버스(~600) → A 사전필터(150) → pykrx PER/PBR/DIV → B 스코어링(150)
+  → A30%+B70% 통합순위 → 최종30 → 통합 CSV
 
 데이터 소스:
   - FnGuide 캐시: 재무제표 (Quality 팩터, PCR/PSR용)
@@ -11,7 +12,6 @@
 
 import pandas as pd
 import numpy as np
-import asyncio
 import warnings
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -56,7 +56,7 @@ def get_latest_trading_date() -> str:
             df = pykrx_stock.get_market_cap(date, market='KOSPI')
             if not df.empty and df['시가총액'].sum() > 0:
                 return date
-        except:
+        except Exception:
             continue
     return '20260129'
 
@@ -140,7 +140,7 @@ def calculate_avg_trading_value_from_cache(days: int = 20) -> pd.DataFrame:
                     if ticker not in trading_values:
                         trading_values[ticker] = []
                     trading_values[ticker].append(df.loc[ticker, '거래대금'])
-        except:
+        except Exception:
             continue
 
     avg_values = {}
@@ -192,7 +192,7 @@ def filter_universe_optimized(
         try:
             name = pykrx_stock.get_market_ticker_name(ticker)
             ticker_names[ticker] = name
-        except:
+        except Exception:
             ticker_names[ticker] = ticker
     filtered['종목명'] = filtered.index.map(ticker_names)
 
@@ -204,7 +204,7 @@ def filter_universe_optimized(
     return filtered, ticker_names
 
 
-async def run_strategy_a_prefilter(
+def run_strategy_a_prefilter(
     magic_df: pd.DataFrame,
     universe_df: pd.DataFrame,
     error_tracker: ErrorTracker
@@ -236,7 +236,7 @@ async def run_strategy_a_prefilter(
         return pd.DataFrame()
 
 
-async def run_strategy_b_scoring(
+def run_strategy_b_scoring(
     prefiltered_df: pd.DataFrame,
     fundamental_df: pd.DataFrame,
     price_df: pd.DataFrame,
@@ -297,11 +297,9 @@ def generate_report(
     """최종 리포트 생성"""
     error_summary = error_tracker.get_summary()
 
-    base_dt = datetime.strptime(BASE_DATE, '%Y%m%d')
-
     report = f"""
 ================================================================================
-퀀트 포트폴리오 리포트 v3.0
+퀀트 포트폴리오 리포트 v3.1
 기준일: {BASE_DATE}
 생성일: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 ================================================================================
@@ -346,15 +344,15 @@ def generate_report(
     return report
 
 
-async def main_async():
-    """메인 함수 (비동기)"""
+def main():
+    """메인 함수"""
     start_time = datetime.now()
     base_dt = datetime.strptime(BASE_DATE, '%Y%m%d')
 
     print("=" * 80)
-    print("퀀트 포트폴리오 생성 v3.0")
+    print("퀀트 포트폴리오 생성 v3.1")
     print(f"기준일: {BASE_DATE}")
-    print(f"파이프라인: 유니버스 → A 사전필터({PREFILTER_N}) → A50%+B50% 통합순위 → 최종{N_STOCKS}개")
+    print(f"파이프라인: 유니버스 → A 사전필터({PREFILTER_N}) → A30%+B70% 통합순위 → 최종{N_STOCKS}개")
     print(f"데이터 소스: FnGuide 캐시 + pykrx 실시간 PER/PBR/DIV")
     print("=" * 80)
 
@@ -444,8 +442,8 @@ async def main_async():
     # =========================================================================
     # 5단계: 전략 실행 (A 사전필터 → B 스코어링 → A+B 통합순위)
     # =========================================================================
-    prefiltered = await run_strategy_a_prefilter(magic_df, universe_df, error_tracker)
-    scored_b = await run_strategy_b_scoring(
+    prefiltered = run_strategy_a_prefilter(magic_df, universe_df, error_tracker)
+    scored_b = run_strategy_b_scoring(
         prefiltered, fundamental_df, price_df, ticker_names, error_tracker
     )
 
@@ -500,11 +498,6 @@ async def main_async():
     print("=" * 80)
 
     return selected
-
-
-def main():
-    """동기 래퍼 (호환성)"""
-    return asyncio.run(main_async())
 
 
 if __name__ == '__main__':

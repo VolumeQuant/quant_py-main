@@ -314,41 +314,6 @@ def with_error_handling(
     return decorator
 
 
-def with_error_handling_async(
-    error_tracker: ErrorTracker,
-    category: ErrorCategory = ErrorCategory.UNKNOWN,
-    default_return: Any = None,
-):
-    """
-    비동기 함수용 에러 처리 데코레이터
-
-    사용법:
-        tracker = ErrorTracker()
-
-        @with_error_handling_async(tracker, ErrorCategory.API_RATE_LIMIT)
-        async def fetch_data_async(ticker):
-            ...
-    """
-    def decorator(func: Callable) -> Callable:
-        @wraps(func)
-        async def wrapper(*args, **kwargs):
-            ticker = kwargs.get('ticker') or (args[0] if args else 'unknown')
-
-            try:
-                return await func(*args, **kwargs)
-            except Exception as e:
-                error_tracker.log_error(
-                    ticker=str(ticker),
-                    category=category,
-                    message=f"{func.__name__} 실행 실패",
-                    exception=e,
-                )
-                return default_return
-
-        return wrapper
-    return decorator
-
-
 # 편의 함수
 def categorize_exception(e: Exception) -> ErrorCategory:
     """

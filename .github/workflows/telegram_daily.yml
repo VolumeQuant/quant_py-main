@@ -28,7 +28,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install pykrx pandas numpy requests beautifulsoup4 lxml pyarrow aiohttp tqdm scipy html5lib
+          pip install pykrx pandas numpy requests beautifulsoup4 lxml pyarrow tqdm scipy html5lib
 
       - name: Create config.py from secrets
         run: |

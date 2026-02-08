@@ -1,11 +1,12 @@
 """
-일별 모니터링 설정 파일 템플릿
+퀀트 포트폴리오 설정 파일 템플릿
 이 파일을 config.py로 복사한 후 설정값을 입력하세요.
 
 사용법:
 1. 이 파일을 config.py로 복사
 2. 텔레그램 봇 토큰과 채팅 ID 입력
-3. daily_monitor.py 실행
+3. python create_current_portfolio.py 실행
+4. python send_telegram_auto.py 실행
 
 텔레그램 봇 설정 방법:
 1. @BotFather에게 /newbot 명령 → 봇 토큰 받기
@@ -16,7 +17,18 @@
 
 # 텔레그램 설정
 TELEGRAM_BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"  # 예: "1234567890:ABCdefGHIjklMNOpqrsTUVwxyz"
-TELEGRAM_CHAT_ID = "YOUR_CHAT_ID_HERE"       # 예: "123456789"
+TELEGRAM_CHAT_ID = "YOUR_CHAT_ID_HERE"       # 예: "123456789" (채널 ID)
+TELEGRAM_PRIVATE_ID = "YOUR_PRIVATE_ID_HERE"  # 예: "123456789" (개인 채팅 ID)
 
-# Git 설정
-GIT_AUTO_PUSH = True  # 자동 커밋/푸시 활성화
+# 유니버스 필터 설정
+MIN_MARKET_CAP = 1000       # 최소 시가총액 (억원)
+MIN_TRADING_VALUE = 30      # 최소 20일 평균 거래대금 (억원)
+
+# 전략 설정
+PREFILTER_N = 150           # 마법공식 사전필터 종목 수
+N_STOCKS = 30               # 최종 선정 종목 수
+
+# 데이터 수집 설정
+MAX_CONCURRENT_REQUESTS = 10  # 최대 동시 요청 수
+PYKRX_WORKERS = 10            # pykrx 병렬 워커 수
+CACHE_DIR = "data_cache"      # 캐시 디렉토리 경로

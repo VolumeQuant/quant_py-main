@@ -60,7 +60,7 @@ def get_rebalance_dates(start_year=2015, end_year=2025):
                     if not mcap.empty:
                         dates.append(try_date)
                         break
-                except:
+                except Exception:
                     continue
 
     return sorted(set(dates))
@@ -92,7 +92,7 @@ def get_universe(date, market='ALL'):
         for ticker in df.index[:200]:  # 상위 200개만
             try:
                 names[ticker] = stock.get_market_ticker_name(ticker)
-            except:
+            except Exception:
                 names[ticker] = ticker
         df['종목명'] = df.index.map(names)
 
@@ -195,7 +195,7 @@ def calculate_momentum_score(tickers, end_date):
             # 12-1 모멘텀
             momentum_data[ticker] = mom_12m - mom_1m
 
-        except:
+        except Exception:
             continue
 
     if not momentum_data:
@@ -296,7 +296,7 @@ def run_strategy_c(date):
         for ticker in kosdaq_df.index[:150]:
             try:
                 names[ticker] = stock.get_market_ticker_name(ticker)
-            except:
+            except Exception:
                 names[ticker] = ticker
         kosdaq_df['종목명'] = kosdaq_df.index.map(names)
 
@@ -363,7 +363,7 @@ def calculate_portfolio_return(portfolio_df, start_date, end_date):
             all_returns.append(daily_return * weight)
             valid_count += 1
 
-        except:
+        except Exception:
             continue
 
     if not all_returns:
