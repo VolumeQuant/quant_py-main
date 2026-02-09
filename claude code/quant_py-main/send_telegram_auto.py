@@ -19,6 +19,7 @@ import glob
 import os
 from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 from zoneinfo import ZoneInfo
+from gemini_analysis import compute_risk_flags
 
 # ============================================================
 # 상수/설정
@@ -183,6 +184,100 @@ def format_stock_detail(s):
 ━━━━━━━━━━━━━━━━━━━
 """
     return block
+
+
+# ============================================================
+# 퀀트 TOP 5 추천
+# ============================================================
+def get_broad_sector(sector):
+    """대분류 섹터 (중복 방지용)"""
+    if '반도체' in sector:
+        return '반도체'
+    if '자동차' in sector:
+        return '자동차'
+    if '바이오' in sector or '의료' in sector or '백신' in sector:
+        return '바이오'
+    if '게임' in sector:
+        return '게임'
+    if '엔터' in sector or 'K-POP' in sector:
+        return '엔터'
+    return sector
+
+
+def select_top5(stock_analysis):
+    """위험 플래그 없는 종목 중 섹터 중복 없이 TOP 5 선정"""
+    selected = []
+    used_sectors = set()
+
+    for s in stock_analysis:
+        if len(selected) >= 5:
+            break
+        flags = compute_risk_flags(s)
+        if flags:
+            continue
+        broad = get_broad_sector(s['sector'])
+        if broad in used_sectors:
+            continue
+        selected.append(s)
+        used_sectors.add(broad)
+
+    return selected
+
+
+def format_recommendation(selected):
+    """퀀트 TOP 5 추천 메시지 포맷"""
+    weights = [25, 25, 20, 15, 15]
+    medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"]
+    now = datetime.now(KST)
+
+    def get_entry(rsi):
+        if rsi < 40:
+            return "즉시 진입 (과매도)"
+        elif rsi < 60:
+            return "즉시 진입"
+        elif rsi < 70:
+            return "분할 매수"
+        else:
+            return f"⚠️대기 (RSI {rsi:.0f} 과열)"
+
+    def get_highlight(s):
+        parts = []
+        per, roe = s.get('per'), s.get('roe')
+        if per and per == per and per < 10:
+            parts.append(f"PER {per:.1f} 저평가")
+        if roe and roe == roe and roe > 20:
+            parts.append(f"ROE {roe:.1f}%")
+        if s.get('w52_pct', 0) < -25:
+            parts.append(f"52주 대비 {s['w52_pct']:.0f}% 할인")
+        if s.get('rsi', 50) < 40:
+            parts.append("과매도 반등 기대")
+        return ', '.join(parts) if parts else f"퀀트 {int(s['rank'])}위"
+
+    lines = [
+        "━━━━━━━━━━━━━━━━━━━",
+        "   🎯 퀀트 TOP 5 추천",
+        "━━━━━━━━━━━━━━━━━━━",
+        f"📅 {now.strftime('%Y년 %m월 %d일')}",
+        "",
+        "퀀트 TOP 30에서 섹터 분산 + RSI 기반",
+        "5종목을 자동 선정했어요.",
+        "",
+    ]
+
+    for i, s in enumerate(selected):
+        lines.append(f"{medals[i]} {s['name']} · {s['sector']}")
+        lines.append(f"   퀀트 {int(s['rank'])}위 | 비중 {weights[i]}%")
+        lines.append(f"   {s['price']:,.0f}원 | RSI {s['rsi']:.0f} | 52주 {s['w52_pct']:+.0f}%")
+        lines.append(f"   📋 {get_entry(s['rsi'])}")
+        lines.append(f"   💡 {get_highlight(s)}")
+        if i < len(selected) - 1:
+            lines.append("─────────")
+
+    lines.append("")
+    lines.append("━━━━━━━━━━━━━━━━━━━")
+    lines.append("⚠️ 참고용이며 투자 판단은 본인 책임입니다.")
+
+    return '\n'.join(lines)
 
 
 # ============================================================
@@ -423,6 +518,31 @@ def main():
             print("\nAI 브리핑 스킵 (결과 없음)")
     except Exception as e:
         print(f"\nAI 브리핑 실패 (계속 진행): {e}")
+
+    # ============================================================
+    # 퀀트 TOP 5 추천 — 채널+개인봇 전송
+    # ============================================================
+    try:
+        selected = select_top5(stock_analysis)
+        if len(selected) >= 5:
+            pick_msg = format_recommendation(selected)
+            print(f"\n=== 퀀트 TOP 5 ({len(pick_msg)}자) ===")
+            print(pick_msg)
+
+            if IS_GITHUB_ACTIONS:
+                r = requests.post(url, data={'chat_id': TELEGRAM_CHAT_ID, 'text': pick_msg})
+                print(f'TOP 5 채널 전송: {r.status_code}')
+                if PRIVATE_CHAT_ID:
+                    r = requests.post(url, data={'chat_id': PRIVATE_CHAT_ID, 'text': pick_msg})
+                    print(f'TOP 5 개인 전송: {r.status_code}')
+            else:
+                target_id = PRIVATE_CHAT_ID or TELEGRAM_CHAT_ID
+                r = requests.post(url, data={'chat_id': target_id, 'text': pick_msg})
+                print(f'TOP 5 전송: {r.status_code}')
+        else:
+            print(f"\nTOP 5 스킵 (위험 플래그 없는 종목 부족: {len(selected)}개)")
+    except Exception as e:
+        print(f"\nTOP 5 추천 실패 (계속 진행): {e}")
 
     # 히스토리 저장
     history = {
