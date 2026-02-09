@@ -2,9 +2,47 @@
 
 ## 문서 개요
 
-**버전**: 10.4
+**버전**: 10.5
 **최종 업데이트**: 2026-02-09
 **작성자**: Claude Opus 4.6
+
+---
+
+## 핵심 변경사항 (v10.5 — AI 브리핑 구분선 안정화)
+
+### 2026-02-09 Gemini [SEP] 의존 제거 → 코드 후처리 구분선
+
+**문제**: Gemini가 `[SEP]` 마커를 불규칙하게 삽입 — 종목 사이 구분선이 랜덤하게 나타나거나 사라짐
+
+| 항목 | Before (v10.4) | After (v10.5) |
+|------|----------------|---------------|
+| 구분선 생성 | Gemini가 `[SEP]` 마커 삽입 | **코드가 regex로 자동 삽입** |
+| 프롬프트 | "종목 사이에 [SEP] 넣어줘" | **"구분선/[SEP] 넣지 마. 코드가 처리"** |
+| 감지 방식 | 텍스트에서 `[SEP]` 문자열 치환 | **`<b>종목명(6자리티커)</b>` 패턴 regex** |
+| 안정성 | Gemini 응답에 따라 불안정 | **100% 안정 (코드 기반)** |
+
+**구분선 삽입 로직** (`convert_markdown_to_html()`):
+```python
+# ⚠️ 섹션에서 <b>종목명 (6자리티커)</b> 패턴을 regex로 감지
+# 2번째 종목부터 앞에 ───────── 구분선 자동 삽입
+idx = result.find('⚠️')
+if idx != -1:
+    before = result[:idx]
+    after = result[idx:]
+    count = [0]
+    def _sep(m):
+        count[0] += 1
+        if count[0] <= 1:
+            return m.group(0)
+        return f'─────────\n{m.group(0)}'
+    after = re.sub(r'<b>[^<]+?\(\d{6}\)</b>', _sep, after)
+    result = before + after
+```
+
+**수정 파일**:
+1. `gemini_analysis.py` — 프롬프트에서 [SEP] 지시 제거, `convert_markdown_to_html()` regex 기반 구분선 로직
+
+**교훈**: AI 출력 포맷에 의존하면 불안정 → 가능한 한 코드가 후처리하는 것이 안정적
 
 ---
 
@@ -46,7 +84,7 @@
 | 위험 감지 | 5개 단순 alert (RSI/52주/전일비) | **6개 정량 플래그** (코드 계산) |
 | 프롬프트 | raw 데이터 + alert 전달 | **종목별 인라인 플래그 + 설명 섹션** |
 | 출력 포맷 | plain text | **Telegram HTML** (bold, 분리선) |
-| 종목 구분 | 없음 | **[SEP] → ───────── 분리선** |
+| 종목 구분 | 없음 | **regex 코드 후처리 구분선** (v10.5에서 [SEP]→regex 전환) |
 | ✅ 클린 리스트 | Gemini 생성 (포맷 불안정) | **코드 직접 생성** |
 | temperature | 0.3 고정 | **0.2 → 실패시 0.3 재시도** |
 | 응답 추출 | response.text 직접 | **extract_text() 헬퍼** |
@@ -599,7 +637,7 @@ def build_prompt(stock_list):
     # [종목별 데이터 & 위험 신호] + [위험 신호 설명] + [출력 형식]
 
 def convert_markdown_to_html(text):
-    """Gemini 마크다운 → 텔레그램 HTML (**→<b>, [SEP]→─────────)"""
+    """Gemini 마크다운 → 텔레그램 HTML (**→<b>, ⚠️ 섹션 regex 구분선)"""
 
 def extract_text(resp):
     """response.text None일 때 parts에서 직접 추출"""
@@ -790,8 +828,9 @@ quant_py-main/
 | **2026-02-09** | **AI 브리핑 parse_mode='HTML' + [SEP] 분리선** | **send_telegram_auto.py** |
 | **2026-02-09** | **TOP20 종목간 빈 줄 제거 (여백 축소)** | **send_telegram_auto.py** |
 | **2026-02-09** | **퀀트 TOP 5 자동 추천 (위험 플래그 제외 + 섹터 분산)** | **send_telegram_auto.py** |
+| **2026-02-09** | **AI 브리핑 구분선 안정화: Gemini [SEP] 의존 제거 → regex 코드 후처리** | **gemini_analysis.py** |
 
 ---
 
-**문서 버전**: 10.4
+**문서 버전**: 10.5
 **최종 업데이트**: 2026-02-09
