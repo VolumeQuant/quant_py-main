@@ -39,8 +39,10 @@ jobs:
           TELEGRAM_BOT_TOKEN = "${{ secrets.TELEGRAM_BOT_TOKEN }}"
           TELEGRAM_CHAT_ID = "${{ secrets.TELEGRAM_CHAT_ID }}"
           TELEGRAM_PRIVATE_ID = "${{ secrets.TELEGRAM_PRIVATE_ID }}"
-          MIN_MARKET_CAP = 1000
-          MIN_TRADING_VALUE = 30
+          MIN_MARKET_CAP = 3000
+          MIN_TRADING_VALUE = 50
+          PER_MAX_LIMIT = 60
+          PBR_MAX_LIMIT = 10
           MAX_CONCURRENT_REQUESTS = 10
           PYKRX_WORKERS = 10
           CACHE_DIR = "data_cache"
