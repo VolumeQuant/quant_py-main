@@ -1,10 +1,10 @@
 """
-Gemini AI 포트폴리오 브리핑 모듈
+Gemini AI 포트폴리오 브리핑 모듈 — v3 정량 리스크 스캐너
 
 "검색은 코드가, 분석은 AI가" 원칙:
-- 개별 종목 뉴스 검색 → 제거 (Grounding은 요청당 5-8개만 검색, 나머지 할루시네이션)
-- 시장 동향 → AI Google Search 유지 (1개 광범위 쿼리는 안정적)
-- 데이터 분석 → 코드가 포트폴리오 데이터 구성 → AI가 해석
+- 코드가 6가지 위험 플래그를 팩트로 계산 → AI는 그 팩트만 해석
+- 시장 동향만 Google Search (1개 광범위 쿼리)
+- [SEP] 마커로 종목 분리 → 코드가 HTML 분리선으로 변환
 """
 
 import re
@@ -28,15 +28,63 @@ def get_gemini_api_key():
         return ''
 
 
+def compute_risk_flags(s):
+    """
+    종목별 위험 신호 계산 (코드가 팩트 기반으로 판별)
+
+    "좋은 사과를 싸게 사자" 철학:
+    - 과매수/고평가/급등 = 비싼 사과 경고
+    - 52주 급락/전일 급락 = 가격 하락 원인 확인 필요
+    - 거래량 폭발 = 비정상 움직임 주의
+    """
+    rsi = s.get('rsi', 50)
+    w52 = s.get('w52_pct', 0)
+    chg = s.get('daily_chg', 0)
+    per = s.get('per')
+    vol = s.get('vol_ratio', 1)
+
+    flags = []
+
+    # 1. 과매수 (RSI >= 75)
+    if rsi >= 75:
+        flags.append(f"🔺 RSI {rsi:.0f}로 과매수 구간")
+
+    # 2. 52주 급락 (w52_pct <= -35%)
+    if w52 <= -35:
+        flags.append(f"📉 52주 고점 대비 {w52:.0f}% 급락")
+
+    # 3. 전일 급락 (daily_chg <= -5%)
+    if chg <= -5:
+        flags.append(f"⚠️ 전일 {chg:.1f}% 급락")
+
+    # 4. 전일 급등 (daily_chg >= +8%)
+    if chg >= 8:
+        flags.append(f"🔺 전일 +{chg:.1f}% 급등 (추격매수 주의)")
+
+    # 5. 고평가 (PER > 40)
+    if per and per == per and per > 40:  # NaN check
+        flags.append(f"💰 PER {per:.1f}배 고평가")
+
+    # 6. 거래량 폭발 (vol_ratio >= 3.0)
+    if vol >= 3.0:
+        flags.append(f"📊 거래량 평소 {vol:.1f}배 폭증")
+
+    return flags
+
+
 def build_prompt(stock_list):
     """
-    AI 브리핑 프롬프트 구성
+    AI 브리핑 프롬프트 구성 — v3 위험 신호 스캐너
 
-    핵심: 개별 종목 검색 요청 없음.
-    코드가 데이터를 구성하고, AI는 시장 동향(1개 검색) + 데이터 해석만 수행.
+    해외 프로젝트 구조 적용:
+    1. 종목별 데이터 + 인라인 위험 신호 (코드가 계산)
+    2. 위험 신호 설명 섹션
+    3. 구조화된 출력 형식 (섹션별 [SEP] 구분)
     """
-    # 종목별 데이터 텍스트 구성 (코드가 수집한 팩트)
-    stock_lines = []
+    stock_count = len(stock_list)
+
+    # 종목별 데이터 & 위험 신호 구성
+    signal_lines = []
     for s in stock_list:
         rank = int(s.get('rank', 0))
         name = s.get('name', '')
@@ -49,104 +97,136 @@ def build_prompt(stock_list):
         rsi = s.get('rsi', 50)
         w52 = s.get('w52_pct', 0)
         chg = s.get('daily_chg', 0)
+        vol = s.get('vol_ratio', 1)
 
+        # Line 1: 종목 헤더
+        header = f"{name} ({ticker}) · {sector} · {rank}위"
+
+        # Line 2: 데이터 요약
         data_parts = []
-        if per and per == per:  # NaN check
+        if per and per == per:
             data_parts.append(f"PER {per:.1f}")
         if pbr and pbr == pbr:
             data_parts.append(f"PBR {pbr:.1f}")
         if roe and roe == roe:
             data_parts.append(f"ROE {roe:.1f}%")
         data_parts.append(f"RSI {rsi:.0f}")
-        data_parts.append(f"52주고점대비 {w52:+.0f}%")
-        data_parts.append(f"전일비 {chg:+.1f}%")
+        data_parts.append(f"52주 {w52:+.0f}%")
+        data_parts.append(f"전일 {chg:+.1f}%")
+        if vol >= 1.5:
+            data_parts.append(f"거래량 {vol:.1f}배")
 
-        data_str = ', '.join(data_parts)
-        stock_lines.append(f"{rank}위 {name}({ticker}) [{sector}] {data_str}")
+        header += f"\n  {', '.join(data_parts)}"
 
-    stock_text = '\n'.join(stock_lines)
-
-    # 주의 종목 자동 감지 (코드가 팩트 기반으로)
-    alerts = []
-    for s in stock_list:
-        name = s.get('name', '')
-        rsi = s.get('rsi', 50)
-        w52 = s.get('w52_pct', 0)
-        chg = s.get('daily_chg', 0)
-
-        flags = []
-        if rsi >= 80:
-            flags.append(f"RSI {rsi:.0f} 과매수")
-        if rsi <= 25:
-            flags.append(f"RSI {rsi:.0f} 과매도")
-        if w52 <= -40:
-            flags.append(f"52주고점 대비 {w52:.0f}% 급락")
-        if chg <= -7:
-            flags.append(f"전일 {chg:.1f}% 급락")
-        if chg >= 10:
-            flags.append(f"전일 {chg:.1f}% 급등")
+        # Line 3: 위험 신호 (또는 "위험 신호 없음")
+        flags = compute_risk_flags(s)
         if flags:
-            alerts.append(f"  {name}: {', '.join(flags)}")
+            header += "\n  " + " | ".join(flags)
+        else:
+            header += "\n  (위험 신호 없음)"
 
-    alert_text = '\n'.join(alerts) if alerts else '  없음'
+        signal_lines.append(header)
 
-    prompt = f"""너는 한국 주식 퀀트 포트폴리오의 AI 브리핑 담당이야.
-아래 데이터는 코드가 수집한 정확한 팩트야.
-네 역할은 (1) 이번 주 한국 시장 동향을 검색하고, (2) 포트폴리오 데이터를 해석해서
-투자자에게 간결한 브리핑을 제공하는 거야.
+    signals_data = '\n\n'.join(signal_lines)
 
-[매수 후보 {len(stock_list)}종목 데이터]
-{stock_text}
+    today_str = datetime.now(KST).strftime('%Y-%m-%d')
 
-[코드가 감지한 주의 신호]
-{alert_text}
+    prompt = f"""오늘 날짜: {today_str}
 
-━━━━━━━━━━━━━━━━━━━
-[작업]
-━━━━━━━━━━━━━━━━━━━
+아래는 한국주식 퀀트 시스템의 매수 후보 {stock_count}종목과 각 종목의 정량적 위험 신호야.
+이 종목들은 밸류+퀄리티+모멘텀 멀티팩터로 선정된 거야.
+네 역할: 위험 신호를 해석해서 "매수 시 주의할 종목"을 투자자에게 알려주는 거야.
 
-1. 📰 이번 주 시장: Google 검색으로 이번 주 한국 주식시장 주요 이벤트를
-   2~3줄로 요약해줘. 매수 후보에 영향 줄 수 있는 것 위주로.
+[종목별 데이터 & 위험 신호 — 시스템이 계산한 팩트]
+{signals_data}
 
-2. ⚠️ 주의 종목: 위 "코드가 감지한 주의 신호" 데이터를 해석해줘.
-   RSI 과매수/과매도, 52주 고점 대비 급락, 전일 급등락 등
-   투자자가 주의해야 할 포인트를 설명해줘.
-   주의 신호가 없으면 이 섹션은 생략해.
+[위험 신호 설명]
+🔺 RSI 과매수 = RSI 75 이상, 단기 과열 구간 (조정 가능성)
+📉 52주 급락 = 고점 대비 35% 이상 하락 (하락 원인 확인 필요)
+⚠️ 전일 급락 = 하루 -5% 이상 하락 (악재 확인 필요)
+🔺 전일 급등 = 하루 +8% 이상 상승 (추격매수 위험)
+💰 고평가 = PER 40배 초과 (밸류에이션 부담)
+📊 거래량 폭발 = 평소 3배 이상 거래 (비정상 움직임)
 
-3. 📊 포트폴리오 특징: 데이터에서 보이는 패턴을 2~3줄로 요약해줘.
-   예: 섹터 편중, 밸류에이션 특징, 모멘텀 상태 등.
+[출력 형식]
+- 한국어, 친절하고 따뜻한 말투 (~예요/~해요 체)
+- 예시: "주가가 많이 빠졌어요", "조심하시는 게 좋겠어요", "아직은 괜찮아 보여요"
+- 딱딱한 보고서 말투 금지. 친구에게 설명하듯 자연스럽게.
+- 총 1500자 이내.
 
-[규칙]
-- 한국어, 친절한 말투(~예요/~해요)
-- 위 데이터에 있는 팩트만 언급할 것 (데이터에 없는 뉴스/실적 추측 금지)
-- 시장 동향만 Google 검색, 개별 종목은 검색하지 말 것
-- 재무 수치를 그대로 나열하지 말고 해석해줘
-- 총 1500자 이내"""
+📰 시장 동향
+이번 주 한국 주식시장 주요 이벤트를 Google 검색해서 2~3줄 요약해줘.
+매수 후보에 영향 줄 수 있는 것 위주로.
+
+⚠️ 매수 주의 종목
+위 위험 신호를 종합해서 매수를 재고할 만한 종목을 골라줘.
+형식: 종목명(티커)를 굵게(**) 쓰고, 1~2줄로 왜 주의해야 하는지 설명.
+종목과 종목 사이에 [SEP] 한 줄만 넣어줘. [SEP] 앞뒤로 빈 줄 넣지 마.
+위험 신호가 없는 종목은 절대 여기에 넣지 마.
+시스템 데이터에 없는 내용을 추측하거나 지어내지 마.
+"✅ 위험 신호 없음" 섹션은 시스템이 자동 생성하니까 네가 만들지 마."""
 
     return prompt
 
 
-def convert_markdown_to_text(text):
-    """Gemini 응답의 마크다운을 텔레그램용 텍스트로 변환"""
+def convert_markdown_to_html(text):
+    """Gemini 응답의 마크다운을 텔레그램 HTML로 변환
+
+    순서 중요:
+    1. HTML 특수문자 이스케이프 (&, <, >)
+    2. **bold** → <b>bold</b>
+    3. *italic* → <i>italic</i>
+    4. ### headers → 제거
+    5. --- → ━━━
+    6. [SEP] → ──────────────────
+    """
     result = text
-    result = re.sub(r'\*\*(.+?)\*\*', r'\1', result)
-    result = re.sub(r'(?<!\w)\*(?!\s)(.+?)(?<!\s)\*(?!\w)', r'\1', result)
+    # Step 1: HTML 이스케이프 (반드시 먼저)
+    result = result.replace('&', '&amp;')
+    result = result.replace('<', '&lt;')
+    result = result.replace('>', '&gt;')
+    # Step 2: 마크다운 → HTML 태그
+    result = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', result)
+    result = re.sub(r'(?<!\w)\*(?!\s)(.+?)(?<!\s)\*(?!\w)', r'<i>\1</i>', result)
+    # Step 3: 헤더/구분선
     result = re.sub(r'#{1,3}\s*', '', result)
     result = result.replace('---', '━━━')
+    result = result.replace('[SEP]', '─────────')
+    # [SEP] 변환된 분리선 앞뒤 빈 줄 제거
+    result = re.sub(r'\n+─────────\n+', '\n─────────\n', result)
+    # 연속 빈 줄 모두 제거 (빈 줄 없이 바로 이어붙임)
+    result = re.sub(r'\n{3,}', '\n\n', result)
     return result
+
+
+def extract_text(resp):
+    """response.text가 None일 때 parts에서 직접 추출"""
+    try:
+        if resp.text:
+            return resp.text
+    except Exception:
+        pass
+    try:
+        parts = resp.candidates[0].content.parts
+        texts = [p.text for p in parts if hasattr(p, 'text') and p.text]
+        if texts:
+            return '\n'.join(texts)
+    except Exception:
+        pass
+    return None
 
 
 def run_ai_analysis(portfolio_message, stock_list):
     """
-    Gemini 2.5 Flash AI 브리핑 실행
+    Gemini 2.5 Flash AI 브리핑 실행 — v3 정량 리스크 스캐너
 
     "검색은 코드가, 분석은 AI가" 원칙:
-    - 개별 종목 검색 없음 (Grounding 5-8개 한계)
-    - 시장 동향만 Google Search (1개 광범위 쿼리)
-    - 포트폴리오 데이터는 코드가 구성해서 전달
+    - 코드가 6가지 위험 플래그를 팩트로 계산
+    - AI는 시장 동향 검색(1회) + 위험 신호 해석만 수행
+    - Markdown → Telegram HTML 변환
 
     Returns:
-        str: 포맷된 AI 브리핑 메시지 (실패 시 None)
+        str: HTML 포맷된 AI 브리핑 메시지 (실패 시 None)
     """
     api_key = get_gemini_api_key()
     if not api_key:
@@ -171,19 +251,19 @@ def run_ai_analysis(portfolio_message, stock_list):
             contents=prompt,
             config=types.GenerateContentConfig(
                 tools=[grounding_tool],
-                temperature=0.3,
+                temperature=0.2,
             ),
         )
 
-        # 빈 응답 방어 — 1회 재시도
-        analysis_text = response.text
+        # 빈 응답 방어 — extract_text + 1회 재시도
+        analysis_text = extract_text(response)
         if not analysis_text:
             try:
                 if hasattr(response, 'candidates') and response.candidates:
                     print(f"[Gemini] finish_reason: {response.candidates[0].finish_reason}")
             except Exception:
                 pass
-            print("[Gemini] 응답이 비어있음 — 재시도")
+            print("[Gemini] 응답이 비어있음 — 재시도 (temp 0.3)")
             response = client.models.generate_content(
                 model='gemini-2.5-flash',
                 contents=prompt,
@@ -192,28 +272,34 @@ def run_ai_analysis(portfolio_message, stock_list):
                     temperature=0.3,
                 ),
             )
-            analysis_text = response.text
+            analysis_text = extract_text(response)
             if not analysis_text:
                 print("[Gemini] 재시도도 실패")
                 return None
 
         print(f"[Gemini] 응답 수신: {len(analysis_text)}자")
 
-        # 마크다운 → 텍스트 변환
-        analysis_clean = convert_markdown_to_text(analysis_text)
+        # 마크다운 → HTML 변환
+        analysis_html = convert_markdown_to_html(analysis_text)
+
+        # ✅ 위험 신호 없음 — 코드가 직접 생성 (Gemini에 맡기면 포맷 불안정)
+        clean_names = [s.get('name', '') for s in stock_list if not compute_risk_flags(s)]
+        clean_section = ''
+        if clean_names:
+            clean_section = f'\n\n✅ 위험 신호 없음 ({len(clean_names)}종목)\n' + ', '.join(clean_names)
 
         # 최종 메시지 구성
         now = datetime.now(KST)
         lines = [
             '━━━━━━━━━━━━━━━━━━━',
-            '       🤖 AI 브리핑',
+            '      🤖 AI 브리핑',
             '━━━━━━━━━━━━━━━━━━━',
             f'📅 {now.strftime("%Y년 %m월 %d일")}',
             '',
-            '포트폴리오 데이터를 AI가 분석한',
-            '브리핑이에요. 참고용이에요!',
+            '매수 후보의 위험 신호를 AI가 해석했어요.',
+            '투자 판단의 참고용이에요!',
             '',
-            analysis_clean,
+            analysis_html + clean_section,
         ]
 
         print("[Gemini] AI 브리핑 완료")
@@ -226,14 +312,26 @@ def run_ai_analysis(portfolio_message, stock_list):
 
 if __name__ == '__main__':
     test_stocks = [
-        {'ticker': '123330', 'name': '제닉', 'rank': 1, 'sector': 'K-뷰티/화장품',
-         'per': 22.5, 'pbr': 8.2, 'roe': 52.4, 'rsi': 72, 'w52_pct': -47, 'daily_chg': 7.1},
-        {'ticker': '019180', 'name': '티에이치엔', 'rank': 2, 'sector': '자동차부품',
-         'per': 4.4, 'pbr': 0.9, 'roe': 33.7, 'rsi': 45, 'w52_pct': -20, 'daily_chg': -0.4},
-        {'ticker': '402340', 'name': 'SK스퀘어', 'rank': 3, 'sector': '투자지주/AI반도체',
-         'per': 18.5, 'pbr': 3.6, 'roe': 30.5, 'rsi': 61, 'w52_pct': -12, 'daily_chg': -3.8},
+        {'ticker': '402340', 'name': 'SK스퀘어', 'rank': 1, 'sector': '투자지주/AI반도체',
+         'per': 18.5, 'pbr': 3.6, 'roe': 30.5, 'rsi': 61, 'w52_pct': -12, 'daily_chg': -3.8, 'vol_ratio': 1.2},
+        {'ticker': '015760', 'name': '한국전력', 'rank': 29, 'sector': '전력/유틸리티',
+         'per': 35.2, 'pbr': 0.4, 'roe': 1.2, 'rsi': 78, 'w52_pct': -5, 'daily_chg': 9.2, 'vol_ratio': 4.5},
+        {'ticker': '000270', 'name': '기아', 'rank': 3, 'sector': '자동차',
+         'per': 6.1, 'pbr': 0.8, 'roe': 18.2, 'rsi': 45, 'w52_pct': -20, 'daily_chg': -0.4, 'vol_ratio': 0.9},
     ]
-    result = run_ai_analysis("테스트 메시지", test_stocks)
+
+    # 위험 플래그 테스트
+    print("=== 위험 플래그 테스트 ===")
+    for s in test_stocks:
+        flags = compute_risk_flags(s)
+        print(f"{s['name']}: {flags if flags else '(없음)'}")
+
+    print("\n=== 프롬프트 미리보기 ===")
+    prompt = build_prompt(test_stocks)
+    print(prompt[:1000] + '...')
+
+    print("\n=== Gemini 호출 ===")
+    result = run_ai_analysis(None, test_stocks)
     if result:
         print("\n=== AI 브리핑 결과 ===")
         print(result)

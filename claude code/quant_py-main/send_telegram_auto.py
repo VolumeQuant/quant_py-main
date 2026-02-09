@@ -176,8 +176,7 @@ def format_stock_detail(s):
         factor_parts.append(f"ROE {s['roe']:.1f}%")
     factor_str = ' | '.join(factor_parts) if factor_parts else ''
 
-    block = f"""
-{medal} {rank}위 {s['name']} ({s['ticker']}) {s['sector']}
+    block = f"""{medal} {rank}위 {s['name']} ({s['ticker']}) {s['sector']}
 💰 {s['price']:,.0f}원 ({s['daily_chg']:+.2f}%)
 📊 {factor_str}
 📈 RSI {s['rsi']:.0f} | 52주 {s['w52_pct']:+.0f}%
@@ -411,14 +410,14 @@ def main():
             print(ai_msg[:500] + '...' if len(ai_msg) > 500 else ai_msg)
 
             if IS_GITHUB_ACTIONS:
-                r = requests.post(url, data={'chat_id': TELEGRAM_CHAT_ID, 'text': ai_msg})
+                r = requests.post(url, data={'chat_id': TELEGRAM_CHAT_ID, 'text': ai_msg, 'parse_mode': 'HTML'})
                 print(f'AI 브리핑 채널 전송: {r.status_code}')
                 if PRIVATE_CHAT_ID:
-                    r = requests.post(url, data={'chat_id': PRIVATE_CHAT_ID, 'text': ai_msg})
+                    r = requests.post(url, data={'chat_id': PRIVATE_CHAT_ID, 'text': ai_msg, 'parse_mode': 'HTML'})
                     print(f'AI 브리핑 개인 전송: {r.status_code}')
             else:
                 target_id = PRIVATE_CHAT_ID or TELEGRAM_CHAT_ID
-                r = requests.post(url, data={'chat_id': target_id, 'text': ai_msg})
+                r = requests.post(url, data={'chat_id': target_id, 'text': ai_msg, 'parse_mode': 'HTML'})
                 print(f'AI 브리핑 전송: {r.status_code}')
         else:
             print("\nAI 브리핑 스킵 (결과 없음)")
