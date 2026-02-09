@@ -81,6 +81,7 @@ class MultiFactorStrategy:
         - ROE (Return on Equity): 높을수록 좋음
         - GPA (Gross Profit to Asset): 높을수록 좋음
         - CFO (Cash Flow to Asset): 높을수록 좋음
+        - EPS개선도 (Trailing PER vs Forward PER): 높을수록 좋음
 
         Args:
             data: 재무 데이터프레임
@@ -102,6 +103,19 @@ class MultiFactorStrategy:
         # 영업현금흐름 / 자산
         if '영업현금흐름' in data.columns and '자산' in data.columns:
             data['CFO'] = data['영업현금흐름'] / data['자산'] * 100
+
+        # EPS개선도 (Forward PER vs Trailing PER)
+        # Trailing PER > Forward PER = 실적 개선 중 (양수)
+        # Trailing PER < Forward PER = 실적 악화 중 (음수)
+        if 'forward_per' in data.columns and 'PER' in data.columns:
+            mask = (data['forward_per'] > 0) & (data['PER'] > 0)
+            data['EPS개선도'] = np.nan
+            data.loc[mask, 'EPS개선도'] = (
+                (data.loc[mask, 'PER'] - data.loc[mask, 'forward_per'])
+                / data.loc[mask, 'PER'] * 100
+            )
+            eps_count = data['EPS개선도'].notna().sum()
+            print(f"EPS개선도 계산: {eps_count}/{len(data)}개 종목 (Forward PER 기반)")
 
         return data
 
@@ -222,8 +236,8 @@ class MultiFactorStrategy:
                 valid_mask = data[col].notna()
                 if valid_mask.sum() > 0:
                     data.loc[valid_mask, col] = self._winsorize(data.loc[valid_mask, col])
-        # ROE/GPA/CFO 극단값 윈저라이징
-        for col in ['ROE', 'GPA', 'CFO']:
+        # ROE/GPA/CFO/EPS개선도 극단값 윈저라이징
+        for col in ['ROE', 'GPA', 'CFO', 'EPS개선도']:
             if col in data.columns:
                 valid_mask = data[col].notna()
                 if valid_mask.sum() > 0:
@@ -266,6 +280,11 @@ class MultiFactorStrategy:
         if 'CFO' in data.columns:
             data['CFO_z'] = self.calculate_zscore_by_sector(data, 'CFO')
             quality_factors.append('CFO_z')
+
+        # EPS개선도 (높을수록 좋음 — 실적 개선 중)
+        if 'EPS개선도' in data.columns and data['EPS개선도'].notna().sum() > 0:
+            data['EPS개선_z'] = self.calculate_zscore_by_sector(data, 'EPS개선도')
+            quality_factors.append('EPS개선_z')
 
         # 모멘텀 팩터 (높을수록 좋음)
         if '모멘텀' in data.columns:

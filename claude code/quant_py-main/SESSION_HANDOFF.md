@@ -2,9 +2,63 @@
 
 ## 문서 개요
 
-**버전**: 10.5
+**버전**: 11.0
 **최종 업데이트**: 2026-02-09
 **작성자**: Claude Opus 4.6
+
+---
+
+## 핵심 변경사항 (v11.0 — Forward PER 실적 개선 시그널)
+
+### 2026-02-09 FnGuide 컨센서스 Forward PER → EPS개선도 팩터 추가
+
+**배경**: 기존 시스템은 Trailing PER만 사용 — "과거에 싼 주식"만 찾음. FnGuide Forward PER 데이터(커버리지 ~80%)가 이미 크롤러에 구현되어 있었지만 한 번도 호출되지 않고 있었음.
+
+**핵심 아이디어**: Forward PER < Trailing PER = 실적이 좋아지고 있다는 시그널 → **"싸면서 좋아지고 있는 주식"**을 찾는다.
+
+| 항목 | Before (v10.5) | After (v11.0) |
+|------|----------------|---------------|
+| Forward PER | 크롤러에만 존재 (미사용) | **파이프라인에 연결, Quality 팩터에 추가** |
+| Quality 팩터 | ROE + GPA + CFO (3개) | **ROE + GPA + CFO + EPS개선도 (4개)** |
+| EPS개선도 | 없음 | **(Trailing PER - Forward PER) / Trailing PER * 100** |
+| 컨센서스 수집 | 없음 | **4.5단계: 150개 종목 FnGuide 컨센서스** |
+| 텔레그램 표시 | PER 29.2 | **PER 29.2→5.3** (Forward PER 병기) |
+| 소요 시간 | ~35초 | **~120초** (컨센서스 수집 +75초) |
+
+**EPS개선도 계산**:
+```python
+# 양수 = 실적 개선 (Forward PER이 Trailing보다 낮음)
+# 음수 = 실적 악화 (Forward PER이 Trailing보다 높음)
+EPS개선도 = (Trailing_PER - Forward_PER) / Trailing_PER * 100
+
+# 예시:
+# SK하이닉스: PER 29.2 → Forward 5.3 = +78.6% (대폭 개선)
+# 효성: PER 5.67 → Forward 8.0 = -41.1% (실적 악화)
+```
+
+**NaN 처리**: Forward PER이 없는 ~20% 종목은 EPS개선도 NaN → `data[quality_factors].mean(axis=1)`이 나머지 3개 팩터(ROE/GPA/CFO) 평균으로 자동 처리 (pandas `skipna=True`).
+
+**파이프라인 변경**:
+```
+[4단계] OHLCV 로드
+[전략 A] 마법공식 사전 필터 → 150종목
+[4.5단계] FnGuide 컨센서스 수집 (Forward PER) ← NEW
+  → get_consensus_batch(150개, delay=0.5) → forward_per 컬럼
+[전략 B] 멀티팩터 스코어링
+  → Forward PER 병합 → EPS개선도 계산 → Quality z-score에 추가
+[통합순위] A30% + B70% → TOP 30
+```
+
+**검증 결과** (2026-02-06 기준):
+- Forward PER 확보: 117/150 (78%), 최종 30종목 중 24/30 (80%)
+- EPS개선도 계산: 116/150 (Forward PER + Trailing PER 둘 다 양수인 종목)
+- TOP 5 실적 개선: SK하이닉스 +78.6%, KT +70.8%, HD한국조선해양 +67.3%
+- TOP 3 실적 악화: 효성 -41.1%, 에스엘 -21.1%, 기아 -14.8%
+
+**수정 파일**:
+1. `strategy_b_multifactor.py` — `calculate_quality_factors()`에 EPS개선도 추가, 윈저라이징, z-score 계산
+2. `create_current_portfolio.py` — 4.5단계 컨센서스 수집, `run_strategy_b_scoring()`에 `consensus_df` 파라미터, forward_per 병합
+3. `send_telegram_auto.py` — Forward PER 추출(portfolio_fwd_per), 텔레그램 메시지에 "PER X→Y" 형식 표시
 
 ---
 
@@ -458,7 +512,7 @@ RSI (40점): 낮을수록 좋음
 │                                                                      │
 │  Strategy B (멀티팩터) → 150종목 전체 스코어링                        │
 │  - Value 50% (PER/PBR 실시간, PCR, PSR, DIV 실시간)                  │
-│  - Quality 30% (ROE, GPA, CFO)                                       │
+│  - Quality 30% (ROE, GPA, CFO, EPS개선도)                             │
 │  - Momentum 20% (12M-1M)                                            │
 │                                                                      │
 │  통합순위 = 마법공식 30% + 멀티팩터 70% → TOP 30                      │
@@ -693,8 +747,12 @@ send_telegram_auto.py → run_ai_analysis(None, stock_list)
 3.6. PER/PBR 상한 필터 (PER>60, PBR>10 제외)
    └─ 고평가 잡주 제거 → ~290개
 
+5.5. FnGuide 컨센서스 수집 (Forward PER) → 150종목
+   └─ get_consensus_batch() → forward_per, EPS개선도
+
 6. 전략 B 스코어링 → 150종목 전체
    └─ Value*0.5 + Quality*0.3 + Momentum*0.2
+   └─ Quality: ROE + GPA + CFO + EPS개선도 (Forward PER 기반)
    └─ PER/PBR/DIV: pykrx 실시간 우선
 
 7. 통합순위 → TOP 30
@@ -829,8 +887,11 @@ quant_py-main/
 | **2026-02-09** | **TOP20 종목간 빈 줄 제거 (여백 축소)** | **send_telegram_auto.py** |
 | **2026-02-09** | **퀀트 TOP 5 자동 추천 (위험 플래그 제외 + 섹터 분산)** | **send_telegram_auto.py** |
 | **2026-02-09** | **AI 브리핑 구분선 안정화: Gemini [SEP] 의존 제거 → regex 코드 후처리** | **gemini_analysis.py** |
+| **2026-02-09** | **Forward PER 실적 개선 시그널: FnGuide 컨센서스 수집 파이프라인 연결** | **create_current_portfolio.py** |
+| **2026-02-09** | **EPS개선도 팩터 추가: Quality에 (Trailing-Forward)/Trailing*100** | **strategy_b_multifactor.py** |
+| **2026-02-09** | **텔레그램 Forward PER 표시: "PER 29.2→5.3" 형식** | **send_telegram_auto.py** |
 
 ---
 
-**문서 버전**: 10.5
+**문서 버전**: 11.0
 **최종 업데이트**: 2026-02-09

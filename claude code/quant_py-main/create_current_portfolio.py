@@ -244,9 +244,10 @@ def run_strategy_b_scoring(
     fundamental_df: pd.DataFrame,
     price_df: pd.DataFrame,
     ticker_names: Dict[str, str],
-    error_tracker: ErrorTracker
+    error_tracker: ErrorTracker,
+    consensus_df: pd.DataFrame = None
 ) -> pd.DataFrame:
-    """전략 B (멀티팩터) - 150개 전체 스코어링 (pykrx 실시간 PER/PBR/DIV 포함)"""
+    """전략 B (멀티팩터) - 150개 전체 스코어링 (pykrx 실시간 PER/PBR/DIV + Forward PER)"""
     print(f"\n[전략 B] 멀티팩터 전체 스코어링 ({len(prefiltered_df)}개)")
 
     if prefiltered_df.empty:
@@ -256,6 +257,18 @@ def run_strategy_b_scoring(
     try:
         multifactor_df = prefiltered_df.copy()
         multifactor_df['종목명'] = multifactor_df['종목코드'].map(ticker_names)
+
+        # Forward PER 병합 (FnGuide 컨센서스)
+        if consensus_df is not None and not consensus_df.empty:
+            fwd_cols = consensus_df[['ticker', 'forward_per']].dropna(subset=['forward_per'])
+            if not fwd_cols.empty:
+                multifactor_df = multifactor_df.merge(
+                    fwd_cols, left_on='종목코드', right_on='ticker', how='left'
+                )
+                if 'ticker' in multifactor_df.columns:
+                    multifactor_df.drop(columns=['ticker'], inplace=True)
+                fwd_count = multifactor_df['forward_per'].notna().sum()
+                print(f"  Forward PER 병합: {fwd_count}/{len(multifactor_df)}개 종목")
 
         # pykrx 실시간 PER/PBR/DIV 병합
         if not fundamental_df.empty:
@@ -463,11 +476,25 @@ def main():
         )
 
     # =========================================================================
-    # 5단계: 전략 실행 (A 사전필터 → B 스코어링 → A+B 통합순위)
+    # 4.5단계: FnGuide 컨센서스 수집 (Forward PER)
     # =========================================================================
     prefiltered = run_strategy_a_prefilter(magic_df, universe_df, error_tracker)
+
+    consensus_df = pd.DataFrame()
+    if not prefiltered.empty:
+        print(f"\n[4.5단계] FnGuide 컨센서스 수집 (Forward PER) - {len(prefiltered)}개 종목")
+        prefiltered_tickers = prefiltered['종목코드'].tolist()
+        consensus_df = collect_consensus_data(prefiltered_tickers, error_tracker)
+        if not consensus_df.empty:
+            has_fwd = consensus_df['forward_per'].notna().sum()
+            print(f"  Forward PER 확보: {has_fwd}/{len(consensus_df)}개 ({has_fwd/len(consensus_df)*100:.0f}%)")
+
+    # =========================================================================
+    # 5단계: 전략 실행 (B 스코어링 → A+B 통합순위)
+    # =========================================================================
     scored_b = run_strategy_b_scoring(
-        prefiltered, fundamental_df, price_df, ticker_names, error_tracker
+        prefiltered, fundamental_df, price_df, ticker_names, error_tracker,
+        consensus_df=consensus_df
     )
 
     # A 30% + B 70% 통합순위로 최종 30개 선정

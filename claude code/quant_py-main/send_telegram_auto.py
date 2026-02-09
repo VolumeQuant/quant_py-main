@@ -170,7 +170,11 @@ def format_stock_detail(s):
 
     factor_parts = []
     if s.get('per') and not pd.isna(s['per']):
-        factor_parts.append(f"PER {s['per']:.1f}")
+        per_str = f"PER {s['per']:.1f}"
+        # Forward PER 있으면 병기 (예: PER 29.2→5.3)
+        if s.get('fwd_per') and not pd.isna(s['fwd_per']):
+            per_str += f"→{s['fwd_per']:.1f}"
+        factor_parts.append(per_str)
     if s.get('pbr') and not pd.isna(s['pbr']):
         factor_parts.append(f"PBR {s['pbr']:.1f}")
     if s.get('roe') and not pd.isna(s['roe']):
@@ -373,6 +377,7 @@ def main():
     portfolio_per = dict(zip(portfolio['종목코드'], portfolio.get('PER', pd.Series()))) if 'PER' in portfolio.columns else {}
     portfolio_pbr = dict(zip(portfolio['종목코드'], portfolio.get('PBR', pd.Series()))) if 'PBR' in portfolio.columns else {}
     portfolio_roe = dict(zip(portfolio['종목코드'], portfolio.get('ROE', pd.Series()))) if 'ROE' in portfolio.columns else {}
+    portfolio_fwd_per = dict(zip(portfolio['종목코드'], portfolio.get('forward_per', pd.Series()))) if 'forward_per' in portfolio.columns else {}
 
     print(f"포트폴리오: {len(portfolio)}개 종목 ({rank_label} 기준)")
 
@@ -400,6 +405,7 @@ def main():
             'per': portfolio_per.get(ticker, None),
             'pbr': portfolio_pbr.get(ticker, None),
             'roe': portfolio_roe.get(ticker, None),
+            'fwd_per': portfolio_fwd_per.get(ticker, None),
             'sector': SECTOR_DB.get(ticker, '기타'),
             **tech,
         })
