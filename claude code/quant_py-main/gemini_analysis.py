@@ -4,7 +4,7 @@ Gemini AI 포트폴리오 브리핑 모듈 — v3 정량 리스크 스캐너
 "검색은 코드가, 분석은 AI가" 원칙:
 - 코드가 6가지 위험 플래그를 팩트로 계산 → AI는 그 팩트만 해석
 - 시장 동향만 Google Search (1개 광범위 쿼리)
-- [SEP] 마커로 종목 분리 → 코드가 HTML 분리선으로 변환
+- 종목 구분선은 코드가 직접 삽입 (AI 의존 X)
 """
 
 import re
@@ -79,7 +79,7 @@ def build_prompt(stock_list):
     해외 프로젝트 구조 적용:
     1. 종목별 데이터 + 인라인 위험 신호 (코드가 계산)
     2. 위험 신호 설명 섹션
-    3. 구조화된 출력 형식 (섹션별 [SEP] 구분)
+    3. 구조화된 출력 형식 (구분선은 코드가 후처리)
     """
     stock_count = len(stock_list)
 
@@ -161,10 +161,10 @@ def build_prompt(stock_list):
 ⚠️ 매수 주의 종목
 위 위험 신호를 종합해서 매수를 재고할 만한 종목을 골라줘.
 형식: 종목명(티커)를 굵게(**) 쓰고, 1~2줄로 왜 주의해야 하는지 설명.
-종목과 종목 사이에 [SEP] 한 줄만 넣어줘. [SEP] 앞뒤로 빈 줄 넣지 마.
 위험 신호가 없는 종목은 절대 여기에 넣지 마.
 시스템 데이터에 없는 내용을 추측하거나 지어내지 마.
-"✅ 위험 신호 없음" 섹션은 시스템이 자동 생성하니까 네가 만들지 마."""
+"✅ 위험 신호 없음" 섹션은 시스템이 자동 생성하니까 네가 만들지 마.
+종목 사이에 구분선이나 [SEP] 같은 마커 넣지 마. 코드가 알아서 처리해."""
 
     return prompt
 
@@ -173,28 +173,43 @@ def convert_markdown_to_html(text):
     """Gemini 응답의 마크다운을 텔레그램 HTML로 변환
 
     순서 중요:
-    1. HTML 특수문자 이스케이프 (&, <, >)
-    2. **bold** → <b>bold</b>
-    3. *italic* → <i>italic</i>
-    4. ### headers → 제거
-    5. --- → ━━━
-    6. [SEP] → ──────────────────
+    1. [SEP] 잔여물 제거
+    2. HTML 특수문자 이스케이프 (&, <, >)
+    3. **bold** → <b>bold</b>, *italic* → <i>italic</i>
+    4. ### headers → 제거, --- → ━━━
+    5. ⚠️ 섹션에서 종목 사이 구분선 자동 삽입 (regex 기반)
     """
     result = text
-    # Step 1: HTML 이스케이프 (반드시 먼저)
+    # Step 1: 혹시 남은 [SEP] 제거
+    result = result.replace('[SEP]', '')
+    # Step 2: HTML 이스케이프 (반드시 먼저)
     result = result.replace('&', '&amp;')
     result = result.replace('<', '&lt;')
     result = result.replace('>', '&gt;')
-    # Step 2: 마크다운 → HTML 태그
+    # Step 3: 마크다운 → HTML 태그
     result = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', result)
     result = re.sub(r'(?<!\w)\*(?!\s)(.+?)(?<!\s)\*(?!\w)', r'<i>\1</i>', result)
-    # Step 3: 헤더/구분선
+    # Step 4: 헤더/구분선
     result = re.sub(r'#{1,3}\s*', '', result)
     result = result.replace('---', '━━━')
-    result = result.replace('[SEP]', '─────────')
-    # [SEP] 변환된 분리선 앞뒤 빈 줄 제거
+    # Step 5: ⚠️ 섹션에서 <b>종목명 (6자리티커)</b> 사이에 구분선 삽입
+    idx = result.find('⚠️')
+    if idx != -1:
+        before = result[:idx]
+        after = result[idx:]
+        count = [0]
+
+        def _sep(m):
+            count[0] += 1
+            if count[0] <= 1:
+                return m.group(0)
+            return f'─────────\n{m.group(0)}'
+
+        after = re.sub(r'<b>[^<]+?\(\d{6}\)</b>', _sep, after)
+        result = before + after
+    # Step 6: 구분선 앞뒤 빈 줄 정리
     result = re.sub(r'\n+─────────\n+', '\n─────────\n', result)
-    # 연속 빈 줄 모두 제거 (빈 줄 없이 바로 이어붙임)
+    # 연속 빈 줄 모두 제거
     result = re.sub(r'\n{3,}', '\n\n', result)
     return result
 
@@ -279,7 +294,7 @@ def run_ai_analysis(portfolio_message, stock_list):
 
         print(f"[Gemini] 응답 수신: {len(analysis_text)}자")
 
-        # 마크다운 → HTML 변환
+        # 마크다운 → HTML 변환 (⚠️ 섹션 구분선 자동 삽입)
         analysis_html = convert_markdown_to_html(analysis_text)
 
         # ✅ 위험 신호 없음 — 코드가 직접 생성 (Gemini에 맡기면 포맷 불안정)
