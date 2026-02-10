@@ -72,7 +72,7 @@ def compute_risk_flags(s):
     return flags
 
 
-def build_prompt(stock_list):
+def build_prompt(stock_list, base_date=None):
     """
     AI 브리핑 프롬프트 구성 — v3 위험 신호 스캐너
 
@@ -129,9 +129,12 @@ def build_prompt(stock_list):
 
     signals_data = '\n\n'.join(signal_lines)
 
-    today_str = datetime.now(KST).strftime('%Y-%m-%d')
+    if base_date:
+        date_str = f"{base_date[:4]}-{base_date[4:6]}-{base_date[6:]}"
+    else:
+        date_str = datetime.now(KST).strftime('%Y-%m-%d')
 
-    prompt = f"""오늘 날짜: {today_str}
+    prompt = f"""분석 기준일: {date_str}
 
 아래는 한국주식 퀀트 시스템의 매수 후보 {stock_count}종목과 각 종목의 정량적 위험 신호야.
 이 종목들은 밸류+퀄리티+모멘텀 멀티팩터로 선정된 거야.
@@ -231,7 +234,7 @@ def extract_text(resp):
     return None
 
 
-def run_ai_analysis(portfolio_message, stock_list):
+def run_ai_analysis(portfolio_message, stock_list, base_date=None):
     """
     Gemini 2.5 Flash AI 브리핑 실행 — v3 정량 리스크 스캐너
 
@@ -257,7 +260,7 @@ def run_ai_analysis(portfolio_message, stock_list):
 
     try:
         client = genai.Client(api_key=api_key)
-        prompt = build_prompt(stock_list)
+        prompt = build_prompt(stock_list, base_date=base_date)
         grounding_tool = types.Tool(google_search=types.GoogleSearch())
 
         print("[Gemini] AI 브리핑 요청 중...")

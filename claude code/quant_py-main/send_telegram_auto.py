@@ -658,7 +658,7 @@ def main():
                     'price': tech.get('price', 0),
                 })
 
-            ai_msg = run_ai_analysis(None, stock_list)
+            ai_msg = run_ai_analysis(None, stock_list, base_date=BASE_DATE)
 
             if ai_msg:
                 print(f"\n=== AI 브리핑 ({len(ai_msg)}자) ===")
