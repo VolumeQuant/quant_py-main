@@ -564,11 +564,15 @@ def main():
     print(f"\n메시지 수: {len(messages)}개 ({msg_sizes})")
 
     if IS_GITHUB_ACTIONS:
-        results = []
-        for msg in messages:
-            r = requests.post(url, data={'chat_id': TELEGRAM_CHAT_ID, 'text': msg})
-            results.append(r.status_code)
-        print(f'\n채널 메시지 전송: {", ".join(map(str, results))}')
+        # 콜드 스타트 시 채널 전송 스킵 (개인봇에만 전송)
+        if cold_start:
+            print('\n콜드 스타트 — 채널 전송 스킵 (아직 3일 데이터 미확보)')
+        else:
+            results = []
+            for msg in messages:
+                r = requests.post(url, data={'chat_id': TELEGRAM_CHAT_ID, 'text': msg})
+                results.append(r.status_code)
+            print(f'\n채널 메시지 전송: {", ".join(map(str, results))}')
 
         if PRIVATE_CHAT_ID:
             results_p = []
@@ -617,8 +621,9 @@ def main():
                 print(ai_msg[:500] + '...' if len(ai_msg) > 500 else ai_msg)
 
                 if IS_GITHUB_ACTIONS:
-                    r = requests.post(url, data={'chat_id': TELEGRAM_CHAT_ID, 'text': ai_msg, 'parse_mode': 'HTML'})
-                    print(f'AI 브리핑 채널 전송: {r.status_code}')
+                    if not cold_start:
+                        r = requests.post(url, data={'chat_id': TELEGRAM_CHAT_ID, 'text': ai_msg, 'parse_mode': 'HTML'})
+                        print(f'AI 브리핑 채널 전송: {r.status_code}')
                     if PRIVATE_CHAT_ID:
                         r = requests.post(url, data={'chat_id': PRIVATE_CHAT_ID, 'text': ai_msg, 'parse_mode': 'HTML'})
                         print(f'AI 브리핑 개인 전송: {r.status_code}')
