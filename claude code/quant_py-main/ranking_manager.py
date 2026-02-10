@@ -96,7 +96,7 @@ def compute_3day_intersection(
     rankings_t1: dict,
     rankings_t2: dict,
     top_n: int = 30,
-    max_picks: int = 10,
+    max_picks: int = 5,
 ) -> List[dict]:
     """
     3일 교집합 계산 — Slow In 핵심 로직
