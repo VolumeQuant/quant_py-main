@@ -225,15 +225,36 @@ def _calc_market_warnings(kospi_df, kosdaq_df):
 # ============================================================
 # 메시지 포맷터
 # ============================================================
+def format_overview():
+    """전략 개요 메시지 (첫 번째 메시지로 전송)"""
+    return """📋 오늘의 퀀트 리포트
+
+안녕하세요! 매일 새벽 전 종목을 자동 분석한 결과입니다.
+
+[종목 선정 과정]
+① 전 종목 시가총액·재무건전성 필터
+② 가치(PER·PBR·ROE) + 모멘텀 스코어링
+③ 60일 이동평균선 위 종목만 통과
+④ 3일 연속 Top 30 유지 종목만 최종 선정
+
+[이렇게 활용하세요]
+• 매수: '매수 후보' 종목을 종목당 15%씩 분산 매수
+• 보유: '생존 리스트'에 있으면 계속 보유
+• 매도: '탈락 종목'에 이름이 뜨면 매도 검토
+
+천천히 들어가고, 빠르게 나옵니다."""
+
+
 def format_death_list(death_list: list) -> str:
-    """Section 1: Death List 메시지 포맷"""
+    """탈락 종목 메시지 포맷"""
     if not death_list:
         return ""
 
     lines = [
-        "🚨 오늘의 탈락자 (Death List)",
-        "━━━━━━━━━━━━━━━━━━━",
-        "어제 Top 50 → 오늘 51위 밖으로 이탈한 종목",
+        "──────────────────",
+        "🚨 탈락 종목",
+        "──────────────────",
+        "어제 Top 50에서 오늘 이탈한 종목",
         "",
     ]
 
@@ -241,28 +262,25 @@ def format_death_list(death_list: list) -> str:
         name = item['name']
         y_rank = item['yesterday_rank']
         sector = SECTOR_DB.get(item['ticker'], '기타')
-        lines.append(f"{i}. {name} ({y_rank}위 📉 이탈) · {sector}")
+        lines.append(f"{i}. {name} ({y_rank}위 → 이탈) · {sector}")
 
     lines.append("")
-    lines.append("⚠️ 보유 중이라면 매도를 검토하세요.")
+    lines.append("보유 중이라면 매도를 검토하세요.")
     lines.append("")
 
     return '\n'.join(lines)
 
 
 def format_buy_recommendations(picks: list, base_date_str: str) -> str:
-    """Section 2: 매수 추천 메시지 포맷"""
-    now = get_korea_now()
-
+    """매수 후보 메시지 포맷"""
     if not picks:
         lines = [
-            "━━━━━━━━━━━━━━━━━━━",
-            "💎 매수 추천",
-            "━━━━━━━━━━━━━━━━━━━",
-            f"📅 {base_date_str} 기준",
+            "──────────────────",
+            "매수 후보",
+            "──────────────────",
             "",
-            "오늘은 3일 연속 검증을 통과한 종목이 없습니다.",
-            "📋 관망 — 무리하게 진입하지 않는 것도 전략입니다.",
+            "3일 연속 검증을 통과한 종목이 없습니다.",
+            "관망 — 무리하게 진입하지 않는 것도 전략입니다.",
             "",
         ]
         return '\n'.join(lines)
@@ -271,14 +289,10 @@ def format_buy_recommendations(picks: list, base_date_str: str) -> str:
     total_weight = n * WEIGHT_PER_STOCK
     cash_weight = 100 - total_weight
 
-    medal_icons = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
-    medals = medal_icons[:n] if n <= 10 else medal_icons + [f"({i+1})" for i in range(10, n)]
-
     lines = [
-        "━━━━━━━━━━━━━━━━━━━",
-        f"💎 매수 추천 ({n}종목, 총 {total_weight}%)",
-        "━━━━━━━━━━━━━━━━━━━",
-        f"📅 {base_date_str} 기준",
+        "──────────────────",
+        f"💎 매수 후보 ({n}종목, 총 {total_weight}%)",
+        "──────────────────",
         f"3일 연속 Top 30 교집합 검증 완료",
         "",
     ]
@@ -289,7 +303,7 @@ def format_buy_recommendations(picks: list, base_date_str: str) -> str:
         sector = SECTOR_DB.get(ticker, '기타')
         w_rank = pick['weighted_rank']
 
-        # 기술지표 수집
+        # 기술지표
         tech = pick.get('_tech')
         if tech:
             price_str = f"{tech['price']:,.0f}원 ({tech['daily_chg']:+.2f}%)"
@@ -318,45 +332,44 @@ def format_buy_recommendations(picks: list, base_date_str: str) -> str:
         factor_str = ' | '.join(factor_parts)
 
         # 3일 순위 변동
-        rank_history = f"T0:{pick['rank_t0']} T1:{pick['rank_t1']} T2:{pick['rank_t2']}"
+        rank_history = f"순위 {pick['rank_t0']}→{pick['rank_t1']}→{pick['rank_t2']}"
 
-        lines.append(f"{medals[i]} {name} ({ticker}) · {sector}")
+        lines.append(f"{i+1}. {name} ({ticker}) · {sector}")
         lines.append(f"   비중 {WEIGHT_PER_STOCK}% | 가중순위 {w_rank}")
         if price_str:
-            lines.append(f"   💰 {price_str}")
+            lines.append(f"   {price_str}")
         if factor_str:
-            lines.append(f"   📊 {factor_str}")
+            lines.append(f"   {factor_str}")
         if rsi_str:
-            lines.append(f"   📈 {rsi_str} | {w52_str} | {rank_history}")
+            lines.append(f"   {rsi_str} | {w52_str} | {rank_history}")
         if i < len(picks) - 1:
-            lines.append("─────────")
+            lines.append("")
 
     lines.append("")
     if cash_weight > 0:
-        lines.append(f"💰 현금 {cash_weight}%")
+        lines.append(f"현금 비중 {cash_weight}%")
     lines.append("")
-    lines.append("⚠️ 참고용이며 투자 판단은 본인 책임입니다.")
+    lines.append("참고용이며 투자 판단은 본인 책임입니다.")
     lines.append("")
 
     return '\n'.join(lines)
 
 
 def format_survivors(survivors: list) -> str:
-    """Section 3: Survivors (1~50위) 메시지 포맷"""
+    """생존 리스트 (Top 50) 메시지 포맷"""
     if not survivors:
         return ""
 
     lines = [
-        "━━━━━━━━━━━━━━━━━━━",
+        "──────────────────",
         "✅ 생존 리스트 (Top 50)",
-        "━━━━━━━━━━━━━━━━━━━",
-        "보유 종목이 아래에 있으면 안전합니다.",
-        "없으면 Death List를 확인하세요.",
+        "──────────────────",
+        "보유 종목이 아래에 있으면 계속 보유하세요.",
+        "없다면 탈락 종목을 확인해주세요.",
         "",
     ]
 
-    # 쉼표 구분 나열
-    names = [f"{s['name']}" for s in survivors]
+    names = [s['name'] for s in survivors]
     lines.append(', '.join(names))
     lines.append("")
 
@@ -402,12 +415,13 @@ def main():
     kosdaq_prev = kosdaq_idx.iloc[-2, 3] if len(kosdaq_idx) > 1 else kosdaq_close
     kosdaq_chg = ((kosdaq_close / kosdaq_prev) - 1) * 100
 
-    if kospi_chg > 1:
-        market_color = "🟢"
-    elif kospi_chg < -1:
-        market_color = "🔴"
-    else:
-        market_color = "🟡"
+    def _idx_color(chg):
+        if chg > 1: return "🟢"
+        elif chg < -1: return "🔴"
+        else: return "🟡"
+
+    kospi_color = _idx_color(kospi_chg)
+    kosdaq_color = _idx_color(kosdaq_chg)
 
     base_date_str = f"{BASE_DATE[:4]}년 {BASE_DATE[4:6]}월 {BASE_DATE[6:]}일"
 
@@ -493,44 +507,42 @@ def main():
     # ============================================================
     # 메시지 구성
     # ============================================================
-    today_str = f"{TODAY[4:6]}월{TODAY[6:]}일"
 
-    # 헤더
-    warning_lines = ""
+    # 경고 블록
+    warning_block = ""
     if market_warnings:
-        warning_lines = "\n".join(market_warnings)
-        warning_lines = f"\n{warning_lines}\n📋 이평선 하회 시 신규 진입을 자제하세요.\n"
+        warning_block = "\n" + "\n".join(market_warnings)
+        warning_block += "\n신규 진입 시 유의하세요.\n"
 
-    header = f"""📊 퀀트 포트폴리오 v5.0
-━━━━━━━━━━━━━━━━━━━
-📅 {base_date_str} 기준
-{market_color} 코스피 {kospi_close:,.0f} ({kospi_chg:+.2f}%) | 코스닥 {kosdaq_close:,.0f} ({kosdaq_chg:+.2f}%)
-━━━━━━━━━━━━━━━━━━━
-{warning_lines}
-💡 Slow In, Fast Out 전략
-• 3일 연속 Top 30 교집합 검증
-• MA60 하회 종목 원천 차단
-• 50위 이탈 시 즉시 Death List 경보
-
-"""
+    # 헤더 (v5.0 타이틀 제거, 지수 각각 별도 줄)
+    header = f"📅 {base_date_str} 기준\n"
+    header += "──────────────────\n"
+    header += f"{kospi_color} 코스피  {kospi_close:,.0f} ({kospi_chg:+.2f}%)\n"
+    header += f"{kosdaq_color} 코스닥  {kosdaq_close:,.0f} ({kosdaq_chg:+.2f}%)\n"
+    if warning_block:
+        header += warning_block
+    header += "\n"
 
     # 각 섹션 생성
     death_section = format_death_list(death_list) if death_list else ""
     buy_section = format_buy_recommendations(picks, base_date_str)
     survivor_section = format_survivors(survivors)
 
-    # 메시지 조합
-    msg1 = header
+    # 개요 (첫 번째 메시지)
+    msg_overview = format_overview()
+
+    # 본문 (헤더 + Death List + 매수 후보)
+    msg_main = header
     if death_section:
-        msg1 += death_section
-    msg1 += buy_section
+        msg_main += death_section
+    msg_main += buy_section
 
-    # Survivors는 별도 메시지 (길이 제한)
-    msg2 = survivor_section if survivor_section else None
+    # 생존 리스트 (별도 메시지)
+    msg_survivors = survivor_section if survivor_section else None
 
-    messages = [msg1]
-    if msg2:
-        messages.append(msg2)
+    messages = [msg_overview, msg_main]
+    if msg_survivors:
+        messages.append(msg_survivors)
 
     # ============================================================
     # 텔레그램 전송
@@ -541,11 +553,15 @@ def main():
     IS_GITHUB_ACTIONS = os.environ.get('GITHUB_ACTIONS') == 'true'
 
     print("\n=== 메시지 미리보기 ===")
-    print(msg1[:2000])
-    if msg2:
-        print("\n--- Survivors ---")
-        print(msg2[:500])
-    print(f"\n메시지 수: {len(messages)}개 (msg1: {len(msg1)}자{f', msg2: {len(msg2)}자' if msg2 else ''})")
+    print("--- 개요 ---")
+    print(msg_overview[:500])
+    print("\n--- 본문 ---")
+    print(msg_main[:2000])
+    if msg_survivors:
+        print("\n--- 생존 리스트 ---")
+        print(msg_survivors[:500])
+    msg_sizes = ', '.join(f'{len(m)}자' for m in messages)
+    print(f"\n메시지 수: {len(messages)}개 ({msg_sizes})")
 
     if IS_GITHUB_ACTIONS:
         results = []
