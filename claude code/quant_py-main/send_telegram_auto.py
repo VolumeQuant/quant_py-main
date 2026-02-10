@@ -267,8 +267,8 @@ def format_recommendation(selected):
         "━━━━━━━━━━━━━━━━━━━",
         f"📅 {now.strftime('%Y년 %m월 %d일')}",
         "",
-        f"퀀트 TOP 30에서 섹터 분산 + RSI 기반",
-        f"{n}종목을 자동 선정했어요.",
+        f"퀀트 TOP 30에서 위험 플래그 제거 + 섹터 분산",
+        f"기반 {n}종목을 자동 선정했어요.",
         "",
     ]
 
