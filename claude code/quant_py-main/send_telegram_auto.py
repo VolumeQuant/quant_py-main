@@ -228,7 +228,7 @@ def _calc_market_warnings(kospi_df, kosdaq_df):
 # ============================================================
 def format_overview():
     """전략 개요 메시지 (첫 번째 메시지로 전송)"""
-    return """<b>📊 퀀트 포트폴리오 — 활용 가이드</b>
+    return f"""<b>📊 퀀트 포트폴리오 — 활용 가이드</b>
 
 매일 새벽, 국내 전 종목을 자동 분석합니다.
 
@@ -239,7 +239,7 @@ def format_overview():
   ④ 3거래일 연속 상위 30위 유지 종목만 최종 선정
 
 <b>▸ 매수·보유·매도 기준</b>
-  매수 — '매수 후보'에 오른 종목을 각 15%씩 분산
+  매수 — '매수 후보'에 오른 종목을 각 {WEIGHT_PER_STOCK}%씩 분산
   보유 — '생존 리스트'에 있는 동안 계속 보유
   매도 — '탈락 종목'에 이름이 뜨면 매도 검토
 
@@ -608,9 +608,15 @@ def main():
     print(f"\n메시지 수: {len(messages)}개 ({msg_sizes})")
 
     if IS_GITHUB_ACTIONS:
-        # 콜드 스타트 시 채널 전송 스킵 (개인봇에만 전송)
         if cold_start:
-            print('\n콜드 스타트 — 채널 전송 스킵 (아직 3일 데이터 미확보)')
+            # 콜드 스타트: 공개 채널 스킵, 개인봇(또는 유일한 대상)에만 전송
+            target = PRIVATE_CHAT_ID or TELEGRAM_CHAT_ID
+            print(f'\n콜드 스타트 — 채널 전송 스킵, 개인봇으로 전송 ({target[:6]}...)')
+            results_cs = []
+            for msg in messages:
+                r = requests.post(url, data={'chat_id': target, 'text': msg, 'parse_mode': 'HTML'})
+                results_cs.append(r.status_code)
+            print(f'콜드 스타트 메시지 전송: {", ".join(map(str, results_cs))}')
         else:
             results = []
             for msg in messages:
@@ -618,12 +624,12 @@ def main():
                 results.append(r.status_code)
             print(f'\n채널 메시지 전송: {", ".join(map(str, results))}')
 
-        if PRIVATE_CHAT_ID:
-            results_p = []
-            for msg in messages:
-                r = requests.post(url, data={'chat_id': PRIVATE_CHAT_ID, 'text': msg, 'parse_mode': 'HTML'})
-                results_p.append(r.status_code)
-            print(f'개인 메시지 전송: {", ".join(map(str, results_p))}')
+            if PRIVATE_CHAT_ID:
+                results_p = []
+                for msg in messages:
+                    r = requests.post(url, data={'chat_id': PRIVATE_CHAT_ID, 'text': msg, 'parse_mode': 'HTML'})
+                    results_p.append(r.status_code)
+                print(f'개인 메시지 전송: {", ".join(map(str, results_p))}')
     else:
         target_id = PRIVATE_CHAT_ID or TELEGRAM_CHAT_ID
         results = []
@@ -665,12 +671,16 @@ def main():
                 print(ai_msg[:500] + '...' if len(ai_msg) > 500 else ai_msg)
 
                 if IS_GITHUB_ACTIONS:
-                    if not cold_start:
+                    if cold_start:
+                        target = PRIVATE_CHAT_ID or TELEGRAM_CHAT_ID
+                        r = requests.post(url, data={'chat_id': target, 'text': ai_msg, 'parse_mode': 'HTML'})
+                        print(f'AI 브리핑 콜드스타트 전송: {r.status_code}')
+                    else:
                         r = requests.post(url, data={'chat_id': TELEGRAM_CHAT_ID, 'text': ai_msg, 'parse_mode': 'HTML'})
                         print(f'AI 브리핑 채널 전송: {r.status_code}')
-                    if PRIVATE_CHAT_ID:
-                        r = requests.post(url, data={'chat_id': PRIVATE_CHAT_ID, 'text': ai_msg, 'parse_mode': 'HTML'})
-                        print(f'AI 브리핑 개인 전송: {r.status_code}')
+                        if PRIVATE_CHAT_ID:
+                            r = requests.post(url, data={'chat_id': PRIVATE_CHAT_ID, 'text': ai_msg, 'parse_mode': 'HTML'})
+                            print(f'AI 브리핑 개인 전송: {r.status_code}')
                 else:
                     target_id = PRIVATE_CHAT_ID or TELEGRAM_CHAT_ID
                     r = requests.post(url, data={'chat_id': target_id, 'text': ai_msg, 'parse_mode': 'HTML'})
