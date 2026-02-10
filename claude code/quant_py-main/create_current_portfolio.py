@@ -133,7 +133,7 @@ def collect_consensus_data(
     print(f"  대상 종목: {len(tickers)}개")
 
     try:
-        consensus_df = get_consensus_batch(tickers=tickers, delay=0.5)
+        consensus_df = get_consensus_batch(tickers=tickers, delay=0.3)
         print(f"  수집 완료: {len(consensus_df)}개 종목")
         return consensus_df
     except Exception as e:
@@ -505,9 +505,17 @@ def main():
             print(f"  제외 종목 없음 ({before_count}개 유지)")
 
     # =========================================================================
-    # 4단계: OHLCV 수집 (병렬)
+    # 4단계: OHLCV 수집 (캐시 + 증분 업데이트)
     # =========================================================================
-    print("\n[4단계] OHLCV 데이터 로드 (캐시)")
+    print("\n[4단계] OHLCV 데이터 로드 (캐시 + 증분)")
+
+    # PER/PBR 필터 통과 종목만 수집 (571 → ~383)
+    ohlcv_tickers = magic_df['종목코드'].tolist() if not magic_df.empty else universe_tickers
+    print(f"  OHLCV 대상: {len(ohlcv_tickers)}개 종목 (PER/PBR 필터 후)")
+
+    end_date_dt = datetime.strptime(BASE_DATE, '%Y%m%d')
+    start_date_dt = end_date_dt - timedelta(days=450)
+    price_start = start_date_dt.strftime('%Y%m%d')
 
     ohlcv_cache_files = list(Path(CACHE_DIR).glob("all_ohlcv_*.parquet"))
     price_df = pd.DataFrame()
@@ -518,23 +526,53 @@ def main():
         print(f"  캐시 파일 확인: {ohlcv_cache_file.name}")
         price_df = pd.read_parquet(ohlcv_cache_file)
 
-        base_date_dt = pd.Timestamp(datetime.strptime(BASE_DATE, '%Y%m%d'))
-        if not price_df.empty and base_date_dt in price_df.index:
-            # 과거 날짜 백필 시 미래 데이터 제거 (데이터 누수 방지)
-            price_df = price_df[price_df.index <= base_date_dt]
-            print(f"  캐시에 {BASE_DATE} 데이터 있음 - 캐시 사용 ({BASE_DATE}까지 truncate)")
-            print(f"  로드 완료: {len(price_df.columns)}개 종목, {len(price_df)}거래일")
+        base_date_ts = pd.Timestamp(end_date_dt)
+        if not price_df.empty and base_date_ts in price_df.index:
+            # 캐시 히트: BASE_DATE 데이터 있음
+            price_df = price_df[price_df.index <= base_date_ts]
+            print(f"  캐시 히트 — {len(price_df.columns)}개 종목, {len(price_df)}거래일")
             need_refresh = False
-        else:
-            print(f"  캐시에 {BASE_DATE} 데이터 없음 - 새로 수집 필요")
+        elif not price_df.empty:
+            # 캐시 있지만 BASE_DATE 없음 — 증분 업데이트 시도
+            last_cached = price_df.index[-1]
+            gap_days = (base_date_ts - last_cached).days
+
+            if 0 < gap_days <= 10:
+                print(f"  증분 업데이트: 캐시 마지막={last_cached.strftime('%Y%m%d')}, 갭={gap_days}일")
+                new_rows = []
+                for offset in range(1, gap_days + 1):
+                    date_dt = last_cached + timedelta(days=offset)
+                    date_str = date_dt.strftime('%Y%m%d')
+                    try:
+                        day_ohlcv = pykrx_stock.get_market_ohlcv_by_date(date_str, market='ALL')
+                        if not day_ohlcv.empty and '종가' in day_ohlcv.columns:
+                            row = day_ohlcv['종가']
+                            row.name = pd.Timestamp(date_dt)
+                            new_rows.append(row)
+                    except Exception:
+                        pass  # 휴장일 등
+
+                if new_rows:
+                    new_df = pd.DataFrame(new_rows)
+                    price_df = pd.concat([price_df, new_df])
+                    price_df = price_df[~price_df.index.duplicated(keep='last')]
+                    price_df = price_df.sort_index()
+                    # 캐시 저장 (새 날짜 범위)
+                    new_start = price_df.index[0].strftime('%Y%m%d')
+                    new_end = price_df.index[-1].strftime('%Y%m%d')
+                    new_cache = Path(CACHE_DIR) / f'all_ohlcv_{new_start}_{new_end}.parquet'
+                    price_df.to_parquet(new_cache)
+                    print(f"  증분 완료: +{len(new_rows)}거래일 → 총 {len(price_df)}거래일, {len(price_df.columns)}종목")
+                else:
+                    print(f"  증분 업데이트: 새 거래일 없음 (휴장일)")
+                need_refresh = False
+            else:
+                print(f"  캐시 갭 {gap_days}일 — 전체 재수집 필요")
 
     if need_refresh:
-        print("  OHLCV 데이터 수집 시작...")
-        end_date_dt = datetime.strptime(BASE_DATE, '%Y%m%d')
-        start_date_dt = end_date_dt - timedelta(days=450)
-        price_start = start_date_dt.strftime('%Y%m%d')
+        print(f"  OHLCV 전체 수집 시작 ({len(ohlcv_tickers)}개 종목)...")
         price_df = collect_price_data_parallel(
-            collector, universe_tickers, price_start, BASE_DATE, error_tracker
+            collector, ohlcv_tickers, price_start, BASE_DATE, error_tracker
         )
 
     # =========================================================================

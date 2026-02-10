@@ -136,7 +136,7 @@ def get_financial_statement(ticker, use_cache=True):
         # 캐시 저장
         data_fs_bind.to_parquet(cache_file)
 
-        time.sleep(2)  # 크롤링 예의
+        time.sleep(1)  # 크롤링 예의 (캐시 히트 시 건너뜀)
 
         return data_fs_bind
 
