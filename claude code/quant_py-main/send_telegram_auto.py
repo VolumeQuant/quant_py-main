@@ -36,7 +36,7 @@ from ranking_manager import (
 KST = ZoneInfo('Asia/Seoul')
 CACHE_DIR = Path('data_cache')
 OUTPUT_DIR = Path('output')
-WEIGHT_PER_STOCK = 15  # 종목당 비중 %
+WEIGHT_PER_STOCK = 20  # 종목당 비중 % (5종목 × 20% = 100%)
 
 # 섹터 데이터베이스
 SECTOR_DB = {

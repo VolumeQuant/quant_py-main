@@ -2,9 +2,40 @@
 
 ## 문서 개요
 
-**버전**: 14.1
+**버전**: 15.0
 **최종 업데이트**: 2026-02-10
 **작성자**: Claude Opus 4.6
+
+---
+
+## 핵심 변경사항 (v15.0 — 텔레그램 UI 강화 + 최종 추천 5종목)
+
+### 2026-02-10 HTML 볼드 + ✅ 마커 + 투자 근거 + 생존 순위 + max_picks 5 + FnGuide 주간 갱신
+
+**배경**: KR/US 텔레그램 UX 비교 분석(12개 개선점 도출) 후 선별 적용. 구독자 친화적 UI 강화 + 고확신 종목 집중.
+
+| 항목 | Before (v14.1) | After (v15.0) |
+|------|----------------|---------------|
+| 텍스트 강조 | 이모지만 | **`<b>볼드</b>` + `parse_mode='HTML'`** |
+| 매수 후보 종목명 | 일반 텍스트 | **✅ `<b>종목명</b>`** (검증 마커) |
+| 투자 근거 | 없음 | **한 줄 투자 근거** (실적 개선/저평가/고수익성/과매도/52주 저점) |
+| 생존 리스트 | 종목명만 나열 | **종목명(순위)** 형태 |
+| 최대 추천 수 | 10종목 | **5종목** (고확신 집중) |
+| Death List 사유 | 어제→오늘 순위만 | **[V↓ Q↓ M↓] 팩터별 사유** |
+| FnGuide 캐시 | 수동 갱신 | **주간 자동 갱신** (`fnguide_weekly.yml`) |
+
+**투자 근거 자동 생성 (`_get_buy_rationale()`)**:
+```python
+# 우선순위: 실적 개선(F.PER<PER) > 저평가(PER<10) > 고수익성(ROE>15) > 과매도(RSI<35) > 52주 저점(w52<-30%)
+# 해당 없으면 "멀티팩터 상위"
+# 최대 2개 사유, ' · ' 구분
+```
+
+**수정 파일**:
+1. `send_telegram_auto.py` — `<b>` 볼드 헤더, ✅ 마커, `_get_buy_rationale()`, 생존 순위, `parse_mode='HTML'` 전체 적용
+2. `ranking_manager.py` — `max_picks: int = 10` → `max_picks: int = 5`
+3. `.github/workflows/fnguide_weekly.yml` — **신규** (매주 일요일 03:00 KST, 시총 1000억+ 전종목 캐시 갱신)
+4. `refresh_fnguide_cache.py` — **신규** (FnGuide 주간 갱신 스크립트)
 
 ---
 
@@ -1078,7 +1109,7 @@ quant_py-main/
 | **2026-02-10** | **텔레그램 3섹션: Death List → 매수 추천 → Survivors** | **send_telegram_auto.py** |
 | **2026-02-10** | **state/ 디렉토리: 일일 순위 JSON 저장 + GitHub Actions git commit** | **state/, telegram_*.yml** |
 | **2026-02-10** | **Overheat 필터/섹터 분산/TOP 추천 제거 (3일 교집합이 대체)** | **send_telegram_auto.py** |
-| **2026-02-10** | **종목당 비중 15%, 나머지 현금** | **send_telegram_auto.py** |
+| **2026-02-10** | **종목당 비중 20% 전액 투자 (15%→20%)** | **send_telegram_auto.py** |
 | **2026-02-10** | **cron 06:00→06:30 KST, permissions: contents: write** | **telegram_daily.yml** |
 | **2026-02-10** | **sys.argv 날짜 오버라이드 + 캐시 truncation (백필용)** | **create_current_portfolio.py** |
 | **2026-02-10** | **시장 이평선 경고: MA5/MA20/MA60 + 데드크로스 자동 진단** | **send_telegram_auto.py** |
@@ -1087,8 +1118,12 @@ quant_py-main/
 | **2026-02-10** | **백필 랭킹 삭제 — 클린 콜드 스타트** | **state/** |
 | **2026-02-10** | **telegram_test.yml: 3일 백필 → 단일 실행 복원** | **telegram_test.yml** |
 | **2026-02-10** | **v14.1: 고객 친화적 메시지 리디자인 (아이콘/톤/구조 전면 개선)** | **send_telegram_auto.py** |
+| **2026-02-10** | **v15.0: HTML 볼드 + ✅ 마커 + 한 줄 투자 근거 + 생존 순위** | **send_telegram_auto.py** |
+| **2026-02-10** | **max_picks 10→5: 고확신 종목 집중** | **ranking_manager.py** |
+| **2026-02-10** | **Death List 팩터별 하락 사유 [V↓ Q↓ M↓]** | **ranking_manager.py** |
+| **2026-02-10** | **FnGuide 주간 캐시 자동 갱신 (매주 일요일 03:00 KST)** | **fnguide_weekly.yml, refresh_fnguide_cache.py** |
 
 ---
 
-**문서 버전**: 14.1
+**문서 버전**: 15.0
 **최종 업데이트**: 2026-02-10
