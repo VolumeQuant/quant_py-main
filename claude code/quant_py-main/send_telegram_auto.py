@@ -208,13 +208,13 @@ def get_broad_sector(sector):
     return sector
 
 
-def select_top5(stock_analysis):
-    """위험 플래그 없는 종목 중 섹터 중복 없이 TOP 5 선정"""
+def select_top5(stock_analysis, n=10):
+    """위험 플래그 없는 종목 중 섹터 중복 없이 TOP N 선정"""
     selected = []
     used_sectors = set()
 
     for s in stock_analysis:
-        if len(selected) >= 5:
+        if len(selected) >= n:
             break
         flags = compute_risk_flags(s)
         if flags:
@@ -229,9 +229,13 @@ def select_top5(stock_analysis):
 
 
 def format_recommendation(selected):
-    """퀀트 TOP 5 추천 메시지 포맷"""
-    weights = [25, 25, 20, 15, 15]
-    medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"]
+    """퀀트 TOP N 추천 메시지 포맷"""
+    n = len(selected)
+    # 비중: 균등 배분 (나머지는 앞에서부터 +1%)
+    base = 100 // n
+    remainder = 100 - base * n
+    weights = [base + (1 if i < remainder else 0) for i in range(n)]
+    medals = ["🥇", "🥈", "🥉"] + [f"{i+1}️⃣" for i in range(3, n)]
     now = datetime.now(KST)
 
     def get_entry(rsi):
@@ -259,12 +263,12 @@ def format_recommendation(selected):
 
     lines = [
         "━━━━━━━━━━━━━━━━━━━",
-        "   🎯 퀀트 TOP 5 추천",
+        f"   🎯 퀀트 TOP {n} 추천",
         "━━━━━━━━━━━━━━━━━━━",
         f"📅 {now.strftime('%Y년 %m월 %d일')}",
         "",
-        "퀀트 TOP 30에서 섹터 분산 + RSI 기반",
-        "5종목을 자동 선정했어요.",
+        f"퀀트 TOP 30에서 섹터 분산 + RSI 기반",
+        f"{n}종목을 자동 선정했어요.",
         "",
     ]
 
