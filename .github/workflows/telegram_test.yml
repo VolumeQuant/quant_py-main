@@ -7,6 +7,9 @@ on:
 env:
   GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
+permissions:
+  contents: write
+
 jobs:
   send-telegram-test:
     runs-on: ubuntu-latest
