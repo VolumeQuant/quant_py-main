@@ -228,17 +228,17 @@ def _calc_market_warnings(kospi_df, kosdaq_df):
 # ============================================================
 def format_overview():
     """전략 개요 메시지 (첫 번째 메시지로 전송)"""
-    return """📊 퀀트 포트폴리오 — 활용 가이드
+    return """<b>📊 퀀트 포트폴리오 — 활용 가이드</b>
 
 매일 새벽, 국내 전 종목을 자동 분석합니다.
 
-▸ 종목은 이렇게 선정됩니다
+<b>▸ 종목은 이렇게 선정됩니다</b>
   ① 전 종목에서 시가총액·재무 건전성 스크리닝
   ② 가치 + 수익성 + 모멘텀 멀티팩터 점수 산출
   ③ 60일 이동평균선 위 종목만 통과
   ④ 3거래일 연속 상위 30위 유지 종목만 최종 선정
 
-▸ 매수·보유·매도 기준
+<b>▸ 매수·보유·매도 기준</b>
   매수 — '매수 후보'에 오른 종목을 각 15%씩 분산
   보유 — '생존 리스트'에 있는 동안 계속 보유
   매도 — '탈락 종목'에 이름이 뜨면 매도 검토
@@ -255,7 +255,7 @@ def format_death_list(death_list: list) -> str:
 
     lines = [
         "─────────────────",
-        "⛔ 탈락 종목 — 매도 검토",
+        "<b>⛔ 탈락 종목 — 매도 검토</b>",
         "─────────────────",
         "",
     ]
@@ -269,7 +269,7 @@ def format_death_list(death_list: list) -> str:
         reasons = item.get('reasons')
         reason_str = f" [{' '.join(reasons)}]" if reasons else ""
 
-        lines.append(f"{i}. {name} · {sector}{reason_str}")
+        lines.append(f"{i}. <b>{name}</b> · {sector}{reason_str}")
         if t_rank is not None:
             lines.append(f"   어제 {y_rank}위 → 오늘 {t_rank}위")
         else:
@@ -282,12 +282,43 @@ def format_death_list(death_list: list) -> str:
     return '\n'.join(lines)
 
 
+def _get_buy_rationale(pick) -> str:
+    """한 줄 투자 근거 생성"""
+    reasons = []
+
+    fwd = pick.get('fwd_per')
+    per = pick.get('per')
+    roe = pick.get('roe')
+    tech = pick.get('_tech') or {}
+
+    if fwd and per and fwd < per and per > 0:
+        reasons.append(f"실적 개선 (PER {per:.0f}→{fwd:.0f})")
+    elif per and per < 10:
+        reasons.append(f"저평가 PER {per:.1f}")
+
+    if roe and roe > 15:
+        reasons.append(f"ROE {roe:.0f}%")
+
+    rsi = tech.get('rsi')
+    if rsi and rsi < 35:
+        reasons.append("과매도 구간")
+
+    w52 = tech.get('w52_pct')
+    if w52 and w52 < -30:
+        reasons.append("52주 저점 부근")
+
+    if not reasons:
+        reasons.append("멀티팩터 상위")
+
+    return ' · '.join(reasons[:2])
+
+
 def format_buy_recommendations(picks: list, base_date_str: str) -> str:
     """매수 후보 메시지 포맷"""
     if not picks:
         lines = [
             "─────────────────",
-            "📋 매수 후보",
+            "<b>📋 매수 후보</b>",
             "─────────────────",
             "",
             "3일 연속 상위권을 유지한 종목이 없습니다.",
@@ -302,7 +333,7 @@ def format_buy_recommendations(picks: list, base_date_str: str) -> str:
 
     lines = [
         "─────────────────",
-        f"💎 매수 후보 — {n}종목 (투자비중 {total_weight}%)",
+        f"<b>💎 매수 후보 — {n}종목 (투자비중 {total_weight}%)</b>",
         "─────────────────",
         "3거래일 연속 Top 30 유지 종목",
         "",
@@ -345,7 +376,9 @@ def format_buy_recommendations(picks: list, base_date_str: str) -> str:
         # 3일 순위 안정성
         rank_str = f"{pick['rank_t0']}→{pick['rank_t1']}→{pick['rank_t2']}위"
 
-        lines.append(f"{i+1}. {name} ({ticker}) · {sector}")
+        rationale = _get_buy_rationale(pick)
+        lines.append(f"{i+1}. ✅ <b>{name}</b> ({ticker}) · {sector}")
+        lines.append(f"   → {rationale}")
         lines.append(f"   비중 {WEIGHT_PER_STOCK}% · 가중순위 {w_rank}")
         if price_str:
             lines.append(f"   {price_str}")
@@ -373,14 +406,14 @@ def format_survivors(survivors: list) -> str:
 
     lines = [
         "─────────────────",
-        "✅ 생존 리스트 — 보유 유지",
+        "<b>✅ 생존 리스트 — 보유 유지</b>",
         "─────────────────",
         "아래 종목을 보유 중이라면 계속 보유하세요.",
         "목록에 없다면 '탈락 종목'을 확인하세요.",
         "",
     ]
 
-    names = [s['name'] for s in survivors]
+    names = [f"{s['name']}({s['rank']})" for s in survivors]
     lines.append(', '.join(names))
     lines.append("")
 
@@ -526,7 +559,7 @@ def main():
         warning_block += "\n신규 매수 시 유의하세요.\n"
 
     # 헤더
-    header = f"📅 {base_date_str} 기준\n"
+    header = f"<b>📅 {base_date_str} 기준</b>\n"
     header += "─────────────────\n"
     header += f"{kospi_color} 코스피  {kospi_close:,.0f} ({kospi_chg:+.2f}%)\n"
     header += f"{kosdaq_color} 코스닥  {kosdaq_close:,.0f} ({kosdaq_chg:+.2f}%)\n"
@@ -581,21 +614,21 @@ def main():
         else:
             results = []
             for msg in messages:
-                r = requests.post(url, data={'chat_id': TELEGRAM_CHAT_ID, 'text': msg})
+                r = requests.post(url, data={'chat_id': TELEGRAM_CHAT_ID, 'text': msg, 'parse_mode': 'HTML'})
                 results.append(r.status_code)
             print(f'\n채널 메시지 전송: {", ".join(map(str, results))}')
 
         if PRIVATE_CHAT_ID:
             results_p = []
             for msg in messages:
-                r = requests.post(url, data={'chat_id': PRIVATE_CHAT_ID, 'text': msg})
+                r = requests.post(url, data={'chat_id': PRIVATE_CHAT_ID, 'text': msg, 'parse_mode': 'HTML'})
                 results_p.append(r.status_code)
             print(f'개인 메시지 전송: {", ".join(map(str, results_p))}')
     else:
         target_id = PRIVATE_CHAT_ID or TELEGRAM_CHAT_ID
         results = []
         for msg in messages:
-            r = requests.post(url, data={'chat_id': target_id, 'text': msg})
+            r = requests.post(url, data={'chat_id': target_id, 'text': msg, 'parse_mode': 'HTML'})
             results.append(r.status_code)
         print(f'\n테스트 메시지 전송: {", ".join(map(str, results))}')
 
