@@ -35,7 +35,6 @@ jobs:
           TELEGRAM_CHAT_ID = "${{ secrets.TELEGRAM_PRIVATE_ID }}"
           TELEGRAM_PRIVATE_ID = ""
           MIN_MARKET_CAP = 3000
-          MIN_TRADING_VALUE = 50
           PER_MAX_LIMIT = 60
           PBR_MAX_LIMIT = 10
           MAX_CONCURRENT_REQUESTS = 10

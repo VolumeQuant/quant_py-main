@@ -22,7 +22,7 @@ TELEGRAM_PRIVATE_ID = "YOUR_PRIVATE_ID_HERE"  # 예: "123456789" (개인 채팅 
 
 # 유니버스 필터 설정
 MIN_MARKET_CAP = 3000       # 최소 시가총액 (억원)
-MIN_TRADING_VALUE = 50      # 최소 20일 평균 거래대금 (억원)
+# 거래대금 차등 필터 (코드 내 하드코딩): 대형(1조+)≥50억, 중소형(3000억~1조)≥20억
 PER_MAX_LIMIT = 60          # PER 상한 (초과 시 유니버스 제외)
 PBR_MAX_LIMIT = 10          # PBR 상한 (초과 시 유니버스 제외)
 

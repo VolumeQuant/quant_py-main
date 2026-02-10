@@ -30,13 +30,12 @@ from strategy_b_multifactor import MultiFactorStrategy
 # 설정
 try:
     from config import (
-        MIN_MARKET_CAP, MIN_TRADING_VALUE,
+        MIN_MARKET_CAP,
         MAX_CONCURRENT_REQUESTS, PYKRX_WORKERS, CACHE_DIR,
         PREFILTER_N, N_STOCKS, PER_MAX_LIMIT, PBR_MAX_LIMIT
     )
 except ImportError:
     MIN_MARKET_CAP = 3000
-    MIN_TRADING_VALUE = 50
     MAX_CONCURRENT_REQUESTS = 10
     PYKRX_WORKERS = 10
     CACHE_DIR = "data_cache"
@@ -172,7 +171,10 @@ def filter_universe_optimized(
     filtered = market_cap_df[market_cap_df['시가총액_억'] >= MIN_MARKET_CAP].copy()
     print(f"시가총액 {MIN_MARKET_CAP}억원 이상: {len(filtered)}개")
 
-    # 2. 거래대금 필터 (20일 평균)
+    # 2. 거래대금 필터 — 시총 구간별 차등 적용
+    #    대형주(1조+): 50억, 중소형(3000억~1조): 20억
+    TRADING_LARGE = 50   # 시총 1조 이상
+    TRADING_MID = 20     # 시총 3000억 ~ 1조
     print(f"20일 평균 거래대금 계산 중...")
     avg_trading_df = calculate_avg_trading_value_from_cache(days=20)
 
@@ -180,13 +182,17 @@ def filter_universe_optimized(
         filtered = filtered.join(avg_trading_df, how='left')
         filtered['거래대금_억'] = filtered['거래대금'] / 100_000_000
         filtered['avg_trading_value'] = filtered['avg_trading_value'].fillna(filtered['거래대금_억'])
-        filtered = filtered[filtered['avg_trading_value'] >= MIN_TRADING_VALUE].copy()
-        print(f"20일 평균 거래대금 {MIN_TRADING_VALUE}억원 이상: {len(filtered)}개")
+        tv_col = 'avg_trading_value'
     else:
         print("  (배치 실패 - 당일 거래대금 사용)")
         filtered['거래대금_억'] = filtered['거래대금'] / 100_000_000
-        filtered = filtered[filtered['거래대금_억'] >= MIN_TRADING_VALUE].copy()
-        print(f"당일 거래대금 {MIN_TRADING_VALUE}억원 이상: {len(filtered)}개")
+        tv_col = '거래대금_억'
+
+    large_mask = filtered['시가총액_억'] >= 10000  # 1조 이상
+    pass_large = filtered[large_mask & (filtered[tv_col] >= TRADING_LARGE)]
+    pass_mid = filtered[~large_mask & (filtered[tv_col] >= TRADING_MID)]
+    filtered = pd.concat([pass_large, pass_mid]).copy()
+    print(f"거래대금 차등 필터 (대형≥{TRADING_LARGE}억, 중소형≥{TRADING_MID}억): {len(filtered)}개")
 
     # 3. 종목명 수집
     print("종목명 수집 중...")
@@ -325,7 +331,7 @@ def generate_report(
 - 필터링 후: {len(universe_df)}개
 - 필터 조건:
   * 시가총액 >= {MIN_MARKET_CAP}억원
-  * 거래대금 >= {MIN_TRADING_VALUE}억원
+  * 거래대금: 대형(1조+)≥50억, 중소형≥20억
   * PER <= {PER_MAX_LIMIT}, PBR <= {PBR_MAX_LIMIT}
   * 금융업/지주사 제외
 
