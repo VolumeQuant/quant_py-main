@@ -235,7 +235,8 @@ def format_recommendation(selected):
     base = 100 // n
     remainder = 100 - base * n
     weights = [base + (1 if i < remainder else 0) for i in range(n)]
-    medals = ["🥇", "🥈", "🥉"] + [f"{i+1}️⃣" for i in range(3, n)]
+    medal_icons = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+    medals = medal_icons[:n] if n <= 10 else medal_icons + [f"({i+1})" for i in range(10, n)]
     now = datetime.now(KST)
 
     def get_entry(rsi):
