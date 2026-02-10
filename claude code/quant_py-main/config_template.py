@@ -27,7 +27,7 @@ PER_MAX_LIMIT = 60          # PER 상한 (초과 시 유니버스 제외)
 PBR_MAX_LIMIT = 10          # PBR 상한 (초과 시 유니버스 제외)
 
 # 전략 설정
-PREFILTER_N = 150           # 마법공식 사전필터 종목 수
+PREFILTER_N = 200           # 마법공식 사전필터 종목 수
 N_STOCKS = 30               # 최종 선정 종목 수
 
 # 데이터 수집 설정

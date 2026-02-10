@@ -40,7 +40,7 @@ jobs:
           MAX_CONCURRENT_REQUESTS = 10
           PYKRX_WORKERS = 10
           CACHE_DIR = "data_cache"
-          PREFILTER_N = 150
+          PREFILTER_N = 200
           N_STOCKS = 30
           GEMINI_API_KEY = "${{ secrets.GEMINI_API_KEY }}"
           EOF

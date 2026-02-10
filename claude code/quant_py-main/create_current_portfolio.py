@@ -39,7 +39,7 @@ except ImportError:
     MAX_CONCURRENT_REQUESTS = 10
     PYKRX_WORKERS = 10
     CACHE_DIR = "data_cache"
-    PREFILTER_N = 150
+    PREFILTER_N = 200
     N_STOCKS = 30
     PER_MAX_LIMIT = 60
     PBR_MAX_LIMIT = 10
@@ -343,9 +343,9 @@ def generate_report(
         report += f"- 상위 10종목:\n{prefiltered.head(10)[['종목코드', '종목명', '마법공식_순위']].to_string()}\n"
 
     report += f"""
-[최종 포트폴리오 - 통합순위 상위 {N_STOCKS}개]
+[최종 포트폴리오 - 멀티팩터 상위 {N_STOCKS}개]
 - 선정 종목 수: {len(selected)}개
-- 통합순위: 마법공식 30% + 멀티팩터 70%
+- 순위: 멀티팩터 100% (마법공식은 사전필터만)
 - Value 팩터 50%: PER(실시간) + PBR(실시간) + PCR + PSR + DIV(실시간)
 - Quality 팩터 30%: ROE + GPA + CFO
 - Momentum 팩터 20%: 12M-1M 수익률
@@ -375,7 +375,7 @@ def main():
     print("=" * 80)
     print("퀀트 포트폴리오 생성 v3.2")
     print(f"기준일: {BASE_DATE}")
-    print(f"파이프라인: 유니버스 → A 사전필터({PREFILTER_N}) → A30%+B70% 통합순위 → 최종{N_STOCKS}개")
+    print(f"파이프라인: 유니버스 → A 사전필터({PREFILTER_N}) → B 멀티팩터 순위 → 최종{N_STOCKS}개")
     print(f"데이터 소스: FnGuide 캐시 + pykrx 실시간 PER/PBR/DIV")
     print("=" * 80)
 
@@ -503,17 +503,17 @@ def main():
         consensus_df=consensus_df
     )
 
-    # A 30% + B 70% 통합순위로 최종 30개 선정
-    print(f"\n[통합순위] 마법공식 30% + 멀티팩터 70%")
-    if not scored_b.empty and '마법공식_순위' in scored_b.columns and '멀티팩터_순위' in scored_b.columns:
-        scored_b['통합순위_점수'] = scored_b['마법공식_순위'] * 0.3 + scored_b['멀티팩터_순위'] * 0.7
-        scored_b['통합순위'] = scored_b['통합순위_점수'].rank(ascending=True, method='first')
+    # 멀티팩터 순위 100%로 최종 30개 선정 (A는 사전필터 역할만)
+    print(f"\n[최종순위] 멀티팩터 100% (A는 사전필터만)")
+    if not scored_b.empty and '멀티팩터_순위' in scored_b.columns:
+        scored_b['통합순위'] = scored_b['멀티팩터_순위']
+        scored_b['통합순위_점수'] = scored_b['멀티팩터_순위']
         scored_b = scored_b.sort_values('통합순위')
         selected = scored_b.head(N_STOCKS).copy()
         print(f"  최종 선정: {len(selected)}개 종목")
     else:
         selected = scored_b.head(N_STOCKS).copy() if not scored_b.empty else pd.DataFrame()
-        print(f"  순위 컬럼 부족 - 멀티팩터 순위로 대체: {len(selected)}개")
+        print(f"  멀티팩터 순위로 선정: {len(selected)}개")
 
     # =========================================================================
     # 6단계: 결과 저장 (통합 CSV 1개)
