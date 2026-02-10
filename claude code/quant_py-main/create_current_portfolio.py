@@ -68,7 +68,12 @@ def get_latest_trading_date() -> str:
             continue
     return '20260129'
 
-BASE_DATE = get_latest_trading_date()
+import sys
+if len(sys.argv) > 1 and len(sys.argv[1]) == 8 and sys.argv[1].isdigit():
+    BASE_DATE = sys.argv[1]
+    print(f"[날짜 오버라이드] BASE_DATE = {BASE_DATE}")
+else:
+    BASE_DATE = get_latest_trading_date()
 OUTPUT_DIR = Path(__file__).parent / 'output'
 OUTPUT_DIR.mkdir(exist_ok=True)
 
@@ -515,7 +520,9 @@ def main():
 
         base_date_dt = pd.Timestamp(datetime.strptime(BASE_DATE, '%Y%m%d'))
         if not price_df.empty and base_date_dt in price_df.index:
-            print(f"  캐시에 {BASE_DATE} 데이터 있음 - 캐시 사용")
+            # 과거 날짜 백필 시 미래 데이터 제거 (데이터 누수 방지)
+            price_df = price_df[price_df.index <= base_date_dt]
+            print(f"  캐시에 {BASE_DATE} 데이터 있음 - 캐시 사용 ({BASE_DATE}까지 truncate)")
             print(f"  로드 완료: {len(price_df.columns)}개 종목, {len(price_df)}거래일")
             need_refresh = False
         else:
