@@ -164,6 +164,65 @@ def get_stock_technical(ticker, base_date):
 
 
 # ============================================================
+# 시장 이평선 경고
+# ============================================================
+def _calc_market_warnings(kospi_df, kosdaq_df):
+    """KOSPI/KOSDAQ 이평선 상태를 진단하여 경고 메시지 리스트 반환"""
+    warnings = []
+
+    for name, df in [('코스피', kospi_df), ('코스닥', kosdaq_df)]:
+        if df is None or len(df) < 5:
+            continue
+
+        close = df.iloc[:, 3]  # 종가 컬럼
+        current = close.iloc[-1]
+
+        ma5 = close.rolling(5).mean().iloc[-1] if len(close) >= 5 else None
+        ma20 = close.rolling(20).mean().iloc[-1] if len(close) >= 20 else None
+        ma60 = close.rolling(60).mean().iloc[-1] if len(close) >= 60 else None
+
+        signals = []
+
+        # 1) 5일선 이탈/위
+        if ma5 is not None:
+            if current < ma5:
+                signals.append("5일선↓")
+            else:
+                signals.append("5일선↑")
+
+        # 2) 20일선 이탈/위
+        if ma20 is not None:
+            if current < ma20:
+                signals.append("20일선↓")
+
+        # 3) 60일선 이탈/위
+        if ma60 is not None:
+            if current < ma60:
+                signals.append("60일선↓")
+
+        # 4) 데드크로스 (MA5 < MA20)
+        if ma5 is not None and ma20 is not None:
+            if ma5 < ma20:
+                signals.append("단기DC")
+
+        # 경고 수준 판단
+        down_count = sum(1 for s in signals if '↓' in s or 'DC' in s)
+
+        if down_count == 0:
+            continue  # 양호 → 경고 안 함
+        elif down_count <= 1:
+            icon = "⚡"
+        elif down_count <= 2:
+            icon = "⚠️"
+        else:
+            icon = "🚨"
+
+        warnings.append(f"{icon} {name}: {' '.join(signals)}")
+
+    return warnings
+
+
+# ============================================================
 # 메시지 포맷터
 # ============================================================
 def format_death_list(death_list: list) -> str:
@@ -329,11 +388,11 @@ def main():
         print()
 
     # ============================================================
-    # 시장 지수
+    # 시장 지수 + 이평선 경고
     # ============================================================
-    start_date = (datetime.strptime(BASE_DATE, '%Y%m%d') - timedelta(days=7)).strftime('%Y%m%d')
-    kospi_idx = stock.get_index_ohlcv(start_date, BASE_DATE, '1001')
-    kosdaq_idx = stock.get_index_ohlcv(start_date, BASE_DATE, '2001')
+    idx_start = (datetime.strptime(BASE_DATE, '%Y%m%d') - timedelta(days=120)).strftime('%Y%m%d')
+    kospi_idx = stock.get_index_ohlcv(idx_start, BASE_DATE, '1001')
+    kosdaq_idx = stock.get_index_ohlcv(idx_start, BASE_DATE, '2001')
 
     kospi_close = kospi_idx.iloc[-1, 3]
     kospi_prev = kospi_idx.iloc[-2, 3] if len(kospi_idx) > 1 else kospi_close
@@ -351,6 +410,15 @@ def main():
         market_color = "🟡"
 
     base_date_str = f"{BASE_DATE[:4]}년 {BASE_DATE[4:6]}월 {BASE_DATE[6:]}일"
+
+    # 이평선 경고 계산
+    market_warnings = _calc_market_warnings(kospi_idx, kosdaq_idx)
+    print(f"\n[시장 이평선 경고]")
+    if market_warnings:
+        for w in market_warnings:
+            print(f"  {w}")
+    else:
+        print("  경고 없음 — 시장 양호")
 
     # ============================================================
     # 순위 데이터 로드 (3일)
@@ -428,12 +496,17 @@ def main():
     today_str = f"{TODAY[4:6]}월{TODAY[6:]}일"
 
     # 헤더
+    warning_lines = ""
+    if market_warnings:
+        warning_lines = "\n".join(market_warnings)
+        warning_lines = f"\n{warning_lines}\n📋 이평선 하회 시 신규 진입을 자제하세요.\n"
+
     header = f"""📊 퀀트 포트폴리오 v5.0
 ━━━━━━━━━━━━━━━━━━━
 📅 {base_date_str} 기준
 {market_color} 코스피 {kospi_close:,.0f} ({kospi_chg:+.2f}%) | 코스닥 {kosdaq_close:,.0f} ({kosdaq_chg:+.2f}%)
 ━━━━━━━━━━━━━━━━━━━
-
+{warning_lines}
 💡 Slow In, Fast Out 전략
 • 3일 연속 Top 30 교집합 검증
 • MA60 하회 종목 원천 차단

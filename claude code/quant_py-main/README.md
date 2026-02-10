@@ -1,6 +1,6 @@
 # 한국 주식 퀀트 투자 시스템
 
-KOSPI/KOSDAQ 대상 멀티팩터 퀀트 전략 백테스팅 및 포트폴리오 생성 시스템
+KOSPI/KOSDAQ 대상 멀티팩터 퀀트 전략 — **Slow In, Fast Out**
 
 ---
 
@@ -8,12 +8,15 @@ KOSPI/KOSDAQ 대상 멀티팩터 퀀트 전략 백테스팅 및 포트폴리오 
 
 | 항목 | 내용 |
 |------|------|
-| **전략 A** | 마법공식 (Magic Formula) - 이익수익률 + ROIC → **사전 필터 200개** (순위 미반영) |
-| **전략 B** | 멀티팩터 - Value(50%) + Quality(30%, EPS개선도 포함) + Momentum(20%) → **최종 순위 100%** |
-| **최종선정** | 멀티팩터 순위 상위 30종목 (마법공식은 사전필터만) |
+| **전략 철학** | **Slow In, Fast Out** — 3일 검증 후 진입, 50위 이탈 시 즉시 경보 |
+| **전략 A** | 마법공식 (Magic Formula) → **사전 필터 200개** (순위 미반영) |
+| **전략 B** | 멀티팩터 - Value(50%) + Quality(30%) + Momentum(20%, 리스크 조정) → **최종 순위 100%** |
+| **MA60 필터** | 현재가 < 60일 이동평균 종목 원천 차단 (가치 함정 방지) |
+| **매수 추천** | 3거래일 연속 Top 30 교집합 (가중순위: T0×0.5+T1×0.3+T2×0.2), 최대 10종목 |
+| **Death List** | Top 50 이탈 종목 즉시 알림 (Fast Out) |
 | **유니버스** | 시가총액 3000억+, 거래대금 차등(대형50억↑/중소형20억↑), PER≤60, PBR≤10, 금융/지주사 제외 |
-| **리밸런싱** | 분기별 (4/5/8/11월 - 실적 공시 후) |
-| **텔레그램** | 매일 06:00 KST 자동 전송 (TOP 20 상세분석) |
+| **비중** | 종목당 15%, 나머지 현금 |
+| **텔레그램** | 매일 06:30 KST 자동 전송 (3섹션: Death List → 매수 추천 → Survivors) |
 
 ### 백테스트 성과 (2015-2025)
 
@@ -66,22 +69,27 @@ python full_backtest.py
 quant_py-main/
 │
 ├── [핵심 모듈] ─────────────────────────────────────────────
-│   ├── error_handler.py        # Skip & Log 에러 처리
-│   ├── fnguide_crawler.py      # FnGuide 재무제표 캐시 + 가중TTM
-│   ├── data_collector.py       # pykrx API + 병렬 처리
-│   ├── strategy_a_magic.py     # 전략 A: 마법공식 (사전 필터)
-│   ├── strategy_b_multifactor.py # 전략 B: 멀티팩터 (최종 스코어링)
-│   └── gemini_analysis.py      # Gemini AI 리스크 분석
+│   ├── error_handler.py          # Skip & Log 에러 처리
+│   ├── fnguide_crawler.py        # FnGuide 재무제표 캐시 + 가중TTM
+│   ├── data_collector.py         # pykrx API + 병렬 처리
+│   ├── strategy_a_magic.py       # 전략 A: 마법공식 (사전 필터)
+│   ├── strategy_b_multifactor.py # 전략 B: 멀티팩터 (리스크 조정 모멘텀)
+│   ├── ranking_manager.py        # 일일 순위 저장/3일 교집합/Death List
+│   └── gemini_analysis.py        # Gemini AI 브리핑
 │
 ├── [실행 스크립트] ─────────────────────────────────────────
-│   ├── create_current_portfolio.py  # 포트폴리오 생성 (메인)
-│   ├── send_telegram_auto.py        # 텔레그램 자동 전송 (GitHub Actions)
+│   ├── create_current_portfolio.py  # 포트폴리오 생성 + 순위 JSON 저장
+│   ├── send_telegram_auto.py        # 텔레그램 3섹션 전송 (Slow In, Fast Out)
 │   ├── full_backtest.py             # 전체 백테스팅
 │   └── generate_report_pdf.py       # PDF 리포트 생성
 │
 ├── [설정] ──────────────────────────────────────────────────
 │   ├── config.py                # API키/텔레그램 설정 (gitignore)
 │   └── config_template.py       # 설정 템플릿
+│
+├── [상태 저장] ─────────────────────────────────────────────
+│   └── state/                   # 일일 순위 JSON (GitHub Actions가 git commit)
+│       └── ranking_YYYYMMDD.json
 │
 ├── [출력 디렉토리] ─────────────────────────────────────────
 │   ├── output/                  # 포트폴리오 CSV/리포트
@@ -116,7 +124,7 @@ quant_py-main/
 │                 ┌─────────────┐                                 │
 │                 │  유니버스   │                                 │
 │                 │ 시총3000억+ │                                 │
-│                 │ 거래50억+   │                                 │
+│                 │ 거래 차등   │                                 │
 │                 │ PER≤60     │                                 │
 │                 │ PBR≤10     │                                 │
 │                 └──────┬──────┘                                 │
@@ -127,20 +135,32 @@ quant_py-main/
 ├────────────────────────┼────────────────────────────────────────┤
 │                        ▼                                        │
 │              ┌─────────────────┐                                │
+│              │  MA60 추세 필터  │                                │
+│              │ 현재가 < MA60   │                                │
+│              │   → 제외        │                                │
+│              └────────┬────────┘                                │
+│                       ▼                                         │
+│              ┌─────────────────┐                                │
 │              │   전략 A 사전필터 │                               │
 │              │   (마법공식)     │                                │
-│              │   상위 150종목   │                                │
+│              │   상위 200종목   │                                │
 │              └────────┬────────┘                                │
 │                       ▼                                         │
 │              ┌─────────────────┐                                │
 │              │  전략 B 스코어링 │                                │
 │              │  (멀티팩터)      │                                │
-│              │  150종목 전체    │                                │
+│              │ 리스크조정모멘텀 │                                │
 │              └────────┬────────┘                                │
 │                       ▼                                         │
 │              ┌─────────────────┐                                │
-│              │ A30% + B70%     │                                │
-│              │ 통합순위 TOP 30 │                                │
+│              │ 멀티팩터 100%   │                                │
+│              │ 순위 JSON 저장  │                                │
+│              └────────┬────────┘                                │
+│                       ▼                                         │
+│              ┌─────────────────┐                                │
+│              │ 3일 교집합 검증  │                                │
+│              │ Death List 계산 │                                │
+│              │ Survivors Top50 │                                │
 │              └─────────────────┘                                │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -160,14 +180,49 @@ quant_py-main/
 ```
 Value   50%: PER(실시간) + PBR(실시간) + PCR + PSR + DIV(실시간)
 Quality 30%: ROE + GPA + CFO/Assets + EPS개선도(Forward PER 기반)
-Momentum 20%: 12개월 수익률 (최근 1개월 제외)
+Momentum 20%: (12M수익률 - 1M수익률) / 12M변동성(연환산) [리스크 조정]
 
 멀티팩터_점수 = Value*0.5 + Quality*0.3 + Momentum*0.2
 
+모멘텀 공식 (v5.0):
+  Score = (12M수익률 - 1M수익률) / 12M변동성(연환산, floor 15%)
+  - 12M수익률 ≤ 0 → 제외 (하락 추세)
+  - 변동성 하한선 15% (저변동 종목 점수 폭발 방지)
+
 EPS개선도 = (Trailing PER - Forward PER) / Trailing PER * 100
-  양수 = 실적 개선 중 (Forward PER이 더 낮음)
-  음수 = 실적 악화 중 (Forward PER이 더 높음)
+  양수 = 실적 개선 중, 음수 = 실적 악화 중
   Forward PER: FnGuide 컨센서스 (커버리지 ~80%)
+```
+
+### 4.4 MA60 추세 필터
+
+```
+현재가 >= 60일 이동평균 → 통과
+현재가 <  60일 이동평균 → 제외 (가치 함정 원천 차단)
+
+→ 아무리 저평가라도 중기 하락 추세면 진입하지 않음
+```
+
+### 4.5 3일 교집합 (Slow In)
+
+```
+일일 순위를 state/ranking_YYYYMMDD.json에 저장
+3거래일(T-0, T-1, T-2) 연속 Top 30에 있는 종목만 매수 추천
+
+가중 평균 순위: T-0 × 0.5 + T-1 × 0.3 + T-2 × 0.2
+→ 가중순위 낮은 순서대로 최대 10종목
+→ 0개면 "관망" (무리한 진입 방지)
+→ 콜드 스타트: 순위 데이터 3일 미만이면 관망
+
+종목당 비중: 15%, 나머지 현금
+```
+
+### 4.6 Death List (Fast Out)
+
+```
+어제(T-1) Top 50에 있었으나 오늘(T-0) 51위 밖으로 이탈한 종목
+→ 전체 탈락자 목록 표시 (cap 없음)
+→ 보유 종목이 있으면 매도 검토 권장
 ```
 
 ### 4.4 가중 TTM (Weighted Trailing Twelve Months)
@@ -182,55 +237,32 @@ EPS개선도 = (Trailing PER - Forward PER) / Trailing PER * 100
 → 최근 실적 변화를 더 잘 반영
 ```
 
-### 4.5 텔레그램 메시지
+### 4.7 텔레그램 메시지 (3섹션)
 
 ```
-1~2개 메시지 (TOP 20 상세분석):
-  - 시장 개황 (코스피/코스닥 지수, RSI)
-  - 전략 설명
-  - TOP 20 종목별: 순위, 업종, 가격, PER/PBR/ROE, RSI, 52주위치, 뉴스
-  - 3800자 초과 시 자동 분할
+섹션 1: 🚨 Death List (50위 이탈 종목)
+  - 어제 Top 50 → 오늘 51위 밖 이탈 종목
+  - "보유 중이라면 매도를 검토하세요"
 
-뉴스 필터링:
-  - 채용공고, 다종목 나열, 종목명 미포함 뉴스 자동 제외
-  - 시세 뉴스 (상승/하락/VI발동) 제외
+섹션 2: 💎 매수 추천 (3일 교집합)
+  - 3일 연속 Top 30 교집합 검증 완료 종목
+  - 종목별: 비중 15%, 가중순위, 가격, PER/PBR/ROE, RSI, 52주위치
+  - 3일 순위 변동 (T0:T1:T2)
+  - 0개면 "관망" 메시지
+
+섹션 3: ✅ Survivors (Top 50)
+  - 현재 1~50위 종목 이름 나열 (쉼표 구분)
+  - "보유 종목이 아래에 있으면 안전합니다"
 ```
 
-### 4.6 AI 브리핑 (Gemini)
+### 4.8 AI 브리핑 (Gemini)
 
 ```
-"검색은 코드가, 분석은 AI가" 원칙 — v3 정량 리스크 스캐너:
-→ 코드가 6가지 위험 플래그를 팩트로 계산 → AI는 그 팩트만 해석
-→ 시장 동향만 Google Search (1개 광범위 쿼리)
-→ Markdown → Telegram HTML 변환, 종목 구분선 코드 자동 삽입 (regex)
-
-Gemini 2.5 Flash + Google Search Grounding (temperature 0.2)
-위험 플래그 (코드 계산):
-  🔺 과매수 (RSI≥75) | 📉 52주 급락 (≤-35%)
-  ⚠️ 전일 급락 (≤-5%) | 🔺 전일 급등 (≥+8%)
-  💰 고평가 (PER>40) | 📊 거래량 폭발 (≥3배)
-출력 형식:
-  📰 시장 동향 (AI Google Search)
-  ⚠️ 매수 주의 종목 (위험 플래그 해석, [SEP] 구분)
-  ✅ 위험 신호 없음 (코드 생성)
-채널+개인봇 HTML 전송
-```
-
-### 4.7 퀀트 TOP 5 추천
-
-```
-퀀트 TOP 30에서 자동으로 5종목 선정:
-→ 위험 플래그 있는 종목 제외 (AI 브리핑과 연동)
-→ 섹터 중복 없이 분산 (대분류 기준)
-→ RSI 기반 진입 전략 (과매도→즉시, 중립→즉시, 과열접근→분할, 과열→대기)
-→ 비중: 25/25/20/15/15%
-
-선정 로직:
-  1. 통합순위 상위부터 순회
-  2. compute_risk_flags() 위험 플래그 → 스킵
-  3. 섹터 대분류 중복 → 스킵
-  4. 5종목 채워질 때까지 반복
-별도 메시지로 채널+개인봇 전송
+"검색은 코드가, 분석은 AI가" 원칙
+→ 매수 추천 종목(3일 교집합 통과)에 대해서만 실행
+→ 추천 종목 0개(관망)이면 스킵
+→ Gemini 2.5 Flash + Google Search Grounding
+→ 채널+개인봇 HTML 전송
 ```
 
 ---
@@ -244,12 +276,11 @@ TELEGRAM_BOT_TOKEN = "your_bot_token"
 TELEGRAM_CHAT_ID = "your_chat_id"
 TELEGRAM_PRIVATE_ID = "your_private_id"
 MIN_MARKET_CAP = 3000
-MIN_TRADING_VALUE = 50
 PER_MAX_LIMIT = 60
 PBR_MAX_LIMIT = 10
 MAX_CONCURRENT_REQUESTS = 10
 PYKRX_WORKERS = 10
-PREFILTER_N = 150
+PREFILTER_N = 200
 N_STOCKS = 30
 GEMINI_API_KEY = "your_gemini_api_key"
 ```
@@ -258,25 +289,27 @@ GEMINI_API_KEY = "your_gemini_api_key"
 
 ## 6. GitHub Actions 자동화
 
-### 매일 06:00 KST 자동 실행
+### 매일 06:30 KST 자동 실행
 
 ```yaml
 # .github/workflows/telegram_daily.yml
 on:
   schedule:
-    - cron: '0 21 * * 0-4'  # UTC 21:00 = KST 06:00 (월~금)
-  workflow_dispatch:          # 수동 실행 가능
+    - cron: '30 21 * * 0-4'  # UTC 21:30 = KST 06:30 (월~금)
+  workflow_dispatch:           # 수동 실행 가능
+permissions:
+  contents: write              # state/ 디렉토리 git commit용
 ```
 
 ### 실행 흐름
 
 ```
-1. checkout → 최신 코드 pull
-2. Python 3.11 설치
-3. pip install (의존성)
-4. config.py 생성 (GitHub Secrets에서)
-5. create_current_portfolio.py → CSV 생성
-6. send_telegram_auto.py → 포트폴리오 전송 + AI 리스크 분석 + TOP 5 추천
+1. checkout → 최신 코드 + state/ 순위 파일 pull
+2. Python 3.11 설치 + pip install
+3. config.py 생성 (GitHub Secrets)
+4. create_current_portfolio.py → 순위 스코어링 + state/ranking_YYYYMMDD.json 저장
+5. send_telegram_auto.py → 3일 교집합 + Death List + Survivors 전송 + AI 브리핑
+6. git commit + push → state/ 디렉토리 (순위 JSON 영속화)
 ```
 
 ### GitHub Secrets
@@ -300,4 +333,4 @@ Repository → Settings → Secrets → Actions:
 
 ---
 
-*버전: 4.0 | 최종 업데이트: 2026-02-10 | Generated by Claude Code*
+*버전: 5.0 Slow In, Fast Out | 최종 업데이트: 2026-02-10 | Generated by Claude Code*

@@ -2,9 +2,66 @@
 
 ## 문서 개요
 
-**버전**: 12.0
+**버전**: 13.0
 **최종 업데이트**: 2026-02-10
 **작성자**: Claude Opus 4.6
+
+---
+
+## 핵심 변경사항 (v13.0 — Slow In, Fast Out 전면 개편)
+
+### 2026-02-10 v5.0 Slow In, Fast Out 전략 전면 개편
+
+**배경**: 기존 시스템의 3가지 핵심 문제 해결
+1. **뒷북치기**: 하루 순위에 올라온 종목 바로 추천 → 다음날 빠지면 손실
+2. **가치 함정**: 저평가지만 계속 하락하는 종목 (PER/PBR만으로 판단 불가)
+3. **정신적 피로**: 매일 20개 종목 분석하는 직장인의 부담
+
+| 항목 | Before (v4.0) | After (v5.0) |
+|------|---------------|--------------|
+| 매수 추천 | TOP 10 (당일 순위 기반) | **3일 교집합 Top 30** (최대 10종목) |
+| 매도 신호 | 없음 | **Death List** (50위 이탈 즉시 경보) |
+| 모멘텀 | 12M - 1M 단순 수익률 | **(12M - 1M) / 변동성** (리스크 조정) |
+| 추세 필터 | 없음 | **MA60 필터** (현재가 < 60일선 제외) |
+| 상태 관리 | 무상태 | **state/ JSON** (GitHub Actions git commit) |
+| 텔레그램 | TOP 20 상세 + TOP 10 추천 | **3섹션**: Death List → 매수 추천 → Survivors |
+| 비중 | 섹터 분산 + 순위 기반 | **종목당 15%**, 나머지 현금 |
+| Overheat 필터 | RSI 70, 급등 필터 | **제거** (3일 검증이 대체) |
+| 섹터 분산 | 강제 분산 | **제거** (순수 점수 기반) |
+
+**새 모듈: ranking_manager.py**
+```python
+save_ranking(date_str, rankings)     # state/ranking_YYYYMMDD.json 저장
+load_ranking(date_str)               # 순위 로드
+compute_3day_intersection(t0,t1,t2)  # Slow In: 3일 교집합 (가중 T0×0.5+T1×0.3+T2×0.2)
+compute_death_list(today, yesterday) # Fast Out: 50위 이탈 감지
+get_survivors(today, threshold=50)   # Top 50 생존 리스트
+```
+
+**리스크 조정 모멘텀 (strategy_b_multifactor.py)**
+```python
+Score = (12M수익률 - 1M수익률) / 12M변동성(연환산)
+- 12M수익률 ≤ 0 → 제외 (하락 추세)
+- 변동성 하한선 15% (저변동 종목 점수 폭발 방지)
+```
+
+**MA60 추세 필터 (create_current_portfolio.py)**
+```python
+# 4.5단계: 현재가 >= MA60이면 통과, 아니면 제외
+# → 가치 함정 원천 차단
+```
+
+**콜드 스타트 처리**
+- Day 1-2: 순위 데이터 부족 → "관망" 메시지 전송
+- Day 3+: 3일 교집합 + Death List 정상 가동
+
+**수정 파일**:
+1. `strategy_b_multifactor.py` — 모멘텀 공식 변경 (리스크 조정)
+2. `create_current_portfolio.py` — MA60 필터 + 순위 JSON 저장 + sys.argv 날짜 오버라이드
+3. `ranking_manager.py` — **신규** (3일 교집합, Death List, 순위 저장/로드)
+4. `send_telegram_auto.py` — **전면 개편** (3섹션 구조, AI 브리핑은 추천종목만)
+5. `telegram_daily.yml` — cron 06:30, state/ git commit, permissions: write
+6. `telegram_test.yml` — state/ git commit, permissions: write
 
 ---
 
@@ -552,20 +609,24 @@ RSI (40점): 낮을수록 좋음
 │  Strategy A (마법공식) → 사전 필터 200종목 (순위 미반영)               │
 │  - 이익수익률 (EBIT/EV) + 투하자본수익률 (ROC)                       │
 │                                                                      │
+│  MA60 추세 필터 → 현재가 < 60일 이동평균 제외 (가치 함정 차단)          │
+│                                                                      │
 │  Strategy B (멀티팩터) → 200종목 전체 스코어링 → 순위 100%            │
 │  - Value 50% (PER/PBR 실시간, PCR, PSR, DIV 실시간)                  │
 │  - Quality 30% (ROE, GPA, CFO, EPS개선도)                             │
-│  - Momentum 20% (12M-1M)                                            │
+│  - Momentum 20% ((12M-1M)/변동성, 리스크 조정)                       │
 │                                                                      │
-│  최종순위 = 멀티팩터 100% → TOP 30 (A는 사전필터만)                    │
+│  순위 JSON 저장 → state/ranking_YYYYMMDD.json                        │
+│  3일 교집합 (Slow In) → Death List (Fast Out) → Survivors            │
 └─────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │                         출력 레이어                                   │
 ├─────────────────────────────────────────────────────────────────────┤
-│  텔레그램 (1~2개 메시지, TOP20)  │  AI 브리핑 (Gemini, 채널+개인봇)       │
-│  퀀트 TOP 5 추천 (별도 메시지)  │  통합 CSV 저장                         │
+│  텔레그램 3섹션:                │  AI 브리핑 (Gemini, 추천종목만)         │
+│  Death List → 매수 추천        │  state/ git commit (GitHub Actions)     │
+│  → Survivors (Top 50)          │  통합 CSV 저장                         │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -936,8 +997,18 @@ quant_py-main/
 | **2026-02-10** | **전략 A 순위 반영 제거 → 사전필터만 (200개)** | **create_current_portfolio.py** |
 | **2026-02-10** | **최종순위: 멀티팩터 100% (A30%+B70% 통합 폐지)** | **create_current_portfolio.py** |
 | **2026-02-10** | **TOP 5 → TOP 10 추천 (섹터 분산 + 위험 플래그 제거)** | **send_telegram_auto.py** |
+| **2026-02-10** | **v5.0: Slow In, Fast Out 전략 전면 개편** | **전체** |
+| **2026-02-10** | **모멘텀: (12M-1M)/변동성 리스크 조정, 12M≤0 제외** | **strategy_b_multifactor.py** |
+| **2026-02-10** | **MA60 추세 필터: 현재가 < MA60 종목 원천 차단** | **create_current_portfolio.py** |
+| **2026-02-10** | **ranking_manager.py 신규: 3일 교집합 + Death List + 순위 저장** | **ranking_manager.py (NEW)** |
+| **2026-02-10** | **텔레그램 3섹션: Death List → 매수 추천 → Survivors** | **send_telegram_auto.py** |
+| **2026-02-10** | **state/ 디렉토리: 일일 순위 JSON 저장 + GitHub Actions git commit** | **state/, telegram_*.yml** |
+| **2026-02-10** | **Overheat 필터/섹터 분산/TOP 추천 제거 (3일 교집합이 대체)** | **send_telegram_auto.py** |
+| **2026-02-10** | **종목당 비중 15%, 나머지 현금** | **send_telegram_auto.py** |
+| **2026-02-10** | **cron 06:00→06:30 KST, permissions: contents: write** | **telegram_daily.yml** |
+| **2026-02-10** | **sys.argv 날짜 오버라이드 + 캐시 truncation (백필용)** | **create_current_portfolio.py** |
 
 ---
 
-**문서 버전**: 12.0
+**문서 버전**: 13.0
 **최종 업데이트**: 2026-02-10

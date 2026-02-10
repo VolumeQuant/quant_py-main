@@ -48,13 +48,7 @@ jobs:
           GEMINI_API_KEY = "${{ secrets.GEMINI_API_KEY }}"
           EOF
 
-      - name: Generate ranking T-2 (20260205)
-        run: python create_current_portfolio.py 20260205
-
-      - name: Generate ranking T-1 (20260206)
-        run: python create_current_portfolio.py 20260206
-
-      - name: Generate ranking T-0 (latest)
+      - name: Generate ranking (latest)
         run: python create_current_portfolio.py
 
       - name: Send Telegram message (private only)
