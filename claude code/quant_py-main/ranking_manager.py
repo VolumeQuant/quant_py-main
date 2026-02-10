@@ -202,8 +202,20 @@ def compute_death_list(
             # 오늘 순위가 있으면 추가
             if ticker in today_all:
                 entry['today_rank'] = today_all[ticker]['rank']
+                # 팩터별 하락 사유 분석
+                reasons = []
+                y = item
+                t = today_all[ticker]
+                for factor, label in [('value_s', 'V'), ('quality_s', 'Q'), ('momentum_s', 'M')]:
+                    y_val = y.get(factor)
+                    t_val = t.get(factor)
+                    if y_val is not None and t_val is not None:
+                        if t_val < y_val - 0.1:  # 의미 있는 하락만
+                            reasons.append(f'{label}↓')
+                entry['reasons'] = reasons if reasons else None
             else:
                 entry['today_rank'] = None  # 유니버스에서도 탈락
+                entry['reasons'] = None
 
             death_list.append(entry)
 

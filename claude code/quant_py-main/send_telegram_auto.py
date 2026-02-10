@@ -266,7 +266,10 @@ def format_death_list(death_list: list) -> str:
         t_rank = item.get('today_rank')
         sector = SECTOR_DB.get(item['ticker'], '기타')
 
-        lines.append(f"{i}. {name} · {sector}")
+        reasons = item.get('reasons')
+        reason_str = f" [{' '.join(reasons)}]" if reasons else ""
+
+        lines.append(f"{i}. {name} · {sector}{reason_str}")
         if t_rank is not None:
             lines.append(f"   어제 {y_rank}위 → 오늘 {t_rank}위")
         else:

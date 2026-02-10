@@ -1,0 +1,63 @@
+name: Weekly FnGuide Cache Refresh
+
+on:
+  schedule:
+    # UTC 토요일 18:00 = KST 일요일 03:00
+    - cron: '0 18 * * 6'
+
+  # 수동 실행 가능
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  refresh-cache:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ./claude code/quant_py-main
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install pykrx pandas numpy requests beautifulsoup4 lxml pyarrow tqdm scipy html5lib
+
+      - name: Create config.py from secrets
+        run: |
+          cat << EOF > config.py
+          TELEGRAM_BOT_TOKEN = "${{ secrets.TELEGRAM_BOT_TOKEN }}"
+          TELEGRAM_CHAT_ID = "${{ secrets.TELEGRAM_CHAT_ID }}"
+          TELEGRAM_PRIVATE_ID = "${{ secrets.TELEGRAM_PRIVATE_ID }}"
+          MIN_MARKET_CAP = 3000
+          PER_MAX_LIMIT = 60
+          PBR_MAX_LIMIT = 10
+          MAX_CONCURRENT_REQUESTS = 10
+          PYKRX_WORKERS = 10
+          CACHE_DIR = "data_cache"
+          PREFILTER_N = 200
+          N_STOCKS = 30
+          GEMINI_API_KEY = "${{ secrets.GEMINI_API_KEY }}"
+          EOF
+
+      - name: Refresh FnGuide cache
+        run: python refresh_fnguide_cache.py
+        timeout-minutes: 30
+
+      - name: Commit updated cache
+        run: |
+          cd "${{ github.workspace }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "claude code/quant_py-main/data_cache/"
+          git diff --cached --quiet || git commit -m "cache: weekly FnGuide refresh $(date -u +%Y%m%d)"
+          git push
