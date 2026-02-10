@@ -1,10 +1,15 @@
 """
-퀀트 포트폴리오 생성 v3.2
+퀀트 포트폴리오 생성 v5.0 — Slow In, Fast Out
 
 파이프라인:
-  유니버스(시총3000억+,거래대금50억+) → PER/PBR 상한 필터
-  → A 사전필터(150) → B 스코어링(Value50%+Quality30%+Momentum20%)
-  → A30%+B70% 통합순위 → 최종30 → 통합 CSV
+  유니버스(시총3000억+,거래대금차등) → PER/PBR 상한 필터
+  → MA60 추세 필터 (하락 추세 원천 차단)
+  → A 사전필터(200) → B 멀티팩터 스코어링
+  → 일일 순위 JSON 저장 (3일 교집합용)
+
+팩터:
+  - Value 50% + Quality 30% + Momentum 20%
+  - Momentum: (12M수익률 - 1M수익률) / 12M변동성 [리스크 조정]
 
 데이터 소스:
   - FnGuide 캐시: 재무제표 (Quality 팩터, PCR/PSR용)
@@ -26,6 +31,7 @@ from fnguide_crawler import get_consensus_batch
 from error_handler import ErrorTracker, ErrorCategory
 from strategy_a_magic import MagicFormulaStrategy
 from strategy_b_multifactor import MultiFactorStrategy
+from ranking_manager import save_ranking
 
 # 설정
 try:
@@ -69,6 +75,48 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 # 제외 키워드 (금융업/지주사)
 EXCLUDE_KEYWORDS = ['금융', '은행', '증권', '보험', '캐피탈', '카드', '저축',
                    '지주', '홀딩스', 'SPAC', '스팩', '리츠', 'REIT']
+
+
+def apply_ma60_filter(price_df: pd.DataFrame, universe_tickers: list) -> list:
+    """
+    MA60 추세 필터: 현재가 >= 60일 이동평균인 종목만 통과
+
+    가치 함정(Value Trap) 원천 차단:
+    - 주가가 60일 이동평균 아래 = 중기 하락 추세
+    - 아무리 저평가라도 추세가 꺾인 종목은 제외
+
+    Args:
+        price_df: OHLCV 가격 데이터 (날짜 인덱스, 종목 컬럼)
+        universe_tickers: 유니버스 종목 리스트
+
+    Returns:
+        MA60 필터 통과한 종목 리스트
+    """
+    if price_df.empty:
+        print("  MA60 필터: 가격 데이터 없음 - 필터 스킵")
+        return universe_tickers
+
+    passed = []
+    failed = 0
+
+    for ticker in universe_tickers:
+        if ticker not in price_df.columns:
+            continue
+
+        prices = price_df[ticker].dropna()
+        if len(prices) < 60:
+            continue
+
+        ma60 = prices.tail(60).mean()
+        current_price = prices.iloc[-1]
+
+        if current_price >= ma60:
+            passed.append(ticker)
+        else:
+            failed += 1
+
+    print(f"  MA60 필터: {len(passed)}개 통과 / {failed}개 제외 (현재가 < MA60)")
+    return passed
 
 
 def collect_consensus_data(
@@ -321,7 +369,7 @@ def generate_report(
 
     report = f"""
 ================================================================================
-퀀트 포트폴리오 리포트 v3.1
+퀀트 포트폴리오 리포트 v5.0 — Slow In, Fast Out
 기준일: {BASE_DATE}
 생성일: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 ================================================================================
@@ -334,6 +382,7 @@ def generate_report(
   * 거래대금: 대형(1조+)≥50억, 중소형≥20억
   * PER <= {PER_MAX_LIMIT}, PBR <= {PBR_MAX_LIMIT}
   * 금융업/지주사 제외
+  * MA60 추세 필터 (현재가 < 60일 이동평균 제외)
 
 [사전 필터 - 마법공식 상위 {PREFILTER_N}개]
 - 통과 종목 수: {len(prefiltered)}개
@@ -347,8 +396,8 @@ def generate_report(
 - 선정 종목 수: {len(selected)}개
 - 순위: 멀티팩터 100% (마법공식은 사전필터만)
 - Value 팩터 50%: PER(실시간) + PBR(실시간) + PCR + PSR + DIV(실시간)
-- Quality 팩터 30%: ROE + GPA + CFO
-- Momentum 팩터 20%: 12M-1M 수익률
+- Quality 팩터 30%: ROE + GPA + CFO + EPS개선도
+- Momentum 팩터 20%: (12M수익률 - 1M수익률) / 12M변동성 [리스크 조정]
 """
 
     if not selected.empty and '종목명' in selected.columns:
@@ -373,10 +422,10 @@ def main():
     base_dt = datetime.strptime(BASE_DATE, '%Y%m%d')
 
     print("=" * 80)
-    print("퀀트 포트폴리오 생성 v3.2")
+    print("퀀트 포트폴리오 생성 v5.0 — Slow In, Fast Out")
     print(f"기준일: {BASE_DATE}")
-    print(f"파이프라인: 유니버스 → A 사전필터({PREFILTER_N}) → B 멀티팩터 순위 → 최종{N_STOCKS}개")
-    print(f"데이터 소스: FnGuide 캐시 + pykrx 실시간 PER/PBR/DIV")
+    print(f"파이프라인: 유니버스 → MA60 필터 → A 사전필터({PREFILTER_N}) → B 멀티팩터 → 순위 저장")
+    print(f"모멘텀: (12M-1M) / 변동성 [리스크 조정]")
     print("=" * 80)
 
     error_tracker = ErrorTracker(log_dir=Path("logs"), name="portfolio")
@@ -482,7 +531,19 @@ def main():
         )
 
     # =========================================================================
-    # 4.5단계: FnGuide 컨센서스 수집 (Forward PER)
+    # 4.5단계: MA60 추세 필터 (가치 함정 원천 차단)
+    # =========================================================================
+    print(f"\n[4.5단계] MA60 추세 필터 (현재가 < MA60 종목 제외)")
+    if not price_df.empty and not magic_df.empty:
+        ma60_tickers = apply_ma60_filter(price_df, magic_df['종목코드'].tolist())
+        before_count = len(magic_df)
+        magic_df = magic_df[magic_df['종목코드'].isin(ma60_tickers)].copy()
+        print(f"  MA60 필터 후: {before_count}개 → {len(magic_df)}개")
+    else:
+        print("  가격 데이터 부족 - MA60 필터 스킵")
+
+    # =========================================================================
+    # 5단계: FnGuide 컨센서스 수집 (Forward PER)
     # =========================================================================
     prefiltered = run_strategy_a_prefilter(magic_df, universe_df, error_tracker)
 
@@ -503,29 +564,59 @@ def main():
         consensus_df=consensus_df
     )
 
-    # 멀티팩터 순위 100%로 최종 30개 선정 (A는 사전필터 역할만)
+    # 멀티팩터 순위 100%로 전체 순위 산정 (A는 사전필터 역할만)
     print(f"\n[최종순위] 멀티팩터 100% (A는 사전필터만)")
     if not scored_b.empty and '멀티팩터_순위' in scored_b.columns:
         scored_b['통합순위'] = scored_b['멀티팩터_순위']
         scored_b['통합순위_점수'] = scored_b['멀티팩터_순위']
         scored_b = scored_b.sort_values('통합순위')
+        # CSV용: 상위 N_STOCKS개
         selected = scored_b.head(N_STOCKS).copy()
-        print(f"  최종 선정: {len(selected)}개 종목")
+        # 전체 순위: Death List(50위) + 여유분
+        all_ranked = scored_b.copy()
+        print(f"  전체 순위: {len(all_ranked)}개, CSV 선정: {len(selected)}개 종목")
     else:
         selected = scored_b.head(N_STOCKS).copy() if not scored_b.empty else pd.DataFrame()
+        all_ranked = scored_b.copy() if not scored_b.empty else pd.DataFrame()
         print(f"  멀티팩터 순위로 선정: {len(selected)}개")
 
     # =========================================================================
-    # 6단계: 결과 저장 (통합 CSV 1개)
+    # 7단계: 결과 저장 (CSV + 일일 순위 JSON)
     # =========================================================================
-    print("\n[6단계] 결과 저장")
+    print("\n[7단계] 결과 저장")
 
     year_month = f"{base_dt.year}_{base_dt.month:02d}"
 
     if not selected.empty:
         output_path = OUTPUT_DIR / f'portfolio_{year_month}.csv'
         selected.to_csv(output_path, index=False, encoding='utf-8-sig')
-        print(f"  포트폴리오: {output_path}")
+        print(f"  포트폴리오 CSV: {output_path}")
+
+    # 일일 순위 JSON 저장 (3일 교집합 + Death List용)
+    if not all_ranked.empty:
+        rankings_list = []
+        for _, row in all_ranked.iterrows():
+            entry = {
+                'rank': int(row.get('통합순위', 999)),
+                'ticker': str(row.get('종목코드', '')).zfill(6),
+                'name': str(row.get('종목명', '')),
+                'score': round(float(row.get('멀티팩터_점수', 0)), 4) if pd.notna(row.get('멀티팩터_점수')) else 0,
+                'sector': str(row.get('종목명', '')),  # SECTOR_DB는 telegram에서 매핑
+            }
+            # 선택적 필드
+            for col, key in [('PER', 'per'), ('PBR', 'pbr'), ('ROE', 'roe'), ('forward_per', 'fwd_per')]:
+                val = row.get(col)
+                if val is not None and pd.notna(val):
+                    entry[key] = round(float(val), 2)
+            rankings_list.append(entry)
+
+        save_ranking(BASE_DATE, rankings_list, metadata={
+            'total_universe': len(universe_tickers),
+            'prefilter_passed': len(prefiltered) if not prefiltered.empty else 0,
+            'scored_count': len(all_ranked),
+            'version': '5.0',
+        })
+        print(f"  일일 순위 JSON: state/ranking_{BASE_DATE}.json ({len(rankings_list)}개 종목)")
 
     # 리포트 생성
     report = generate_report(

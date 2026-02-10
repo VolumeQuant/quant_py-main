@@ -2,9 +2,9 @@ name: Daily Telegram Report
 
 on:
   schedule:
-    # UTC 21:00 = KST 06:00 (다음날)
-    # 일-목 21:00 UTC = 월-금 06:00 KST
-    - cron: '0 21 * * 0-4'
+    # UTC 21:30 = KST 06:30 (다음날)
+    # 일-목 21:30 UTC = 월-금 06:30 KST
+    - cron: '30 21 * * 0-4'
 
   # 수동 실행 가능
   workflow_dispatch:
@@ -55,3 +55,12 @@ jobs:
 
       - name: Send Telegram message
         run: python send_telegram_auto.py
+
+      - name: Commit ranking state
+        run: |
+          cd "${{ github.workspace }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "claude code/quant_py-main/state/"
+          git diff --cached --quiet || git commit -m "state: daily ranking $(date -u +%Y%m%d)"
+          git push
