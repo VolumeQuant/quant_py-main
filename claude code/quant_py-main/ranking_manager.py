@@ -1,10 +1,11 @@
 """
-일일 순위 관리 모듈 — v5.0 Slow In, Fast Out
+일일 순위 관리 모듈 — v5.1 Slow In, Fast Out
 
 기능:
   - 일일 순위 JSON 저장/로드 (state/ 디렉토리)
   - 3일 교집합 (3-Day Intersection) 계산
   - Death List (50위 이탈) 계산
+  - 종목 파이프라인 상태 (✅/🔸/🆕)
   - 콜드 스타트 처리
 """
 
@@ -242,6 +243,51 @@ def get_survivors(rankings_today: dict, threshold: int = 50) -> List[dict]:
 
     survivors.sort(key=lambda x: x['rank'])
     return survivors
+
+
+def get_stock_status(rankings_t0, rankings_t1=None, rankings_t2=None, top_n=30):
+    """
+    Top N 종목의 연속 진입 상태 판별
+
+    Returns:
+        list of dicts sorted by rank, each with 'status' key:
+        ✅ = 3일 연속 (매수 대상)
+        ⏳ = 2일 연속 (관찰)
+        🆕 = 신규 진입 (관찰)
+    """
+    top_t0 = {}
+    for item in rankings_t0.get('rankings', []):
+        if item['rank'] <= top_n:
+            top_t0[item['ticker']] = item
+
+    top_t1 = set()
+    if rankings_t1:
+        for item in rankings_t1.get('rankings', []):
+            if item['rank'] <= top_n:
+                top_t1.add(item['ticker'])
+
+    top_t2 = set()
+    if rankings_t2:
+        for item in rankings_t2.get('rankings', []):
+            if item['rank'] <= top_n:
+                top_t2.add(item['ticker'])
+
+    result = []
+    for ticker, item in top_t0.items():
+        entry = item.copy()
+        in_t1 = ticker in top_t1
+        in_t2 = ticker in top_t2
+
+        if in_t1 and in_t2:
+            entry['status'] = '✅'
+        elif in_t1:
+            entry['status'] = '⏳'
+        else:
+            entry['status'] = '🆕'
+        result.append(entry)
+
+    result.sort(key=lambda x: x['rank'])
+    return result
 
 
 def cleanup_old_rankings(keep_days: int = 30):

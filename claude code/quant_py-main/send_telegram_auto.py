@@ -27,7 +27,7 @@ from zoneinfo import ZoneInfo
 from ranking_manager import (
     load_ranking, load_recent_rankings, save_ranking,
     compute_3day_intersection, compute_death_list, get_survivors,
-    cleanup_old_rankings, get_available_ranking_dates,
+    get_stock_status, cleanup_old_rankings, get_available_ranking_dates,
 )
 
 # ============================================================
@@ -420,6 +420,48 @@ def format_survivors(survivors: list) -> str:
     return '\n'.join(lines)
 
 
+def format_pipeline(pipeline: list, available_days: int = 3) -> str:
+    """후보 현황 (⏳/🆕 관찰 종목) 메시지 포맷"""
+    two_day = [s for s in pipeline if s['status'] == '⏳']
+    new_stocks = [s for s in pipeline if s['status'] == '🆕']
+
+    if not two_day and not new_stocks:
+        return ""
+
+    lines = []
+
+    if available_days < 3:
+        lines.extend([
+            "─────────────────",
+            f"<b>📋 후보 현황</b> ({available_days}/3일 축적)",
+            "─────────────────",
+            "3일 검증 완료 시 매수 후보가 선정됩니다.",
+            "",
+            "💡 ✅ 매수 대상 · ⏳ 2일 연속 · 🆕 신규",
+        ])
+    else:
+        lines.extend([
+            "─────────────────",
+            "<b>📋 관찰 종목</b>",
+            "─────────────────",
+            "💡 ⏳ 2일 연속 · 🆕 신규 진입",
+        ])
+
+    lines.append("")
+
+    if two_day:
+        names = [f"⏳ {s['name']}({s['rank']})" for s in two_day]
+        lines.append(', '.join(names))
+
+    if new_stocks:
+        names = [f"🆕 {s['name']}({s['rank']})" for s in new_stocks]
+        lines.append(', '.join(names))
+
+    lines.append("")
+
+    return '\n'.join(lines)
+
+
 # ============================================================
 # 메인 함수
 # ============================================================
@@ -510,11 +552,23 @@ def main():
         print(f"  T-2 ({trading_dates[2]}): {len(rankings_t2.get('rankings', []))}개 종목")
 
     # ============================================================
-    # Section 1: Death List
+    # 종목 파이프라인 상태 (✅/⏳/🆕)
+    # ============================================================
+    pipeline = get_stock_status(rankings_t0, rankings_t1, rankings_t2)
+    available_days = sum(1 for r in [rankings_t0, rankings_t1, rankings_t2] if r is not None)
+    v_count = sum(1 for s in pipeline if s['status'] == '✅')
+    d_count = sum(1 for s in pipeline if s['status'] == '⏳')
+    n_count = sum(1 for s in pipeline if s['status'] == '🆕')
+    print(f"\n[파이프라인] ✅ {v_count}개, ⏳ {d_count}개, 🆕 {n_count}개 (데이터 {available_days}일)")
+
+    # ============================================================
+    # Section 1: Death List (콜드 스타트 시 생략)
     # ============================================================
     print("\n[Death List 계산]")
     death_list = []
-    if rankings_t1 is not None:
+    if cold_start:
+        print("  콜드 스타트 → Death List 생략")
+    elif rankings_t1 is not None:
         death_list = compute_death_list(rankings_t0, rankings_t1)
         print(f"  탈락 종목: {len(death_list)}개")
         for d in death_list:
@@ -543,10 +597,14 @@ def main():
         print("  콜드 스타트 → 추천 없음 (관망)")
 
     # ============================================================
-    # Section 3: Survivors
+    # Section 3: Survivors (콜드 스타트 시 생략)
     # ============================================================
-    survivors = get_survivors(rankings_t0)
-    print(f"\n[Survivors] Top 50: {len(survivors)}개 종목")
+    survivors = []
+    if cold_start:
+        print(f"\n[Survivors] 콜드 스타트 → 생략")
+    else:
+        survivors = get_survivors(rankings_t0)
+        print(f"\n[Survivors] Top 50: {len(survivors)}개 종목")
 
     # ============================================================
     # 메시지 구성
@@ -569,19 +627,28 @@ def main():
 
     # 각 섹션 생성
     death_section = format_death_list(death_list) if death_list else ""
-    buy_section = format_buy_recommendations(picks, base_date_str)
+    pipeline_section = format_pipeline(pipeline, available_days)
+
+    if cold_start:
+        buy_section = ""  # 콜드 스타트: 파이프라인이 대체
+    else:
+        buy_section = format_buy_recommendations(picks, base_date_str)
+
     survivor_section = format_survivors(survivors)
 
     # 개요 (첫 번째 메시지)
     msg_overview = format_overview()
 
-    # 본문 (헤더 + Death List + 매수 후보)
+    # 본문 (헤더 + Death List + 매수 후보 + 파이프라인)
     msg_main = header
     if death_section:
         msg_main += death_section
-    msg_main += buy_section
+    if buy_section:
+        msg_main += buy_section
+    if pipeline_section:
+        msg_main += pipeline_section
 
-    # 생존 리스트 (별도 메시지)
+    # 생존 리스트 (별도 메시지) — 콜드 스타트 시 이미 빈 리스트
     msg_survivors = survivor_section if survivor_section else None
 
     messages = [msg_overview, msg_main]
@@ -699,6 +766,7 @@ def main():
 
     print(f'\nDeath List: {len(death_list)}개')
     print(f'매수 추천: {len(picks)}개 ({"관망" if not picks else f"총 {len(picks)*WEIGHT_PER_STOCK}%"})')
+    print(f'파이프라인: ✅ {v_count} · ⏳ {d_count} · 🆕 {n_count}')
     print(f'Survivors: {len(survivors)}개')
     print('\n완료!')
 
