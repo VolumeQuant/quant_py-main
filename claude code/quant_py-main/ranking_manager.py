@@ -159,82 +159,91 @@ def compute_3day_intersection(
 
 
 def compute_death_list(
-    rankings_today: dict,
-    rankings_yesterday: dict,
-    threshold: int = 50,
+    rankings_t0: dict,
+    rankings_t1: dict,
+    rankings_t2: dict = None,
+    threshold: int = 30,
 ) -> List[dict]:
     """
-    Death List 계산 — Fast Out 핵심 로직
+    Death List 계산 — 2일 연속 Top 30 밖
 
-    어제 Top 50이었으나 오늘 51위 밖으로 이탈한 종목 추출.
+    T-2에서 Top 30이었으나, T-1과 T-0 모두 Top 30 밖인 종목 추출.
+    rankings_t2가 없으면 빈 리스트 반환 (3일 데이터 필요).
 
     Args:
-        rankings_today: 오늘(T-0) 순위
-        rankings_yesterday: 어제(T-1) 순위
-        threshold: 이탈 기준 (기본 50위)
+        rankings_t0: 오늘(T-0) 순위
+        rankings_t1: 어제(T-1) 순위
+        rankings_t2: 그저께(T-2) 순위
+        threshold: 이탈 기준 (기본 30위)
 
     Returns:
-        이탈 종목 리스트 [{"ticker", "name", "yesterday_rank", ...}]
+        이탈 종목 리스트 [{"ticker", "name", "ref_rank", "today_rank", ...}]
     """
-    # 어제 Top 50
-    yesterday_top = {}
-    for item in rankings_yesterday.get('rankings', []):
-        if item['rank'] <= threshold:
-            yesterday_top[item['ticker']] = item
+    if rankings_t2 is None:
+        return []
 
-    # 오늘 Top 50
-    today_top = set()
-    today_all = {}
-    for item in rankings_today.get('rankings', []):
-        today_all[item['ticker']] = item
+    # T-2 Top N (기준: 보유 가능 종목)
+    ref_top = {}
+    for item in rankings_t2.get('rankings', []):
         if item['rank'] <= threshold:
-            today_top.add(item['ticker'])
+            ref_top[item['ticker']] = item
 
-    # 어제 Top 50에 있었는데 오늘 Top 50에 없는 종목
+    # T-1 Top N
+    t1_top = set()
+    for item in rankings_t1.get('rankings', []):
+        if item['rank'] <= threshold:
+            t1_top.add(item['ticker'])
+
+    # T-0 Top N + 전체
+    t0_top = set()
+    t0_all = {}
+    for item in rankings_t0.get('rankings', []):
+        t0_all[item['ticker']] = item
+        if item['rank'] <= threshold:
+            t0_top.add(item['ticker'])
+
+    # Death List: T-2 Top N → T-1 밖 AND T-0 밖 (2일 연속 이탈)
     death_list = []
-    for ticker, item in yesterday_top.items():
-        if ticker not in today_top:
+    for ticker, ref_item in ref_top.items():
+        if ticker not in t1_top and ticker not in t0_top:
             entry = {
                 'ticker': ticker,
-                'name': item.get('name', ticker),
-                'yesterday_rank': item['rank'],
-                'sector': item.get('sector', '기타'),
+                'name': ref_item.get('name', ticker),
+                'ref_rank': ref_item['rank'],
+                'sector': ref_item.get('sector', '기타'),
             }
-            # 오늘 순위가 있으면 추가
-            if ticker in today_all:
-                entry['today_rank'] = today_all[ticker]['rank']
+            if ticker in t0_all:
+                entry['today_rank'] = t0_all[ticker]['rank']
                 # 팩터별 하락 사유 분석
                 reasons = []
-                y = item
-                t = today_all[ticker]
                 for factor, label in [('value_s', 'V'), ('quality_s', 'Q'), ('momentum_s', 'M')]:
-                    y_val = y.get(factor)
-                    t_val = t.get(factor)
-                    if y_val is not None and t_val is not None:
-                        if t_val < y_val - 0.1:  # 의미 있는 하락만
+                    ref_val = ref_item.get(factor)
+                    t_val = t0_all[ticker].get(factor)
+                    if ref_val is not None and t_val is not None:
+                        if t_val < ref_val - 0.1:
                             reasons.append(f'{label}↓')
                 entry['reasons'] = reasons if reasons else None
             else:
-                entry['today_rank'] = None  # 유니버스에서도 탈락
+                entry['today_rank'] = None  # 유니버스 이탈
                 entry['reasons'] = None
 
             death_list.append(entry)
 
-    # 어제 순위 기준 정렬 (높은 순위에서 탈락한 게 더 충격적)
-    death_list.sort(key=lambda x: x['yesterday_rank'])
+    # 기준 순위 기준 정렬 (높은 순위에서 탈락한 게 더 충격적)
+    death_list.sort(key=lambda x: x['ref_rank'])
 
     return death_list
 
 
-def get_survivors(rankings_today: dict, threshold: int = 50) -> List[dict]:
+def get_survivors(rankings_today: dict, threshold: int = 30) -> List[dict]:
     """
-    Survivors 리스트 — Top 50 생존 종목
+    Survivors 리스트 — Top 30 생존 종목
 
     Args:
         rankings_today: 오늘(T-0) 순위
 
     Returns:
-        1~50위 종목 리스트 (순위순)
+        1~30위 종목 리스트 (순위순)
     """
     survivors = []
     for item in rankings_today.get('rankings', []):

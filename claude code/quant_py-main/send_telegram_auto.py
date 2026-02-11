@@ -249,7 +249,7 @@ def format_overview():
 
 
 def format_death_list(death_list: list) -> str:
-    """탈락 종목 메시지 포맷"""
+    """탈락 종목 메시지 포맷 — 2일 연속 Top 30 밖"""
     if not death_list:
         return ""
 
@@ -257,12 +257,13 @@ def format_death_list(death_list: list) -> str:
         "─────────────────",
         "<b>⛔ 탈락 종목 — 매도 검토</b>",
         "─────────────────",
+        "2일 연속 30위 밖으로 밀린 종목",
         "",
     ]
 
     for i, item in enumerate(death_list, 1):
         name = item['name']
-        y_rank = item['yesterday_rank']
+        ref_rank = item['ref_rank']
         t_rank = item.get('today_rank')
         sector = SECTOR_DB.get(item['ticker'], '기타')
 
@@ -271,9 +272,9 @@ def format_death_list(death_list: list) -> str:
 
         lines.append(f"{i}. <b>{name}</b> · {sector}{reason_str}")
         if t_rank is not None:
-            lines.append(f"   어제 {y_rank}위 → 오늘 {t_rank}위")
+            lines.append(f"   이전 {ref_rank}위 → 현재 {t_rank}위")
         else:
-            lines.append(f"   어제 {y_rank}위 → 유니버스 이탈")
+            lines.append(f"   이전 {ref_rank}위 → 유니버스 이탈")
 
     lines.append("")
     lines.append("이 종목을 보유 중이라면 매도를 검토하세요.")
@@ -400,7 +401,7 @@ def format_buy_recommendations(picks: list, base_date_str: str) -> str:
 
 
 def format_survivors(survivors: list) -> str:
-    """생존 리스트 (Top 50) 메시지 포맷"""
+    """생존 리스트 (Top 30) 메시지 포맷"""
     if not survivors:
         return ""
 
@@ -409,7 +410,7 @@ def format_survivors(survivors: list) -> str:
         "<b>✅ 생존 리스트 — 보유 유지</b>",
         "─────────────────",
         "아래 종목을 보유 중이라면 계속 보유하세요.",
-        "목록에 없다면 '탈락 종목'을 확인하세요.",
+        "목록에 없다면 1일 유예 후 '탈락 종목'을 확인하세요.",
         "",
     ]
 
@@ -568,13 +569,12 @@ def main():
     death_list = []
     if cold_start:
         print("  콜드 스타트 → Death List 생략")
-    elif rankings_t1 is not None:
-        death_list = compute_death_list(rankings_t0, rankings_t1)
-        print(f"  탈락 종목: {len(death_list)}개")
-        for d in death_list:
-            print(f"    {d['name']}: {d['yesterday_rank']}위 → 이탈")
     else:
-        print("  T-1 순위 없음 → Death List 생략")
+        death_list = compute_death_list(rankings_t0, rankings_t1, rankings_t2)
+        print(f"  탈락 종목: {len(death_list)}개 (2일 연속 Top 30 밖)")
+        for d in death_list:
+            t_rank = d.get('today_rank')
+            print(f"    {d['name']}: 기준 {d['ref_rank']}위 → {'현재 ' + str(t_rank) + '위' if t_rank else '유니버스 이탈'}")
 
     # ============================================================
     # Section 2: 3일 교집합 매수 추천
