@@ -1,11 +1,11 @@
 """
-일일 순위 관리 모듈 — v5.1 Slow In, Fast Out
+일일 순위 관리 모듈 — v6.0 Slow In, Simple Out
 
 기능:
   - 일일 순위 JSON 저장/로드 (state/ 디렉토리)
   - 3일 교집합 (3-Day Intersection) 계산
-  - Death List (50위 이탈) 계산
-  - 종목 파이프라인 상태 (✅/🔸/🆕)
+  - 일일 변동 (Daily Changes) — Top 30 진입/이탈
+  - 종목 파이프라인 상태 (✅/⏳/🆕)
   - 콜드 스타트 처리
 """
 
@@ -158,100 +158,39 @@ def compute_3day_intersection(
     return results[:max_picks]
 
 
-def compute_death_list(
+def get_daily_changes(
     rankings_t0: dict,
     rankings_t1: dict,
-    rankings_t2: dict = None,
     threshold: int = 30,
-) -> List[dict]:
+) -> Tuple[List[dict], List[dict]]:
     """
-    Death List 계산 — 2일 연속 Top 30 밖
-
-    T-2에서 Top 30이었으나, T-1과 T-0 모두 Top 30 밖인 종목 추출.
-    rankings_t2가 없으면 빈 리스트 반환 (3일 데이터 필요).
+    일일 변동 — 어제 vs 오늘 Top 30 단순 set 비교
 
     Args:
         rankings_t0: 오늘(T-0) 순위
         rankings_t1: 어제(T-1) 순위
-        rankings_t2: 그저께(T-2) 순위
-        threshold: 이탈 기준 (기본 30위)
+        threshold: 기준 (기본 30위)
 
     Returns:
-        이탈 종목 리스트 [{"ticker", "name", "ref_rank", "today_rank", ...}]
+        (entered, exited) — 신규 진입 종목, 이탈 종목
     """
-    if rankings_t2 is None:
-        return []
-
-    # T-2 Top N (기준: 보유 가능 종목)
-    ref_top = {}
-    for item in rankings_t2.get('rankings', []):
+    t0_map = {}
+    for item in rankings_t0.get('rankings', []):
         if item['rank'] <= threshold:
-            ref_top[item['ticker']] = item
+            t0_map[item['ticker']] = item
 
-    # T-1 Top N
-    t1_top = set()
+    t1_map = {}
     for item in rankings_t1.get('rankings', []):
         if item['rank'] <= threshold:
-            t1_top.add(item['ticker'])
+            t1_map[item['ticker']] = item
 
-    # T-0 Top N + 전체
-    t0_top = set()
-    t0_all = {}
-    for item in rankings_t0.get('rankings', []):
-        t0_all[item['ticker']] = item
-        if item['rank'] <= threshold:
-            t0_top.add(item['ticker'])
+    entered = [t0_map[t] for t in (set(t0_map) - set(t1_map))]
+    exited = [t1_map[t] for t in (set(t1_map) - set(t0_map))]
 
-    # Death List: T-2 Top N → T-1 밖 AND T-0 밖 (2일 연속 이탈)
-    death_list = []
-    for ticker, ref_item in ref_top.items():
-        if ticker not in t1_top and ticker not in t0_top:
-            entry = {
-                'ticker': ticker,
-                'name': ref_item.get('name', ticker),
-                'ref_rank': ref_item['rank'],
-                'sector': ref_item.get('sector', '기타'),
-            }
-            if ticker in t0_all:
-                entry['today_rank'] = t0_all[ticker]['rank']
-                # 팩터별 하락 사유 분석
-                reasons = []
-                for factor, label in [('value_s', 'V'), ('quality_s', 'Q'), ('momentum_s', 'M')]:
-                    ref_val = ref_item.get(factor)
-                    t_val = t0_all[ticker].get(factor)
-                    if ref_val is not None and t_val is not None:
-                        if t_val < ref_val - 0.1:
-                            reasons.append(f'{label}↓')
-                entry['reasons'] = reasons if reasons else None
-            else:
-                entry['today_rank'] = None  # 유니버스 이탈
-                entry['reasons'] = None
+    entered.sort(key=lambda x: x['rank'])
+    exited.sort(key=lambda x: x['rank'])
 
-            death_list.append(entry)
-
-    # 기준 순위 기준 정렬 (높은 순위에서 탈락한 게 더 충격적)
-    death_list.sort(key=lambda x: x['ref_rank'])
-
-    return death_list
-
-
-def get_survivors(rankings_today: dict, threshold: int = 30) -> List[dict]:
-    """
-    Survivors 리스트 — Top 30 생존 종목
-
-    Args:
-        rankings_today: 오늘(T-0) 순위
-
-    Returns:
-        1~30위 종목 리스트 (순위순)
-    """
-    survivors = []
-    for item in rankings_today.get('rankings', []):
-        if item['rank'] <= threshold:
-            survivors.append(item)
-
-    survivors.sort(key=lambda x: x['rank'])
-    return survivors
+    return entered, exited
 
 
 def get_stock_status(rankings_t0, rankings_t1=None, rankings_t2=None, top_n=30):

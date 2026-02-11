@@ -1,11 +1,10 @@
 """
-한국주식 퀀트 텔레그램 v5.1 — Slow In, Fast Out
+한국주식 퀀트 텔레그램 v7.0 — 고객 친화 UI
 
-4개 메시지 구조:
-  1. 개요 — 분석 흐름 + 활용 가이드
-  2. 본문 — 시장 지수 + 탈락 종목 + 매수 후보
-  3. 생존 리스트 — Top 50 보유 확인
-  4. AI 브리핑 — 매수 후보 대상 AI 분석 (0개면 스킵)
+메시지 구조:
+  📖 투자 가이드 — 시스템 소개 + 활용법
+  [1/2] 📊 매수 후보 + Top 30 — 시장 + 종목 + 보유 확인
+  [2/2] 🤖 AI 브리핑 — 매수 후보 AI 분석 (0개면 스킵)
 
 실행: python send_telegram_auto.py
 """
@@ -26,7 +25,7 @@ from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 from zoneinfo import ZoneInfo
 from ranking_manager import (
     load_ranking, load_recent_rankings, save_ranking,
-    compute_3day_intersection, compute_death_list, get_survivors,
+    compute_3day_intersection, get_daily_changes,
     get_stock_status, cleanup_old_rankings, get_available_ranking_dates,
 )
 
@@ -226,59 +225,66 @@ def _calc_market_warnings(kospi_df, kosdaq_df):
 # ============================================================
 # 메시지 포맷터
 # ============================================================
-def format_overview():
-    """전략 개요 메시지 (첫 번째 메시지로 전송)"""
-    return f"""<b>📊 퀀트 포트폴리오 — 활용 가이드</b>
+def format_overview(has_picks: bool = False):
+    """📖 투자 가이드 — 시스템 개요, 선정 과정, 보유/매도 기준"""
+    lines = [
+        '━━━━━━━━━━━━━━━━━━━',
+        '      📖 투자 가이드',
+        '━━━━━━━━━━━━━━━━━━━',
+        '',
+        '🔎 <b>어떤 종목을 찾나요?</b>',
+        '국내 전 종목을 매일 자동 분석해서',
+        '"좋은 회사를 싸게 살 수 있는 타이밍"을 찾아요.',
+        '',
+        '📊 <b>어떻게 골라요?</b>',
+        '매일 새벽 5단계로 걸러요.',
+        '',
+        '① 시가총액·재무 건전성으로 1차 스크리닝',
+        '② 가치 + 수익성 + 모멘텀 멀티팩터 점수 산출',
+        '③ 60일 이동평균선 위 종목만 통과',
+        '④ 3거래일 연속 상위 30위 유지 → 검증 완료 ✅',
+        '⑤ AI 위험 점검 후 최종 매수 후보 선정',
+        '',
+        '⏱️ <b>얼마나 보유하나요?</b>',
+        'Top 30에 남아있는 동안은 계속 보유하세요.',
+        '목록에서 빠지면 매도를 검토하면 돼요.',
+        '',
+        f'📩 <b>오늘의 메시지</b>',
+    ]
+    if has_picks:
+        lines.append('[1/2] 📊 시장 + 매수 후보 + Top 30')
+        lines.append('[2/2] 🤖 AI 브리핑')
+    else:
+        lines.append('📊 시장 + Top 30')
+    return '\n'.join(lines)
 
-매일 새벽, 국내 전 종목을 자동 분석합니다.
 
-<b>▸ 종목은 이렇게 선정됩니다</b>
-  ① 전 종목에서 시가총액·재무 건전성 스크리닝
-  ② 가치 + 수익성 + 모멘텀 멀티팩터 점수 산출
-  ③ 60일 이동평균선 위 종목만 통과
-  ④ 3거래일 연속 상위 30위 유지 종목만 최종 선정
-
-<b>▸ 매수·보유·매도 기준</b>
-  매수 — '매수 후보'에 오른 종목을 각 {WEIGHT_PER_STOCK}%씩 분산
-  보유 — '생존 리스트'에 있는 동안 계속 보유
-  매도 — '탈락 종목'에 이름이 뜨면 매도 검토
-
-매일 이 리포트를 확인하시면 됩니다.
-3일간 검증된 종목만 진입하고,
-이탈 신호 발생 시 즉시 알려드립니다."""
-
-
-def format_death_list(death_list: list) -> str:
-    """탈락 종목 메시지 포맷 — 2일 연속 Top 30 밖"""
-    if not death_list:
+def format_top30(pipeline: list, exited: list, has_picks: bool = False) -> str:
+    """Top 30 목록 + 이탈 종목 한 줄"""
+    if not pipeline:
         return ""
 
     lines = [
         "─────────────────",
-        "<b>⛔ 탈락 종목 — 매도 검토</b>",
+        "<b>📋 Top 30 — 보유 확인</b>",
         "─────────────────",
-        "2일 연속 30위 밖으로 밀린 종목",
+        "목록에 있으면 보유, 없으면 매도 검토.",
         "",
     ]
 
-    for i, item in enumerate(death_list, 1):
-        name = item['name']
-        ref_rank = item['ref_rank']
-        t_rank = item.get('today_rank')
-        sector = SECTOR_DB.get(item['ticker'], '기타')
+    names = [f"{s['status']} {s['name']}({s['rank']})" for s in pipeline]
+    lines.append(', '.join(names))
 
-        reasons = item.get('reasons')
-        reason_str = f" [{' '.join(reasons)}]" if reasons else ""
-
-        lines.append(f"{i}. <b>{name}</b> · {sector}{reason_str}")
-        if t_rank is not None:
-            lines.append(f"   이전 {ref_rank}위 → 현재 {t_rank}위")
-        else:
-            lines.append(f"   이전 {ref_rank}위 → 유니버스 이탈")
+    if exited:
+        exit_names = ', '.join(e['name'] for e in exited)
+        lines.append("")
+        lines.append(f"⛔ 이탈: {exit_names}")
+        lines.append("보유 중이라면 매도를 검토하세요.")
 
     lines.append("")
-    lines.append("이 종목을 보유 중이라면 매도를 검토하세요.")
-    lines.append("")
+
+    if has_picks:
+        lines.append("👉 다음: AI 브리핑 [2/2]")
 
     return '\n'.join(lines)
 
@@ -322,8 +328,8 @@ def format_buy_recommendations(picks: list, base_date_str: str) -> str:
             "<b>📋 매수 후보</b>",
             "─────────────────",
             "",
-            "3일 연속 상위권을 유지한 종목이 없습니다.",
-            "무리한 진입보다 관망도 전략입니다.",
+            "3일 연속 상위권을 유지한 종목이 없어요.",
+            "무리한 진입보다 관망도 전략이에요.",
             "",
         ]
         return '\n'.join(lines)
@@ -334,9 +340,9 @@ def format_buy_recommendations(picks: list, base_date_str: str) -> str:
 
     lines = [
         "─────────────────",
-        f"<b>💎 매수 후보 — {n}종목 (투자비중 {total_weight}%)</b>",
+        f"<b>💎 매수 후보 — {n}종목</b>",
         "─────────────────",
-        "3거래일 연속 Top 30 유지 종목",
+        "3거래일 연속 상위권을 유지한 종목이에요.",
         "",
     ]
 
@@ -378,47 +384,26 @@ def format_buy_recommendations(picks: list, base_date_str: str) -> str:
         rank_str = f"{pick['rank_t0']}→{pick['rank_t1']}→{pick['rank_t2']}위"
 
         rationale = _get_buy_rationale(pick)
-        lines.append(f"{i+1}. ✅ <b>{name}</b> ({ticker}) · {sector}")
-        lines.append(f"   → {rationale}")
-        lines.append(f"   비중 {WEIGHT_PER_STOCK}% · 가중순위 {w_rank}")
+        lines.append(f"<b>{i+1}</b> ✅ <b>{name}</b> ({ticker})")
+        lines.append(f"<i>{sector}</i> · 비중 {WEIGHT_PER_STOCK}% · 가중순위 {w_rank}")
+        lines.append(f"→ {rationale}")
         if price_str:
-            lines.append(f"   {price_str}")
+            lines.append(f"{price_str}")
         if factor_str:
-            lines.append(f"   {factor_str}")
+            lines.append(f"{factor_str}")
         if rsi_val is not None:
-            lines.append(f"   RSI {rsi_val:.0f} · 52주대비 {w52_val:+.0f}% · 3일순위 {rank_str}")
-        if i < len(picks) - 1:
-            lines.append("")
+            lines.append(f"RSI {rsi_val:.0f} · 52주대비 {w52_val:+.0f}% · 3일순위 {rank_str}")
+        lines.append("──────────────────")
 
-    lines.append("")
     if cash_weight > 0:
         lines.append(f"잔여 현금 {cash_weight}%")
     lines.append("")
-    lines.append("※ 참고용이며 투자 판단은 본인 책임입니다.")
+    lines.append("⚠️ 참고용이며, 투자 판단은 본인 책임이에요.")
     lines.append("")
 
     return '\n'.join(lines)
 
 
-def format_survivors(survivors: list) -> str:
-    """생존 리스트 (Top 30) 메시지 포맷"""
-    if not survivors:
-        return ""
-
-    lines = [
-        "─────────────────",
-        "<b>✅ 생존 리스트 — 보유 유지</b>",
-        "─────────────────",
-        "아래 종목을 보유 중이라면 계속 보유하세요.",
-        "목록에 없다면 1일 유예 후 '탈락 종목'을 확인하세요.",
-        "",
-    ]
-
-    names = [f"{s['name']}({s['rank']})" for s in survivors]
-    lines.append(', '.join(names))
-    lines.append("")
-
-    return '\n'.join(lines)
 
 
 def format_pipeline(pipeline: list, available_days: int = 3) -> str:
@@ -436,19 +421,17 @@ def format_pipeline(pipeline: list, available_days: int = 3) -> str:
             "─────────────────",
             f"<b>📋 후보 현황</b> ({available_days}/3일 축적)",
             "─────────────────",
-            "3일 검증 완료 시 매수 후보가 선정됩니다.",
+            "3일 검증 완료 시 매수 후보가 선정돼요.",
             "",
-            "💡 ✅ 매수 대상 · ⏳ 2일 연속 · 🆕 신규",
         ])
     else:
         lines.extend([
             "─────────────────",
             "<b>📋 관찰 종목</b>",
             "─────────────────",
-            "💡 ⏳ 2일 연속 · 🆕 신규 진입",
+            "아직 3일 검증이 안 된 종목이에요.",
+            "",
         ])
-
-    lines.append("")
 
     if two_day:
         names = [f"⏳ {s['name']}({s['rank']})" for s in two_day]
@@ -563,18 +546,19 @@ def main():
     print(f"\n[파이프라인] ✅ {v_count}개, ⏳ {d_count}개, 🆕 {n_count}개 (데이터 {available_days}일)")
 
     # ============================================================
-    # Section 1: Death List (콜드 스타트 시 생략)
+    # Section 1: 일일 변동 (콜드 스타트 시 생략)
     # ============================================================
-    print("\n[Death List 계산]")
-    death_list = []
+    print("\n[일일 변동]")
+    entered, exited = [], []
     if cold_start:
-        print("  콜드 스타트 → Death List 생략")
-    else:
-        death_list = compute_death_list(rankings_t0, rankings_t1, rankings_t2)
-        print(f"  탈락 종목: {len(death_list)}개 (2일 연속 Top 30 밖)")
-        for d in death_list:
-            t_rank = d.get('today_rank')
-            print(f"    {d['name']}: 기준 {d['ref_rank']}위 → {'현재 ' + str(t_rank) + '위' if t_rank else '유니버스 이탈'}")
+        print("  콜드 스타트 → 일일 변동 생략")
+    elif rankings_t1:
+        entered, exited = get_daily_changes(rankings_t0, rankings_t1)
+        print(f"  진입: {len(entered)}개, 이탈: {len(exited)}개")
+        for e in entered:
+            print(f"    ↑ {e['name']} ({e['rank']}위)")
+        for e in exited:
+            print(f"    ↓ {e['name']} ({e['rank']}위)")
 
     # ============================================================
     # Section 2: 3일 교집합 매수 추천
@@ -597,18 +581,14 @@ def main():
         print("  콜드 스타트 → 추천 없음 (관망)")
 
     # ============================================================
-    # Section 3: Survivors (콜드 스타트 시 생략)
+    # Section 3: Top 30 목록
     # ============================================================
-    survivors = []
-    if cold_start:
-        print(f"\n[Survivors] 콜드 스타트 → 생략")
-    else:
-        survivors = get_survivors(rankings_t0)
-        print(f"\n[Survivors] Top 50: {len(survivors)}개 종목")
+    print(f"\n[Top 30] {len(pipeline)}개 종목")
 
     # ============================================================
     # 메시지 구성
     # ============================================================
+    has_picks = len(picks) > 0
 
     # 경고 블록
     warning_block = ""
@@ -616,17 +596,29 @@ def main():
         warning_block = "\n" + "\n".join(market_warnings)
         warning_block += "\n신규 매수 시 유의하세요.\n"
 
-    # 헤더
-    header = f"<b>📅 {base_date_str} 기준</b>\n"
-    header += "─────────────────\n"
-    header += f"{kospi_color} 코스피  {kospi_close:,.0f} ({kospi_chg:+.2f}%)\n"
-    header += f"{kosdaq_color} 코스닥  {kosdaq_close:,.0f} ({kosdaq_chg:+.2f}%)\n"
+    # 본문 헤더 (타이틀 + 시장 + 읽는 법)
+    header_lines = []
+    header_lines.append('━━━━━━━━━━━━━━━━━━━')
+    if has_picks:
+        header_lines.append(' [1/2] 📊 매수 후보 + Top 30')
+    else:
+        header_lines.append('    📊 시장 현황 + Top 30')
+    header_lines.append('━━━━━━━━━━━━━━━━━━━')
+    header_lines.append(f'📅 {base_date_str} 기준')
+    header_lines.append('─────────────────')
+    header_lines.append(f'{kospi_color} 코스피  {kospi_close:,.0f} ({kospi_chg:+.2f}%)')
+    header_lines.append(f'{kosdaq_color} 코스닥  {kosdaq_close:,.0f} ({kosdaq_chg:+.2f}%)')
     if warning_block:
-        header += warning_block
-    header += "\n"
+        header_lines.append(warning_block.rstrip())
+    header_lines.append('')
+    header_lines.append('💡 <b>읽는 법</b>')
+    header_lines.append('✅ 3일 연속 Top 30 → 매수 대상')
+    header_lines.append('⏳ 2일 연속 → 내일 검증 가능')
+    header_lines.append('🆕 오늘 첫 진입 → 지켜보세요')
+    header_lines.append('')
+    header = '\n'.join(header_lines)
 
     # 각 섹션 생성
-    death_section = format_death_list(death_list) if death_list else ""
     pipeline_section = format_pipeline(pipeline, available_days)
 
     if cold_start:
@@ -634,26 +626,21 @@ def main():
     else:
         buy_section = format_buy_recommendations(picks, base_date_str)
 
-    survivor_section = format_survivors(survivors)
+    top30_section = format_top30(pipeline, exited, has_picks) if not cold_start else ""
 
     # 개요 (첫 번째 메시지)
-    msg_overview = format_overview()
+    msg_overview = format_overview(has_picks)
 
-    # 본문 (헤더 + Death List + 매수 후보 + 파이프라인)
+    # 본문 (헤더 + 매수 후보 + 파이프라인 + Top 30)
     msg_main = header
-    if death_section:
-        msg_main += death_section
     if buy_section:
         msg_main += buy_section
     if pipeline_section:
         msg_main += pipeline_section
-
-    # 생존 리스트 (별도 메시지) — 콜드 스타트 시 이미 빈 리스트
-    msg_survivors = survivor_section if survivor_section else None
+    if top30_section:
+        msg_main += top30_section
 
     messages = [msg_overview, msg_main]
-    if msg_survivors:
-        messages.append(msg_survivors)
 
     # ============================================================
     # 텔레그램 전송
@@ -668,9 +655,6 @@ def main():
     print(msg_overview[:500])
     print("\n--- 본문 ---")
     print(msg_main[:2000])
-    if msg_survivors:
-        print("\n--- 생존 리스트 ---")
-        print(msg_survivors[:500])
     msg_sizes = ', '.join(f'{len(m)}자' for m in messages)
     print(f"\n메시지 수: {len(messages)}개 ({msg_sizes})")
 
@@ -764,10 +748,9 @@ def main():
     # ============================================================
     cleanup_old_rankings(keep_days=30)
 
-    print(f'\nDeath List: {len(death_list)}개')
-    print(f'매수 추천: {len(picks)}개 ({"관망" if not picks else f"총 {len(picks)*WEIGHT_PER_STOCK}%"})')
+    print(f'\n매수 추천: {len(picks)}개 ({"관망" if not picks else f"총 {len(picks)*WEIGHT_PER_STOCK}%"})')
     print(f'파이프라인: ✅ {v_count} · ⏳ {d_count} · 🆕 {n_count}')
-    print(f'Survivors: {len(survivors)}개')
+    print(f'일일 변동: 진입 {len(entered)}개 · 이탈 {len(exited)}개')
     print('\n완료!')
 
 
