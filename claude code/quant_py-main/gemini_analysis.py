@@ -310,21 +310,117 @@ def run_ai_analysis(portfolio_message, stock_list, base_date=None):
         now = datetime.now(KST)
         lines = [
             '━━━━━━━━━━━━━━━━━━━',
-            '      🤖 AI 브리핑',
+            '    🛡️ AI 리스크 필터',
             '━━━━━━━━━━━━━━━━━━━',
-            f'📅 {now.strftime("%Y년 %m월 %d일")}',
             '',
-            '매수 후보의 위험 신호를 AI가 해석했어요.',
-            '투자 판단의 참고용이에요!',
+            '후보 종목 중 주의할 점을 AI가 점검했어요.',
             '',
             analysis_html + clean_section,
         ]
 
-        print("[Gemini] AI 브리핑 완료")
+        print("[Gemini] AI 리스크 필터 완료")
         return '\n'.join(lines)
 
     except Exception as e:
         print(f"[Gemini] AI 분석 실패: {e}")
+        return None
+
+
+def build_final_picks_prompt(stock_list, weight_per_stock=20, base_date=None):
+    """최종 추천 종목별 설명 프롬프트 (미국 프로젝트 방식)"""
+    stock_lines = []
+    for i, s in enumerate(stock_list):
+        line = f"{i+1}. {s['name']}({s['ticker']}) · {s.get('sector', '기타')}"
+        parts = []
+        if s.get('per'): parts.append(f"PER {s['per']:.1f}")
+        if s.get('fwd_per'): parts.append(f"Fwd PER {s['fwd_per']:.1f}")
+        if s.get('roe'): parts.append(f"ROE {s['roe']:.1f}%")
+        parts.append(f"RSI {s.get('rsi', 50):.0f}")
+        parts.append(f"52주 {s.get('w52_pct', 0):+.0f}%")
+        line += f"\n   비중 {weight_per_stock}% · {', '.join(parts)}"
+        stock_lines.append(line)
+
+    stocks_data = '\n\n'.join(stock_lines)
+
+    if base_date:
+        date_str = f"{base_date[:4]}-{base_date[4:6]}-{base_date[6:]}"
+    else:
+        date_str = datetime.now(KST).strftime('%Y-%m-%d')
+
+    return f"""분석 기준일: {date_str}
+
+아래는 한국주식 퀀트 시스템이 자동 선정한 {len(stock_list)}종목 최종 포트폴리오야.
+선정 기준: 밸류+퀄리티+모멘텀 멀티팩터 상위, 3거래일 연속 Top 30 유지, AI 리스크 필터 통과.
+
+[포트폴리오]
+{stocks_data}
+
+[출력 형식]
+- 한국어, 친절하고 따뜻한 말투 (~예요/~해요 체)
+- 각 종목을 아래 형식으로 출력:
+  **N. 종목명(티커) · 비중 {weight_per_stock}%**
+  날씨아이콘 1~2줄 선정 이유
+- 날씨아이콘: 🔥 매우 좋음, ☀️ 좋음, 🌤️ 양호, ⛅ 보통
+- 종목과 종목 사이에 반드시 [SEP] 한 줄을 넣어서 구분해줘.
+- 맨 끝에 별도 문구 넣지 마. (코드에서 추가함)
+- 500자 이내
+
+각 종목의 비중과 선정 이유를 설명해줘.
+시스템 데이터에 없는 내용을 지어내지 마."""
+
+
+def _convert_picks_markdown(text):
+    """최종 추천 마크다운 → HTML 변환"""
+    result = text
+    result = result.replace('&', '&amp;')
+    result = result.replace('<', '&lt;')
+    result = result.replace('>', '&gt;')
+    result = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', result)
+    result = re.sub(r'(?<!\w)\*(?!\s)(.+?)(?<!\s)\*(?!\w)', r'<i>\1</i>', result)
+    result = result.replace('[SEP]', '──────────────────')
+    result = re.sub(r'#{1,3}\s*', '', result)
+    result = re.sub(r'\n{3,}', '\n\n', result)
+    return result.strip()
+
+
+def run_final_picks_analysis(stock_list, weight_per_stock=20, base_date=None):
+    """최종 추천 종목별 AI 설명 생성 (미국 프로젝트 방식)"""
+    api_key = get_gemini_api_key()
+    if not api_key:
+        print("[Gemini] GEMINI_API_KEY 미설정 — 최종 추천 AI 설명 스킵")
+        return None
+
+    try:
+        from google import genai
+        from google.genai import types
+    except ImportError:
+        print("[Gemini] google-genai 패키지 미설치 — 최종 추천 AI 설명 스킵")
+        return None
+
+    try:
+        client = genai.Client(api_key=api_key)
+        prompt = build_final_picks_prompt(stock_list, weight_per_stock, base_date)
+
+        print("[Gemini] 최종 추천 설명 요청 중...")
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.2,
+            ),
+        )
+
+        text = extract_text(response)
+        if not text:
+            print("[Gemini] 최종 추천 응답 비어있음")
+            return None
+
+        html = _convert_picks_markdown(text)
+        print(f"[Gemini] 최종 추천 설명 완료: {len(html)}자")
+        return html
+
+    except Exception as e:
+        print(f"[Gemini] 최종 추천 설명 실패: {e}")
         return None
 
 
