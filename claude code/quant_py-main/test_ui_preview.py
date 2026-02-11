@@ -73,7 +73,7 @@ def _get_buy_rationale(pick):
     return ' · '.join(reasons[:2])
 
 
-def format_buy_recommendations(picks, base_date_str, universe_count=0, ai_picks_text=None):
+def format_buy_recommendations(picks, base_date_str, universe_count=0, ai_picks_text=None, skipped=None):
     if not picks:
         return ""
     n = len(picks)
@@ -92,6 +92,11 @@ def format_buy_recommendations(picks, base_date_str, universe_count=0, ai_picks_
         funnel,
         "",
     ]
+
+    if skipped:
+        for candidate, chg in skipped:
+            lines.append(f"⚠️ {candidate['name']}(가중 {candidate['weighted_rank']}) 전일 {chg:.1f}% 급락 → 제외")
+        lines.append("")
 
     weight_parts = [f"{p['name']} {WEIGHT_PER_STOCK}%" for p in picks]
     lines.append("📊 <b>비중 한눈에 보기</b>")
@@ -125,7 +130,7 @@ def format_buy_recommendations(picks, base_date_str, universe_count=0, ai_picks_
     return '\n'.join(lines)
 
 
-def format_top30(pipeline, exited, cold_start=False, has_next=False, rankings_t0=None):
+def format_top30(pipeline, exited, cold_start=False, has_next=False, rankings_t0=None, rankings_t1=None, rankings_t2=None):
     if not pipeline:
         return ""
     lines = [
@@ -139,15 +144,34 @@ def format_top30(pipeline, exited, cold_start=False, has_next=False, rankings_t0
     two_day = [s for s in pipeline if s['status'] == '⏳']
     new_stocks = [s for s in pipeline if s['status'] == '🆕']
 
+    if verified and rankings_t1 and rankings_t2:
+        t1_map = {r['ticker']: r['rank'] for r in rankings_t1.get('rankings', []) if r['rank'] <= 30}
+        t2_map = {r['ticker']: r['rank'] for r in rankings_t2.get('rankings', []) if r['rank'] <= 30}
+        for s in verified:
+            r0 = s['rank']
+            r1 = t1_map.get(s['ticker'], r0)
+            r2 = t2_map.get(s['ticker'], r0)
+            s['_r1'] = r1
+            s['_r2'] = r2
+            s['_weighted'] = r0 * 0.5 + r1 * 0.3 + r2 * 0.2
+        verified.sort(key=lambda x: x['_weighted'])
+
     groups_added = False
     if verified:
-        names = ', '.join(f"{s['name']}({s['rank']})" for s in verified)
+        if rankings_t1 and rankings_t2:
+            names = ', '.join(f"{s['name']}({s['rank']}→{s['_r1']}→{s['_r2']})" for s in verified)
+        else:
+            names = ', '.join(f"{s['name']}({s['rank']})" for s in verified)
         lines.append(f"✅ 3일 검증: {names}")
         groups_added = True
     if two_day:
         if groups_added:
             lines.append("")
-        names = ', '.join(f"{s['name']}({s['rank']})" for s in two_day)
+        if rankings_t1:
+            t1_map_td = {r['ticker']: r['rank'] for r in rankings_t1.get('rankings', []) if r['rank'] <= 30}
+            names = ', '.join(f"{s['name']}({s['rank']}→{t1_map_td.get(s['ticker'], '?')})" for s in two_day)
+        else:
+            names = ', '.join(f"{s['name']}({s['rank']})" for s in two_day)
         lines.append(f"⏳ 내일 검증: {names}")
         groups_added = True
     if new_stocks:
@@ -186,10 +210,17 @@ def format_top30(pipeline, exited, cold_start=False, has_next=False, rankings_t0
 fake_picks = [
     {
         'ticker': '000660', 'name': 'SK하이닉스',
-        'rank': 1, 'weighted_rank': 1.8,
-        'rank_t0': 1, 'rank_t1': 2, 'rank_t2': 3,
+        'rank': 1, 'weighted_rank': 1.0,
+        'rank_t0': 1, 'rank_t1': 1, 'rank_t2': 1,
         'per': 8.5, 'pbr': 1.3, 'roe': 22.1, 'fwd_per': 6.8,
         '_tech': {'price': 245000, 'daily_chg': 2.31, 'rsi': 38, 'w52_pct': -18},
+    },
+    {
+        'ticker': '032640', 'name': 'LG유플러스',
+        'rank': 2, 'weighted_rank': 2.0,
+        'rank_t0': 2, 'rank_t1': 2, 'rank_t2': 2,
+        'per': 7.3, 'pbr': 0.5, 'roe': 7.8, 'fwd_per': 6.5,
+        '_tech': {'price': 13200, 'daily_chg': 0.38, 'rsi': 45, 'w52_pct': -15},
     },
     {
         'ticker': '015760', 'name': '한국전력',
@@ -199,18 +230,18 @@ fake_picks = [
         '_tech': {'price': 28750, 'daily_chg': -0.52, 'rsi': 42, 'w52_pct': -25},
     },
     {
-        'ticker': '030200', 'name': 'KT',
-        'rank': 5, 'weighted_rank': 5.6,
-        'rank_t0': 5, 'rank_t1': 6, 'rank_t2': 7,
-        'per': 9.1, 'pbr': 0.6, 'roe': 7.2, 'fwd_per': 7.8,
-        '_tech': {'price': 42300, 'daily_chg': 0.95, 'rsi': 51, 'w52_pct': -12},
+        'ticker': '282330', 'name': 'BGF리테일',
+        'rank': 4, 'weighted_rank': 4.2,
+        'rank_t0': 4, 'rank_t1': 4, 'rank_t2': 5,
+        'per': 12.1, 'pbr': 1.8, 'roe': 15.2, 'fwd_per': 10.5,
+        '_tech': {'price': 185000, 'daily_chg': 11.5, 'rsi': 68, 'w52_pct': -8},
     },
     {
-        'ticker': '000270', 'name': '기아',
-        'rank': 8, 'weighted_rank': 7.4,
-        'rank_t0': 8, 'rank_t1': 6, 'rank_t2': 9,
-        'per': 4.8, 'pbr': 0.7, 'roe': 18.3, 'fwd_per': 4.2,
-        '_tech': {'price': 128500, 'daily_chg': 1.58, 'rsi': 33, 'w52_pct': -32},
+        'ticker': '023590', 'name': '다우기술',
+        'rank': 6, 'weighted_rank': 5.9,
+        'rank_t0': 6, 'rank_t1': 5, 'rank_t2': 7,
+        'per': 6.8, 'pbr': 0.9, 'roe': 14.5, 'fwd_per': 5.8,
+        '_tech': {'price': 32100, 'daily_chg': 1.26, 'rsi': 47, 'w52_pct': -20},
     },
 ]
 
@@ -219,47 +250,77 @@ fake_pipeline = [
     {'name': 'LG유플러스', 'rank': 2, 'status': '✅', 'ticker': '032640'},
     {'name': '한국전력', 'rank': 3, 'status': '✅', 'ticker': '015760'},
     {'name': 'BGF리테일', 'rank': 4, 'status': '✅', 'ticker': '282330'},
-    {'name': 'KT', 'rank': 5, 'status': '✅', 'ticker': '030200'},
-    {'name': 'JW중외제약', 'rank': 6, 'status': '✅', 'ticker': '001060'},
-    {'name': '삼성전자', 'rank': 7, 'status': '✅', 'ticker': '005930'},
-    {'name': '기아', 'rank': 8, 'status': '✅', 'ticker': '000270'},
-    {'name': '이엔에프테크놀로지', 'rank': 9, 'status': '⏳', 'ticker': '102710'},
-    {'name': 'HD현대', 'rank': 10, 'status': '⏳', 'ticker': '267250'},
-    {'name': '다우기술', 'rank': 11, 'status': '⏳', 'ticker': '023590'},
-    {'name': '지엔씨에너지', 'rank': 12, 'status': '⏳', 'ticker': '119850'},
-    {'name': 'KCC', 'rank': 13, 'status': '⏳', 'ticker': '002380'},
-    {'name': '헥토이노베이션', 'rank': 14, 'status': '⏳', 'ticker': '124500'},
-    {'name': '영원무역', 'rank': 15, 'status': '⏳', 'ticker': '111770'},
-    {'name': 'GS', 'rank': 16, 'status': '⏳', 'ticker': '078930'},
-    {'name': '현대글로비스', 'rank': 17, 'status': '⏳', 'ticker': '086280'},
-    {'name': '현대엘리베이터', 'rank': 18, 'status': '⏳', 'ticker': '017800'},
-    {'name': '동성화인텍', 'rank': 19, 'status': '⏳', 'ticker': '033500'},
-    {'name': 'F&F', 'rank': 20, 'status': '⏳', 'ticker': '383220'},
-    {'name': 'LX인터내셔널', 'rank': 21, 'status': '⏳', 'ticker': '001120'},
-    {'name': '현대백화점', 'rank': 22, 'status': '⏳', 'ticker': '069960'},
-    {'name': '테스', 'rank': 23, 'status': '⏳', 'ticker': '095610'},
-    {'name': '제룡전기', 'rank': 24, 'status': '🆕', 'ticker': '033100'},
-    {'name': 'SK스퀘어', 'rank': 25, 'status': '🆕', 'ticker': '402340'},
-    {'name': '나무가', 'rank': 26, 'status': '🆕', 'ticker': '190510'},
-    {'name': '신세계', 'rank': 27, 'status': '🆕', 'ticker': '004170'},
-    {'name': 'SK텔레콤', 'rank': 28, 'status': '🆕', 'ticker': '017670'},
-    {'name': '삼지전자', 'rank': 29, 'status': '🆕', 'ticker': '037460'},
-    {'name': '한국타이어', 'rank': 30, 'status': '🆕', 'ticker': '161390'},
+    {'name': '이엔에프테크놀로지', 'rank': 5, 'status': '✅', 'ticker': '102710'},
+    {'name': '다우기술', 'rank': 6, 'status': '✅', 'ticker': '023590'},
+    {'name': 'JW중외제약', 'rank': 7, 'status': '✅', 'ticker': '001060'},
+    {'name': '제룡전기', 'rank': 8, 'status': '⏳', 'ticker': '033100'},
+    {'name': 'HD현대', 'rank': 9, 'status': '✅', 'ticker': '267250'},
+    {'name': '삼지전자', 'rank': 10, 'status': '✅', 'ticker': '037460'},
+    {'name': 'KT', 'rank': 11, 'status': '✅', 'ticker': '030200'},
+    {'name': '삼성전자', 'rank': 12, 'status': '✅', 'ticker': '005930'},
+    {'name': 'SK스퀘어', 'rank': 13, 'status': '⏳', 'ticker': '402340'},
+    {'name': '기아', 'rank': 14, 'status': '✅', 'ticker': '000270'},
+    {'name': '지엔씨에너지', 'rank': 15, 'status': '✅', 'ticker': '119850'},
+    {'name': '영원무역', 'rank': 16, 'status': '✅', 'ticker': '111770'},
+    {'name': '현대엘리베이터', 'rank': 17, 'status': '✅', 'ticker': '017800'},
+    {'name': 'GS', 'rank': 18, 'status': '✅', 'ticker': '078930'},
+    {'name': 'KCC', 'rank': 19, 'status': '✅', 'ticker': '002380'},
+    {'name': '현대글로비스', 'rank': 20, 'status': '✅', 'ticker': '086280'},
+    {'name': '테스', 'rank': 21, 'status': '✅', 'ticker': '095610'},
+    {'name': '현대백화점', 'rank': 22, 'status': '✅', 'ticker': '069960'},
+    {'name': 'F&F', 'rank': 23, 'status': '✅', 'ticker': '383220'},
+    {'name': 'LX인터내셔널', 'rank': 24, 'status': '✅', 'ticker': '001120'},
+    {'name': '동성화인텍', 'rank': 25, 'status': '✅', 'ticker': '033500'},
+    {'name': '한국타이어앤테크놀로지', 'rank': 26, 'status': '✅', 'ticker': '161390'},
+    {'name': '나무가', 'rank': 27, 'status': '⏳', 'ticker': '190510'},
+    {'name': '신세계', 'rank': 28, 'status': '⏳', 'ticker': '004170'},
+    {'name': 'SK텔레콤', 'rank': 29, 'status': '⏳', 'ticker': '017670'},
+    {'name': '코나아이', 'rank': 30, 'status': '🆕', 'ticker': '052400'},
 ]
 
 fake_exited = [
-    {'name': '카카오', 'rank': 18, 'ticker': '035720'},
-    {'name': '네이버', 'rank': 22, 'ticker': '035420'},
-    {'name': 'CJ제일제당', 'rank': 29, 'ticker': '097950'},
+    {'name': '헥토이노베이션', 'rank': 16, 'ticker': '124500'},
 ]
 
-# 이탈 종목의 현재 순위 테스트 (rankings_t0 전체 데이터)
+# 이탈 종목의 현재 순위 + 3일 순위 데이터
 fake_rankings_t0 = {
     'rankings': [
         *[{'ticker': s['ticker'], 'rank': s['rank']} for s in fake_pipeline],
-        {'ticker': '035720', 'rank': 35},   # 카카오: 18위 → 35위 (대폭 하락)
-        {'ticker': '097950', 'rank': 42},   # CJ제일제당: 29위 → 42위 (경계 탈락)
-        # 네이버(035420): 없음 → 순위권 밖
+    ]
+}
+fake_rankings_t1 = {
+    'rankings': [
+        {'ticker': '000660', 'rank': 1}, {'ticker': '032640', 'rank': 2},
+        {'ticker': '015760', 'rank': 3}, {'ticker': '282330', 'rank': 4},
+        {'ticker': '023590', 'rank': 5}, {'ticker': '001060', 'rank': 6},
+        {'ticker': '102710', 'rank': 7}, {'ticker': '030200', 'rank': 8},
+        {'ticker': '037460', 'rank': 9}, {'ticker': '267250', 'rank': 10},
+        {'ticker': '005930', 'rank': 11}, {'ticker': '119850', 'rank': 12},
+        {'ticker': '000270', 'rank': 13}, {'ticker': '033100', 'rank': 14},
+        {'ticker': '002380', 'rank': 15}, {'ticker': '124500', 'rank': 16},
+        {'ticker': '402340', 'rank': 17}, {'ticker': '111770', 'rank': 18},
+        {'ticker': '078930', 'rank': 19}, {'ticker': '086280', 'rank': 20},
+        {'ticker': '017800', 'rank': 21}, {'ticker': '033500', 'rank': 22},
+        {'ticker': '383220', 'rank': 23}, {'ticker': '001120', 'rank': 24},
+        {'ticker': '069960', 'rank': 25}, {'ticker': '095610', 'rank': 26},
+        {'ticker': '161390', 'rank': 27}, {'ticker': '190510', 'rank': 28},
+        {'ticker': '004170', 'rank': 29}, {'ticker': '017670', 'rank': 30},
+    ]
+}
+fake_rankings_t2 = {
+    'rankings': [
+        {'ticker': '000660', 'rank': 1}, {'ticker': '032640', 'rank': 2},
+        {'ticker': '015760', 'rank': 4}, {'ticker': '282330', 'rank': 5},
+        {'ticker': '023590', 'rank': 7}, {'ticker': '102710', 'rank': 8},
+        {'ticker': '030200', 'rank': 9}, {'ticker': '037460', 'rank': 10},
+        {'ticker': '000270', 'rank': 11}, {'ticker': '001060', 'rank': 12},
+        {'ticker': '005930', 'rank': 13}, {'ticker': '002380', 'rank': 14},
+        {'ticker': '267250', 'rank': 15}, {'ticker': '111770', 'rank': 18},
+        {'ticker': '119850', 'rank': 20}, {'ticker': '078930', 'rank': 21},
+        {'ticker': '086280', 'rank': 22}, {'ticker': '069960', 'rank': 23},
+        {'ticker': '001120', 'rank': 25}, {'ticker': '161390', 'rank': 26},
+        {'ticker': '033500', 'rank': 27}, {'ticker': '017800', 'rank': 28},
+        {'ticker': '383220', 'rank': 29}, {'ticker': '095610', 'rank': 30},
     ]
 }
 
@@ -288,7 +349,7 @@ header_lines = [
     '',
 ]
 header = '\n'.join(header_lines)
-top30_section = format_top30(fake_pipeline, fake_exited, has_next=True, rankings_t0=fake_rankings_t0)
+top30_section = format_top30(fake_pipeline, fake_exited, has_next=True, rankings_t0=fake_rankings_t0, rankings_t1=fake_rankings_t1, rankings_t2=fake_rankings_t2)
 msg_main = header + top30_section
 
 # [2/3] AI 리스크 필터
@@ -311,20 +372,28 @@ fake_ai = """━━━━━━━━━━━━━━━━━━━
 
 msg_ai = fake_ai + '\n\n👉 다음: 최종 추천 [3/3]'
 
-# [3/3] 최종 추천 — AI 생성 멘트
-fake_ai_picks = """<b>1. SK하이닉스(000660) · 20%</b>
-☀️ AI 반도체 대장주로, HBM 수요 증가와 메모리 업황 회복이 기대돼요.
-──────────────────
-<b>2. 한국전력(015760) · 20%</b>
-🌤️ 업종 대비 크게 저평가된 유틸리티주예요. 전기요금 정상화 기대감이 있어요.
-──────────────────
-<b>3. KT(030200) · 20%</b>
-☀️ 안정적인 배당과 실적 개선이 동시에 기대되는 통신 대표주예요.
-──────────────────
-<b>4. 기아(000270) · 20%</b>
-🔥 글로벌 판매 호조에 과매도 구간이라 반등 여력이 충분해요. ROE 18%로 수익성도 탄탄해요."""
+# 급락 제외 테스트 데이터
+fake_skipped = [
+    ({'name': '이엔에프테크놀로지', 'weighted_rank': 6.2, 'ticker': '102710'}, -6.2),
+]
 
-msg_final = format_buy_recommendations(fake_picks, '2026년 02월 10일', universe_count=598, ai_picks_text=fake_ai_picks)
+# [3/3] 최종 추천 — AI 생성 멘트 (3일 순위 포함)
+fake_ai_picks = """<b>1. SK하이닉스(000660) · 순위 1→1→1 · 비중 20%</b>
+🔥 3일 연속 부동의 1위! AI 반도체 대장주로 HBM 수요와 업황 회복이 기대돼요.
+──────────────────
+<b>2. LG유플러스(032640) · 순위 2→2→2 · 비중 20%</b>
+☀️ 안정적인 통신주로 저평가 매력과 꾸준한 배당이 돋보여요.
+──────────────────
+<b>3. 한국전력(015760) · 순위 3→3→4 · 비중 20%</b>
+🔥 매우 낮은 PER로 밸류 매력이 뛰어나며 전기요금 정상화 기대감이 있어요.
+──────────────────
+<b>4. BGF리테일(282330) · 순위 4→4→5 · 비중 20%</b>
+☀️ 견고한 수익성과 안정적인 편의점 사업 기반으로 꾸준한 성장이 기대돼요.
+──────────────────
+<b>5. 다우기술(023590) · 순위 6→5→7 · 비중 20%</b>
+🔥 매력적인 밸류와 우수한 수익성, 그리고 좋은 모멘텀을 겸비했어요."""
+
+msg_final = format_buy_recommendations(fake_picks, '2026년 02월 10일', universe_count=598, ai_picks_text=fake_ai_picks, skipped=fake_skipped)
 
 messages = [msg_guide, msg_main, msg_ai, msg_final]
 

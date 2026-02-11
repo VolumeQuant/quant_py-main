@@ -261,7 +261,7 @@ def format_overview(has_ai: bool = False):
     return '\n'.join(lines)
 
 
-def format_top30(pipeline: list, exited: list, cold_start: bool = False, has_next: bool = False, rankings_t0: dict = None) -> str:
+def format_top30(pipeline: list, exited: list, cold_start: bool = False, has_next: bool = False, rankings_t0: dict = None, rankings_t1: dict = None, rankings_t2: dict = None) -> str:
     """Top 30 목록 — 상태별 그룹핑"""
     if not pipeline:
         return ""
@@ -278,16 +278,36 @@ def format_top30(pipeline: list, exited: list, cold_start: bool = False, has_nex
     two_day = [s for s in pipeline if s['status'] == '⏳']
     new_stocks = [s for s in pipeline if s['status'] == '🆕']
 
+    # ✅ 종목: T-1, T-2 순위 조회 → 가중순위 계산 → 가중순위순 정렬
+    if verified and rankings_t1 and rankings_t2:
+        t1_map = {r['ticker']: r['rank'] for r in rankings_t1.get('rankings', []) if r['rank'] <= 30}
+        t2_map = {r['ticker']: r['rank'] for r in rankings_t2.get('rankings', []) if r['rank'] <= 30}
+        for s in verified:
+            r0 = s['rank']
+            r1 = t1_map.get(s['ticker'], r0)
+            r2 = t2_map.get(s['ticker'], r0)
+            s['_r1'] = r1
+            s['_r2'] = r2
+            s['_weighted'] = r0 * 0.5 + r1 * 0.3 + r2 * 0.2
+        verified.sort(key=lambda x: x['_weighted'])
+
     groups_added = False
     if verified:
-        names = ', '.join(f"{s['name']}({s['rank']})" for s in verified)
+        if rankings_t1 and rankings_t2:
+            names = ', '.join(f"{s['name']}({s['rank']}→{s['_r1']}→{s['_r2']})" for s in verified)
+        else:
+            names = ', '.join(f"{s['name']}({s['rank']})" for s in verified)
         lines.append(f"✅ 3일 검증: {names}")
         groups_added = True
 
     if two_day:
         if groups_added:
             lines.append("")
-        names = ', '.join(f"{s['name']}({s['rank']})" for s in two_day)
+        if rankings_t1:
+            t1_map_td = {r['ticker']: r['rank'] for r in rankings_t1.get('rankings', []) if r['rank'] <= 30}
+            names = ', '.join(f"{s['name']}({s['rank']}→{t1_map_td.get(s['ticker'], '?')})" for s in two_day)
+        else:
+            names = ', '.join(f"{s['name']}({s['rank']})" for s in two_day)
         lines.append(f"⏳ 내일 검증: {names}")
         groups_added = True
 
@@ -351,7 +371,7 @@ def _get_buy_rationale(pick) -> str:
     return ' · '.join(reasons[:2])
 
 
-def format_buy_recommendations(picks: list, base_date_str: str, universe_count: int = 0, ai_picks_text: str = None) -> str:
+def format_buy_recommendations(picks: list, base_date_str: str, universe_count: int = 0, ai_picks_text: str = None, skipped: list = None) -> str:
     """최종 추천 메시지 — AI 멘트 + 구분선"""
     if not picks:
         lines = [
@@ -381,6 +401,12 @@ def format_buy_recommendations(picks: list, base_date_str: str, universe_count: 
         funnel,
         "",
     ]
+
+    # 급락 제외 종목 안내
+    if skipped:
+        for candidate, chg in skipped:
+            lines.append(f"⚠️ {candidate['name']}(가중 {candidate['weighted_rank']}) 전일 {chg:.1f}% 급락 → 제외")
+        lines.append("")
 
     # 비중 한눈에 보기
     weight_parts = [f"{p['name']} {WEIGHT_PER_STOCK}%" for p in picks]
@@ -540,18 +566,29 @@ def main():
     # ============================================================
     print("\n[3일 교집합 매수 추천]")
     picks = []
+    skipped = []
     if not cold_start:
-        picks = compute_3day_intersection(rankings_t0, rankings_t1, rankings_t2)
-        print(f"  3일 교집합 통과: {len(picks)}개 종목")
+        all_intersection = compute_3day_intersection(rankings_t0, rankings_t1, rankings_t2, max_picks=30)
+        print(f"  3일 교집합 통과: {len(all_intersection)}개 종목")
 
-        # 기술지표 보강 (매수 추천 종목만)
-        for pick in picks:
-            tech = get_stock_technical(pick['ticker'], BASE_DATE)
-            pick['_tech'] = tech
+        # 기술지표 보강 + 전일 급락 하드 필터
+        for candidate in all_intersection:
+            tech = get_stock_technical(candidate['ticker'], BASE_DATE)
+            candidate['_tech'] = tech
+            daily_chg = (tech or {}).get('daily_chg', 0)
+
+            if daily_chg <= -5:
+                skipped.append((candidate, daily_chg))
+                print(f"    ⛔ {candidate['name']}: 가중순위 {candidate['weighted_rank']}, 전일 {daily_chg:.1f}% 급락 → 제외")
+                continue
+
+            picks.append(candidate)
             if tech:
-                print(f"    {pick['name']}: 가중순위 {pick['weighted_rank']}, RSI {tech['rsi']:.0f}, 52주 {tech['w52_pct']:.0f}%")
+                print(f"    {candidate['name']}: 가중순위 {candidate['weighted_rank']}, RSI {tech['rsi']:.0f}, 52주 {tech['w52_pct']:.0f}%")
             else:
-                print(f"    {pick['name']}: 가중순위 {pick['weighted_rank']} (기술지표 실패)")
+                print(f"    {candidate['name']}: 가중순위 {candidate['weighted_rank']} (기술지표 실패)")
+            if len(picks) >= 5:
+                break
     else:
         print("  콜드 스타트 → 추천 없음 (관망)")
 
@@ -630,7 +667,7 @@ def main():
     header = '\n'.join(header_lines)
 
     # [1/2] 섹션: Top 30만 (상세 카드는 [2/2]에서)
-    top30_section = format_top30(pipeline, exited, cold_start, has_next=has_ai, rankings_t0=rankings_t0)
+    top30_section = format_top30(pipeline, exited, cold_start, has_next=has_ai, rankings_t0=rankings_t0, rankings_t1=rankings_t1, rankings_t2=rankings_t2)
 
     # 개요 (첫 번째 메시지)
     msg_overview = format_overview(has_ai)
@@ -659,6 +696,9 @@ def main():
                     'ticker': pick['ticker'],
                     'name': pick['name'],
                     'sector': SECTOR_DB.get(pick['ticker'], '기타'),
+                    'rank_t0': pick.get('rank_t0'),
+                    'rank_t1': pick.get('rank_t1'),
+                    'rank_t2': pick.get('rank_t2'),
                     'per': pick.get('per'),
                     'fwd_per': pick.get('fwd_per'),
                     'roe': pick.get('roe'),
@@ -668,7 +708,7 @@ def main():
             ai_picks_text = run_final_picks_analysis(final_stock_list, WEIGHT_PER_STOCK, BASE_DATE)
         except Exception as e:
             print(f"최종 추천 AI 설명 실패 (fallback 사용): {e}")
-        msg_final = format_buy_recommendations(picks, base_date_str, universe_count, ai_picks_text)
+        msg_final = format_buy_recommendations(picks, base_date_str, universe_count, ai_picks_text, skipped=skipped)
 
     # 메시지 리스트: Guide → [1/3] 시장+Top30 → [2/3] AI → [3/3] 최종
     messages = [msg_overview, msg_main]

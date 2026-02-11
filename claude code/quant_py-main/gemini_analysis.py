@@ -323,6 +323,8 @@ def build_final_picks_prompt(stock_list, weight_per_stock=20, base_date=None):
     for i, s in enumerate(stock_list):
         line = f"{i+1}. {s['name']}({s['ticker']}) · {s.get('sector', '기타')}"
         parts = []
+        if s.get('rank_t0') is not None:
+            parts.append(f"순위 {s['rank_t0']}→{s.get('rank_t1', '?')}→{s.get('rank_t2', '?')}")
         if s.get('per'): parts.append(f"PER {s['per']:.1f}")
         if s.get('fwd_per'): parts.append(f"Fwd PER {s['fwd_per']:.1f}")
         if s.get('roe'): parts.append(f"ROE {s['roe']:.1f}%")
@@ -349,8 +351,9 @@ def build_final_picks_prompt(stock_list, weight_per_stock=20, base_date=None):
 [출력 형식]
 - 한국어, 친절하고 따뜻한 말투 (~예요/~해요 체)
 - 각 종목을 아래 형식으로 출력:
-  **N. 종목명(티커) · 비중 {weight_per_stock}%**
+  **N. 종목명(티커) · 순위 X→Y→Z · 비중 {weight_per_stock}%**
   날씨아이콘 1~2줄 선정 이유
+- 순위는 데이터에 있는 3일 순위(rank_t0→rank_t1→rank_t2)를 그대로 사용해
 - 날씨아이콘: 🔥 매우 좋음, ☀️ 좋음, 🌤️ 양호, ⛅ 보통
 - 종목과 종목 사이에 반드시 [SEP] 한 줄을 넣어서 구분해줘.
 - 맨 끝에 별도 문구 넣지 마. (코드에서 추가함)
