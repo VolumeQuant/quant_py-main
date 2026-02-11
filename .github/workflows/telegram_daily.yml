@@ -50,12 +50,12 @@ jobs:
         run: |
           pip install pykrx pandas numpy requests beautifulsoup4 lxml pyarrow tqdm scipy html5lib google-genai
 
-      - name: Create config.py from secrets
+      - name: Create config.py from secrets (private only — 채널 전송 중단)
         run: |
           cat << EOF > config.py
           TELEGRAM_BOT_TOKEN = "${{ secrets.TELEGRAM_BOT_TOKEN }}"
-          TELEGRAM_CHAT_ID = "${{ secrets.TELEGRAM_CHAT_ID }}"
-          TELEGRAM_PRIVATE_ID = "${{ secrets.TELEGRAM_PRIVATE_ID }}"
+          TELEGRAM_CHAT_ID = "${{ secrets.TELEGRAM_PRIVATE_ID }}"
+          TELEGRAM_PRIVATE_ID = ""
           MIN_MARKET_CAP = 3000
           PER_MAX_LIMIT = 60
           PBR_MAX_LIMIT = 10
