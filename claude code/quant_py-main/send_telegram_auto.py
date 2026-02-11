@@ -261,7 +261,7 @@ def format_overview(has_ai: bool = False):
     return '\n'.join(lines)
 
 
-def format_top30(pipeline: list, exited: list, cold_start: bool = False, has_next: bool = False) -> str:
+def format_top30(pipeline: list, exited: list, cold_start: bool = False, has_next: bool = False, rankings_t0: dict = None) -> str:
     """Top 30 목록 — 상태별 그룹핑"""
     if not pipeline:
         return ""
@@ -299,9 +299,16 @@ def format_top30(pipeline: list, exited: list, cold_start: bool = False, has_nex
 
     if exited:
         lines.append("")
-        exit_names = ', '.join(e['name'] for e in exited)
-        lines.append(f"⛔ 이탈: {exit_names}")
-        lines.append("보유 중이라면 매도를 검토하세요.")
+        t0_rank_map = {item['ticker']: item['rank'] for item in (rankings_t0 or {}).get('rankings', [])}
+        lines.append(f"📉 어제 대비 이탈 {len(exited)}개")
+        for e in exited:
+            prev = e['rank']
+            cur = t0_rank_map.get(e['ticker'])
+            if cur:
+                lines.append(f"  {e['name']} {prev}위 → {cur}위")
+            else:
+                lines.append(f"  {e['name']} {prev}위 → 순위권 밖")
+        lines.append("⛔ 보유 중이라면 매도를 검토하세요.")
 
     if cold_start:
         lines.append("")
@@ -623,7 +630,7 @@ def main():
     header = '\n'.join(header_lines)
 
     # [1/2] 섹션: Top 30만 (상세 카드는 [2/2]에서)
-    top30_section = format_top30(pipeline, exited, cold_start, has_next=has_ai)
+    top30_section = format_top30(pipeline, exited, cold_start, has_next=has_ai, rankings_t0=rankings_t0)
 
     # 개요 (첫 번째 메시지)
     msg_overview = format_overview(has_ai)

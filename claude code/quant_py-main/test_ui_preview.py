@@ -125,7 +125,7 @@ def format_buy_recommendations(picks, base_date_str, universe_count=0, ai_picks_
     return '\n'.join(lines)
 
 
-def format_top30(pipeline, exited, cold_start=False, has_next=False):
+def format_top30(pipeline, exited, cold_start=False, has_next=False, rankings_t0=None):
     if not pipeline:
         return ""
     lines = [
@@ -158,9 +158,16 @@ def format_top30(pipeline, exited, cold_start=False, has_next=False):
 
     if exited:
         lines.append("")
-        exit_names = ', '.join(e['name'] for e in exited)
-        lines.append(f"⛔ 이탈: {exit_names}")
-        lines.append("보유 중이라면 매도를 검토하세요.")
+        t0_rank_map = {item['ticker']: item['rank'] for item in (rankings_t0 or {}).get('rankings', [])}
+        lines.append(f"📉 어제 대비 이탈 {len(exited)}개")
+        for e in exited:
+            prev = e['rank']
+            cur = t0_rank_map.get(e['ticker'])
+            if cur:
+                lines.append(f"  {e['name']} {prev}위 → {cur}위")
+            else:
+                lines.append(f"  {e['name']} {prev}위 → 순위권 밖")
+        lines.append("⛔ 보유 중이라면 매도를 검토하세요.")
 
     if cold_start:
         lines.append("")
@@ -246,6 +253,16 @@ fake_exited = [
     {'name': 'CJ제일제당', 'rank': 29, 'ticker': '097950'},
 ]
 
+# 이탈 종목의 현재 순위 테스트 (rankings_t0 전체 데이터)
+fake_rankings_t0 = {
+    'rankings': [
+        *[{'ticker': s['ticker'], 'rank': s['rank']} for s in fake_pipeline],
+        {'ticker': '035720', 'rank': 35},   # 카카오: 18위 → 35위 (대폭 하락)
+        {'ticker': '097950', 'rank': 42},   # CJ제일제당: 29위 → 42위 (경계 탈락)
+        # 네이버(035420): 없음 → 순위권 밖
+    ]
+}
+
 # ============================================================
 # 메시지 생성 — Guide → [1/3] 시장+Top30 → [2/3] AI → [3/3] 최종
 # ============================================================
@@ -271,7 +288,7 @@ header_lines = [
     '',
 ]
 header = '\n'.join(header_lines)
-top30_section = format_top30(fake_pipeline, fake_exited, has_next=True)
+top30_section = format_top30(fake_pipeline, fake_exited, has_next=True, rankings_t0=fake_rankings_t0)
 msg_main = header + top30_section
 
 # [2/3] AI 리스크 필터
