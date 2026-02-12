@@ -561,13 +561,13 @@ def main():
     # Section 2: 3일 교집합 매수 추천
     # ============================================================
     print("\n[3일 교집합 매수 추천]")
-    picks = []
+    all_candidates = []
     skipped = []
     if not cold_start:
         all_intersection = compute_3day_intersection(rankings_t0, rankings_t1, rankings_t2, max_picks=30)
         print(f"  3일 교집합 통과: {len(all_intersection)}개 종목")
 
-        # 기술지표 보강 + 전일 급락 하드 필터
+        # 기술지표 보강 + 전일 급락 하드 필터 (전체 후보)
         for candidate in all_intersection:
             tech = get_stock_technical(candidate['ticker'], BASE_DATE)
             candidate['_tech'] = tech
@@ -578,15 +578,15 @@ def main():
                 print(f"    ⛔ {candidate['name']}: 가중순위 {candidate['weighted_rank']}, 전일 {daily_chg:.1f}% 급락 → 제외")
                 continue
 
-            picks.append(candidate)
+            all_candidates.append(candidate)
             if tech:
                 print(f"    {candidate['name']}: 가중순위 {candidate['weighted_rank']}, RSI {tech['rsi']:.0f}, 52주 {tech['w52_pct']:.0f}%")
             else:
                 print(f"    {candidate['name']}: 가중순위 {candidate['weighted_rank']} (기술지표 실패)")
-            if len(picks) >= 5:
-                break
     else:
         print("  콜드 스타트 → 추천 없음 (관망)")
+
+    print(f"  하드필터 통과: {len(all_candidates)}개 종목")
 
     # ============================================================
     # Section 3: Top 30 목록
@@ -594,16 +594,17 @@ def main():
     print(f"\n[Top 30] {len(pipeline)}개 종목")
 
     # ============================================================
-    # AI 리스크 필터 생성 (Gemini) — 메시지 전송 전에 미리 생성
+    # AI 리스크 필터 생성 (Gemini) — 전체 후보 대상
     # ============================================================
     ai_msg = None
-    if picks:
+    risk_flagged_tickers = set()
+    if all_candidates:
         try:
-            from gemini_analysis import run_ai_analysis
+            from gemini_analysis import run_ai_analysis, compute_risk_flags
             stock_list = []
-            for pick in picks:
+            for pick in all_candidates:
                 tech = pick.get('_tech', {}) or {}
-                stock_list.append({
+                stock_data = {
                     'ticker': pick['ticker'],
                     'name': pick['name'],
                     'rank': pick['rank_t0'],
@@ -617,7 +618,11 @@ def main():
                     'daily_chg': tech.get('daily_chg', 0),
                     'vol_ratio': 1,
                     'price': tech.get('price', 0),
-                })
+                }
+                stock_list.append(stock_data)
+                if compute_risk_flags(stock_data):
+                    risk_flagged_tickers.add(pick['ticker'])
+            print(f"\n  AI 리스크 대상: {len(stock_list)}개 (위험 플래그: {len(risk_flagged_tickers)}개)")
             ai_msg = run_ai_analysis(None, stock_list, base_date=BASE_DATE)
             if ai_msg:
                 print(f"\n=== AI 리스크 필터 ({len(ai_msg)}자) ===")
@@ -628,6 +633,12 @@ def main():
             print(f"\nAI 리스크 필터 실패 (계속 진행): {e}")
     else:
         print("\nAI 리스크 필터 스킵 (추천 종목 없음)")
+
+    # 리스크 플래그 없는 종목 우선, 상위 5개 선정
+    clean_candidates = [c for c in all_candidates if c['ticker'] not in risk_flagged_tickers]
+    flagged_candidates = [c for c in all_candidates if c['ticker'] in risk_flagged_tickers]
+    picks = (clean_candidates + flagged_candidates)[:5]
+    print(f"\n  최종 picks: {len(picks)}개 (클린 {len(clean_candidates)}개 + 플래그 {len(flagged_candidates)}개에서 선정)")
 
     # ============================================================
     # 메시지 구성 — Guide → [1/3] 시장+Top30 → [2/3] AI → [3/3] 최종

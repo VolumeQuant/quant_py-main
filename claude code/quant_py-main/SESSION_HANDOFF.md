@@ -2,13 +2,36 @@
 
 ## 문서 개요
 
-**버전**: 17.1
-**최종 업데이트**: 2026-02-12
+**버전**: 17.2
+**최종 업데이트**: 2026-02-13
 **작성자**: Claude Opus 4.6
 
 ---
 
-## 핵심 변경사항 (v17.1 — 최종 추천 UI 개선 + 3일 랭킹 일관성 확보)
+## 핵심 변경사항 (v17.2 — AI 리스크 필터 전체 후보 대상 확대)
+
+### 2026-02-13 AI 리스크 필터 범위 확대 + 워크플로우 git stash 수정
+
+**배경**: AI 리스크 필터가 최종 picks 5개에만 적용되어, 상위 종목이 리스크 플래그로 빠질 때 대체 후보(6위~)가 리스크 미검증 상태였음. 또한 워크플로우에서 data_cache 등 untracked 파일로 인해 `git pull --rebase` 실패.
+
+| 항목 | Before | After |
+|------|--------|-------|
+| AI 리스크 대상 | picks 5개만 | **3일 교집합 전체 후보** (하드필터 통과 전원) |
+| picks 선정 순서 | 가중순위 상위 5개 → AI 리스크 | **AI 리스크 → 클린 종목 우선 상위 5개** |
+| 리스크 플래그 종목 | 경고만 표시 | **경고 + picks 후순위 배치** |
+| 워크플로우 commit | `git pull --rebase` 실패 가능 | **`git stash --include-untracked` 후 pull** |
+
+**흐름 변경**:
+```
+Before: 3일교집합 → 상위5개 잘라서 → AI 리스크(5개만) → 최종 추천
+After:  3일교집합 → 전체 하드필터 → AI 리스크(전원) → 클린 우선 상위5개 → 최종 추천
+```
+
+**수정 파일**:
+1. `send_telegram_auto.py` — 전체 후보 AI 리스크 검사, `compute_risk_flags`로 플래그 종목 후순위 배치
+2. `.github/workflows/telegram_daily.yml` — `git stash --include-untracked` + `git stash pop` 추가
+
+---
 
 ### 2026-02-12 구분선 간격 축소 + 비중 줄바꿈 + 랭킹 동일 환경 재계산
 
@@ -1082,8 +1105,10 @@ def extract_text(resp):
 #### 2단계 AI 분석 흐름
 ```
 send_telegram_auto.py
-  → [2/3] run_ai_analysis(stock_list)     # 리스크 필터 (Google Search)
-  → [3/3] run_final_picks_analysis(stock_list)  # 종목별 멘트 (검색 없음)
+  → all_candidates = 3일교집합 전체 (하드필터 통과)
+  → [2/3] run_ai_analysis(all_candidates)  # 리스크 필터 (전체 후보 대상, Google Search)
+  → compute_risk_flags → 클린 종목 우선 상위 5개 = picks
+  → [3/3] run_final_picks_analysis(picks)  # 종목별 멘트 (검색 없음)
   → format_buy_recommendations(picks, ai_picks_text=...)
 ```
 
@@ -1300,8 +1325,14 @@ quant_py-main/
 | **2026-02-11** | **Gemini 프롬프트: 순위 궤적 (순위 X→Y→Z) 반영** | **gemini_analysis.py** |
 | **2026-02-11** | **최종 추천: 급락 제외 종목 안내 (skipped 파라미터)** | **send_telegram_auto.py** |
 | **2026-02-11** | **test_ui_preview: 실제 2/11 데이터로 전면 갱신** | **test_ui_preview.py** |
+| **2026-02-12** | **최종 추천 구분선 간격 축소 + 비중 줄바꿈** | **gemini_analysis.py, send_telegram_auto.py** |
+| **2026-02-12** | **3일 랭킹 동일 환경 재계산 (OHLCV 캐시 통일)** | **state/ranking_*.json** |
+| **2026-02-12** | **save_ranking path 변수 누락 복구** | **ranking_manager.py** |
+| **2026-02-13** | **AI 리스크 필터 전체 후보 대상 확대 (5개→전원)** | **send_telegram_auto.py** |
+| **2026-02-13** | **picks 선정: 클린 종목 우선 + 플래그 종목 후순위** | **send_telegram_auto.py** |
+| **2026-02-13** | **워크플로우 git stash 추가 (pull --rebase 실패 방지)** | **.github/workflows/telegram_daily.yml** |
 
 ---
 
-**문서 버전**: 16.2
-**최종 업데이트**: 2026-02-11
+**문서 버전**: 17.2
+**최종 업데이트**: 2026-02-13
