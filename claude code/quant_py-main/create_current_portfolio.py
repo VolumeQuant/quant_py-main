@@ -1,5 +1,5 @@
 """
-퀀트 포트폴리오 생성 v5.0 — Slow In, Fast Out
+퀀트 포트폴리오 생성 v6.0 — Slow In, Fast Out
 
 파이프라인:
   유니버스(시총3000억+,거래대금차등) → PER/PBR 상한 필터
@@ -8,7 +8,8 @@
   → 일일 순위 JSON 저장 (3일 교집합용)
 
 팩터:
-  - Value 50% + Quality 30% + Momentum 20%
+  - Value 45% + Quality 25% + Growth 10% + Momentum 20%
+  - Growth: EPS개선도 (Forward PER) + 매출성장률 (YoY)
   - Momentum: (12M수익률 - 1M수익률) / 12M변동성 [리스크 조정]
 
 데이터 소스:
@@ -27,7 +28,7 @@ warnings.filterwarnings('ignore')
 
 # 내부 모듈
 from data_collector import DataCollector
-from fnguide_crawler import get_consensus_batch
+from fnguide_crawler import get_consensus_batch, extract_revenue_growth
 from error_handler import ErrorTracker, ErrorCategory
 from strategy_a_magic import MagicFormulaStrategy
 from strategy_b_multifactor import MultiFactorStrategy
@@ -304,7 +305,8 @@ def run_strategy_b_scoring(
     price_df: pd.DataFrame,
     ticker_names: Dict[str, str],
     error_tracker: ErrorTracker,
-    consensus_df: pd.DataFrame = None
+    consensus_df: pd.DataFrame = None,
+    revenue_growth_df: pd.DataFrame = None
 ) -> pd.DataFrame:
     """전략 B (멀티팩터) - 150개 전체 스코어링 (pykrx 실시간 PER/PBR/DIV + Forward PER)"""
     print(f"\n[전략 B] 멀티팩터 전체 스코어링 ({len(prefiltered_df)}개)")
@@ -328,6 +330,14 @@ def run_strategy_b_scoring(
                     multifactor_df.drop(columns=['ticker'], inplace=True)
                 fwd_count = multifactor_df['forward_per'].notna().sum()
                 print(f"  Forward PER 병합: {fwd_count}/{len(multifactor_df)}개 종목")
+
+        # 매출성장률(YoY) 병합
+        if revenue_growth_df is not None and not revenue_growth_df.empty:
+            multifactor_df = multifactor_df.merge(
+                revenue_growth_df, on='종목코드', how='left'
+            )
+            rev_count = multifactor_df['매출성장률'].notna().sum()
+            print(f"  매출성장률 병합: {rev_count}/{len(multifactor_df)}개 종목")
 
         # pykrx 실시간 PER/PBR/DIV 병합
         if not fundamental_df.empty:
@@ -374,7 +384,7 @@ def generate_report(
 
     report = f"""
 ================================================================================
-퀀트 포트폴리오 리포트 v5.0 — Slow In, Fast Out
+퀀트 포트폴리오 리포트 v6.0 — Slow In, Fast Out
 기준일: {BASE_DATE}
 생성일: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 ================================================================================
@@ -400,8 +410,9 @@ def generate_report(
 [최종 포트폴리오 - 멀티팩터 상위 {N_STOCKS}개]
 - 선정 종목 수: {len(selected)}개
 - 순위: 멀티팩터 100% (마법공식은 사전필터만)
-- Value 팩터 50%: PER(실시간) + PBR(실시간) + PCR + PSR + DIV(실시간)
-- Quality 팩터 30%: ROE + GPA + CFO + EPS개선도
+- Value 팩터 45%: PER(실시간) + PBR(실시간) + PCR + PSR + DIV(실시간)
+- Quality 팩터 25%: ROE + GPA + CFO
+- Growth 팩터 10%: EPS개선도 (Forward PER) + 매출성장률 (YoY)
 - Momentum 팩터 20%: (12M수익률 - 1M수익률) / 12M변동성 [리스크 조정]
 """
 
@@ -427,7 +438,7 @@ def main():
     base_dt = datetime.strptime(BASE_DATE, '%Y%m%d')
 
     print("=" * 80)
-    print("퀀트 포트폴리오 생성 v5.0 — Slow In, Fast Out")
+    print("퀀트 포트폴리오 생성 v6.0 — Slow In, Fast Out")
     print(f"기준일: {BASE_DATE}")
     print(f"파이프라인: 유니버스 → MA60 필터 → A 사전필터({PREFILTER_N}) → B 멀티팩터 → 순위 저장")
     print(f"모멘텀: (12M-1M) / 변동성 [리스크 조정]")
@@ -593,6 +604,7 @@ def main():
     prefiltered = run_strategy_a_prefilter(magic_df, universe_df, error_tracker)
 
     consensus_df = pd.DataFrame()
+    revenue_growth_df = pd.DataFrame()
     if not prefiltered.empty:
         print(f"\n[4.5단계] FnGuide 컨센서스 수집 (Forward PER) - {len(prefiltered)}개 종목")
         prefiltered_tickers = prefiltered['종목코드'].tolist()
@@ -601,12 +613,16 @@ def main():
             has_fwd = consensus_df['forward_per'].notna().sum()
             print(f"  Forward PER 확보: {has_fwd}/{len(consensus_df)}개 ({has_fwd/len(consensus_df)*100:.0f}%)")
 
+        # 매출성장률(YoY) 추출 (fs_data에서 연간 매출액 2개년 비교)
+        revenue_growth_df = extract_revenue_growth(fs_data, base_date=BASE_DATE)
+
     # =========================================================================
     # 5단계: 전략 실행 (B 스코어링 → A+B 통합순위)
     # =========================================================================
     scored_b = run_strategy_b_scoring(
         prefiltered, fundamental_df, price_df, ticker_names, error_tracker,
-        consensus_df=consensus_df
+        consensus_df=consensus_df,
+        revenue_growth_df=revenue_growth_df
     )
 
     # 멀티팩터 순위 100%로 전체 순위 산정 (A는 사전필터 역할만)
@@ -654,7 +670,7 @@ def main():
                 if val is not None and pd.notna(val):
                     entry[key] = round(float(val), 2)
             # 팩터별 점수 (Death List 사유 분석용)
-            for col, key in [('밸류_점수', 'value_s'), ('퀄리티_점수', 'quality_s'), ('모멘텀_점수', 'momentum_s')]:
+            for col, key in [('밸류_점수', 'value_s'), ('퀄리티_점수', 'quality_s'), ('성장_점수', 'growth_s'), ('모멘텀_점수', 'momentum_s')]:
                 val = row.get(col)
                 if val is not None and pd.notna(val):
                     entry[key] = round(float(val), 4)
@@ -664,7 +680,7 @@ def main():
             'total_universe': len(universe_tickers),
             'prefilter_passed': len(prefiltered) if not prefiltered.empty else 0,
             'scored_count': len(all_ranked),
-            'version': '5.0',
+            'version': '6.0',
         })
         print(f"  일일 순위 JSON: state/ranking_{BASE_DATE}.json ({len(rankings_list)}개 종목)")
 

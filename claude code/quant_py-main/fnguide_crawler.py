@@ -373,6 +373,57 @@ def extract_magic_formula_data(fs_dict, base_date=None, use_ttm=True):
     return result_df
 
 
+def extract_revenue_growth(fs_dict, base_date=None):
+    """
+    재무제표에서 매출성장률(YoY) 추출
+
+    연간 매출액 2개년 비교:
+      매출성장률 = (최근매출액 - 전기매출액) / |전기매출액| × 100
+
+    Args:
+        fs_dict: {ticker: 재무제표 데이터프레임}
+        base_date: 기준일 (str, YYYYMMDD)
+
+    Returns:
+        DataFrame: 종목코드, 매출성장률
+    """
+    if base_date:
+        from datetime import datetime, timedelta
+        base_dt = datetime.strptime(base_date, '%Y%m%d')
+        cutoff_date = base_dt - timedelta(days=90)  # 연간 공시 시차
+    else:
+        cutoff_date = None
+
+    results = []
+
+    for ticker, fs_df in fs_dict.items():
+        annual = fs_df[(fs_df['공시구분'] == 'y') & (fs_df['계정'] == '매출액')].copy()
+
+        if cutoff_date is not None:
+            annual = annual[annual['기준일'] <= cutoff_date]
+
+        if len(annual) < 2:
+            continue
+
+        annual = annual.sort_values('기준일', ascending=False)
+        latest_rev = annual.iloc[0]['값']
+        prior_rev = annual.iloc[1]['값']
+
+        if pd.isna(prior_rev) or prior_rev == 0:
+            continue
+
+        yoy = (latest_rev - prior_rev) / abs(prior_rev) * 100
+        results.append({'종목코드': ticker, '매출성장률': yoy})
+
+    if not results:
+        return pd.DataFrame(columns=['종목코드', '매출성장률'])
+
+    df = pd.DataFrame(results)
+    valid = df['매출성장률'].notna().sum()
+    print(f"매출성장률(YoY) 계산: {valid}/{len(fs_dict)}개 종목 (연간 매출액 2개년 비교)")
+    return df
+
+
 # ============================================================================
 # 컨센서스 데이터 크롤링 (Forward EPS/PER)
 # ============================================================================

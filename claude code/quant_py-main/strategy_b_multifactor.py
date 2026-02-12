@@ -262,13 +262,12 @@ class MultiFactorStrategy:
                 valid_mask = data[col].notna()
                 if valid_mask.sum() > 0:
                     data.loc[valid_mask, col] = self._winsorize(data.loc[valid_mask, col])
-        # ROE/GPA/CFO/EPS개선도 극단값 윈저라이징
-        for col in ['ROE', 'GPA', 'CFO', 'EPS개선도']:
+        # ROE/GPA/CFO/EPS개선도/매출성장률 극단값 윈저라이징
+        for col in ['ROE', 'GPA', 'CFO', 'EPS개선도', '매출성장률']:
             if col in data.columns:
                 valid_mask = data[col].notna()
                 if valid_mask.sum() > 0:
                     data.loc[valid_mask, col] = self._winsorize(data.loc[valid_mask, col])
-
         # 4. 각 팩터별 Z-Score 계산
         value_factors = []
         quality_factors = []
@@ -307,10 +306,17 @@ class MultiFactorStrategy:
             data['CFO_z'] = self.calculate_zscore_by_sector(data, 'CFO')
             quality_factors.append('CFO_z')
 
-        # EPS개선도 (높을수록 좋음 — 실적 개선 중)
+        # Growth 팩터 (높을수록 좋음)
+        growth_factors = []
         if 'EPS개선도' in data.columns and data['EPS개선도'].notna().sum() > 0:
             data['EPS개선_z'] = self.calculate_zscore_by_sector(data, 'EPS개선도')
-            quality_factors.append('EPS개선_z')
+            growth_factors.append('EPS개선_z')
+
+        if '매출성장률' in data.columns and data['매출성장률'].notna().sum() > 0:
+            data['매출성장_z'] = self.calculate_zscore_by_sector(data, '매출성장률')
+            growth_factors.append('매출성장_z')
+            rev_count = data['매출성장률'].notna().sum()
+            print(f"매출성장률 z-score: {rev_count}개 종목")
 
         # 모멘텀 팩터 (높을수록 좋음)
         if '모멘텀' in data.columns:
@@ -322,9 +328,10 @@ class MultiFactorStrategy:
         # 5. 종합 점수 계산 (각 팩터 카테고리의 평균)
         data['밸류_점수'] = data[value_factors].mean(axis=1) if value_factors else 0
         data['퀄리티_점수'] = data[quality_factors].mean(axis=1) if quality_factors else 0
+        data['성장_점수'] = data[growth_factors].mean(axis=1).fillna(0.0) if growth_factors else 0
         data['모멘텀_점수'] = data[momentum_factors].mean(axis=1) if momentum_factors else 0
 
-        # 최종 점수 (가중 평균: Value 50% + Quality 30% + Momentum 20%)
+        # 최종 점수 (가중 평균: V45 + Q25 + G10 + M20)
         # 모멘텀 데이터가 없는 종목은 제외
         if momentum_factors:
             before_count = len(data)
@@ -333,10 +340,11 @@ class MultiFactorStrategy:
             if excluded > 0:
                 print(f"모멘텀 데이터 없는 종목 제외: {excluded}개 → {len(data)}개 남음")
 
-            data['멀티팩터_점수'] = (data['밸류_점수'] * 0.5 +
-                                    data['퀄리티_점수'] * 0.3 +
-                                    data['모멘텀_점수'] * 0.2)
-            print("멀티팩터 가중치: Value 50% + Quality 30% + Momentum 20%")
+            data['멀티팩터_점수'] = (data['밸류_점수'] * 0.45 +
+                                    data['퀄리티_점수'] * 0.25 +
+                                    data['성장_점수'] * 0.10 +
+                                    data['모멘텀_점수'] * 0.20)
+            print("멀티팩터 가중치: V45 + Q25 + G10 + M20")
         else:
             # 모멘텀 팩터 자체가 없는 경우 (price_df가 None)
             data['멀티팩터_점수'] = (data['밸류_점수'] * 0.6 +

@@ -2,9 +2,63 @@
 
 ## 문서 개요
 
-**버전**: 16.2
-**최종 업데이트**: 2026-02-11
+**버전**: 17.0
+**최종 업데이트**: 2026-02-12
 **작성자**: Claude Opus 4.6
+
+---
+
+## 핵심 변경사항 (v17.0 — Growth 팩터 독립 + 매출성장률 추가)
+
+### 2026-02-12 멀티팩터 v6.0: V45 + Q25 + G10 + M20
+
+**배경**: 기존 시스템은 Value+Quality+Momentum만으로 "뭘 살까"는 잘 잡지만, 성장성을 독립 팩터로 평가하지 못함. EPS개선도는 Quality에 묻혀있고, 매출 성장은 아예 반영 안 됨. "좋은 사과를 싸게 사자" + "성장하는 기업 선호" 아젠다를 동시에 충족하기 위해 Growth 팩터를 독립시킴.
+
+| 항목 | Before (v5.0) | After (v6.0) |
+|------|---------------|--------------|
+| Value | **50%** | **45%** |
+| Quality | **30%** (ROE+GPA+CFO+EPS개선도) | **25%** (ROE+GPA+CFO) |
+| Growth | 없음 | **10%** (EPS개선도 + 매출성장률) |
+| Momentum | **20%** | **20%** (변경 없음) |
+| EPS개선도 | Quality 소속 | **Growth 소속** (팩터 분리) |
+| 매출성장률 | 없음 | **YoY 연간 매출액 2개년 비교** |
+
+**매출성장률(YoY) 계산** (`fnguide_crawler.py: extract_revenue_growth()`):
+```python
+# FnGuide 연간 재무제표에서 매출액 2개년 추출
+# 90일 공시 시차 적용 (base_date - 90일 이전 공시만 사용)
+매출성장률 = (최근매출액 - 전기매출액) / |전기매출액| × 100
+# 커버리지: ~97% (557/574개 종목)
+```
+
+**Growth 팩터 스코어링** (`strategy_b_multifactor.py`):
+```python
+# EPS개선도 + 매출성장률 각각 섹터별 z-score → 평균
+growth_factors = ['EPS개선_z', '매출성장_z']
+data['성장_점수'] = data[growth_factors].mean(axis=1).fillna(0.0)
+# NaN 종목 → 성장_점수 0.0 (중립)
+```
+
+**가중치 분석** (V45/Q25/G10/M20):
+- Value 45% 유지: "싸게 사자" 아젠다 핵심. 50%→45%로 약간만 양보
+- Quality 25%: EPS개선도가 Growth로 이관되면서 3개 서브팩터만 남아 비중 축소 합리적
+- Growth 10%: 보수적 배분. 성장주 ~40% (12/30) 포함되면서도 가치주 밀어내지 않는 균형점
+- Momentum 20%: "빠르게 나온다" Fast Out 핵심. 변경 없음
+
+**OHLCV 캐시 수동 갱신**:
+- 기존 캐시: 20241113~20260206 (301 거래일) — 20260207-08 설날 휴장
+- 20260209/10/11 거래일 데이터 pykrx로 수동 fetch → 304 거래일로 확장
+- 3일치 per-date OHLCV 슬라이싱으로 각 날짜별 정확한 모멘텀 계산
+- 결과: 29/30 교집합 (🆕 유바이오로직스, 이탈 씨에스윈드)
+
+**수정 파일**:
+1. `strategy_b_multifactor.py` — Growth 팩터 분리 (EPS개선도+매출성장률), 가중치 V45+Q25+G10+M20, calculate_timing() 제거
+2. `fnguide_crawler.py` — `extract_revenue_growth()` 함수 추가
+3. `create_current_portfolio.py` — v6.0, revenue_growth_df 파라미터, 리포트 텍스트 업데이트
+4. `send_telegram_auto.py` — 가이드 문구 미세 조정
+5. `state/ranking_2026020{9,10,11}.json` — v6.0 재계산 (per-date OHLCV)
+6. `README.md` — v6.0 전략 반영
+7. `SESSION_HANDOFF.md` — v17.0 변경사항 추가
 
 ---
 
