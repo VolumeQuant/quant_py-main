@@ -25,7 +25,7 @@ def get_ranking_path(date_str: str) -> Path:
     return STATE_DIR / f'ranking_{date_str}.json'
 
 
-def save_ranking(date_str: str, rankings: list, metadata: dict = None, overwrite: bool = False):
+def save_ranking(date_str: str, rankings: list, metadata: dict = None):
     """
     일일 순위 저장
 
@@ -33,13 +33,7 @@ def save_ranking(date_str: str, rankings: list, metadata: dict = None, overwrite
         date_str: 기준일 (YYYYMMDD)
         rankings: [{"rank": 1, "ticker": "005930", "name": "삼성전자", ...}, ...]
         metadata: 추가 메타데이터 (유니버스 수, MA60 통과 수 등)
-        overwrite: True면 기존 파일 덮어쓰기, False면 이미 존재 시 스킵
     """
-    path = get_ranking_path(date_str)
-    if path.exists() and not overwrite:
-        print(f"[순위저장] {path.name} 이미 존재 — 스킵 (덮어쓰려면 overwrite=True)")
-        return
-
     data = {
         "date": date_str,
         "generated_at": datetime.now(KST).isoformat(),
