@@ -56,6 +56,27 @@ from pykrx import stock as pykrx_stock
 from zoneinfo import ZoneInfo
 KST = ZoneInfo('Asia/Seoul')
 
+# pykrx 업종지수명 → 대분류 매핑
+KRX_SECTOR_MAP = {
+    '전기전자': '반도체/전자',
+    '운수장비': '자동차',
+    '바이오/제약': '바이오/제약', '의료정밀': '바이오/제약',
+    '화학': '화학/소재',
+    '전기가스': '에너지/유틸', '기계': '에너지/유틸',
+    '유통': '소비재', '음식료': '소비재', '섬유/의류': '소비재',
+    '건설': '건설',
+    '서비스': '서비스/IT', '통신': '서비스/IT', 'IT서비스': '서비스/IT',
+    '금속': '소재/금속', '비금속': '소재/금속', '종이/목재': '소재/금속',
+    '운수창고': '물류',
+    '금융': '금융', '증권': '금융', '보험': '금융',
+    '엔터/문화': '엔터/문화', '부동산': '부동산',
+    '제조': '제조', '기타제조': '제조',
+}
+
+def get_broad_sector(krx_sector: str) -> str:
+    """pykrx 업종명 → 통합 대분류"""
+    return KRX_SECTOR_MAP.get(krx_sector, krx_sector or '기타')
+
 def get_latest_trading_date() -> str:
     """최근 거래일 찾기 (한국 시간 기준)"""
     today = datetime.now(KST)
@@ -449,6 +470,18 @@ def main():
 
     collector = DataCollector(start_date='20150101', end_date='20261231')
 
+    # KRX 업종분류 로드 (섹터 통계용)
+    sector_df = collector.get_krx_sector(BASE_DATE)
+    sector_map = {}
+    if not sector_df.empty:
+        code_col = '종목코드' if '종목코드' in sector_df.columns else sector_df.columns[0]
+        sect_col = '업종명' if '업종명' in sector_df.columns else None
+        if sect_col:
+            for _, row in sector_df.iterrows():
+                ticker = str(row[code_col]).zfill(6)
+                sector_map[ticker] = str(row[sect_col])
+            print(f"  KRX 업종분류: {len(sector_map)}개 종목 매핑")
+
     # =========================================================================
     # 1단계: 시가총액 데이터 수집
     # =========================================================================
@@ -662,7 +695,7 @@ def main():
                 'ticker': str(row.get('종목코드', '')).zfill(6),
                 'name': str(row.get('종목명', '')),
                 'score': round(float(row.get('멀티팩터_점수', 0)), 4) if pd.notna(row.get('멀티팩터_점수')) else 0,
-                'sector': str(row.get('종목명', '')),  # SECTOR_DB는 telegram에서 매핑
+                'sector': get_broad_sector(sector_map.get(str(row.get('종목코드', '')).zfill(6), '')),
             }
             # 선택적 필드
             for col, key in [('PER', 'per'), ('PBR', 'pbr'), ('ROE', 'roe'), ('forward_per', 'fwd_per')]:

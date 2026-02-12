@@ -223,39 +223,60 @@ class DataCollector:
             return pd.DataFrame()
 
     def get_krx_sector(self, date):
-        """KRX 섹터 정보 조회"""
+        """KRX 업종분류 조회 — pykrx 업종지수 구성종목 방식"""
         cache_file = DATA_DIR / f'krx_sector_{date}.parquet'
 
         if cache_file.exists():
             print(f"캐시에서 섹터 정보 로드: {cache_file}")
             return pd.read_parquet(cache_file)
 
-        print(f"{date} 섹터 정보 수집 중...")
+        print(f"{date} KRX 업종분류 수집 중 (pykrx 업종지수)...")
 
-        # pykrx로 업종 정보 가져오기
-        try:
-            df = stock.get_market_ticker_and_name(date)
-            sectors = []
+        # KOSPI + KOSDAQ 업종지수 → 구성종목 매핑
+        sector_indices = {
+            # KOSPI
+            '1005': '음식료', '1006': '섬유/의류', '1007': '종이/목재',
+            '1008': '화학', '1009': '바이오/제약', '1010': '비금속',
+            '1011': '금속', '1012': '기계', '1013': '전기전자',
+            '1014': '의료정밀', '1015': '운수장비', '1016': '유통',
+            '1017': '전기가스', '1018': '건설', '1019': '운수창고',
+            '1020': '통신', '1021': '금융', '1024': '증권', '1025': '보험',
+            '1026': '서비스', '1045': '부동산', '1046': 'IT서비스', '1047': '엔터/문화',
+            # KOSDAQ
+            '2012': '서비스', '2024': '제조', '2026': '건설', '2027': '유통',
+            '2029': '운수창고', '2031': '금융', '2037': '엔터/문화',
+            '2056': '음식료', '2058': '섬유/의류', '2065': '화학',
+            '2067': '비금속', '2068': '금속', '2070': '기계',
+            '2072': '전기전자', '2075': '운수장비', '2077': '기타제조',
+            '2114': '통신', '2118': 'IT서비스',
+        }
 
-            for ticker in df.index:
-                try:
-                    # 개별 종목의 업종 정보
-                    # Note: pykrx에서 직접 업종을 가져오는 방법이 제한적일 수 있음
-                    sectors.append({
-                        '종목코드': ticker,
-                        '종목명': df.loc[ticker]
-                    })
-                    time.sleep(0.03)
-                except Exception:
-                    continue
+        rows = []
+        for idx_code, sector_name in sector_indices.items():
+            try:
+                tickers = stock.get_index_portfolio_deposit_file(idx_code, date)
+                for t in tickers:
+                    rows.append({'종목코드': t, '업종명': sector_name})
+                time.sleep(0.2)
+            except Exception:
+                continue
 
-            sector_df = pd.DataFrame(sectors)
+        if rows:
+            sector_df = pd.DataFrame(rows)
+            # 중복 제거 (KOSPI 우선)
+            sector_df = sector_df.drop_duplicates(subset='종목코드', keep='first')
             sector_df.to_parquet(cache_file)
+            print(f"  KRX 업종분류: {len(sector_df)}개 종목")
             return sector_df
 
-        except Exception as e:
-            print(f"섹터 정보 수집 실패: {e}")
-            return pd.DataFrame()
+        # fallback: 최근 캐시 파일
+        recent = sorted(DATA_DIR.glob('krx_sector_*.parquet'))
+        if recent:
+            print(f"  fallback: {recent[-1].name}")
+            return pd.read_parquet(recent[-1])
+
+        print("  KRX 섹터 데이터 없음")
+        return pd.DataFrame()
 
     def get_financial_statement_fdr(self, ticker):
         """FinanceDataReader로 재무제표 조회 (선택적)

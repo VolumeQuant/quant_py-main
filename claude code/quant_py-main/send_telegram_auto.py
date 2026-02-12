@@ -38,69 +38,16 @@ CACHE_DIR = Path('data_cache')
 OUTPUT_DIR = Path('output')
 WEIGHT_PER_STOCK = 20  # 종목당 비중 % (5종목 × 20% = 100%)
 
-# 섹터 데이터베이스
-SECTOR_DB = {
-    '000270': '자동차',
-    '000660': 'AI반도체/메모리',
-    '001060': '바이오/제약',
-    '002380': '건자재/도료',
-    '002900': '농기계/중장비',
-    '005180': '식품',
-    '005850': '자동차부품/조명',
-    '006910': '원전/발전설비',
-    '008770': '면세점/호텔',
-    '009540': '조선/해양',
-    '015760': '전력/유틸리티',
-    '017800': '승강기/기계',
-    '018290': 'K-뷰티',
-    '019180': '자동차부품/와이어링',
-    '030000': '광고/마케팅',
-    '030200': '통신',
-    '033100': '변압기/전력',
-    '033500': 'LNG단열재',
-    '033530': '건설/플랜트',
-    '035900': '엔터/K-POP',
-    '036620': '아웃도어패션',
-    '037460': '전자부품/커넥터',
-    '039130': '여행',
-    '041510': '엔터/K-POP',
-    '043260': '전자부품',
-    '052400': '디지털화폐/핀테크',
-    '067160': '스트리밍',
-    '067290': '바이오/제약',
-    '078930': '에너지/정유',
-    '083450': '반도체장비',
-    '084670': '자동차부품',
-    '086280': '물류/운송',
-    '088130': '디스플레이장비',
-    '095610': '2차전지장비',
-    '098120': '반도체/패키징',
-    '100840': '방산/에너지',
-    '102710': '반도체소재',
-    '111770': '섬유/의류',
-    '112610': '풍력/에너지',
-    '119850': '에너지/발전설비',
-    '123330': 'K-뷰티/화장품',
-    '123410': '자동차부품',
-    '124500': 'IT/금거래',
-    '183300': '반도체소재',
-    '190510': '로봇/센서',
-    '192080': '게임',
-    '200670': '의료기기/필러',
-    '204620': '택스리펀드/면세',
-    '206650': '바이오/백신',
-    '223250': 'IT서비스',
-    '250060': 'AI/핵융합',
-    '259630': '2차전지장비',
-    '259960': '게임',
-    '278470': '뷰티디바이스',
-    '282330': '편의점/유통',
-    '336570': '의료기기',
-    '383220': '패션/브랜드',
-    '402340': '투자지주/AI반도체',
-    '419530': '애니/캐릭터',
-    '462870': '게임',
-}
+def _get_sector_from_rankings(ticker: str, rankings_data: dict) -> str:
+    """ranking JSON에서 섹터 조회"""
+    for item in rankings_data.get('rankings', []):
+        if item.get('ticker') == ticker:
+            s = item.get('sector', '기타')
+            # 이전 JSON 호환 (sector가 종목명이던 시절)
+            if s == item.get('name', ''):
+                return '기타'
+            return s
+    return '기타'
 
 
 # ============================================================
@@ -258,6 +205,44 @@ def format_overview(has_ai: bool = False):
         lines.append('[3/3] 🎯 최종 추천')
     else:
         lines.append('📊 시장 + Top 30')
+    return '\n'.join(lines)
+
+
+def format_sector_distribution(pipeline: list, rankings_t0: dict) -> str:
+    """Top 30 섹터 분포 통계"""
+    if not pipeline:
+        return ""
+
+    sector_map = {}
+    for item in rankings_t0.get('rankings', []):
+        s = item.get('sector', '기타')
+        if s == item.get('name', ''):
+            s = '기타'
+        sector_map[item['ticker']] = s
+
+    counts = {}
+    for s in pipeline:
+        sector = sector_map.get(s['ticker'], '기타')
+        counts[sector] = counts.get(sector, 0) + 1
+
+    total = len(pipeline)
+    sorted_sectors = sorted(counts.items(), key=lambda x: -x[1])
+
+    parts = []
+    for sector, count in sorted_sectors:
+        pct = count / total * 100
+        parts.append(f"{sector} {count}개({pct:.0f}%)")
+
+    lines = [
+        "─────────────────",
+        "<b>📊 섹터 분포</b> (Top 30)",
+        ' · '.join(parts),
+    ]
+
+    top_sector, top_count = sorted_sectors[0]
+    if top_count / total >= 0.4:
+        lines.append(f"⚠️ {top_sector} 집중 {top_count / total * 100:.0f}% — 분산 투자 참고")
+
     return '\n'.join(lines)
 
 
@@ -424,7 +409,7 @@ def format_buy_recommendations(picks: list, base_date_str: str, universe_count: 
         for i, pick in enumerate(picks):
             name = pick['name']
             ticker = pick['ticker']
-            sector = SECTOR_DB.get(ticker, '기타')
+            sector = pick.get('sector', '기타')
             rationale = _get_buy_rationale(pick)
             lines.append(f"<b>{i+1}. {name}({ticker}) · {WEIGHT_PER_STOCK}%</b>")
             lines.append(f"{sector} · {rationale}")
@@ -612,7 +597,7 @@ def main():
                     'pbr': pick.get('pbr'),
                     'roe': pick.get('roe'),
                     'fwd_per': pick.get('fwd_per'),
-                    'sector': SECTOR_DB.get(pick['ticker'], '기타'),
+                    'sector': pick.get('sector', '기타'),
                     'rsi': tech.get('rsi', 50),
                     'w52_pct': tech.get('w52_pct', 0),
                     'daily_chg': tech.get('daily_chg', 0),
@@ -684,6 +669,11 @@ def main():
     if top30_section:
         msg_main += top30_section
 
+    # 섹터 분포 통계
+    sector_dist = format_sector_distribution(pipeline, rankings_t0)
+    if sector_dist:
+        msg_main += '\n\n' + sector_dist
+
     # [2/3] AI 리스크 필터 (AI 있을 때만)
     msg_ai = None
     if ai_msg:
@@ -702,7 +692,7 @@ def main():
                 final_stock_list.append({
                     'ticker': pick['ticker'],
                     'name': pick['name'],
-                    'sector': SECTOR_DB.get(pick['ticker'], '기타'),
+                    'sector': pick.get('sector', '기타'),
                     'rank_t0': pick.get('rank_t0'),
                     'rank_t1': pick.get('rank_t1'),
                     'rank_t2': pick.get('rank_t2'),
