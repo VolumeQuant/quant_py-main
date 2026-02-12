@@ -42,6 +42,7 @@ def save_ranking(date_str: str, rankings: list, metadata: dict = None):
     if metadata:
         data["metadata"] = metadata
 
+    path = get_ranking_path(date_str)
     with open(path, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
