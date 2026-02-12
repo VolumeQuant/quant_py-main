@@ -418,12 +418,9 @@ def format_buy_recommendations(picks: list, base_date_str: str, universe_count: 
 
     # 종목별 설명
     if ai_picks_text:
-        lines.append("─────────────────")
         lines.append(ai_picks_text)
-        lines.append("─────────────────")
     else:
         # Fallback: AI 실패 시
-        lines.append("─────────────────")
         for i, pick in enumerate(picks):
             name = pick['name']
             ticker = pick['ticker']
@@ -433,7 +430,6 @@ def format_buy_recommendations(picks: list, base_date_str: str, universe_count: 
             lines.append(f"{sector} · {rationale}")
             if i < n - 1:
                 lines.append("──────────────────")
-        lines.append("─────────────────")
 
     lines.append("")
     lines.append("💡 <b>활용법</b>")
