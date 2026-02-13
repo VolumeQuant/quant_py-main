@@ -703,13 +703,12 @@ def main():
                     entry[key] = round(float(val), 4)
             rankings_list.append(entry)
 
-        force_save = os.environ.get('FORCE_RECOLLECT', '').lower() in ('true', '1', 'yes')
         save_ranking(BASE_DATE, rankings_list, metadata={
             'total_universe': len(universe_tickers),
             'prefilter_passed': len(prefiltered) if not prefiltered.empty else 0,
             'scored_count': len(all_ranked),
             'version': '6.0',
-        }, force=force_save)
+        })
         print(f"  일일 순위 JSON: state/ranking_{BASE_DATE}.json ({len(rankings_list)}개 종목)")
 
     # 리포트 생성
