@@ -14,9 +14,30 @@ Verdad 4분면 모델:
 
 import urllib.request
 import io
+import time
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
+
+
+def _fetch_fred_csv(series_id: str, start_date: str, end_date: str, retries: int = 3) -> str:
+    """FRED CSV 다운로드 (재시도 로직 포함)"""
+    url = (
+        f"https://fred.stlouisfed.org/graph/fredgraph.csv"
+        f"?id={series_id}&cosd={start_date}&coed={end_date}"
+    )
+    for attempt in range(retries):
+        try:
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=20) as response:
+                return response.read().decode('utf-8')
+        except Exception as e:
+            if attempt < retries - 1:
+                wait = 3 * (attempt + 1)
+                print(f"  [FRED] {series_id} 시도 {attempt+1}/{retries} 실패: {e} → {wait}초 후 재시도")
+                time.sleep(wait)
+            else:
+                raise
 
 
 def fetch_hy_quadrant():
@@ -28,13 +49,7 @@ def fetch_hy_quadrant():
     try:
         end_date = datetime.now().strftime('%Y-%m-%d')
         start_date = (datetime.now() - timedelta(days=365 * 11)).strftime('%Y-%m-%d')
-        url = (
-            f"https://fred.stlouisfed.org/graph/fredgraph.csv"
-            f"?id=BAMLH0A0HYM2&cosd={start_date}&coed={end_date}"
-        )
-        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=15) as response:
-            csv_data = response.read().decode('utf-8')
+        csv_data = _fetch_fred_csv('BAMLH0A0HYM2', start_date, end_date)
 
         df = pd.read_csv(io.StringIO(csv_data), parse_dates=['observation_date'])
         df.columns = ['date', 'hy_spread']
@@ -65,13 +80,13 @@ def fetch_hy_quadrant():
         is_rising = hy_spread >= hy_3m_ago
 
         if is_wide and not is_rising:
-            quadrant, label, icon = 'Q1', '봄', '🌸'
+            quadrant, label, icon = 'Q1', '봄(회복국면)', '🌸'
         elif not is_wide and not is_rising:
-            quadrant, label, icon = 'Q2', '여름', '☀️'
+            quadrant, label, icon = 'Q2', '여름(성장국면)', '☀️'
         elif not is_wide and is_rising:
-            quadrant, label, icon = 'Q3', '가을', '🍂'
+            quadrant, label, icon = 'Q3', '가을(과열국면)', '🍂'
         else:
-            quadrant, label, icon = 'Q4', '겨울', '❄️'
+            quadrant, label, icon = 'Q4', '겨울(침체국면)', '❄️'
 
         # 해빙 신호 (= 적극 매수 기회)
         signals = []
@@ -158,13 +173,7 @@ def fetch_vix_data():
     try:
         end_date = datetime.now().strftime('%Y-%m-%d')
         start_date = (datetime.now() - timedelta(days=400)).strftime('%Y-%m-%d')
-        url = (
-            f"https://fred.stlouisfed.org/graph/fredgraph.csv"
-            f"?id=VIXCLS&cosd={start_date}&coed={end_date}"
-        )
-        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=15) as response:
-            csv_data = response.read().decode('utf-8')
+        csv_data = _fetch_fred_csv('VIXCLS', start_date, end_date)
 
         df = pd.read_csv(io.StringIO(csv_data), parse_dates=['observation_date'])
         df.columns = ['date', 'vix']
@@ -494,15 +503,17 @@ def format_credit_section(credit: dict, n_picks: int = 5) -> str:
 
     lines = ['─────────────────']
 
+    # 타이틀 + 사계절
     if hy:
-        # 타이틀 + 사계절
         lines.append(f"🌡️ <b>시장 위험 지표</b> — {hy['quadrant_icon']} {hy['quadrant_label']}")
+    else:
+        lines.append('🌡️ <b>시장 위험 지표</b>')
 
-        # ── 신용시장 카테고리 ──
-        lines.append('─────────────────')
-        lines.append('🏦 <b>신용시장</b>')
+    # ── 신용시장 카테고리 ──
+    lines.append('─────────────────')
+    lines.append('🏦 <b>신용시장</b>')
 
-        # HY 수치 + 맥락 해석
+    if hy:
         hy_val = hy['hy_spread']
         med_val = hy['median_10y']
         q = hy['quadrant']
@@ -516,48 +527,47 @@ def format_credit_section(credit: dict, n_picks: int = 5) -> str:
             interp = f"평균({med_val:.2f}%)보다 높고 계속 올라가고 있어요."
         lines.append(f"HY Spread(부도위험) {hy_val:.2f}%")
         lines.append(interp)
+    else:
+        lines.append('HY Spread — 수집 실패')
 
-        if kr:
-            kr_interp = {'정상': '정상 범위에요.', '경계': '경계 수준이에요.', '위기': '위험 수준이에요.'}
-            lines.append(f"한국 BBB-(회사채) {kr['spread']:.1f}%p")
-            lines.append(kr_interp.get(kr['regime_label'], kr['regime_label']))
+    if kr:
+        kr_interp = {'정상': '정상 범위에요.', '경계': '경계 수준이에요.', '위기': '위험 수준이에요.'}
+        lines.append(f"한국 BBB-(회사채) {kr['spread']:.1f}%p")
+        lines.append(kr_interp.get(kr['regime_label'], kr['regime_label']))
 
-        # ── 변동성 카테고리 ──
-        if vix:
-            lines.append('─────────────────')
-            lines.append('⚡ <b>변동성</b>')
-            v = vix['vix_current']
-            slope_arrow = '↑' if vix['vix_slope_dir'] == 'rising' else ('↓' if vix['vix_slope_dir'] == 'falling' else '')
-            adj = vix['cash_adjustment']
-            if vix['regime'] == 'normal':
-                rel = '이하' if v <= vix['vix_ma_20'] else '이상'
-                lines.append(f"VIX {v:.1f}")
-                lines.append(f"평균({vix['vix_ma_20']:.1f}) {rel}, 안정적이에요.")
-            else:
-                lines.append(f"VIX {v:.1f} {slope_arrow}")
-                if adj > 0:
-                    lines.append(f"{vix['regime_label']} 구간이에요. 현금 +{adj}%")
-                elif adj < 0:
-                    lines.append(f"{vix['regime_label']} 구간이에요. 현금 {adj}%")
-                else:
-                    lines.append(f"{vix['regime_label']} 구간이에요.")
-
-        # ── 결론 ──
+    # ── 변동성 카테고리 ──
+    if vix:
         lines.append('─────────────────')
-        if final_cash == 0:
-            lines.append('💰 투자 100%')
+        lines.append('⚡ <b>변동성</b>')
+        v = vix['vix_current']
+        slope_arrow = '↑' if vix['vix_slope_dir'] == 'rising' else ('↓' if vix['vix_slope_dir'] == 'falling' else '')
+        adj = vix['cash_adjustment']
+        if vix['regime'] == 'normal':
+            rel = '이하' if v <= vix['vix_ma_20'] else '이상'
+            lines.append(f"VIX {v:.1f}")
+            lines.append(f"평균({vix['vix_ma_20']:.1f}) {rel}, 안정적이에요.")
         else:
-            lines.append(f"💰 투자 {100 - final_cash}% + 현금 {final_cash}%")
+            lines.append(f"VIX {v:.1f} {slope_arrow}")
+            if adj > 0:
+                lines.append(f"{vix['regime_label']} 구간이에요. 현금 +{adj}%")
+            elif adj < 0:
+                lines.append(f"{vix['regime_label']} 구간이에요. 현금 {adj}%")
+            else:
+                lines.append(f"{vix['regime_label']} 구간이에요.")
 
-        # 행동 가이드 (자연어)
-        lines.append(f"→ {final_action}")
+    # ── 결론 ──
+    lines.append('─────────────────')
+    if final_cash == 0:
+        lines.append('💰 투자 100%')
+    else:
+        lines.append(f"💰 투자 {100 - final_cash}% + 현금 {final_cash}%")
 
-        # 해빙 신호
+    lines.append(f"→ {final_action}")
+
+    # 해빙 신호
+    if hy:
         for sig in hy.get('signals', []):
             lines.append(sig)
-    else:
-        lines.append('🌡️ <b>시장 위험 지표</b> — 데이터 수집 실패')
-        lines.append(f'💰 기본 현금 {final_cash}%')
 
     return '\n'.join(lines)
 
