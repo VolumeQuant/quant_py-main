@@ -209,7 +209,7 @@ def format_overview(has_ai: bool = False):
 
 
 def format_sector_distribution(pipeline: list, rankings_t0: dict) -> str:
-    """Top 30 섹터 분포 통계"""
+    """Top 30 주도 업종 한 줄 요약 (미국 프로젝트 스타일)"""
     if not pipeline:
         return ""
 
@@ -225,25 +225,11 @@ def format_sector_distribution(pipeline: list, rankings_t0: dict) -> str:
         sector = sector_map.get(s['ticker'], '기타')
         counts[sector] = counts.get(sector, 0) + 1
 
-    total = len(pipeline)
     sorted_sectors = sorted(counts.items(), key=lambda x: -x[1])
 
-    parts = []
-    for sector, count in sorted_sectors:
-        pct = count / total * 100
-        parts.append(f"{sector} {count}개({pct:.0f}%)")
+    parts = [f"{sector} {count}" for sector, count in sorted_sectors]
 
-    lines = [
-        "─────────────────",
-        "<b>📊 섹터 분포</b> (Top 30)",
-        ' · '.join(parts),
-    ]
-
-    top_sector, top_count = sorted_sectors[0]
-    if top_count / total >= 0.4:
-        lines.append(f"⚠️ {top_sector} 집중 {top_count / total * 100:.0f}% — 분산 투자 참고")
-
-    return '\n'.join(lines)
+    return f"📊 주도 업종: {' · '.join(parts)}"
 
 
 def format_top30(pipeline: list, exited: list, cold_start: bool = False, has_next: bool = False, rankings_t0: dict = None, rankings_t1: dict = None, rankings_t2: dict = None) -> str:
@@ -655,6 +641,13 @@ def main():
     header_lines.append('✅ 3일 연속 Top 30 → 검증 완료')
     header_lines.append('⏳ 2일 연속 → 내일 검증 가능')
     header_lines.append('🆕 오늘 첫 진입 → 지켜보세요')
+
+    # 주도 업종 한 줄 (읽는 법 바로 아래)
+    sector_line = format_sector_distribution(pipeline, rankings_t0)
+    if sector_line:
+        header_lines.append('')
+        header_lines.append(sector_line)
+
     header_lines.append('')
     header = '\n'.join(header_lines)
 
@@ -669,10 +662,7 @@ def main():
     if top30_section:
         msg_main += top30_section
 
-    # 섹터 분포 통계
-    sector_dist = format_sector_distribution(pipeline, rankings_t0)
-    if sector_dist:
-        msg_main += '\n\n' + sector_dist
+    # 섹터 분포는 header에서 상단 표시 (format_sector_distribution)
 
     # [2/3] AI 리스크 필터 (AI 있을 때만)
     msg_ai = None
