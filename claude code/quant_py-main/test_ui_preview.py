@@ -73,11 +73,10 @@ def _get_buy_rationale(pick):
     return ' · '.join(reasons[:2])
 
 
-def format_buy_recommendations(picks, base_date_str, universe_count=0, ai_picks_text=None, skipped=None):
+def format_buy_recommendations(picks, base_date_str, universe_count=0, ai_picks_text=None, skipped=None, cash_pct=20):
     if not picks:
         return ""
     n = len(picks)
-    cash_weight = 100 - n * WEIGHT_PER_STOCK
 
     if universe_count > 0:
         funnel = f"{universe_count:,}종목 → Top 30 → ✅ 검증 → 최종 {n}종목"
@@ -101,8 +100,8 @@ def format_buy_recommendations(picks, base_date_str, universe_count=0, ai_picks_
     weight_parts = [f"{p['name']} {WEIGHT_PER_STOCK}%" for p in picks]
     lines.append("📊 <b>비중 한눈에 보기</b>")
     lines.append(' · '.join(weight_parts))
-    if cash_weight > 0:
-        lines.append(f"현금 {cash_weight}%")
+    if cash_pct > 0:
+        lines.append(f"🛡️ 시장 위험 권고: 현금 {cash_pct}% 보유 추천")
     lines.append("")
 
     if ai_picks_text:
