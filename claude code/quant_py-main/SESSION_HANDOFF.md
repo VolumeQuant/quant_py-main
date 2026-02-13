@@ -1583,8 +1583,9 @@ quant_py-main/
 | **2026-02-13** | **picks 선정: 클린 종목 우선 + 플래그 종목 후순위** | **send_telegram_auto.py** |
 | **2026-02-13** | **워크플로우 git stash 추가 (pull --rebase 실패 방지)** | **.github/workflows/telegram_daily.yml** |
 | **2026-02-13** | **주도 업종 라벨/데이터 줄바꿈 분리** | **send_telegram_auto.py** |
+| **2026-02-13** | **순위 데이터 보호: 같은 날짜 재실행 시 덮어쓰기 방지** | **ranking_manager.py, create_current_portfolio.py** |
 
 ---
 
-**문서 버전**: 17.3
+**문서 버전**: 17.4
 **최종 업데이트**: 2026-02-13

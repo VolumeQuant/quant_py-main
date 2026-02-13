@@ -25,7 +25,7 @@ def get_ranking_path(date_str: str) -> Path:
     return STATE_DIR / f'ranking_{date_str}.json'
 
 
-def save_ranking(date_str: str, rankings: list, metadata: dict = None):
+def save_ranking(date_str: str, rankings: list, metadata: dict = None, force: bool = False):
     """
     일일 순위 저장
 
@@ -33,7 +33,16 @@ def save_ranking(date_str: str, rankings: list, metadata: dict = None):
         date_str: 기준일 (YYYYMMDD)
         rankings: [{"rank": 1, "ticker": "005930", "name": "삼성전자", ...}, ...]
         metadata: 추가 메타데이터 (유니버스 수, MA60 통과 수 등)
+        force: True면 기존 파일 존재해도 덮어쓰기
     """
+    path = get_ranking_path(date_str)
+
+    # 데이터 보호: 이미 순위 파일이 있으면 덮어쓰기 방지
+    if path.exists() and not force:
+        print(f"[순위보존] {path.name} 이미 존재 — 덮어쓰기 스킵")
+        print(f"  강제 저장하려면: FORCE_RECOLLECT=true 환경변수 설정")
+        return False
+
     data = {
         "date": date_str,
         "generated_at": datetime.now(KST).isoformat(),
@@ -42,11 +51,11 @@ def save_ranking(date_str: str, rankings: list, metadata: dict = None):
     if metadata:
         data["metadata"] = metadata
 
-    path = get_ranking_path(date_str)
     with open(path, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
     print(f"[순위저장] {path.name} — {len(rankings)}개 종목")
+    return True
 
 
 def load_ranking(date_str: str) -> Optional[dict]:
