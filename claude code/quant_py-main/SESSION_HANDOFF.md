@@ -2,9 +2,53 @@
 
 ## 문서 개요
 
-**버전**: 17.7
+**버전**: 17.8
 **최종 업데이트**: 2026-02-13
 **작성자**: Claude Opus 4.6
+
+---
+
+## 핵심 변경사항 (v17.8 — VIX Layer 3 구현)
+
+### 2026-02-13 VIX Layer 3 구현: FRED VIXCLS 수집 + Concordance Check + 텔레그램 표시
+
+**배경**: v17.7에서 두 에이전트가 독립 연구한 VIX 분석 결과를 실제 코드로 구현. `credit_monitor.py`에 `fetch_vix_data()` 함수를 추가하고, `get_credit_status()`에 Layer 3 + Concordance Check를 통합.
+
+| 항목 | Before (v17.7) | After (v17.8) |
+|------|----------------|---------------|
+| VIX | 분석/설계 문서만 | **`fetch_vix_data()` 구현, 실데이터 수집** |
+| 현금비중 | HY + BBB- 2레이어 | **HY + BBB- + VIX 3레이어** |
+| Concordance | 설계만 | **`get_credit_status()` 내 구현** |
+| 텔레그램 | VIX 표시 없음 | **`format_credit_section()` VIX 블록 추가** |
+
+**수정 파일**:
+1. `credit_monitor.py` — `fetch_vix_data()` 신규 + `get_credit_status()` L3/Concordance + `format_credit_section()` VIX 표시
+
+**구현 상세**:
+```
+fetch_vix_data():
+  FRED VIXCLS CSV (~400일) → 5일 slope (±0.5 threshold)
+  레짐 7종: normal / elevated / high / crisis / crisis_relief / stabilizing / complacency
+  cash_adjustment: -10% ~ +15%
+  direction: 'warn' (crisis/high/elevated/complacency) 또는 'stable'
+
+get_credit_status() Concordance:
+  both_warn   → VIX 전액 적용
+  hy_only     → VIX 0% (스텔스 위기 - HY가 이미 반영)
+  vix_only    → VIX 50%만 (일시적 쇼크)
+  both_stable → VIX 그대로 (보통 0%)
+
+  final_cash = max(0, min(70, base_cash + kr_adj + vix_adj))
+```
+
+**검증 결과** (2026-02-13 실행):
+```
+[HY] 2.84% | Q2 성장기 (29일째) → 현금 20%
+[KR] BBB- 6.39%p → 정상 → 가감 0%
+[VIX] 17.6 | slope -4.1 (falling) → 안정 → 가감 0%
+Concordance: both_stable
+최종 현금비중: 20% (HY 20 + KR +0 + VIX +0)
+```
 
 ---
 
