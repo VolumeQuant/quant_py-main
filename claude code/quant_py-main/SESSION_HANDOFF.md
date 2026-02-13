@@ -38,8 +38,9 @@
 **수정 파일**:
 1. `data_collector.py` — `2024`(제조) 제거, `2062`/`2063`/`2066`/`2074` 추가
 2. `create_current_portfolio.py` — `KRX_SECTOR_MAP` 최소 통합으로 변경
-3. `send_telegram_auto.py` — 상단 한 줄 컴팩트 형식, 하단 블록 제거
-3. `send_telegram_auto.py` — `SECTOR_DB` 제거, `format_sector_distribution()` 추가, AI 섹터 참조를 `pick.get('sector')` 방식으로 전환
+3. `send_telegram_auto.py` — `SECTOR_DB` 제거, 상단 한 줄 컴팩트 형식, AI 섹터는 `pick.get('sector')` 방식
+
+**주의**: `data_cache/krx_sector_*.parquet` 캐시가 이전 분류(제조 포함)로 남아있으면 새 코드가 무시됨. GitHub Actions data-cache 삭제 필요: `gh cache list | grep data-cache` → `gh cache delete <id>`
 
 ---
 
