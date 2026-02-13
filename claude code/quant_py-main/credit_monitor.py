@@ -375,6 +375,54 @@ def fetch_kr_credit_spread(api_key: str = None):
         return None
 
 
+def _synthesize_action(hy, kr, vix, final_cash):
+    """3지표 종합 행동 멘트 생성 — HY만이 아닌 전체 상황 반영"""
+    q = hy['quadrant']
+
+    # 각 지표 안정 여부
+    hy_ok = q in ('Q1', 'Q2')
+    kr_ok = kr is None or kr['regime'] == 'normal'
+    vix_ok = vix is None or vix['direction'] == 'stable'
+    n_ok = sum([hy_ok, kr_ok, vix_ok])
+
+    # 봄(Q1) — 회복기, 역사적 최고 수익률
+    if q == 'Q1':
+        if n_ok == 3:
+            return '모든 지표가 매수를 가리켜요. 적극 투자하세요!'
+        elif kr_ok and not vix_ok:
+            return '회복 구간이에요. VIX가 높지만 신용시장이 안정적이라 공격적으로 투자해도 좋아요.'
+        elif not kr_ok:
+            return '회복 신호가 있지만 한국 신용시장이 불안해요. 분할 매수하세요.'
+        return '회복 구간이에요. 적극 매수하세요.'
+
+    # 여름(Q2) — 성장기, 정상 투자
+    if q == 'Q2':
+        if n_ok == 3:
+            return '모든 지표가 안정적이에요. 평소대로 투자하세요.'
+        elif not vix_ok and kr_ok:
+            return '신용시장은 안정적이지만 VIX가 높아요. 신규 매수 시 신중하세요.'
+        elif not kr_ok and vix_ok:
+            return '한국 신용시장이 경계 수준이에요. 신규 매수 시 신중하세요.'
+        return '일부 경고 신호가 있어요. 신규 매수를 줄여가세요.'
+
+    # 가을(Q3) — 과열기
+    if q == 'Q3':
+        if kr_ok and vix_ok:
+            return '과열 신호가 있어요. 신규 매수를 줄여가세요.'
+        elif not vix_ok:
+            return '과열 + 변동성 확대에요. 보유 종목을 점검하고 신규 매수를 멈추세요.'
+        return '여러 지표가 과열이에요. 현금 비중을 늘리세요.'
+
+    # 겨울(Q4) — 침체기
+    if n_ok == 0:
+        return '모든 지표가 위험해요. 신규 매수를 멈추고 현금을 확보하세요.'
+    elif kr_ok and vix_ok:
+        return '겨울이지만 한국 시장은 안정적이에요. 현금 비중을 유지하며 지켜보세요.'
+    elif not kr_ok and not vix_ok:
+        return '신용시장과 변동성 모두 위험해요. 보유 종목을 줄이고 현금을 확보하세요.'
+    return '위험 구간이에요. 보유 종목을 줄이고 현금을 늘리세요.'
+
+
 def get_credit_status(ecos_api_key: str = None):
     """신용시장 통합 상태 조회 (HY + BBB- + VIX + Concordance)
 
@@ -465,13 +513,19 @@ def get_credit_status(ecos_api_key: str = None):
         elif hy['quadrant'] == 'Q1' and (kr is None or kr['regime'] == 'normal') and vix_dir == 'stable':
             final_cash = 0
 
-        final_action = hy['action']
+        # 3지표 종합 행동 멘트 (HY만이 아닌 전체 상황 반영)
+        final_action = _synthesize_action(hy, kr, vix, final_cash)
     else:
+        # HY 실패 시에도 KR/VIX 가감 적용
         base_cash = 20
-        kr_adj = 0
-        vix_adj = 0
-        final_cash = 20
-        final_action = '데이터 수집 실패로 기본값을 적용했어요.'
+        kr_adj = kr['adjustment'] if kr else 0
+        vix_adj = vix['cash_adjustment'] if vix else 0
+        final_cash = max(0, min(70, base_cash + kr_adj + vix_adj))
+
+        if kr and vix:
+            final_action = '신용시장 메인 지표 수집 실패. 보조 지표 기준으로 기본값을 적용했어요.'
+        else:
+            final_action = '데이터 수집 실패로 기본값을 적용했어요.'
 
     print(f"  → 최종 현금비중: {final_cash}% (HY {base_cash} + KR {kr_adj:+d} + VIX {vix_adj:+d})")
 
@@ -582,6 +636,10 @@ def format_credit_section(credit: dict, n_picks: int = 5) -> str:
         else:
             conf = '엇갈린 신호'
         lines.append(f"{dots} {n_ok}/{n_total} 안정 — {conf}")
+
+        # 봄(Q1) + ALL 안정 → 특별 강조
+        if hy and hy['quadrant'] == 'Q1' and n_ok == n_total:
+            lines.append('💎 역사적 매수 기회 — 적극 투자하세요!')
 
     if final_cash == 0:
         lines.append('💰 투자 100%')

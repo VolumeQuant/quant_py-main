@@ -160,6 +160,18 @@ def compute_3day_intersection(
     return results[:max_picks]
 
 
+def _compute_exit_reason(t0_item: dict, t1_item: dict) -> str:
+    """이탈 종목의 사유 태그 계산 — V/Q/M 스코어 비교"""
+    tags = []
+    for key, label in [('value_s', 'V'), ('quality_s', 'Q'), ('momentum_s', 'M')]:
+        s0 = t0_item.get(key)
+        s1 = t1_item.get(key)
+        if s0 is not None and s1 is not None:
+            if s0 < s1 - 0.05:  # 의미 있는 하락만
+                tags.append(f"{label}↓")
+    return ' '.join(tags) if tags else ''
+
+
 def get_daily_changes(
     rankings_t0: dict,
     rankings_t1: dict,
@@ -175,7 +187,11 @@ def get_daily_changes(
 
     Returns:
         (entered, exited) — 신규 진입 종목, 이탈 종목
+        이탈 종목에 'exit_reason' 필드 추가 ([V↓ Q↓ M↓])
     """
+    # T-0 전체 맵 (이탈 종목의 현재 스코어 조회용)
+    t0_all = {item['ticker']: item for item in rankings_t0.get('rankings', [])}
+
     t0_map = {}
     for item in rankings_t0.get('rankings', []):
         if item['rank'] <= threshold:
@@ -187,7 +203,18 @@ def get_daily_changes(
             t1_map[item['ticker']] = item
 
     entered = [t0_map[t] for t in (set(t0_map) - set(t1_map))]
-    exited = [t1_map[t] for t in (set(t1_map) - set(t0_map))]
+
+    exited_tickers = set(t1_map) - set(t0_map)
+    exited = []
+    for t in exited_tickers:
+        item = t1_map[t].copy()
+        # T-0에서 해당 종목의 현재 스코어 찾기
+        t0_item = t0_all.get(t)
+        if t0_item:
+            item['exit_reason'] = _compute_exit_reason(t0_item, item)
+        else:
+            item['exit_reason'] = ''
+        exited.append(item)
 
     entered.sort(key=lambda x: x['rank'])
     exited.sort(key=lambda x: x['rank'])

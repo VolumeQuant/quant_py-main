@@ -130,7 +130,7 @@ def format_buy_recommendations(picks, base_date_str, universe_count=0, ai_picks_
     return '\n'.join(lines)
 
 
-def format_top30(pipeline, exited, cold_start=False, has_next=False, rankings_t0=None, rankings_t1=None, rankings_t2=None):
+def format_top30(pipeline, exited, cold_start=False, has_next=False, rankings_t0=None, rankings_t1=None, rankings_t2=None, credit=None):
     if not pipeline:
         return ""
     lines = [
@@ -187,10 +187,12 @@ def format_top30(pipeline, exited, cold_start=False, has_next=False, rankings_t0
         for e in exited:
             prev = e['rank']
             cur = t0_rank_map.get(e['ticker'])
+            reason = e.get('exit_reason', '')
+            reason_tag = f" [{reason}]" if reason else ""
             if cur:
-                lines.append(f"  {e['name']} {prev}위 → {cur}위")
+                lines.append(f"  {e['name']} {prev}위 → {cur}위{reason_tag}")
             else:
-                lines.append(f"  {e['name']} {prev}위 → 순위권 밖")
+                lines.append(f"  {e['name']} {prev}위 → 순위권 밖{reason_tag}")
         lines.append("⛔ 보유 중이라면 매도를 검토하세요.")
 
     if cold_start:
@@ -279,7 +281,7 @@ fake_pipeline = [
 ]
 
 fake_exited = [
-    {'name': '헥토이노베이션', 'rank': 16, 'ticker': '124500'},
+    {'name': '헥토이노베이션', 'rank': 16, 'ticker': '124500', 'exit_reason': 'M↓'},
 ]
 
 # 이탈 종목의 현재 순위 + 3일 순위 데이터
@@ -356,7 +358,7 @@ header_lines = [
     '',
     '🟢🟢🟢 3/3 안정 — 확실한 신호',
     '💰 투자 80% + 현금 20%',
-    '→ 평소대로 투자하세요.',
+    '→ 모든 지표가 안정적이에요. 평소대로 투자하세요.',
     '─────────────────',
     '💡 <b>읽는 법</b>',
     '✅매수 ⏳내일검증 🆕관찰',

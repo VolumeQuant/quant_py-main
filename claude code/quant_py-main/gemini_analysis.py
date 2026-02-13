@@ -65,7 +65,7 @@ def compute_risk_flags(s):
     return flags
 
 
-def build_prompt(stock_list, base_date=None):
+def build_prompt(stock_list, base_date=None, market_context=None):
     """
     AI 브리핑 프롬프트 구성 — v3 위험 신호 스캐너
 
@@ -73,6 +73,7 @@ def build_prompt(stock_list, base_date=None):
     1. 종목별 데이터 + 인라인 위험 신호 (코드가 계산)
     2. 위험 신호 설명 섹션
     3. 구조화된 출력 형식 (구분선은 코드가 후처리)
+    4. 시장 환경 컨텍스트 (market_context)
     """
     stock_count = len(stock_list)
 
@@ -127,12 +128,31 @@ def build_prompt(stock_list, base_date=None):
     else:
         date_str = datetime.now(KST).strftime('%Y-%m-%d')
 
+    # 시장 환경 컨텍스트 블록
+    market_block = ""
+    if market_context:
+        season = market_context.get('season', '')
+        cash = market_context.get('cash_pct', 20)
+        concordance = market_context.get('concordance_text', '')
+        action = market_context.get('action', '')
+        market_block = f"""
+[현재 시장 환경 — 시스템이 판단한 베타 위험]
+시장 국면: {season}
+현금 비중 권고: {cash}%
+지표 일치도: {concordance}
+종합 판단: {action}
+
+→ 이 시장 환경을 종목 분석에 반영해줘.
+  현금 비중이 높으면(40%+) "지금 당장 사야 할 이유가 있는지" 더 엄격하게 봐줘.
+  현금 비중이 낮으면(0~20%) "좋은 기회를 놓치지 않게" 긍정적으로 평가해줘.
+"""
+
     prompt = f"""분석 기준일: {date_str}
 
 아래는 한국주식 퀀트 시스템의 매수 후보 {stock_count}종목과 각 종목의 정량적 위험 신호야.
 이 종목들은 밸류+퀄리티+모멘텀 멀티팩터로 선정된 거야.
 네 역할: 위험 신호를 해석해서 "매수 시 주의할 종목"을 투자자에게 알려주는 거야.
-
+{market_block}
 [종목별 데이터 & 위험 신호 — 시스템이 계산한 팩트]
 {signals_data}
 
@@ -225,7 +245,7 @@ def extract_text(resp):
     return None
 
 
-def run_ai_analysis(portfolio_message, stock_list, base_date=None):
+def run_ai_analysis(portfolio_message, stock_list, base_date=None, market_context=None):
     """
     Gemini 2.5 Flash AI 브리핑 실행 — v3 정량 리스크 스캐너
 
@@ -233,6 +253,7 @@ def run_ai_analysis(portfolio_message, stock_list, base_date=None):
     - 코드가 6가지 위험 플래그를 팩트로 계산
     - AI는 시장 동향 검색(1회) + 위험 신호 해석만 수행
     - Markdown → Telegram HTML 변환
+    - market_context: 시장 환경 (계절, 현금비중, concordance)
 
     Returns:
         str: HTML 포맷된 AI 브리핑 메시지 (실패 시 None)
@@ -251,7 +272,7 @@ def run_ai_analysis(portfolio_message, stock_list, base_date=None):
 
     try:
         client = genai.Client(api_key=api_key)
-        prompt = build_prompt(stock_list, base_date=base_date)
+        prompt = build_prompt(stock_list, base_date=base_date, market_context=market_context)
         grounding_tool = types.Tool(google_search=types.GoogleSearch())
 
         print("[Gemini] AI 브리핑 요청 중...")
@@ -317,7 +338,7 @@ def run_ai_analysis(portfolio_message, stock_list, base_date=None):
         return None
 
 
-def build_final_picks_prompt(stock_list, weight_per_stock=20, base_date=None):
+def build_final_picks_prompt(stock_list, weight_per_stock=20, base_date=None, market_context=None):
     """최종 추천 종목별 설명 프롬프트 (미국 프로젝트 방식)"""
     stock_lines = []
     for i, s in enumerate(stock_list):
@@ -340,10 +361,24 @@ def build_final_picks_prompt(stock_list, weight_per_stock=20, base_date=None):
     else:
         date_str = datetime.now(KST).strftime('%Y-%m-%d')
 
+    # 시장 환경 블록
+    market_block = ""
+    if market_context:
+        season = market_context.get('season', '')
+        cash = market_context.get('cash_pct', 20)
+        action = market_context.get('action', '')
+        market_block = f"""
+[시장 위험 상태]
+국면: {season} / 현금 비중 권고: {cash}%
+행동 권장: {action}
+→ 종목 설명에 시장 환경을 자연스럽게 반영해줘. 위험 높으면 "방어적", 안정적이면 "공격적" 톤으로.
+"""
+
     return f"""분석 기준일: {date_str}
 
 아래는 한국주식 퀀트 시스템이 자동 선정한 {len(stock_list)}종목 최종 포트폴리오야.
 선정 기준: 밸류+퀄리티+모멘텀 멀티팩터 상위, 3거래일 연속 Top 30 유지, AI 리스크 필터 통과.
+{market_block}
 
 [포트폴리오]
 {stocks_data}
@@ -378,7 +413,7 @@ def _convert_picks_markdown(text):
     return result.strip()
 
 
-def run_final_picks_analysis(stock_list, weight_per_stock=20, base_date=None):
+def run_final_picks_analysis(stock_list, weight_per_stock=20, base_date=None, market_context=None):
     """최종 추천 종목별 AI 설명 생성 (미국 프로젝트 방식)"""
     api_key = get_gemini_api_key()
     if not api_key:
@@ -394,7 +429,7 @@ def run_final_picks_analysis(stock_list, weight_per_stock=20, base_date=None):
 
     try:
         client = genai.Client(api_key=api_key)
-        prompt = build_final_picks_prompt(stock_list, weight_per_stock, base_date)
+        prompt = build_final_picks_prompt(stock_list, weight_per_stock, base_date, market_context)
 
         print("[Gemini] 최종 추천 설명 요청 중...")
         response = client.models.generate_content(
