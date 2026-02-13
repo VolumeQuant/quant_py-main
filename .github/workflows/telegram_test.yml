@@ -60,6 +60,7 @@ jobs:
           PREFILTER_N = 200
           N_STOCKS = 30
           GEMINI_API_KEY = "${{ secrets.GEMINI_API_KEY }}"
+          ECOS_API_KEY = "${{ secrets.ECOS_API_KEY }}"
           EOF
 
       - name: Generate ranking (latest)
