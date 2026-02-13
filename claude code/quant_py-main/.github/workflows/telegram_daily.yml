@@ -1,0 +1,87 @@
+name: Daily Telegram Report
+
+on:
+  schedule:
+    # UTC 21:30 = KST 06:30 (다음날)
+    # 일-목 21:30 UTC = 월-금 06:30 KST
+    - cron: '30 21 * * 0-4'
+
+  # 수동 실행 가능
+  workflow_dispatch:
+
+env:
+  GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+permissions:
+  contents: write
+
+jobs:
+  send-telegram:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ./claude code/quant_py-main
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('**/telegram_daily.yml') }}
+          restore-keys: pip-${{ runner.os }}-
+
+      - name: Cache data_cache (OHLCV, fundamentals)
+        uses: actions/cache@v4
+        with:
+          path: claude code/quant_py-main/data_cache
+          key: data-cache-${{ github.run_id }}
+          restore-keys: data-cache-
+
+      - name: Install dependencies
+        run: |
+          pip install pykrx pandas numpy requests beautifulsoup4 lxml pyarrow tqdm scipy html5lib google-genai
+
+      - name: Create config.py from secrets
+        run: |
+          cat << EOF > config.py
+          TELEGRAM_BOT_TOKEN = "${{ secrets.TELEGRAM_BOT_TOKEN }}"
+          TELEGRAM_CHAT_ID = "${{ secrets.TELEGRAM_PRIVATE_ID }}"
+          TELEGRAM_PRIVATE_ID = ""
+          MIN_MARKET_CAP = 3000
+          PER_MAX_LIMIT = 60
+          PBR_MAX_LIMIT = 10
+          MAX_CONCURRENT_REQUESTS = 10
+          PYKRX_WORKERS = 10
+          CACHE_DIR = "data_cache"
+          PREFILTER_N = 200
+          N_STOCKS = 30
+          GEMINI_API_KEY = "${{ secrets.GEMINI_API_KEY }}"
+          ECOS_API_KEY = "${{ secrets.ECOS_API_KEY }}"
+          EOF
+
+      - name: Generate portfolio (create CSV)
+        run: python create_current_portfolio.py
+
+      - name: Send Telegram message
+        run: python send_telegram_auto.py
+
+      - name: Commit ranking state
+        run: |
+          cd "${{ github.workspace }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "claude code/quant_py-main/state/"
+          git diff --cached --quiet || git commit -m "state: daily ranking $(date -u +%Y%m%d)"
+          git stash --include-untracked
+          git pull --rebase || true
+          git stash pop || true
+          git push

@@ -29,6 +29,7 @@ from ranking_manager import (
     compute_3day_intersection, get_daily_changes,
     get_stock_status, cleanup_old_rankings, get_available_ranking_dates,
 )
+from credit_monitor import get_credit_status, format_credit_section
 
 # ============================================================
 # 상수/설정
@@ -36,7 +37,8 @@ from ranking_manager import (
 KST = ZoneInfo('Asia/Seoul')
 CACHE_DIR = Path('data_cache')
 OUTPUT_DIR = Path('output')
-WEIGHT_PER_STOCK = 20  # 종목당 비중 % (5종목 × 20% = 100%)
+MAX_PICKS = 5          # 최대 종목 수
+WEIGHT_PER_STOCK = 20  # 종목당 기본 비중 % (5종목 × 20% = 100%)
 
 def _get_sector_from_rankings(ticker: str, rankings_data: dict) -> str:
     """ranking JSON에서 섹터 조회"""
@@ -342,8 +344,11 @@ def _get_buy_rationale(pick) -> str:
     return ' · '.join(reasons[:2])
 
 
-def format_buy_recommendations(picks: list, base_date_str: str, universe_count: int = 0, ai_picks_text: str = None, skipped: list = None) -> str:
+def format_buy_recommendations(picks: list, base_date_str: str, universe_count: int = 0, ai_picks_text: str = None, skipped: list = None, weight_per_stock: int = None, cash_pct: int = 0) -> str:
     """최종 추천 메시지 — AI 멘트 + 구분선"""
+    if weight_per_stock is None:
+        weight_per_stock = WEIGHT_PER_STOCK
+
     if not picks:
         lines = [
             "━━━━━━━━━━━━━━━━━━━",
@@ -357,7 +362,7 @@ def format_buy_recommendations(picks: list, base_date_str: str, universe_count: 
         return '\n'.join(lines)
 
     n = len(picks)
-    cash_weight = 100 - n * WEIGHT_PER_STOCK
+    cash_weight = 100 - n * weight_per_stock
 
     if universe_count > 0:
         funnel = f"{universe_count:,}종목 → Top 30 → ✅ 검증 → 최종 {n}종목"
@@ -380,7 +385,7 @@ def format_buy_recommendations(picks: list, base_date_str: str, universe_count: 
         lines.append("")
 
     # 비중 한눈에 보기
-    weight_parts = [f"{p['name']} {WEIGHT_PER_STOCK}%" for p in picks]
+    weight_parts = [f"{p['name']} {weight_per_stock}%" for p in picks]
     lines.append("📊 <b>비중 한눈에 보기</b>")
     lines.append(' · '.join(weight_parts))
     if cash_weight > 0:
@@ -397,7 +402,7 @@ def format_buy_recommendations(picks: list, base_date_str: str, universe_count: 
             ticker = pick['ticker']
             sector = pick.get('sector', '기타')
             rationale = _get_buy_rationale(pick)
-            lines.append(f"<b>{i+1}. {name}({ticker}) · {WEIGHT_PER_STOCK}%</b>")
+            lines.append(f"<b>{i+1}. {name}({ticker}) · {weight_per_stock}%</b>")
             lines.append(f"{sector} · {rationale}")
             if i < n - 1:
                 lines.append("──────────────────")
@@ -471,6 +476,18 @@ def main():
             print(f"  {w}")
     else:
         print("  경고 없음 — 시장 양호")
+
+    # ============================================================
+    # 신용시장 모니터링 (US HY Spread + 한국 BBB-)
+    # ============================================================
+    ecos_key = getattr(__import__('config'), 'ECOS_API_KEY', None)
+    credit = get_credit_status(ecos_api_key=ecos_key)
+    cash_pct = credit['final_cash_pct']
+
+    # 현금비중에 따른 종목당 비중 재계산
+    stock_weight = (100 - cash_pct) // MAX_PICKS if MAX_PICKS > 0 else 20
+    if stock_weight <= 0:
+        stock_weight = 1  # 최소 1%
 
     # ============================================================
     # 순위 데이터 로드 (3일)
@@ -636,6 +653,10 @@ def main():
     header_lines.append(f'{kosdaq_color} 코스닥  {kosdaq_close:,.0f} ({kosdaq_chg:+.2f}%)')
     if warning_block:
         header_lines.append(warning_block.rstrip())
+    # 신용시장 섹션
+    header_lines.append('')
+    header_lines.append(format_credit_section(credit))
+
     header_lines.append('')
     header_lines.append('💡 <b>읽는 법</b>')
     header_lines.append('✅ 3일 연속 Top 30 → 검증 완료')
@@ -692,10 +713,10 @@ def main():
                     'rsi': tech.get('rsi', 50),
                     'w52_pct': tech.get('w52_pct', 0),
                 })
-            ai_picks_text = run_final_picks_analysis(final_stock_list, WEIGHT_PER_STOCK, BASE_DATE)
+            ai_picks_text = run_final_picks_analysis(final_stock_list, stock_weight, BASE_DATE)
         except Exception as e:
             print(f"최종 추천 AI 설명 실패 (fallback 사용): {e}")
-        msg_final = format_buy_recommendations(picks, base_date_str, universe_count, ai_picks_text, skipped=skipped)
+        msg_final = format_buy_recommendations(picks, base_date_str, universe_count, ai_picks_text, skipped=skipped, weight_per_stock=stock_weight, cash_pct=cash_pct)
 
     # 메시지 리스트: Guide → [1/3] 시장+Top30 → [2/3] AI → [3/3] 최종
     messages = [msg_overview, msg_main]
@@ -754,7 +775,7 @@ def main():
     # ============================================================
     cleanup_old_rankings(keep_days=30)
 
-    print(f'\n매수 추천: {len(picks)}개 ({"관망" if not picks else f"총 {len(picks)*WEIGHT_PER_STOCK}%"})')
+    print(f'\n매수 추천: {len(picks)}개 ({"관망" if not picks else f"종목 {len(picks)*stock_weight}% + 현금 {cash_pct}%"})')
     print(f'파이프라인: ✅ {v_count} · ⏳ {d_count} · 🆕 {n_count}')
     print(f'일일 변동: 진입 {len(entered)}개 · 이탈 {len(exited)}개')
     print('\n완료!')
