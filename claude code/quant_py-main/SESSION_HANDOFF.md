@@ -1538,8 +1538,9 @@ quant_py-main/
 | **2026-02-13** | **AI 리스크 필터 전체 후보 대상 확대 (5개→전원)** | **send_telegram_auto.py** |
 | **2026-02-13** | **picks 선정: 클린 종목 우선 + 플래그 종목 후순위** | **send_telegram_auto.py** |
 | **2026-02-13** | **워크플로우 git stash 추가 (pull --rebase 실패 방지)** | **.github/workflows/telegram_daily.yml** |
+| **2026-02-13** | **주도 업종 라벨/데이터 줄바꿈 분리** | **send_telegram_auto.py** |
 
 ---
 
-**문서 버전**: 17.2
+**문서 버전**: 17.3
 **최종 업데이트**: 2026-02-13

@@ -230,7 +230,7 @@ def format_sector_distribution(pipeline: list, rankings_t0: dict) -> str:
 
     parts = [f"{sector} {count}" for sector, count in sorted_sectors]
 
-    return f"📊 주도 업종: {' · '.join(parts)}"
+    return f"📊 주도 업종\n{' · '.join(parts)}"
 
 
 def format_top30(pipeline: list, exited: list, cold_start: bool = False, has_next: bool = False, rankings_t0: dict = None, rankings_t1: dict = None, rankings_t2: dict = None) -> str:
