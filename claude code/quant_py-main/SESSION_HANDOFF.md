@@ -26,6 +26,7 @@
 | A | HY 실패 시 VIX 무시 버그 | else 블록에서도 kr_adj + vix_adj 적용 |
 | B | [3/3]에 현금 비중 누락 | 🛡️ 시장 위험 권고: 현금 N% 보유 추천 라인 추가 |
 | C | Gemini 포트폴리오에 시장환경 누락 | `build_final_picks_prompt()`에 market_context |
+| D | 투자 가이드에 "종목 수 UP/DOWN" 잔재 | 현금 비중 중심 문구로 통일, 불필요 문구 삭제 |
 
 **수정 파일**:
 1. `credit_monitor.py` — `_synthesize_action()` 신규, HY 실패 시 VIX 적용, Q1 강조
