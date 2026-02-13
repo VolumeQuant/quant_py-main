@@ -369,11 +369,13 @@ def format_credit_section(credit: dict, n_picks: int = 5) -> str:
             interp = f"평균({med_val:.2f}%) 이하지만 올라가는 중이에요."
         else:
             interp = f"평균({med_val:.2f}%)보다 높고 계속 올라가고 있어요."
-        lines.append(f"HY Spread(부도위험) {hy_val:.2f}% · {interp}")
+        lines.append(f"HY Spread(부도위험) {hy_val:.2f}%")
+        lines.append(interp)
 
         if kr:
             kr_interp = {'정상': '정상 범위에요.', '경계': '경계 수준이에요.', '위기': '위험 수준이에요.'}
-            lines.append(f"한국 BBB-(회사채) {kr['spread']:.1f}%p · {kr_interp.get(kr['regime_label'], kr['regime_label'])}")
+            lines.append(f"한국 BBB-(회사채) {kr['spread']:.1f}%p")
+            lines.append(kr_interp.get(kr['regime_label'], kr['regime_label']))
 
         # 투자 비중
         if final_cash == 0:
