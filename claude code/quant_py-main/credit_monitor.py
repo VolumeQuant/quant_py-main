@@ -64,39 +64,35 @@ def fetch_hy_quadrant():
         is_rising = hy_spread >= hy_3m_ago
 
         if is_wide and not is_rising:
-            quadrant, label, icon = 'Q1', '회복 중', '🟢'
-            desc = '기업 부도 위험이 높았지만 빠르게 안정되고 있어요.'
+            quadrant, label, icon = 'Q1', '회복기', '🟢'
         elif not is_wide and not is_rising:
-            quadrant, label, icon = 'Q2', '안정', '🟢'
-            desc = '기업 부도 위험이 낮고 안정적이에요.'
+            quadrant, label, icon = 'Q2', '성장기', '🟢'
         elif not is_wide and is_rising:
-            quadrant, label, icon = 'Q3', '주의', '🟡'
-            desc = '기업 부도 위험이 올라가기 시작했어요.'
+            quadrant, label, icon = 'Q3', '과열기', '🟡'
         else:
-            quadrant, label, icon = 'Q4', '위험', '🔴'
-            desc = '기업 부도 위험이 높아요. 현금 비중을 늘리세요.'
+            quadrant, label, icon = 'Q4', '침체기', '🔴'
 
         # 해빙 신호
         signals = []
         daily_change_bp = (hy_spread - hy_prev) * 100
 
         if 4 <= hy_spread <= 5 and daily_change_bp <= -20:
-            signals.append('💎 부도 위험이 하루 만에 크게 떨어졌어요 — 매수 기회')
+            signals.append(f'💎 스프레드 급축소 (HY {hy_spread:.2f}%, 전일 대비 {daily_change_bp:+.0f}bp)')
 
         if hy_prev >= 5 and hy_spread < 5:
-            signals.append('💎 위험 수준이 안전 구간으로 내려왔어요 — 매수 적기')
+            signals.append('💎 5% 하향 돌파 — 위험→안전 구간 진입')
 
         peak_60d = df['hy_spread'].rolling(60).max().iloc[-1]
         from_peak_bp = (hy_spread - peak_60d) * 100
         if from_peak_bp <= -300:
-            signals.append('💎 최근 고점 대비 위험이 크게 줄었어요 — 강력 매수 신호')
+            signals.append(f'💎 60일 고점 대비 {from_peak_bp:.0f}bp 하락 — 강력 매수 신호')
 
         # Q4→Q1 전환 감지
         prev_wide = hy_prev >= median_10y
         hy_3m_ago_prev = df['hy_spread'].iloc[-64] if len(df) >= 64 else df['hy_spread'].iloc[0]
         prev_rising = hy_prev >= hy_3m_ago_prev
         if (prev_wide and prev_rising) and (is_wide and not is_rising):
-            signals.append('💎 위험에서 회복으로 전환 — 최고의 매수 구간')
+            signals.append('💎 침체기→회복기 전환 — 최고 매수 구간')
 
         # 분면 지속 일수 (최대 252영업일)
         df['hy_3m'] = df['hy_spread'].shift(63)
@@ -116,20 +112,20 @@ def fetch_hy_quadrant():
         # 현금비중 + 행동 권장
         if quadrant == 'Q4':
             if q_days <= 20:
-                cash_pct, action = 30, '신규 매수 자제'
+                cash_pct, action = 30, '신규 매수 중단'
             elif q_days <= 60:
-                cash_pct, action = 50, '투자 줄이기'
+                cash_pct, action = 50, '단계적 축소'
             else:
-                cash_pct, action = 70, '현금 확보 우선'
+                cash_pct, action = 70, '적극 방어'
         elif quadrant == 'Q3':
             if q_days >= 60:
-                cash_pct, action = 30, '신규 매수 줄이기'
+                cash_pct, action = 30, '신규 진입 축소'
             else:
-                cash_pct, action = 20, '신중하게 투자'
+                cash_pct, action = 20, '주의 관찰'
         elif quadrant == 'Q1':
-            cash_pct, action = 0, '적극 투자 구간'
+            cash_pct, action = 0, '적극 매수'
         else:
-            cash_pct, action = 20, '정상 투자 가능'
+            cash_pct, action = 20, '정상 운영'
 
         return {
             'hy_spread': hy_spread,
@@ -139,7 +135,6 @@ def fetch_hy_quadrant():
             'quadrant': quadrant,
             'quadrant_label': label,
             'quadrant_icon': icon,
-            'quadrant_desc': desc,
             'signals': signals,
             'q_days': q_days,
             'cash_pct': cash_pct,
@@ -343,7 +338,7 @@ def get_credit_status(ecos_api_key: str = None):
 
 
 def format_credit_section(credit: dict, n_picks: int = 5) -> str:
-    """텔레그램 메시지용 투자 환경 섹션 포맷팅
+    """텔레그램 메시지용 신용시장 섹션 포맷팅
 
     Args:
         credit: get_credit_status() 반환값
@@ -360,32 +355,28 @@ def format_credit_section(credit: dict, n_picks: int = 5) -> str:
     lines = ['─────────────────']
 
     if hy:
-        lines.append(f"{hy['quadrant_icon']} <b>투자 환경 — {hy['quadrant_label']}</b>")
-        lines.append(hy['quadrant_desc'])
+        lines.append(f"{hy['quadrant_icon']} <b>신용시장</b> — {hy['quadrant_label']}")
+        lines.append(f"HY Spread(부도위험) {hy['hy_spread']:.2f}% · 10년 평균 {hy['median_10y']:.2f}%")
 
-        # 미국/한국 상태 한 줄씩
-        lines.append(f"  미국 회사채: {hy['quadrant_icon']} {hy['quadrant_label']}"
-                     f"  한국 회사채: {kr['regime_icon']} {kr['regime_label']}" if kr
-                     else f"  미국 회사채: {hy['quadrant_icon']} {hy['quadrant_label']}")
+        if kr:
+            lines.append(f"한국 BBB-(회사채 위험) {kr['spread']:.1f}%p {kr['regime_icon']} {kr['regime_label']}")
 
-        # 현금비중 + 종목당 비중
+        # 현금비중 + 종목당 비중 + action (모든 케이스)
         stock_weight = (100 - final_cash) // n_picks if n_picks > 0 else 20
         if final_cash == 0:
             lines.append(f"📊 투자 100% · 종목당 {stock_weight}% · {final_action}")
         else:
-            cash_line = f"📊 투자 {100 - final_cash}% + 현금 {final_cash}%"
-            cash_line += f" · 종목당 {stock_weight}%"
-            lines.append(cash_line)
-
-        # 해빙 신호
-        for sig in hy.get('signals', []):
-            lines.append(sig)
+            lines.append(f"📊 투자 {100 - final_cash}% + 현금 {final_cash}% · 종목당 {stock_weight}% · {final_action}")
 
         # Q4 경고
         if hy['quadrant'] == 'Q4':
             lines.append('⚠️ 신규 매수 시 신중하게 판단하세요.')
+
+        # 해빙 신호
+        for sig in hy.get('signals', []):
+            lines.append(sig)
     else:
-        lines.append('📊 <b>투자 환경</b> — 데이터 수집 실패')
+        lines.append('📊 <b>신용시장</b> — 데이터 수집 실패')
         lines.append(f'📊 기본 현금 {final_cash}%')
 
     return '\n'.join(lines)
