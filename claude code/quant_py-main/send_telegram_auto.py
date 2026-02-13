@@ -181,7 +181,6 @@ def format_overview(has_ai: bool = False):
         '━━━━━━━━━━━━━━━━━━━',
         '      📖 투자 가이드',
         '━━━━━━━━━━━━━━━━━━━',
-        '',
         '🔎 <b>어떤 종목을 찾나요?</b>',
         '국내 전 종목을 매일 자동 분석해서',
         '"좋은 회사를 싸게 살 수 있는 타이밍"을 찾아요.',
@@ -266,32 +265,37 @@ def format_top30(pipeline: list, exited: list, cold_start: bool = False, has_nex
 
     groups_added = False
     if verified:
+        lines.append(f"✅ 3일 검증 {len(verified)}개")
         if rankings_t1 and rankings_t2:
-            names = ', '.join(f"{s['name']}({s['rank']}→{s['_r1']}→{s['_r2']})" for s in verified)
+            for s in verified:
+                lines.append(f"  {s['name']} {s['rank']}→{s['_r1']}→{s['_r2']}위")
         else:
-            names = ', '.join(f"{s['name']}({s['rank']})" for s in verified)
-        lines.append(f"✅ 3일 검증: {names}")
+            for s in verified:
+                lines.append(f"  {s['name']} {s['rank']}위")
         groups_added = True
 
     if two_day:
         if groups_added:
-            lines.append("")
+            lines.append("─────────────────")
+        lines.append(f"⏳ 내일 검증 {len(two_day)}개")
         if rankings_t1:
             t1_map_td = {r['ticker']: r['rank'] for r in rankings_t1.get('rankings', []) if r['rank'] <= 30}
-            names = ', '.join(f"{s['name']}({s['rank']}→{t1_map_td.get(s['ticker'], '?')})" for s in two_day)
+            for s in two_day:
+                lines.append(f"  {s['name']} {s['rank']}→{t1_map_td.get(s['ticker'], '?')}위")
         else:
-            names = ', '.join(f"{s['name']}({s['rank']})" for s in two_day)
-        lines.append(f"⏳ 내일 검증: {names}")
+            for s in two_day:
+                lines.append(f"  {s['name']} {s['rank']}위")
         groups_added = True
 
     if new_stocks:
         if groups_added:
-            lines.append("")
-        names = ', '.join(f"{s['name']}({s['rank']})" for s in new_stocks)
-        lines.append(f"🆕 신규 진입: {names}")
+            lines.append("─────────────────")
+        lines.append(f"🆕 신규 진입 {len(new_stocks)}개")
+        for s in new_stocks:
+            lines.append(f"  {s['name']} {s['rank']}위")
 
     if exited:
-        lines.append("")
+        lines.append("─────────────────")
         t0_rank_map = {item['ticker']: item['rank'] for item in (rankings_t0 or {}).get('rankings', [])}
         lines.append(f"📉 어제 대비 이탈 {len(exited)}개")
         for e in exited:
@@ -304,11 +308,11 @@ def format_top30(pipeline: list, exited: list, cold_start: bool = False, has_nex
         lines.append("⛔ 보유 중이라면 매도를 검토하세요.")
 
     if cold_start:
-        lines.append("")
+        lines.append("─────────────────")
         lines.append("📊 데이터 축적 중 — 3일 완료 시 매수 후보가 선정돼요.")
 
-    lines.append("")
     if has_next:
+        lines.append("─────────────────")
         lines.append("👉 다음: AI 리스크 필터 [2/3]")
     return '\n'.join(lines)
 
@@ -375,24 +379,23 @@ def format_buy_recommendations(picks: list, base_date_str: str, universe_count: 
         "━━━━━━━━━━━━━━━━━━━",
         f"📅 {base_date_str} 기준",
         funnel,
-        "",
     ]
 
     # 급락 제외 종목 안내
     if skipped:
         for candidate, chg in skipped:
             lines.append(f"⚠️ {candidate['name']}(가중 {candidate['weighted_rank']}) 전일 {chg:.1f}% 급락 → 제외")
-        lines.append("")
 
     # 비중 한눈에 보기
+    lines.append("─────────────────")
     weight_parts = [f"{p['name']} {weight_per_stock}%" for p in picks]
     lines.append("📊 <b>비중 한눈에 보기</b>")
     lines.append(' · '.join(weight_parts))
     if cash_weight > 0:
         lines.append(f"현금 {cash_weight}%")
-    lines.append("")
 
     # 종목별 설명
+    lines.append("─────────────────")
     if ai_picks_text:
         lines.append(ai_picks_text)
     else:
@@ -407,7 +410,7 @@ def format_buy_recommendations(picks: list, base_date_str: str, universe_count: 
             if i < n - 1:
                 lines.append("──────────────────")
 
-    lines.append("")
+    lines.append("─────────────────")
     lines.append("💡 <b>활용법</b>")
     lines.append("· 비중대로 분산 투자를 권장해요")
     lines.append("· Top 30에서 빠지면 매도 검토")
@@ -651,23 +654,19 @@ def main():
     header_lines.append(f'{kosdaq_color} 코스닥  {kosdaq_close:,.0f} ({kosdaq_chg:+.2f}%)')
     if warning_block:
         header_lines.append(warning_block.rstrip())
-    # 신용시장 섹션
-    header_lines.append('')
+    # 신용시장 섹션 (format_credit_section 자체가 ─── 로 시작)
     header_lines.append(format_credit_section(credit))
 
-    header_lines.append('')
+    header_lines.append('─────────────────')
     header_lines.append('💡 <b>읽는 법</b>')
-    header_lines.append('✅ 3일 연속 Top 30 → 검증 완료')
-    header_lines.append('⏳ 2일 연속 → 내일 검증 가능')
-    header_lines.append('🆕 오늘 첫 진입 → 지켜보세요')
+    header_lines.append('✅매수 ⏳내일검증 🆕관찰')
 
-    # 주도 업종 한 줄 (읽는 법 바로 아래)
+    # 주도 업종 한 줄
     sector_line = format_sector_distribution(pipeline, rankings_t0)
     if sector_line:
-        header_lines.append('')
+        header_lines.append('─────────────────')
         header_lines.append(sector_line)
 
-    header_lines.append('')
     header = '\n'.join(header_lines)
 
     # [1/2] 섹션: Top 30만 (상세 카드는 [2/2]에서)
@@ -686,7 +685,7 @@ def main():
     # [2/3] AI 리스크 필터 (AI 있을 때만)
     msg_ai = None
     if ai_msg:
-        msg_ai = ai_msg + '\n\n👉 다음: 최종 추천 [3/3]'
+        msg_ai = ai_msg + '\n─────────────────\n👉 다음: 최종 추천 [3/3]'
 
     # [3/3] 최종 추천 — AI 종목별 설명 (AI 있을 때만)
     msg_final = None
