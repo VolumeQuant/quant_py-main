@@ -525,15 +525,15 @@ def format_credit_section(credit: dict, n_picks: int = 5) -> str:
             interp = f"평균({med_val:.2f}%) 이하지만 올라가는 중이에요."
         else:
             interp = f"평균({med_val:.2f}%)보다 높고 계속 올라가고 있어요."
-        lines.append(f"HY Spread(부도위험) {hy_val:.2f}%")
-        lines.append(interp)
+        lines.append(f"▸ HY Spread(부도위험) {hy_val:.2f}%")
+        lines.append(f"  {interp}")
     else:
-        lines.append('HY Spread — 수집 실패')
+        lines.append('▸ HY Spread — 수집 실패')
 
     if kr:
         kr_interp = {'정상': '정상 범위에요.', '경계': '경계 수준이에요.', '위기': '위험 수준이에요.'}
-        lines.append(f"한국 BBB-(회사채) {kr['spread']:.1f}%p")
-        lines.append(kr_interp.get(kr['regime_label'], kr['regime_label']))
+        lines.append(f"▸ 한국 BBB-(회사채) {kr['spread']:.1f}%p")
+        lines.append(f"  {kr_interp.get(kr['regime_label'], kr['regime_label'])}")
 
     # ── 변동성 카테고리 ──
     if vix:
@@ -544,19 +544,45 @@ def format_credit_section(credit: dict, n_picks: int = 5) -> str:
         adj = vix['cash_adjustment']
         if vix['regime'] == 'normal':
             rel = '이하' if v <= vix['vix_ma_20'] else '이상'
-            lines.append(f"VIX {v:.1f}")
-            lines.append(f"평균({vix['vix_ma_20']:.1f}) {rel}, 안정적이에요.")
+            lines.append(f"▸ VIX {v:.1f}")
+            lines.append(f"  평균({vix['vix_ma_20']:.1f}) {rel}, 안정적이에요.")
         else:
-            lines.append(f"VIX {v:.1f} {slope_arrow}")
+            lines.append(f"▸ VIX {v:.1f} {slope_arrow}")
             if adj > 0:
-                lines.append(f"{vix['regime_label']} 구간이에요. 현금 +{adj}%")
+                lines.append(f"  {vix['regime_label']} 구간이에요. 현금 +{adj}%")
             elif adj < 0:
-                lines.append(f"{vix['regime_label']} 구간이에요. 현금 {adj}%")
+                lines.append(f"  {vix['regime_label']} 구간이에요. 현금 {adj}%")
             else:
-                lines.append(f"{vix['regime_label']} 구간이에요.")
+                lines.append(f"  {vix['regime_label']} 구간이에요.")
 
-    # ── 결론 ──
+    # ── 결론 (Concordance Check) ──
+    # 3가지 지표 신호 판정
+    signals = []
+    if hy:
+        hy_ok = hy['quadrant'] in ('Q1', 'Q2')
+        signals.append(('HY', hy_ok))
+    if kr:
+        kr_ok = kr['regime'] == 'normal'
+        signals.append(('KR', kr_ok))
+    if vix:
+        vix_ok = vix['direction'] == 'stable'
+        signals.append(('VIX', vix_ok))
+
     lines.append('')
+    if signals:
+        n_ok = sum(1 for _, ok in signals if ok)
+        n_total = len(signals)
+        dots = ''.join('🟢' if ok else '🔴' for _, ok in signals)
+        if n_ok == n_total:
+            conf = '확실한 신호'
+        elif n_ok >= n_total - 1 and n_total >= 2:
+            conf = '대체로 안정'
+        elif n_ok == 0:
+            conf = '위험 신호'
+        else:
+            conf = '엇갈린 신호'
+        lines.append(f"{dots} {n_ok}/{n_total} 안정 — {conf}")
+
     if final_cash == 0:
         lines.append('💰 투자 100%')
     else:
