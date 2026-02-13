@@ -510,7 +510,7 @@ def format_credit_section(credit: dict, n_picks: int = 5) -> str:
         lines.append('🌡️ <b>시장 위험 지표</b>')
 
     # ── 신용시장 카테고리 ──
-    lines.append('─────────────────')
+    lines.append('')
     lines.append('🏦 <b>신용시장</b>')
 
     if hy:
@@ -537,7 +537,7 @@ def format_credit_section(credit: dict, n_picks: int = 5) -> str:
 
     # ── 변동성 카테고리 ──
     if vix:
-        lines.append('─────────────────')
+        lines.append('')
         lines.append('⚡ <b>변동성</b>')
         v = vix['vix_current']
         slope_arrow = '↑' if vix['vix_slope_dir'] == 'rising' else ('↓' if vix['vix_slope_dir'] == 'falling' else '')
@@ -556,7 +556,7 @@ def format_credit_section(credit: dict, n_picks: int = 5) -> str:
                 lines.append(f"{vix['regime_label']} 구간이에요.")
 
     # ── 결론 ──
-    lines.append('─────────────────')
+    lines.append('')
     if final_cash == 0:
         lines.append('💰 투자 100%')
     else:
