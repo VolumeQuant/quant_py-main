@@ -376,11 +376,10 @@ def format_credit_section(credit: dict, n_picks: int = 5) -> str:
             lines.append(f"한국 BBB-(회사채) {kr['spread']:.1f}%p · {kr_interp.get(kr['regime_label'], kr['regime_label'])}")
 
         # 투자 비중
-        stock_weight = (100 - final_cash) // n_picks if n_picks > 0 else 20
         if final_cash == 0:
-            lines.append(f"📊 투자 100% · 종목당 {stock_weight}%")
+            lines.append('📊 투자 100%')
         else:
-            lines.append(f"📊 투자 {100 - final_cash}% + 현금 {final_cash}% · 종목당 {stock_weight}%")
+            lines.append(f"📊 투자 {100 - final_cash}% + 현금 {final_cash}%")
 
         # 행동 가이드 (자연어)
         lines.append(f"→ {final_action}")
