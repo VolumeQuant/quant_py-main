@@ -50,7 +50,7 @@ jobs:
         run: |
           pip install pykrx pandas numpy requests beautifulsoup4 lxml pyarrow tqdm scipy html5lib google-genai
 
-      - name: Create config.py from secrets (private only — 채널 전송 중단)
+      - name: Create config.py from secrets
         run: |
           cat << EOF > config.py
           TELEGRAM_BOT_TOKEN = "${{ secrets.TELEGRAM_BOT_TOKEN }}"
@@ -65,6 +65,7 @@ jobs:
           PREFILTER_N = 200
           N_STOCKS = 30
           GEMINI_API_KEY = "${{ secrets.GEMINI_API_KEY }}"
+          ECOS_API_KEY = "${{ secrets.ECOS_API_KEY }}"
           EOF
 
       - name: Generate portfolio (create CSV)

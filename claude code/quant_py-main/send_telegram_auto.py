@@ -484,10 +484,8 @@ def main():
     credit = get_credit_status(ecos_api_key=ecos_key)
     cash_pct = credit['final_cash_pct']
 
-    # 현금비중에 따른 종목당 비중 재계산
-    stock_weight = (100 - cash_pct) // MAX_PICKS if MAX_PICKS > 0 else 20
-    if stock_weight <= 0:
-        stock_weight = 1  # 최소 1%
+    # 종목당 비중 고정 20%
+    stock_weight = 20
 
     # ============================================================
     # 순위 데이터 로드 (3일)
