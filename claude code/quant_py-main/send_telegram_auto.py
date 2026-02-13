@@ -481,7 +481,7 @@ def main():
         print("  경고 없음 — 시장 양호")
 
     # ============================================================
-    # 신용시장 모니터링 (US HY Spread + 한국 BBB-)
+    # 시장 위험 지표 모니터링 (US HY Spread + 한국 BBB- + VIX)
     # ============================================================
     ecos_key = getattr(__import__('config'), 'ECOS_API_KEY', None)
     credit = get_credit_status(ecos_api_key=ecos_key)
@@ -654,7 +654,7 @@ def main():
     header_lines.append(f'{kosdaq_color} 코스닥  {kosdaq_close:,.0f} ({kosdaq_chg:+.2f}%)')
     if warning_block:
         header_lines.append(warning_block.rstrip())
-    # 신용시장 섹션 (format_credit_section 자체가 ─── 로 시작)
+    # 시장 위험 지표 섹션 (format_credit_section 자체가 ─── 로 시작)
     header_lines.append(format_credit_section(credit))
 
     header_lines.append('─────────────────')
@@ -678,7 +678,7 @@ def main():
     # [1/2] 본문 (시장 + Top 30)
     msg_main = header
     if top30_section:
-        msg_main += top30_section
+        msg_main += '\n' + top30_section
 
     # 섹터 분포는 header에서 상단 표시 (format_sector_distribution)
 

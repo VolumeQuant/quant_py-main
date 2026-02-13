@@ -65,13 +65,13 @@ def fetch_hy_quadrant():
         is_rising = hy_spread >= hy_3m_ago
 
         if is_wide and not is_rising:
-            quadrant, label, icon = 'Q1', '회복기', '🟢'
+            quadrant, label, icon = 'Q1', '봄', '🌸'
         elif not is_wide and not is_rising:
-            quadrant, label, icon = 'Q2', '성장기', '🟢'
+            quadrant, label, icon = 'Q2', '여름', '☀️'
         elif not is_wide and is_rising:
-            quadrant, label, icon = 'Q3', '과열기', '🟡'
+            quadrant, label, icon = 'Q3', '가을', '🍂'
         else:
-            quadrant, label, icon = 'Q4', '침체기', '🔴'
+            quadrant, label, icon = 'Q4', '겨울', '❄️'
 
         # 해빙 신호 (= 적극 매수 기회)
         signals = []
@@ -93,7 +93,7 @@ def fetch_hy_quadrant():
         hy_3m_ago_prev = df['hy_spread'].iloc[-64] if len(df) >= 64 else df['hy_spread'].iloc[0]
         prev_rising = hy_prev >= hy_3m_ago_prev
         if (prev_wide and prev_rising) and (is_wide and not is_rising):
-            signals.append('💎 침체기→회복기 전환 — 가장 좋은 매수 타이밍이에요!')
+            signals.append('💎 겨울→봄 전환 — 가장 좋은 매수 타이밍이에요!')
 
         # 분면 지속 일수 (최대 252영업일)
         df['hy_3m'] = df['hy_spread'].shift(63)
@@ -208,7 +208,7 @@ def fetch_vix_data():
                 regime, label, icon = 'elevated', '경계', '⚠️'
                 cash_adj = 5
             elif slope_dir == 'falling':
-                regime, label, icon = 'stabilizing', '안정화', '📊'
+                regime, label, icon = 'stabilizing', '안정화', '🟢'
                 cash_adj = -5
             else:
                 regime, label, icon = 'elevated_flat', '보통', '🟡'
@@ -217,7 +217,7 @@ def fetch_vix_data():
             regime, label, icon = 'complacency', '안일', '⚠️'
             cash_adj = 5
         else:  # 12~20 normal
-            regime, label, icon = 'normal', '안정', '📊'
+            regime, label, icon = 'normal', '안정', '🟢'
             cash_adj = 0
 
         # Simplified direction for concordance check
@@ -477,7 +477,7 @@ def get_credit_status(ecos_api_key: str = None):
 
 
 def format_credit_section(credit: dict, n_picks: int = 5) -> str:
-    """텔레그램 메시지용 신용시장 섹션 포맷팅
+    """텔레그램 메시지용 시장 위험 지표 섹션 포맷팅
 
     Args:
         credit: get_credit_status() 반환값
@@ -488,15 +488,19 @@ def format_credit_section(credit: dict, n_picks: int = 5) -> str:
     """
     hy = credit['hy']
     kr = credit['kr']
+    vix = credit.get('vix')
     final_cash = credit['final_cash_pct']
     final_action = credit['final_action']
 
     lines = ['─────────────────']
 
-    vix = credit.get('vix')
-
     if hy:
-        lines.append(f"{hy['quadrant_icon']} <b>신용시장</b> — {hy['quadrant_label']}")
+        # 타이틀 + 사계절
+        lines.append(f"🌡️ <b>시장 위험 지표</b> — {hy['quadrant_icon']} {hy['quadrant_label']}")
+
+        # ── 신용시장 카테고리 ──
+        lines.append('─────────────────')
+        lines.append('🏦 <b>신용시장</b>')
 
         # HY 수치 + 맥락 해석
         hy_val = hy['hy_spread']
@@ -518,17 +522,19 @@ def format_credit_section(credit: dict, n_picks: int = 5) -> str:
             lines.append(f"한국 BBB-(회사채) {kr['spread']:.1f}%p")
             lines.append(kr_interp.get(kr['regime_label'], kr['regime_label']))
 
-        # VIX 표시
+        # ── 변동성 카테고리 ──
         if vix:
+            lines.append('─────────────────')
+            lines.append('⚡ <b>변동성</b>')
             v = vix['vix_current']
             slope_arrow = '↑' if vix['vix_slope_dir'] == 'rising' else ('↓' if vix['vix_slope_dir'] == 'falling' else '')
             adj = vix['cash_adjustment']
             if vix['regime'] == 'normal':
                 rel = '이하' if v <= vix['vix_ma_20'] else '이상'
-                lines.append(f"📊 VIX(변동성) {v:.1f}")
+                lines.append(f"VIX {v:.1f}")
                 lines.append(f"평균({vix['vix_ma_20']:.1f}) {rel}, 안정적이에요.")
             else:
-                lines.append(f"{vix['regime_icon']} VIX(변동성) {v:.1f} {slope_arrow}")
+                lines.append(f"VIX {v:.1f} {slope_arrow}")
                 if adj > 0:
                     lines.append(f"{vix['regime_label']} 구간이에요. 현금 +{adj}%")
                 elif adj < 0:
@@ -536,11 +542,12 @@ def format_credit_section(credit: dict, n_picks: int = 5) -> str:
                 else:
                     lines.append(f"{vix['regime_label']} 구간이에요.")
 
-        # 투자 비중
+        # ── 결론 ──
+        lines.append('─────────────────')
         if final_cash == 0:
-            lines.append('📊 투자 100%')
+            lines.append('💰 투자 100%')
         else:
-            lines.append(f"📊 투자 {100 - final_cash}% + 현금 {final_cash}%")
+            lines.append(f"💰 투자 {100 - final_cash}% + 현금 {final_cash}%")
 
         # 행동 가이드 (자연어)
         lines.append(f"→ {final_action}")
@@ -549,8 +556,8 @@ def format_credit_section(credit: dict, n_picks: int = 5) -> str:
         for sig in hy.get('signals', []):
             lines.append(sig)
     else:
-        lines.append('📊 <b>신용시장</b> — 데이터 수집 실패')
-        lines.append(f'📊 기본 현금 {final_cash}%')
+        lines.append('🌡️ <b>시장 위험 지표</b> — 데이터 수집 실패')
+        lines.append(f'💰 기본 현금 {final_cash}%')
 
     return '\n'.join(lines)
 
