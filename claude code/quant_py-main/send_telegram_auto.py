@@ -247,9 +247,7 @@ def format_top30(pipeline: list, exited: list, cold_start: bool = False, has_nex
     lines = [
         "─────────────────",
         "<b>📋 Top 30 — 보유 확인</b>",
-        "─────────────────",
         "목록에 있으면 보유, 없으면 매도 검토.",
-        "",
     ]
 
     verified = [s for s in pipeline if s['status'] == '✅']
@@ -282,7 +280,7 @@ def format_top30(pipeline: list, exited: list, cold_start: bool = False, has_nex
 
     if two_day:
         if groups_added:
-            lines.append("─────────────────")
+            lines.append("")
         lines.append(f"⏳ 내일 검증 {len(two_day)}개")
         if rankings_t1:
             t1_map_td = {r['ticker']: r['rank'] for r in rankings_t1.get('rankings', []) if r['rank'] <= 30}
@@ -295,7 +293,7 @@ def format_top30(pipeline: list, exited: list, cold_start: bool = False, has_nex
 
     if new_stocks:
         if groups_added:
-            lines.append("─────────────────")
+            lines.append("")
         lines.append(f"🆕 신규 진입 {len(new_stocks)}개")
         for s in new_stocks:
             lines.append(f"  {s['name']} {s['rank']}위")
@@ -387,7 +385,6 @@ def format_buy_recommendations(picks: list, base_date_str: str, universe_count: 
             "",
             "3일 연속 상위권을 유지한 종목이 없어요.",
             "무리한 진입보다 관망도 전략이에요.",
-            "",
         ]
         return '\n'.join(lines)
 
@@ -432,7 +429,7 @@ def format_buy_recommendations(picks: list, base_date_str: str, universe_count: 
             lines.append(f"<b>{i+1}. {name}({ticker}) · {weight_per_stock}%</b>")
             lines.append(f"{sector} · {rationale}")
             if i < n - 1:
-                lines.append("──────────────────")
+                lines.append("")
 
     lines.append("─────────────────")
     lines.append("💡 <b>활용법</b>")
@@ -684,7 +681,6 @@ def main():
         header_lines.append('    📊 시장 + Top 30')
     header_lines.append('━━━━━━━━━━━━━━━━━━━')
     header_lines.append(f'📅 {base_date_str} 기준')
-    header_lines.append('─────────────────')
     header_lines.append(f'{kospi_color} 코스피  {kospi_close:,.0f} ({kospi_chg:+.2f}%)')
     header_lines.append(f'{kosdaq_color} 코스닥  {kosdaq_close:,.0f} ({kosdaq_chg:+.2f}%)')
     if warning_block:
