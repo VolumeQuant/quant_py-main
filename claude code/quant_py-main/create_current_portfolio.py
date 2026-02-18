@@ -3,7 +3,7 @@
 
 파이프라인:
   유니버스(시총3000억+,거래대금차등) → PER/PBR 상한 필터
-  → MA60 추세 필터 (하락 추세 원천 차단)
+  → MA120 추세 필터 (하락 추세 원천 차단, 5% 버퍼)
   → A 사전필터(200) → B 멀티팩터 스코어링
   → 일일 순위 JSON 저장 (3일 교집합용)
 
@@ -98,23 +98,24 @@ EXCLUDE_KEYWORDS = ['금융', '은행', '증권', '보험', '캐피탈', '카드
                    '지주', '홀딩스', 'SPAC', '스팩', '리츠', 'REIT']
 
 
-def apply_ma60_filter(price_df: pd.DataFrame, universe_tickers: list) -> list:
+def apply_ma120_filter(price_df: pd.DataFrame, universe_tickers: list) -> list:
     """
-    MA60 추세 필터: 현재가 >= 60일 이동평균인 종목만 통과
+    MA120 추세 필터 (5% 버퍼): 현재가 >= 120일 이동평균 × 0.95인 종목만 통과
 
     가치 함정(Value Trap) 원천 차단:
-    - 주가가 60일 이동평균 아래 = 중기 하락 추세
-    - 아무리 저평가라도 추세가 꺾인 종목은 제외
+    - 주가가 120일 이동평균의 95% 미만 = 중장기 하락 추세
+    - 단기 조정(-5% 이내)은 허용하되, 본격 하락 추세는 제외
+    - 60일 → 120일로 확대하여 단기 변동에 덜 민감
 
     Args:
         price_df: OHLCV 가격 데이터 (날짜 인덱스, 종목 컬럼)
         universe_tickers: 유니버스 종목 리스트
 
     Returns:
-        MA60 필터 통과한 종목 리스트
+        MA120 필터 통과한 종목 리스트
     """
     if price_df.empty:
-        print("  MA60 필터: 가격 데이터 없음 - 필터 스킵")
+        print("  MA120 필터: 가격 데이터 없음 - 필터 스킵")
         return universe_tickers
 
     passed = []
@@ -125,18 +126,18 @@ def apply_ma60_filter(price_df: pd.DataFrame, universe_tickers: list) -> list:
             continue
 
         prices = price_df[ticker].dropna()
-        if len(prices) < 60:
+        if len(prices) < 120:
             continue
 
-        ma60 = prices.tail(60).mean()
+        ma120 = prices.tail(120).mean()
         current_price = prices.iloc[-1]
 
-        if current_price >= ma60:
+        if current_price >= ma120 * 0.95:
             passed.append(ticker)
         else:
             failed += 1
 
-    print(f"  MA60 필터: {len(passed)}개 통과 / {failed}개 제외 (현재가 < MA60)")
+    print(f"  MA120 필터: {len(passed)}개 통과 / {failed}개 제외 (현재가 < MA120×0.95)")
     return passed
 
 
@@ -412,7 +413,7 @@ def generate_report(
   * 거래대금: 대형(1조+)≥50억, 중소형≥20억
   * PER <= {PER_MAX_LIMIT}, PBR <= {PBR_MAX_LIMIT}
   * 금융업/지주사 제외
-  * MA60 추세 필터 (현재가 < 60일 이동평균 제외)
+  * MA120 추세 필터 (현재가 < 120일 이동평균×0.95 제외)
 
 [사전 필터 - 마법공식 상위 {PREFILTER_N}개]
 - 통과 종목 수: {len(prefiltered)}개
@@ -455,7 +456,7 @@ def main():
     print("=" * 80)
     print("퀀트 포트폴리오 생성 v6.0 — Slow In, Fast Out")
     print(f"기준일: {BASE_DATE}")
-    print(f"파이프라인: 유니버스 → MA60 필터 → A 사전필터({PREFILTER_N}) → B 멀티팩터 → 순위 저장")
+    print(f"파이프라인: 유니버스 → MA120 필터 → A 사전필터({PREFILTER_N}) → B 멀티팩터 → 순위 저장")
     print(f"모멘텀: (12M-1M) / 변동성 [리스크 조정]")
     print("=" * 80)
 
@@ -614,16 +615,16 @@ def main():
         )
 
     # =========================================================================
-    # 4.5단계: MA60 추세 필터 (가치 함정 원천 차단)
+    # 4.5단계: MA120 추세 필터 (가치 함정 원천 차단, 5% 버퍼)
     # =========================================================================
-    print(f"\n[4.5단계] MA60 추세 필터 (현재가 < MA60 종목 제외)")
+    print(f"\n[4.5단계] MA120 추세 필터 (현재가 < MA120×0.95 종목 제외)")
     if not price_df.empty and not magic_df.empty:
-        ma60_tickers = apply_ma60_filter(price_df, magic_df['종목코드'].tolist())
+        ma120_tickers = apply_ma120_filter(price_df, magic_df['종목코드'].tolist())
         before_count = len(magic_df)
-        magic_df = magic_df[magic_df['종목코드'].isin(ma60_tickers)].copy()
-        print(f"  MA60 필터 후: {before_count}개 → {len(magic_df)}개")
+        magic_df = magic_df[magic_df['종목코드'].isin(ma120_tickers)].copy()
+        print(f"  MA120 필터 후: {before_count}개 → {len(magic_df)}개")
     else:
-        print("  가격 데이터 부족 - MA60 필터 스킵")
+        print("  가격 데이터 부족 - MA120 필터 스킵")
 
     # =========================================================================
     # 5단계: FnGuide 컨센서스 수집 (Forward PER)

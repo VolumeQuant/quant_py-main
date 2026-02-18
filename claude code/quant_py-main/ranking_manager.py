@@ -32,7 +32,7 @@ def save_ranking(date_str: str, rankings: list, metadata: dict = None):
     Args:
         date_str: 기준일 (YYYYMMDD)
         rankings: [{"rank": 1, "ticker": "005930", "name": "삼성전자", ...}, ...]
-        metadata: 추가 메타데이터 (유니버스 수, MA60 통과 수 등)
+        metadata: 추가 메타데이터 (유니버스 수, MA120 통과 수 등)
     """
     path = get_ranking_path(date_str)
 
