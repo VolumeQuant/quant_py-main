@@ -49,6 +49,17 @@
 | `send_telegram_auto.py` | cash_pct 참조 전부 제거, format_overview/format_top30/format_buy_recommendations 수정 |
 | `gemini_analysis.py` | build_prompt/build_final_picks_prompt에서 cash_pct → action 기반 |
 
+#### 구분선 정리 (US 프로젝트 패턴 적용)
+
+**규칙**: 같은 카테고리 = 빈줄 또는 없음, 다른 카테고리 = `─────────────────` 구분선
+
+| 위치 | Before | After | 이유 |
+|------|--------|-------|------|
+| 날짜↔지수 | `─────` | 제거 | 같은 "시장 현황" |
+| Top30 타이틀↔본문 | `─────` | 제거 | 같은 카테고리 |
+| ✅↔⏳↔🆕 그룹 간 | `─────` | 빈줄 | 같은 "종목 상태" |
+| 종목 간 (fallback) | `──────` | 빈줄 | 같은 카테고리 |
+
 ---
 
 ## 핵심 변경사항 (v18.1 — 전략 밸런스 리뷰 + MA120 추세 필터)
