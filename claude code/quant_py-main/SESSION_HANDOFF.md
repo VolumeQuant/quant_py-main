@@ -2,9 +2,52 @@
 
 ## 문서 개요
 
-**버전**: 18.1
+**버전**: 18.2
 **최종 업데이트**: 2026-02-18
 **작성자**: Claude Opus 4.6
+
+---
+
+## 핵심 변경사항 (v18.2 — 현금비중 % 제거 + 행동 등급 시스템 + VIX 퍼센타일)
+
+### 2026-02-18 현금비중 → 행동 가이드 전환
+
+**배경**: 기존 시스템은 VIX 수준에 따라 현금비중을 ±5~15% 가감했으나, 실제 포트폴리오는 항상 5종목×20% 고정이라 수치가 무의미. 미국 프로젝트(eps-momentum-us v31)에서 동일한 이유로 이미 현금비중 % 제거 완료. 한국 프로젝트도 동일 적용.
+
+**핵심 원칙**: "표시하는 숫자와 실제 행동이 일치해야 한다."
+
+#### 주요 변경
+
+| 항목 | Before | After |
+|------|--------|-------|
+| VIX 기준 | 절대값 (20/25/35 고정) | **252일 퍼센타일** (적응형) |
+| 현금비중 | cash_pct 0~70% 산출 | **완전 제거** (cash_adjustment=0) |
+| KR 가감 | adjustment 0/10/20 | **제거** (레짐 정보만) |
+| 최종 출력 | `💰 투자 80% + 현금 20%` | `→ [행동 가이드 텍스트]` |
+| 행동 결정 | cash_pct 기반 분기 | **HY분면 × q_days × n_ok × Concordance** |
+| Concordance | 현금% 가감 조절 | **행동 톤 강화/완화** |
+| Gemini 프롬프트 | `현금 비중 권고: X%` | `행동 권장: [action]` |
+
+#### 행동 등급 매트릭스 핵심
+
+- **Q1 봄**: 적극 매수 (n_ok에 따라 강도 조절)
+- **Q2 여름**: 평소대로~신중~줄이세요
+- **Q3 가을**: q_days < 60 신중, ≥ 60 줄이세요~멈추세요
+- **Q4 겨울**: ≤20일 매도(최강), 20~60일 관망, **>60일 분할 매수**(Q1 전환 사전 포석)
+- **💎 해빙/VIX 공포완화**: 분할 매수 시작!
+
+**30년 데이터 근거**:
+- Q4 초기(≤20일): 20일 수익 -0.5~0% → 가장 위험
+- Q4 후기(>60일): 60일 수익 +1.5~2.5% → 사실상 Q1 수준
+- Q4→Q1 전환: 250일 수익 +8~12% → 역사적 최고 매수 기회
+
+#### 변경 파일
+
+| 파일 | 변경 |
+|------|------|
+| `credit_monitor.py` | fetch_vix_data 퍼센타일, fetch_hy_quadrant cash_pct 제거, fetch_kr_credit_spread adjustment 제거, _synthesize_action 전면 개편, get_credit_status cash 로직 제거, format_credit_section 현금% → 행동 가이드 |
+| `send_telegram_auto.py` | cash_pct 참조 전부 제거, format_overview/format_top30/format_buy_recommendations 수정 |
+| `gemini_analysis.py` | build_prompt/build_final_picks_prompt에서 cash_pct → action 기반 |
 
 ---
 

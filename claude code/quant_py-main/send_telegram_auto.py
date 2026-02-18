@@ -201,8 +201,8 @@ def format_overview(has_ai: bool = False):
         '🌡️ <b>시장 위험 신호 읽는 법</b>',
         '🟢 안정 🔴 위험으로 3가지 지표를 보여줘요.',
         '순서대로 🏦신용(HY) · 🇰🇷한국(BBB-) · ⚡변동성(VIX)',
-        '🟢 많으면 → 적극 투자',
-        '🔴 많으면 → 현금 비중 UP',
+        '🟢 많으면 → 평소대로 투자',
+        '🔴 많으면 → 매수 축소 또는 매도 검토',
         '',
         '📩 <b>오늘의 메시지</b>',
     ]
@@ -304,12 +304,12 @@ def format_top30(pipeline: list, exited: list, cold_start: bool = False, has_nex
         lines.append("─────────────────")
         t0_rank_map = {item['ticker']: item['rank'] for item in (rankings_t0 or {}).get('rankings', [])}
 
-        # 시장 위험에 따른 이탈 경보 차등
-        cash_pct = 20
-        if credit:
-            cash_pct = credit.get('final_cash_pct', 20)
+        # 시장 위험에 따른 이탈 경보 차등 (HY quadrant 기반)
+        hy_q = ''
+        if credit and credit.get('hy'):
+            hy_q = credit['hy'].get('quadrant', '')
 
-        if cash_pct >= 50:
+        if hy_q == 'Q4':
             lines.append(f"🚨 어제 대비 이탈 {len(exited)}개")
         else:
             lines.append(f"📉 어제 대비 이탈 {len(exited)}개")
@@ -325,10 +325,10 @@ def format_top30(pipeline: list, exited: list, cold_start: bool = False, has_nex
             else:
                 lines.append(f"  {e['name']} {prev}위 → 순위권 밖{reason_tag}")
 
-        # 시장 위험에 따른 경보 톤 차등
-        if cash_pct >= 50:
+        # 시장 위험에 따른 경보 톤 차등 (HY quadrant 기반)
+        if hy_q == 'Q4':
             lines.append("🚨 위험 구간이에요. 보유 중이라면 즉시 매도하세요.")
-        elif cash_pct >= 30:
+        elif hy_q == 'Q3':
             lines.append("⛔ 경계 구간이에요. 보유 중이라면 매도를 검토하세요.")
         else:
             lines.append("⛔ 보유 중이라면 매도를 검토하세요.")
@@ -374,7 +374,7 @@ def _get_buy_rationale(pick) -> str:
     return ' · '.join(reasons[:2])
 
 
-def format_buy_recommendations(picks: list, base_date_str: str, universe_count: int = 0, ai_picks_text: str = None, skipped: list = None, weight_per_stock: int = None, cash_pct: int = 0) -> str:
+def format_buy_recommendations(picks: list, base_date_str: str, universe_count: int = 0, ai_picks_text: str = None, skipped: list = None, weight_per_stock: int = None, final_action: str = '') -> str:
     """최종 추천 메시지 — AI 멘트 + 구분선"""
     if weight_per_stock is None:
         weight_per_stock = WEIGHT_PER_STOCK
@@ -417,8 +417,6 @@ def format_buy_recommendations(picks: list, base_date_str: str, universe_count: 
     lines.append("📊 <b>비중 한눈에 보기</b>")
     weight_parts = [f"{p['name']} {weight_per_stock}%" for p in picks]
     lines.append(' · '.join(weight_parts))
-    if cash_pct > 0:
-        lines.append(f"🛡️ 시장 위험 권고: 현금 {cash_pct}% 보유 추천")
 
     # 종목별 설명
     lines.append("─────────────────")
@@ -439,8 +437,8 @@ def format_buy_recommendations(picks: list, base_date_str: str, universe_count: 
     lines.append("─────────────────")
     lines.append("💡 <b>활용법</b>")
     lines.append("· 비중대로 분산 투자를 권장해요")
-    if cash_pct > 0:
-        lines.append(f"· 시장 위험 권고에 따라 현금 {cash_pct}% 보유를 고려하세요")
+    if final_action:
+        lines.append(f"· 시장 위험 지표: {final_action}")
     lines.append("· Top 30에서 빠지면 매도 검토")
     lines.append("⚠️ 참고용이며, 투자 판단은 본인 책임이에요.")
 
@@ -513,11 +511,9 @@ def main():
     # ============================================================
     ecos_key = getattr(__import__('config'), 'ECOS_API_KEY', None)
     credit = get_credit_status(ecos_api_key=ecos_key)
-    cash_pct = credit['final_cash_pct']
 
-    # 종목 수는 항상 MAX_PICKS (퀀트 모델 결정), 현금 비중은 별도 권고
     stock_weight = WEIGHT_PER_STOCK
-    print(f"\n[매수 추천 설정] 현금 {cash_pct}% · 최대 {MAX_PICKS}종목 × {stock_weight}%")
+    print(f"\n[매수 추천 설정] 행동: {credit['final_action']} · 최대 {MAX_PICKS}종목 × {stock_weight}%")
 
     # ============================================================
     # 순위 데이터 로드 (3일)
@@ -620,7 +616,6 @@ def main():
     if hy_data:
         market_ctx = {
             'season': f"{hy_data['quadrant_icon']} {hy_data['quadrant_label']}",
-            'cash_pct': cash_pct,
             'concordance_text': credit.get('concordance', ''),
             'action': credit.get('final_action', ''),
         }
@@ -753,7 +748,7 @@ def main():
             ai_picks_text = run_final_picks_analysis(final_stock_list, stock_weight, BASE_DATE, market_context=market_ctx)
         except Exception as e:
             print(f"최종 추천 AI 설명 실패 (fallback 사용): {e}")
-        msg_final = format_buy_recommendations(picks, base_date_str, universe_count, ai_picks_text, skipped=skipped, weight_per_stock=stock_weight, cash_pct=cash_pct)
+        msg_final = format_buy_recommendations(picks, base_date_str, universe_count, ai_picks_text, skipped=skipped, weight_per_stock=stock_weight, final_action=credit.get('final_action', ''))
 
     # 메시지 리스트: Guide → [1/3] 시장+Top30 → [2/3] AI → [3/3] 최종
     messages = [msg_overview, msg_main]
@@ -812,7 +807,7 @@ def main():
     # ============================================================
     cleanup_old_rankings(keep_days=30)
 
-    print(f'\n매수 추천: {len(picks)}개 ({"관망" if not picks else f"종목 {len(picks)*stock_weight}% + 현금 {cash_pct}%"})')
+    print(f'\n매수 추천: {len(picks)}개 ({"관망" if not picks else f"종목 {len(picks)*stock_weight}%"})')
     print(f'파이프라인: ✅ {v_count} · ⏳ {d_count} · 🆕 {n_count}')
     print(f'일일 변동: 진입 {len(entered)}개 · 이탈 {len(exited)}개')
     print('\n완료!')

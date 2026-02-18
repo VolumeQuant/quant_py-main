@@ -132,19 +132,17 @@ def build_prompt(stock_list, base_date=None, market_context=None):
     market_block = ""
     if market_context:
         season = market_context.get('season', '')
-        cash = market_context.get('cash_pct', 20)
         concordance = market_context.get('concordance_text', '')
         action = market_context.get('action', '')
         market_block = f"""
 [현재 시장 환경 — 시스템이 판단한 베타 위험]
 시장 국면: {season}
-현금 비중 권고: {cash}%
 지표 일치도: {concordance}
-종합 판단: {action}
+행동 권장: {action}
 
 → 이 시장 환경을 종목 분석에 반영해줘.
-  현금 비중이 높으면(40%+) "지금 당장 사야 할 이유가 있는지" 더 엄격하게 봐줘.
-  현금 비중이 낮으면(0~20%) "좋은 기회를 놓치지 않게" 긍정적으로 평가해줘.
+  행동 권장에 '매도'나 '멈추'가 포함되면 더 엄격하게 봐줘.
+  행동 권장에 '적극'이나 '평소대로'가 포함되면 긍정적으로 평가해줘.
 """
 
     prompt = f"""분석 기준일: {date_str}
@@ -365,11 +363,10 @@ def build_final_picks_prompt(stock_list, weight_per_stock=20, base_date=None, ma
     market_block = ""
     if market_context:
         season = market_context.get('season', '')
-        cash = market_context.get('cash_pct', 20)
         action = market_context.get('action', '')
         market_block = f"""
 [시장 위험 상태]
-국면: {season} / 현금 비중 권고: {cash}%
+국면: {season}
 행동 권장: {action}
 → 종목 설명에 시장 환경을 자연스럽게 반영해줘. 위험 높으면 "방어적", 안정적이면 "공격적" 톤으로.
 """

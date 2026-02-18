@@ -1,15 +1,25 @@
 """
 신용시장 모니터링 — US HY Spread (FRED) + 한국 BBB- 신용스프레드 (ECOS) + VIX (FRED)
 
+v18.2: 현금비중 % 제거 → 행동 등급(Action) 기반 시스템
+  - 표시하는 숫자와 실제 행동이 일치해야 한다
+  - VIX: 절대값 기준 → 252일 퍼센타일 기반 레짐
+  - HY: cash_pct 제거, q_days 기반 행동 강화
+  - KR: adjustment 제거, 레짐 정보만 유지
+  - _synthesize_action: HY 분면 × q_days × n_ok(보조지표) × Concordance(톤)
+
 Verdad 4분면 모델:
   수준: HY vs 10년 롤링 중위수 (넓/좁)
   방향: 현재 vs 63영업일(3개월) 전 (상승/하락)
   → Q1 회복(넓+하락), Q2 성장(좁+하락), Q3 과열(좁+상승), Q4 침체(넓+상승)
 
-현금비중:
-  Layer 1 (미국): US HY Spread 4분면 → 기본 현금비중 (0~70%)
-  Layer 2 (한국): BBB- 신용스프레드 → 가감 조정 (±10~20%)
-  Layer 3 (글로벌): VIX 변동성 지수 → 가감 조정 (±5~15%), Concordance 반영
+핵심 설계 원칙 (30년 데이터 근거):
+  - Q4 초기(≤20일) = 가장 위험 (20일 수익 -0.5~0%)
+  - Q4 중기(20~60일) = 턴어라운드 시작 (60일 수익 +0.5~1.5%)
+  - Q4 후기(>60일) = 사실상 Q1 수준 (60일 수익 +1.5~2.5%), 분할 매수 사전 포석
+  - Q4→Q1 전환 = 역사적 최고 매수 기회 (250일 수익 +8~12%)
+  - VIX 40+ 하락 전환 = 12개월 평균 +23.4% → 해빙 신호 동급
+  - HY = 방향타, VIX = 속도계 → VIX 단독 결정 불가
 """
 
 import urllib.request
@@ -44,7 +54,7 @@ def fetch_hy_quadrant():
     """US HY Spread Verdad 4분면 + 해빙 신호 (FRED BAMLH0A0HYM2)
 
     Returns:
-        dict or None
+        dict or None: cash_pct 없음, action은 q_days 기반
     """
     try:
         end_date = datetime.now().strftime('%Y-%m-%d')
@@ -125,23 +135,23 @@ def fetch_hy_quadrant():
             else:
                 break
 
-        # 현금비중 + 행동 권장
+        # 행동 권장 (q_days 기반, 30년 데이터 근거)
         if quadrant == 'Q4':
             if q_days <= 20:
-                cash_pct, action = 30, '신규 매수를 멈추고 관망하세요.'
+                action = '침체에 진입했어요. 신규 매수를 멈추고 보유 종목을 줄이세요.'
             elif q_days <= 60:
-                cash_pct, action = 50, '보유 종목을 줄이고 현금을 늘리세요.'
+                action = '침체가 지속 중이에요. 신규 매수를 멈추고 관망하세요.'
             else:
-                cash_pct, action = 70, '현금을 최대한 확보하세요.'
+                action = '바닥권에 접근하고 있어요. 분할 매수를 시작하세요.'
         elif quadrant == 'Q3':
             if q_days >= 60:
-                cash_pct, action = 30, '신규 매수를 줄여가세요.'
+                action = '신규 매수를 줄여가세요.'
             else:
-                cash_pct, action = 20, '매수할 때 신중하게 판단하세요.'
+                action = '신규 매수 시 신중하게 판단하세요.'
         elif quadrant == 'Q1':
-            cash_pct, action = 0, '적극 매수하세요. 역사적으로 수익률이 가장 높은 구간이에요.'
+            action = '적극 매수하세요. 역사적으로 수익률이 가장 높은 구간이에요.'
         else:
-            cash_pct, action = 20, '평소대로 투자하세요.'
+            action = '평소대로 투자하세요.'
 
         return {
             'hy_spread': hy_spread,
@@ -153,7 +163,6 @@ def fetch_hy_quadrant():
             'quadrant_icon': icon,
             'signals': signals,
             'q_days': q_days,
-            'cash_pct': cash_pct,
             'action': action,
         }
 
@@ -163,16 +172,14 @@ def fetch_hy_quadrant():
 
 
 def fetch_vix_data():
-    """VIX(CBOE 변동성 지수) 레짐 판단 + 현금비중 가감 (FRED VIXCLS)
+    """VIX(CBOE 변동성 지수) 252일 퍼센타일 기반 레짐 판단 (FRED VIXCLS)
 
     Returns:
-        dict or None: {vix_current, vix_5d_ago, vix_slope, vix_slope_dir,
-                       vix_ma_20, regime, regime_label, regime_icon,
-                       cash_adjustment, direction}
+        dict or None: cash_adjustment=0 (호환성), vix_pct(퍼센타일) 추가
     """
     try:
         end_date = datetime.now().strftime('%Y-%m-%d')
-        start_date = (datetime.now() - timedelta(days=400)).strftime('%Y-%m-%d')
+        start_date = (datetime.now() - timedelta(days=600)).strftime('%Y-%m-%d')
         csv_data = _fetch_fred_csv('VIXCLS', start_date, end_date)
 
         df = pd.read_csv(io.StringIO(csv_data), parse_dates=['observation_date'])
@@ -189,6 +196,13 @@ def fetch_vix_data():
         vix_slope = vix_current - vix_5d_ago
         vix_ma_20 = float(df['vix'].rolling(20).mean().iloc[-1])
 
+        # 252일 퍼센타일 계산
+        if len(df) >= 252:
+            recent_252 = df['vix'].iloc[-252:]
+            vix_pct = float((recent_252 < vix_current).sum() / len(recent_252) * 100)
+        else:
+            vix_pct = float((df['vix'] < vix_current).sum() / len(df) * 100)
+
         # Slope direction (±0.5 threshold to avoid noise)
         if vix_slope > 0.5:
             slope_dir = 'rising'
@@ -197,37 +211,28 @@ def fetch_vix_data():
         else:
             slope_dir = 'flat'
 
-        # Regime + cash adjustment
-        if vix_current > 35:
+        # 퍼센타일 기반 레짐
+        if vix_pct >= 90:
             if slope_dir in ('rising', 'flat'):
                 regime, label, icon = 'crisis', '위기', '🔴'
-                cash_adj = 15
             else:
                 regime, label, icon = 'crisis_relief', '공포완화', '💎'
-                cash_adj = -10
-        elif vix_current >= 25:
+        elif vix_pct >= 80:
             if slope_dir == 'rising':
                 regime, label, icon = 'high', '상승경보', '🔶'
-                cash_adj = 10
             else:
                 regime, label, icon = 'high_stable', '높지만안정', '🟡'
-                cash_adj = 0
-        elif vix_current >= 20:
+        elif vix_pct >= 67:
             if slope_dir == 'rising':
                 regime, label, icon = 'elevated', '경계', '⚠️'
-                cash_adj = 5
             elif slope_dir == 'falling':
                 regime, label, icon = 'stabilizing', '안정화', '🟢'
-                cash_adj = -5
             else:
                 regime, label, icon = 'elevated_flat', '보통', '🟡'
-                cash_adj = 0
-        elif vix_current < 12:
+        elif vix_pct < 10:
             regime, label, icon = 'complacency', '안일', '⚠️'
-            cash_adj = 5
-        else:  # 12~20 normal
+        else:  # 10~67 normal
             regime, label, icon = 'normal', '안정', '🟢'
-            cash_adj = 0
 
         # Simplified direction for concordance check
         direction = 'warn' if regime in ('crisis', 'high', 'elevated', 'complacency') else 'stable'
@@ -238,10 +243,11 @@ def fetch_vix_data():
             'vix_slope': vix_slope,
             'vix_slope_dir': slope_dir,
             'vix_ma_20': vix_ma_20,
+            'vix_pct': vix_pct,
             'regime': regime,
             'regime_label': label,
             'regime_icon': icon,
-            'cash_adjustment': cash_adj,
+            'cash_adjustment': 0,
             'direction': direction,
         }
 
@@ -253,11 +259,8 @@ def fetch_vix_data():
 def fetch_kr_credit_spread(api_key: str = None):
     """한국 신용스프레드 = 회사채 BBB- 금리 - 국고채 3년 금리 (ECOS API)
 
-    Args:
-        api_key: ECOS API 인증키 (없으면 None 반환)
-
     Returns:
-        dict or None
+        dict or None: adjustment 제거, 레짐 정보만 유지
     """
     if not api_key:
         return None
@@ -324,12 +327,8 @@ def fetch_kr_credit_spread(api_key: str = None):
 
         # 3개월 전 대비 추세
         spread_3m_ago = merged['spread'].iloc[-63] if len(merged) >= 63 else merged['spread'].iloc[0]
-        is_rising = spread >= spread_3m_ago
 
         # 레짐 판단
-        # 정상: < 중위수 + 1%p
-        # 경계: 중위수 + 1%p ~ 중위수 + 2%p
-        # 위기: > 중위수 + 2%p
         if spread >= median_5y + 2.0:
             regime = 'stress'
             regime_label = '위기'
@@ -343,20 +342,6 @@ def fetch_kr_credit_spread(api_key: str = None):
             regime_label = '정상'
             regime_icon = '🟢'
 
-        # 현금비중 가감
-        if regime == 'stress':
-            if is_rising:
-                adjustment = 20   # 위기 + 악화 중
-            else:
-                adjustment = 10   # 위기 + 개선 중
-        elif regime == 'caution':
-            if is_rising:
-                adjustment = 10   # 경계 + 악화 중
-            else:
-                adjustment = 0    # 경계 + 개선 중
-        else:
-            adjustment = 0        # 정상
-
         return {
             'spread': spread,
             'spread_prev': spread_prev,
@@ -365,7 +350,6 @@ def fetch_kr_credit_spread(api_key: str = None):
             'regime': regime,
             'regime_label': regime_label,
             'regime_icon': regime_icon,
-            'adjustment': adjustment,
             'ktb_3y': merged['ktb_3y'].iloc[-1],
             'bbb_rate': merged['bbb_rate'].iloc[-1],
         }
@@ -375,52 +359,88 @@ def fetch_kr_credit_spread(api_key: str = None):
         return None
 
 
-def _synthesize_action(hy, kr, vix, final_cash):
-    """3지표 종합 행동 멘트 생성 — HY만이 아닌 전체 상황 반영"""
-    q = hy['quadrant']
+def _synthesize_action(hy, kr, vix):
+    """HY 분면 × q_days × n_ok(보조지표) × Concordance(톤) → 최종 행동 멘트
 
-    # 각 지표 안정 여부
-    hy_ok = q in ('Q1', 'Q2')
+    30년 데이터 기반 설계:
+      - Q4 초기(≤20일) = 가장 위험 (폭풍의 한가운데)
+      - Q4 후기(>60일) = Q1 전환 접근 (분할 매수 사전 포석)
+      - Concordance: both_warn → 한단계↑, vix_only → 한단계↓
+      - VIX crisis_relief = 해빙 신호 동급 (12개월 +23.4%)
+    """
+    q = hy['quadrant']
+    q_days = hy.get('q_days', 1)
+
+    # 보조 지표 안정 여부 (HY 제외: KR, VIX만)
     kr_ok = kr is None or kr['regime'] == 'normal'
     vix_ok = vix is None or vix['direction'] == 'stable'
-    n_ok = sum([hy_ok, kr_ok, vix_ok])
+    n_ok = sum([kr_ok, vix_ok])  # 0~2
 
-    # 봄(Q1) — 회복기, 역사적 최고 수익률
+    # VIX crisis_relief(90th+ 퍼센타일, 하락 전환) = 해빙 신호 동급
+    if vix and vix['regime'] == 'crisis_relief':
+        return '공포가 꺾이고 있어요. 분할 매수를 시작하세요!'
+
+    # 해빙 신호 우선
+    if hy.get('signals'):
+        for sig in hy['signals']:
+            if '💎' in sig:
+                return '회복 전환 신호가 감지됐어요. 분할 매수를 시작하세요!'
+
+    # ── Q1 봄 — 회복기, 역사적 최고 수익률 ──
     if q == 'Q1':
-        if n_ok == 3:
-            return '모든 지표가 매수를 가리켜요. 적극 투자하세요!'
+        if n_ok == 2:
+            return '모든 지표가 매수를 가리켜요. 적극 매수하세요!'
         elif kr_ok and not vix_ok:
-            return '회복 구간이에요. VIX가 높지만 신용시장이 안정적이라 공격적으로 투자해도 좋아요.'
+            return '회복 구간이에요. VIX가 높지만 신용시장이 안정적이니 적극 매수하세요.'
         elif not kr_ok:
-            return '회복 신호가 있지만 한국 신용시장이 불안해요. 분할 매수하세요.'
+            return '회복 구간이지만 한국 신용시장이 불안해요. 분할 매수하세요.'
         return '회복 구간이에요. 적극 매수하세요.'
 
-    # 여름(Q2) — 성장기, 정상 투자
+    # ── Q2 여름 — 성장기, 정상 투자 ──
     if q == 'Q2':
-        if n_ok == 3:
+        if n_ok == 2:
             return '모든 지표가 안정적이에요. 평소대로 투자하세요.'
         elif not vix_ok and kr_ok:
-            return '신용시장은 안정적이지만 VIX가 높아요. 신규 매수 시 신중하세요.'
+            return '신용시장은 안정적이지만 변동성이 높아요. 신규 매수 시 신중하세요.'
         elif not kr_ok and vix_ok:
             return '한국 신용시장이 경계 수준이에요. 신규 매수 시 신중하세요.'
-        return '일부 경고 신호가 있어요. 신규 매수를 줄여가세요.'
+        return '한국 신용시장과 변동성 모두 불안해요. 신규 매수를 줄이세요.'
 
-    # 가을(Q3) — 과열기
+    # ── Q3 가을 — 과열기, 시간 경과 = 위험 증가 ──
     if q == 'Q3':
-        if kr_ok and vix_ok:
-            return '과열 신호가 있어요. 신규 매수를 줄여가세요.'
-        elif not vix_ok:
-            return '과열 + 변동성 확대에요. 보유 종목을 점검하고 신규 매수를 멈추세요.'
-        return '여러 지표가 과열이에요. 현금 비중을 늘리세요.'
+        if q_days < 60:
+            if n_ok >= 1:
+                return '과열 초기 신호에요. 신규 매수 시 신중하세요.'
+            return '과열 신호에 경고가 겹쳤어요. 신규 매수를 줄이세요.'
+        else:  # q_days >= 60
+            if n_ok == 2:
+                return '과열이 2개월 넘게 지속 중이에요. 신규 매수를 줄이세요.'
+            elif n_ok == 1:
+                return '장기 과열에 경고가 겹쳤어요. 신규 매수를 멈추고 보유 종목을 점검하세요.'
+            return '⚠️ 장기 과열 + 전 지표 경고에요. 보유 종목을 줄이고 신규 매수를 멈추세요.'
 
-    # 겨울(Q4) — 침체기
-    if n_ok == 0:
-        return '모든 지표가 위험해요. 신규 매수를 멈추고 현금을 확보하세요.'
-    elif kr_ok and vix_ok:
-        return '겨울이지만 한국 시장은 안정적이에요. 현금 비중을 유지하며 지켜보세요.'
-    elif not kr_ok and not vix_ok:
-        return '신용시장과 변동성 모두 위험해요. 보유 종목을 줄이고 현금을 확보하세요.'
-    return '위험 구간이에요. 보유 종목을 줄이고 현금을 늘리세요.'
+    # ── Q4 겨울 — 침체기, 초기가 가장 위험, 후기는 Q1 전환 접근 ──
+    if q_days <= 20:
+        # 진입 직후 — 폭풍의 한가운데 (20일 수익 -0.5~0%)
+        if n_ok >= 2:
+            return '⚠️ 침체에 진입했어요. 신규 매수를 멈추고 보유 종목을 줄이세요.'
+        elif n_ok == 1:
+            return '⚠️ 침체 진입 + 경고 신호. 보유 종목을 매도하세요.'
+        return '🚨 모든 지표가 위험해요. 보유 종목을 즉시 매도하세요.'
+    elif q_days <= 60:
+        # 턴어라운드 시작 (60일 수익 +0.5~1.5%)
+        if n_ok >= 2:
+            return '침체가 지속 중이지만 보조 지표는 안정적이에요. 신규 매수를 멈추고 관망하세요.'
+        elif n_ok == 1:
+            return '침체 지속 + 경고 신호에요. 보유 종목을 줄여가세요.'
+        return '⚠️ 침체 + 전 지표 경고에요. 보유 종목을 매도하세요.'
+    else:
+        # Q1 전환 접근 — 사전 포석 (60일 수익 +1.5~2.5%, Q1과 유사)
+        if n_ok >= 2:
+            return '바닥권에 접근하고 있어요. 분할 매수를 시작하세요.'
+        elif n_ok == 1:
+            return '바닥권이지만 일부 경고가 있어요. 소규모 분할 매수를 고려하세요.'
+        return '장기 침체 + 전 지표 경고에요. 관망하며 회복 신호를 기다리세요.'
 
 
 def get_credit_status(ecos_api_key: str = None):
@@ -428,11 +448,10 @@ def get_credit_status(ecos_api_key: str = None):
 
     Returns:
         dict {
-            'hy': dict or None,          # US HY Spread 결과
-            'kr': dict or None,          # 한국 BBB- 스프레드 결과
-            'vix': dict or None,         # VIX 결과
+            'hy': dict or None,
+            'kr': dict or None,
+            'vix': dict or None,
             'concordance': str,          # 'both_warn'|'hy_only'|'vix_only'|'both_stable'
-            'final_cash_pct': int,       # 최종 현금비중 (0~70)
             'final_action': str,         # 최종 행동 권장
         }
     """
@@ -444,12 +463,12 @@ def get_credit_status(ecos_api_key: str = None):
     if hy:
         print(f"  [HY] {hy['hy_spread']:.2f}% | 중위 {hy['median_10y']:.2f}% | "
               f"{hy['quadrant']} {hy['quadrant_label']} ({hy['q_days']}일째)")
-        print(f"  [HY] 기본 현금 {hy['cash_pct']}% · {hy['action']}")
+        print(f"  [HY] {hy['action']}")
         if hy['signals']:
             for sig in hy['signals']:
                 print(f"  [HY] 해빙: {sig}")
     else:
-        print("  [HY] 수집 실패 — 기본값(현금 20%) 적용")
+        print("  [HY] 수집 실패 — 기본값 적용")
 
     # Layer 2: 한국 BBB- 신용스프레드
     kr = None
@@ -459,19 +478,18 @@ def get_credit_status(ecos_api_key: str = None):
         if kr:
             print(f"  [KR] BBB- {kr['bbb_rate']:.2f}% - 국고채 {kr['ktb_3y']:.2f}% = "
                   f"스프레드 {kr['spread']:.2f}%p ({kr['regime_label']})")
-            print(f"  [KR] 현금비중 가감: {kr['adjustment']:+d}%")
         else:
-            print("  [KR] 수집 실패 — 가감 없이 진행")
+            print("  [KR] 수집 실패")
 
-    # Layer 3: VIX
+    # Layer 3: VIX (퍼센타일 기반)
     print("  VIX 조회 중...")
     vix = fetch_vix_data()
     if vix:
-        print(f"  [VIX] {vix['vix_current']:.1f} | 5일 전 {vix['vix_5d_ago']:.1f} | "
+        print(f"  [VIX] {vix['vix_current']:.1f} | 퍼센타일 {vix['vix_pct']:.0f}% | "
               f"slope {vix['vix_slope']:+.1f} ({vix['vix_slope_dir']})")
-        print(f"  [VIX] 레짐: {vix['regime_label']} | 가감: {vix['cash_adjustment']:+d}%")
+        print(f"  [VIX] 레짐: {vix['regime_label']}")
     else:
-        print("  [VIX] 수집 실패 — 가감 없이 진행")
+        print("  [VIX] 수집 실패")
 
     # Concordance Check (HY direction vs VIX direction)
     hy_dir = 'warn' if hy and hy['quadrant'] in ('Q3', 'Q4') else 'stable'
@@ -486,65 +504,31 @@ def get_credit_status(ecos_api_key: str = None):
     else:
         concordance = 'both_stable'
 
-    # 최종 현금비중 산출
+    # 최종 행동 멘트
     if hy:
-        base_cash = hy['cash_pct']
-        kr_adj = kr['adjustment'] if kr else 0
-
-        # VIX adjustment with concordance modulation
-        if vix:
-            raw_vix_adj = vix['cash_adjustment']
-            if concordance == 'both_warn':
-                vix_adj = raw_vix_adj           # 이중 확인 → 전액 적용
-            elif concordance == 'hy_only':
-                vix_adj = 0                     # HY만 경고, VIX 안정 → VIX 가감 없음
-            elif concordance == 'vix_only':
-                vix_adj = raw_vix_adj // 2      # VIX만 경고 → 50% 적용 (일시적 쇼크)
-            else:  # both_stable
-                vix_adj = raw_vix_adj           # 정상 → 그대로 (보통 0 또는 매수기회 음수)
-        else:
-            vix_adj = 0
-
-        final_cash = max(0, min(70, base_cash + kr_adj + vix_adj))
-
-        # 양쪽 모두 극단일 때 오버라이드
-        if hy['quadrant'] == 'Q4' and kr and kr['regime'] == 'stress':
-            final_cash = 70
-        elif hy['quadrant'] == 'Q1' and (kr is None or kr['regime'] == 'normal') and vix_dir == 'stable':
-            final_cash = 0
-
-        # 3지표 종합 행동 멘트 (HY만이 아닌 전체 상황 반영)
-        final_action = _synthesize_action(hy, kr, vix, final_cash)
+        final_action = _synthesize_action(hy, kr, vix)
     else:
-        # HY 실패 시에도 KR/VIX 가감 적용
-        base_cash = 20
-        kr_adj = kr['adjustment'] if kr else 0
-        vix_adj = vix['cash_adjustment'] if vix else 0
-        final_cash = max(0, min(70, base_cash + kr_adj + vix_adj))
-
         if kr and vix:
             final_action = '신용시장 메인 지표 수집 실패. 보조 지표 기준으로 기본값을 적용했어요.'
         else:
             final_action = '데이터 수집 실패로 기본값을 적용했어요.'
 
-    print(f"  → 최종 현금비중: {final_cash}% (HY {base_cash} + KR {kr_adj:+d} + VIX {vix_adj:+d})")
+    print(f"  → 행동: {final_action}")
 
     return {
         'hy': hy,
         'kr': kr,
         'vix': vix,
         'concordance': concordance,
-        'final_cash_pct': final_cash,
         'final_action': final_action,
     }
 
 
-def format_credit_section(credit: dict, n_picks: int = 5) -> str:
+def format_credit_section(credit: dict) -> str:
     """텔레그램 메시지용 시장 위험 지표 섹션 포맷팅
 
     Args:
         credit: get_credit_status() 반환값
-        n_picks: 최종 종목 수 (비중 계산용)
 
     Returns:
         str: 텔레그램 메시지 블록
@@ -552,7 +536,6 @@ def format_credit_section(credit: dict, n_picks: int = 5) -> str:
     hy = credit['hy']
     kr = credit['kr']
     vix = credit.get('vix')
-    final_cash = credit['final_cash_pct']
     final_action = credit['final_action']
 
     lines = ['─────────────────']
@@ -594,23 +577,16 @@ def format_credit_section(credit: dict, n_picks: int = 5) -> str:
         lines.append('')
         lines.append('⚡ <b>변동성</b>')
         v = vix['vix_current']
+        pct = vix['vix_pct']
         slope_arrow = '↑' if vix['vix_slope_dir'] == 'rising' else ('↓' if vix['vix_slope_dir'] == 'falling' else '')
-        adj = vix['cash_adjustment']
         if vix['regime'] == 'normal':
-            rel = '이하' if v <= vix['vix_ma_20'] else '이상'
-            lines.append(f"▸ VIX {v:.1f}")
-            lines.append(f"  평균({vix['vix_ma_20']:.1f}) {rel}, 안정적이에요.")
+            lines.append(f"▸ VIX {v:.1f} (1년 중 {pct:.0f}번째)")
+            lines.append(f"  안정적이에요.")
         else:
-            lines.append(f"▸ VIX {v:.1f} {slope_arrow}")
-            if adj > 0:
-                lines.append(f"  {vix['regime_label']} 구간이에요. 현금 +{adj}%")
-            elif adj < 0:
-                lines.append(f"  {vix['regime_label']} 구간이에요. 현금 {adj}%")
-            else:
-                lines.append(f"  {vix['regime_label']} 구간이에요.")
+            lines.append(f"▸ VIX {v:.1f}{slope_arrow} (1년 중 {pct:.0f}번째)")
+            lines.append(f"  {vix['regime_label']} 구간이에요.")
 
-    # ── 결론 (Concordance Check) ──
-    # 3가지 지표 신호 판정
+    # ── 결론 ──
     signals = []
     if hy:
         hy_ok = hy['quadrant'] in ('Q1', 'Q2')
@@ -640,11 +616,6 @@ def format_credit_section(credit: dict, n_picks: int = 5) -> str:
         # 봄(Q1) + ALL 안정 → 특별 강조
         if hy and hy['quadrant'] == 'Q1' and n_ok == n_total:
             lines.append('💎 역사적 매수 기회 — 적극 투자하세요!')
-
-    if final_cash == 0:
-        lines.append('💰 투자 100%')
-    else:
-        lines.append(f"💰 투자 {100 - final_cash}% + 현금 {final_cash}%")
 
     lines.append(f"→ {final_action}")
 
