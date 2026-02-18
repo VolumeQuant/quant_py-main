@@ -58,7 +58,7 @@ jobs:
 
       - name: Refresh FnGuide cache
         run: python refresh_fnguide_cache.py
-        timeout-minutes: 30
+        timeout-minutes: 45
 
       - name: Commit updated cache
         run: |

@@ -11,11 +11,26 @@ import io
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 import time
+import threading
 from pathlib import Path
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 KST = ZoneInfo('Asia/Seoul')
+
+# 병렬 워커 수 (FnGuide 부하 방지를 위해 4로 제한)
+MAX_WORKERS = 4
+
+
+def _crawl_one(ticker, get_financial_statement):
+    """단일 종목 크롤링 (워커 스레드에서 실행)"""
+    try:
+        get_financial_statement(ticker, use_cache=False)
+        return ticker, True, None
+    except Exception as e:
+        return ticker, False, str(e)
+
 
 def main():
     from data_collector import DataCollector
@@ -49,23 +64,44 @@ def main():
     # 시가총액 1000억 이상 종목 (넉넉하게)
     market_cap = dc.get_market_cap(base_date, market='ALL')
     tickers = market_cap[market_cap['시가총액'] >= 1000_0000_0000].index.tolist()
-    print(f"갱신 대상: {len(tickers)}개 종목")
+    print(f"갱신 대상: {len(tickers)}개 종목 (워커 {MAX_WORKERS}개 병렬)")
 
     success = 0
     fail = 0
-    for i, ticker in enumerate(tickers):
-        try:
-            get_financial_statement(ticker, use_cache=False)
-            success += 1
-            if (i + 1) % 50 == 0:
-                print(f"  진행: {i+1}/{len(tickers)} (성공 {success}, 실패 {fail})")
-            time.sleep(0.3)  # FnGuide 부하 방지
-        except Exception as e:
-            fail += 1
-            if fail <= 10:
-                print(f"  실패 {ticker}: {e}")
+    fail_tickers = []
+    done = 0
+    start_time = time.time()
 
-    print(f"\n완료: {success}개 성공, {fail}개 실패 (총 {len(tickers)}개)")
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        futures = {
+            executor.submit(_crawl_one, ticker, get_financial_statement): ticker
+            for ticker in tickers
+        }
+
+        for future in as_completed(futures):
+            ticker, ok, err = future.result()
+            done += 1
+
+            if ok:
+                success += 1
+            else:
+                fail += 1
+                fail_tickers.append(ticker)
+                if fail <= 10:
+                    print(f"  실패 {ticker}: {err}")
+
+            if done % 50 == 0:
+                elapsed = time.time() - start_time
+                print(f"  진행: {done}/{len(tickers)} "
+                      f"(성공 {success}, 실패 {fail}, "
+                      f"경과 {elapsed:.0f}초)")
+
+    elapsed = time.time() - start_time
+    print(f"\n완료: {success}개 성공, {fail}개 실패 "
+          f"(총 {len(tickers)}개, {elapsed:.0f}초)")
+
+    if fail_tickers:
+        print(f"실패 종목: {fail_tickers[:20]}")
 
 
 if __name__ == '__main__':
