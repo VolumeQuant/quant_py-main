@@ -2,9 +2,34 @@
 
 ## 문서 개요
 
-**버전**: 18.2
-**최종 업데이트**: 2026-02-18
+**버전**: 18.3
+**최종 업데이트**: 2026-02-19
 **작성자**: Claude Opus 4.6
+
+---
+
+## 핵심 변경사항 (v18.3 — FnGuide 병렬화 성능 개선)
+
+### 2026-02-19 FnGuide 재무제표 + 컨센서스 4스레드 병렬화
+
+**배경**: 워크플로우 실행시간 8~10분으로 과다. 분석 결과 `create_current_portfolio.py` 내 FnGuide 크롤링이 전체의 80% 차지. `refresh_fnguide_cache.py`에서는 이미 4스레드 병렬을 사용하고 있었으나, 본체(`fnguide_crawler.py`)에서는 순차 처리.
+
+#### 변경 사항
+
+| 함수 | Before | After | 효과 |
+|------|--------|-------|------|
+| `get_all_financial_statements()` | `for ticker in tqdm(tickers)` 순차 | `ThreadPoolExecutor(4)` 병렬 | 596종목 캐시 로드 병렬화 |
+| `get_consensus_batch()` | `for i, ticker in enumerate(tickers)` + `sleep(1)` | `ThreadPoolExecutor(4)` 병렬 + 스레드별 `sleep(1)` | 200종목 크롤링 4배속 |
+
+#### 성능 결과
+
+| 구간 | Before | After |
+|------|--------|-------|
+| `create_current_portfolio.py` | 396초 (6.6분) | **97초 (1.6분)** |
+| 전체 워크플로우 | 8분 20초 | **3분 40초** |
+
+#### 수정 파일
+- `fnguide_crawler.py` — `get_all_financial_statements()`, `get_consensus_batch()` 2개 함수
 
 ---
 
