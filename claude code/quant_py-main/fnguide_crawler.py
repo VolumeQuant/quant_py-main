@@ -147,7 +147,7 @@ def get_financial_statement(ticker, use_cache=True):
 
 def get_all_financial_statements(tickers, use_cache=True):
     """
-    여러 종목의 재무제표 크롤링
+    여러 종목의 재무제표 크롤링 (4스레드 병렬)
 
     Args:
         tickers: 종목 리스트
@@ -156,22 +156,34 @@ def get_all_financial_statements(tickers, use_cache=True):
     Returns:
         dict: {ticker: 재무제표 데이터프레임}
     """
-    print(f"FnGuide에서 재무제표 수집 중 (총 {len(tickers)}개 종목)...")
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    print(f"FnGuide에서 재무제표 수집 중 (총 {len(tickers)}개 종목, 4스레드)...")
+
+    def _fetch_one(ticker):
+        try:
+            fs = get_financial_statement(ticker, use_cache=use_cache)
+            return ticker, fs, None
+        except Exception as e:
+            return ticker, None, str(e)
 
     fs_data = {}
     error_list = []
+    done = 0
 
-    for ticker in tqdm(tickers):
-        try:
-            fs = get_financial_statement(ticker, use_cache=use_cache)
-            if not fs.empty:
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        futures = {executor.submit(_fetch_one, t): t for t in tickers}
+        for future in as_completed(futures):
+            ticker, fs, err = future.result()
+            done += 1
+            if err:
+                error_list.append(ticker)
+            elif fs is not None and not fs.empty:
                 fs_data[ticker] = fs
-        except Exception as e:
-            print(f"\n종목 {ticker} 실패: {e}")
-            error_list.append(ticker)
-            continue
+            if done % 100 == 0:
+                print(f"  재무제표 진행: {done}/{len(tickers)}")
 
-    print(f"\n수집 완료: {len(fs_data)}개 성공, {len(error_list)}개 실패")
+    print(f"수집 완료: {len(fs_data)}개 성공, {len(error_list)}개 실패")
     if error_list:
         print(f"실패 종목: {error_list[:10]}...")
 
@@ -506,32 +518,41 @@ def get_consensus_data(ticker):
 
 def get_consensus_batch(tickers, delay=1.0):
     """
-    여러 종목의 컨센서스 데이터 일괄 수집
+    여러 종목의 컨센서스 데이터 일괄 수집 (4스레드 병렬)
 
     Args:
         tickers: 종목코드 리스트
-        delay: 요청 간 딜레이 (초)
+        delay: 요청 간 딜레이 (초, 스레드별 적용)
 
     Returns:
         pd.DataFrame: 컨센서스 데이터
     """
-    results = []
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    print(f"\n📊 컨센서스 데이터 수집 중... ({len(tickers)}개 종목)")
-
-    for i, ticker in enumerate(tickers):
+    def _fetch_one(ticker):
         try:
             data = get_consensus_data(ticker)
-            results.append(data)
-
-            if (i + 1) % 20 == 0:
-                print(f"   {i + 1}/{len(tickers)} 완료...")
-
             time.sleep(delay)
+            return data
+        except Exception:
+            return {'ticker': ticker, 'has_consensus': False}
 
-        except Exception as e:
-            results.append({'ticker': ticker, 'has_consensus': False})
+    print(f"\n📊 컨센서스 데이터 수집 중... ({len(tickers)}개 종목, 4스레드)")
 
+    results_map = {}
+    done = 0
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        futures = {executor.submit(_fetch_one, t): t for t in tickers}
+        for future in as_completed(futures):
+            ticker = futures[future]
+            results_map[ticker] = future.result()
+            done += 1
+            if done % 40 == 0:
+                print(f"   {done}/{len(tickers)} 완료...")
+
+    # 원래 순서 유지
+    results = [results_map[t] for t in tickers]
     df = pd.DataFrame(results)
 
     # 커버리지 통계
