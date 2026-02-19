@@ -456,7 +456,7 @@ Q1(회복) + VIX 하락 = 12개월 평균 +23.4%. `_synthesize_action`에서 우
   - 구분선: 같은 카테고리(✅/⏳/🆕)는 빈줄, 다른 카테고리 간만 ─── 구분선
   - "👉 다음: AI 리스크 필터 [2/3]"
 
-[2/3] 🛡️ AI 리스크 필터 — parse_mode='HTML'
+[2/3] 🤖 AI 리스크 필터 — parse_mode='HTML'
   - Gemini 2.5 Flash + Google Search Grounding
   - 📰 시장 동향 (검색 기반)
   - ⚠️ 매수 주의 종목 (코드가 계산한 위험 플래그 기반)

@@ -43,7 +43,7 @@ def format_overview(has_ai=False):
     ]
     if has_ai:
         lines.append('[1/3] 📊 시장 + Top 30')
-        lines.append('[2/3] 🛡️ AI 리스크 필터')
+        lines.append('[2/3] 🤖 AI 리스크 필터')
         lines.append('[3/3] 🎯 최종 추천')
     else:
         lines.append('📊 시장 + Top 30')
@@ -101,7 +101,7 @@ def format_buy_recommendations(picks, base_date_str, universe_count=0, ai_picks_
     lines.append("📊 <b>비중 한눈에 보기</b>")
     lines.append(' · '.join(weight_parts))
     if cash_pct > 0:
-        lines.append(f"🛡️ 시장 위험 권고: 현금 {cash_pct}% 보유 추천")
+        lines.append(f"🚨 시장 위험 권고: 현금 {cash_pct}% 보유 추천")
     lines.append("")
 
     if ai_picks_text:
@@ -371,7 +371,7 @@ msg_main = header + '\n' + top30_section
 
 # [2/3] AI 리스크 필터
 fake_ai = """━━━━━━━━━━━━━━━━━━━
-    🛡️ AI 리스크 필터
+    🤖 AI 리스크 필터
 ━━━━━━━━━━━━━━━━━━━
 
 후보 종목 중 주의할 점을 AI가 점검했어요.
