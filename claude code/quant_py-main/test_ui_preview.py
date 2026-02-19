@@ -97,12 +97,9 @@ def format_buy_recommendations(picks, base_date_str, universe_count=0, ai_picks_
             lines.append(f"⚠️ {candidate['name']}(가중 {candidate['weighted_rank']}) 전일 {chg:.1f}% 급락 → 제외")
         lines.append("")
 
-    weight_parts = [f"{p['name']} {WEIGHT_PER_STOCK}%" for p in picks]
-    lines.append("📊 <b>비중 한눈에 보기</b>")
-    lines.append(' · '.join(weight_parts))
     if cash_pct > 0:
         lines.append(f"🚨 시장 위험 권고: 현금 {cash_pct}% 보유 추천")
-    lines.append("")
+        lines.append("")
 
     if ai_picks_text:
         lines.append("─────────────────")
