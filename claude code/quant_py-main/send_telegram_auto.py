@@ -742,6 +742,63 @@ def main():
         messages.append(msg_final)
 
     # ============================================================
+    # 웹 대시보드용 데이터 캐시 저장
+    # ============================================================
+    try:
+        import json as _json
+        web_data = {
+            'date': BASE_DATE,
+            'generated_at': get_korea_now().isoformat(),
+            'market': {
+                'kospi': {'close': float(kospi_close), 'change_pct': round(float(kospi_chg), 2)},
+                'kosdaq': {'close': float(kosdaq_close), 'change_pct': round(float(kosdaq_chg), 2)},
+                'warnings': market_warnings,
+            },
+            'credit': {
+                'hy': credit.get('hy'),
+                'kr': credit.get('kr'),
+                'vix': credit.get('vix'),
+                'concordance': credit.get('concordance'),
+                'final_action': credit.get('final_action'),
+                'formatted': format_credit_section(credit),
+            },
+            'pipeline': {
+                'verified': [s for s in pipeline if s['status'] == '✅'],
+                'pending': [s for s in pipeline if s['status'] == '⏳'],
+                'new_entry': [s for s in pipeline if s['status'] == '🆕'],
+            },
+            'picks': [{
+                'ticker': p['ticker'], 'name': p['name'], 'sector': p.get('sector', ''),
+                'weighted_rank': p.get('weighted_rank'), 'rank_t0': p.get('rank_t0'),
+                'rank_t1': p.get('rank_t1'), 'rank_t2': p.get('rank_t2'),
+                'per': p.get('per'), 'pbr': p.get('pbr'), 'roe': p.get('roe'), 'fwd_per': p.get('fwd_per'),
+                'score': p.get('score'), 'weight': stock_weight,
+                'tech': {k: v for k, v in (p.get('_tech') or {}).items() if k != 'ohlcv'},
+            } for p in picks],
+            'skipped': [{'name': s[0]['name'], 'ticker': s[0]['ticker'], 'daily_chg': s[1]} for s in skipped],
+            'exited': [{'ticker': e['ticker'], 'name': e['name'], 'rank': e['rank'],
+                        'prev_rank': e.get('prev_rank'), 'exit_reason': e.get('exit_reason', '')}
+                       for e in exited],
+            'sectors': {},
+            'ai': {
+                'risk_filter': ai_msg,
+                'picks_text': ai_picks_text if 'ai_picks_text' in dir() else None,
+                'flagged_tickers': list(risk_flagged_tickers),
+            },
+        }
+        # 섹터 분포
+        for s in pipeline:
+            sec = s.get('sector', '기타')
+            web_data['sectors'][sec] = web_data['sectors'].get(sec, 0) + 1
+
+        web_path = STATE_DIR / f'web_data_{BASE_DATE}.json'
+        with open(web_path, 'w', encoding='utf-8') as _f:
+            _json.dump(web_data, _f, ensure_ascii=False, indent=2, default=str)
+        print(f'\n[웹 캐시] {web_path.name} 저장 완료')
+    except Exception as _e:
+        print(f'\n[웹 캐시] 저장 실패 (무시): {_e}')
+
+    # ============================================================
     # 텔레그램 전송
     # ============================================================
     url = f'https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage'
