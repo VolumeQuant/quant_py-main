@@ -346,7 +346,7 @@ def build_final_picks_prompt(stock_list, weight_per_stock=20, base_date=None, ma
         line = f"{i+1}. {s['name']}({s['ticker']}) · {s.get('sector', '기타')}"
         parts = []
         if s.get('rank_t0') is not None:
-            parts.append(f"순위 {s['rank_t0']}→{s.get('rank_t1', '?')}→{s.get('rank_t2', '?')}")
+            parts.append(f"순위 {s.get('rank_t2', '?')}→{s.get('rank_t1', '?')}→{s['rank_t0']}")
         if s.get('per'): parts.append(f"PER {s['per']:.1f}")
         if s.get('fwd_per'): parts.append(f"Fwd PER {s['fwd_per']:.1f}")
         if s.get('roe'): parts.append(f"ROE {s['roe']:.1f}%")

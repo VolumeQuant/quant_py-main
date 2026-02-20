@@ -666,20 +666,15 @@ def main():
 
         PENALTY = 50
         # T-1, T-2의 composite_rank 맵 (가중순위가 아닌 순수 composite!)
+        # 주의: rank<=30 필터 없이 전체 종목 포함 (이전에 30위 밖이었을 수 있음)
         t1_map = {}
         if t1_data:
             for item in t1_data.get('rankings', []):
-                if 'composite_rank' in item:
-                    t1_map[item['ticker']] = item['composite_rank']
-                elif item['rank'] <= 30:  # fallback: 이전 형식
-                    t1_map[item['ticker']] = item['rank']
+                t1_map[item['ticker']] = item.get('composite_rank', item['rank'])
         t2_map = {}
         if t2_data:
             for item in t2_data.get('rankings', []):
-                if 'composite_rank' in item:
-                    t2_map[item['ticker']] = item['composite_rank']
-                elif item['rank'] <= 30:
-                    t2_map[item['ticker']] = item['rank']
+                t2_map[item['ticker']] = item.get('composite_rank', item['rank'])
 
         # 가중순위 = composite_T0 × 0.5 + composite_T1 × 0.3 + composite_T2 × 0.2
         weighted_scores = []

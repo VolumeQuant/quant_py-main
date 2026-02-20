@@ -2,9 +2,43 @@
 
 ## 문서 개요
 
-**버전**: 19.1
-**최종 업데이트**: 2026-02-20
+**버전**: 19.2
+**최종 업데이트**: 2026-02-21
 **작성자**: Claude Opus 4.6
+
+---
+
+## 핵심 변경사항 (v19.2 — 순위 표시 일관성 종합 수정)
+
+### 2026-02-21
+
+**배경**: 사용자가 실제 투자에 사용 중, 02/19 브이엠 5위 → 02/20 어제 8위로 표시되는 불일치 발견. 원인 분석 결과 6건의 버그 확인. 종합 감사 실시.
+
+| # | 심각도 | 파일 | 문제 | 수정 |
+|---|--------|------|------|------|
+| 1 | CRITICAL | `send_telegram_auto.py:274` | 궤적 역순 표시 (T0→T-1→T-2) | T-2→T-1→T0 시간순으로 수정 |
+| 2 | CRITICAL | `send_telegram_auto.py:258` | 이전일 Top30 밖 종목 궤적 누락 (`rank<=30` 필터) | 필터 제거, 전체 종목 맵 |
+| 3 | HIGH | `send_telegram_auto.py:305` | Death List에서 `rank`(통합순위) 사용 | `composite_rank` 통일 |
+| 4 | HIGH | `create_current_portfolio.py:668` | T-1/T-2 맵 `rank<=30` 조건 + 불일치 fallback | `.get('composite_rank', item['rank'])` 통일 |
+| 5 | HIGH | `gemini_analysis.py:349` | AI 프롬프트 궤적 역순 | T-2→T-1→T0 시간순으로 수정 |
+| 6 | MEDIUM | `send_telegram_auto.py:782` | 웹 캐시 Death List `rank` 사용 | `composite_rank` 수정 |
+
+#### 설계 원리 (확인됨)
+```
+rank (통합순위)       = 3일 가중 계산 후 정렬 위치 → 멤버십 판단에만 사용 (Top 30 경계)
+composite_rank (멀티팩터순위) = 당일 순수 멀티팩터 순위 → 사용자 표시 + 가중 계산 입력에 사용
+```
+
+#### 검증 결과 (5개 규칙 전체 PASS)
+- 궤적 순서: T-2→T-1→T0 (시간순) — 3개 위치
+- 표시 순위: `composite_rank` 사용 — 9개 위치
+- 멤버십 체크: `rank` 사용 — 5개 위치
+- 3일 교집합: `composite_rank` 기반 — 3개 위치
+- 팩터 점수: 존재 확인 — 3일 데이터
+
+#### 추가 수정
+- README.md: Death List Top50→Top30, 궤적 시간순 설명
+- MEMORY.md: Death List Top50→Top30
 
 ---
 
@@ -685,8 +719,8 @@ data['성장_점수'] = data[growth_factors].mean(axis=1).fillna(0.0)
 |------|----------------|--------------|
 | 급락 처리 | 경고만 (최종 추천에 포함) | **하드 필터 (전일 -5% → 제외, 다음 순위로 대체)** |
 | ✅ 정렬 | T-0 순위 순 | **가중순위 순 정렬** (T0×0.5+T1×0.3+T2×0.2) |
-| ✅ 표시 | `SK하이닉스(1)` | **`SK하이닉스(1→1→1)`** (T0→T1→T2 3일 궤적) |
-| ⏳ 표시 | `제룡전기(8)` | **`제룡전기(8→14)`** (T0→T1 2일 궤적) |
+| ✅ 표시 | `SK하이닉스(1)` | **`SK하이닉스(1→1→1위)`** (T-2→T-1→T0 시간순) |
+| ⏳ 표시 | `제룡전기(8)` | **`제룡전기(14→8위)`** (T-1→T0 시간순) |
 | 🆕 표시 | `코나아이(30)` | `코나아이(30)` (변경 없음) |
 | Gemini 프롬프트 | 가중순위 없음 | **`순위 X→Y→Z`** 궤적 포함 |
 | AI 출력 형식 | `종목명(티커) · 비중 20%` | **`종목명(티커) · 순위 X→Y→Z · 비중 20%`** |
@@ -706,7 +740,7 @@ data['성장_점수'] = data[growth_factors].mean(axis=1).fillna(0.0)
 
 **수정 파일**:
 1. `send_telegram_auto.py` — max_picks=30 + 하드 필터 루프, ✅ 가중순위 정렬 + 3일 궤적, ⏳ 2일 궤적, format_buy_recommendations에 skipped 파라미터
-2. `gemini_analysis.py` — build_final_picks_prompt에 순위 궤적 (rank_t0→rank_t1→rank_t2)
+2. `gemini_analysis.py` — build_final_picks_prompt에 순위 궤적 (rank_t2→rank_t1→rank_t0, 시간순)
 3. `test_ui_preview.py` — 실제 2/11 데이터로 전면 갱신, fake_rankings_t0/t1/t2 추가
 4. `README.md` — 하드 필터, 순위 궤적 반영
 5. `SESSION_HANDOFF.md` — v16.2 변경사항 추가

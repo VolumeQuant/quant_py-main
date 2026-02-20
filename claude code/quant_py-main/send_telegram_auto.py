@@ -254,9 +254,10 @@ def format_top30(pipeline: list, exited: list, cold_start: bool = False, has_nex
 
     # ✅ 종목: T-1, T-2 composite_rank 조회 → 가중순위 계산 → 정렬
     # composite_rank = 순수 점수 순위 (누적 없음), rank = 가중순위 (Top 30 결정)
+    # 주의: rank<=30 필터 없이 전체 종목의 composite_rank 조회 (이전에 30위 밖이었을 수 있음)
     if verified and rankings_t1 and rankings_t2:
-        t1_map = {r['ticker']: r.get('composite_rank', r['rank']) for r in rankings_t1.get('rankings', []) if r['rank'] <= 30}
-        t2_map = {r['ticker']: r.get('composite_rank', r['rank']) for r in rankings_t2.get('rankings', []) if r['rank'] <= 30}
+        t1_map = {r['ticker']: r.get('composite_rank', r['rank']) for r in rankings_t1.get('rankings', [])}
+        t2_map = {r['ticker']: r.get('composite_rank', r['rank']) for r in rankings_t2.get('rankings', [])}
         for s in verified:
             r0 = s.get('composite_rank', s['rank'])
             r1 = t1_map.get(s['ticker'], r0)
@@ -271,7 +272,8 @@ def format_top30(pipeline: list, exited: list, cold_start: bool = False, has_nex
         lines.append(f"✅ 3일 검증 {len(verified)}개")
         if rankings_t1 and rankings_t2:
             for s in verified:
-                lines.append(f"  {s['name']} {s.get('composite_rank', s['rank'])}→{s['_r1']}→{s['_r2']}위")
+                # 시간순 표시: T-2→T-1→T0위 (과거→현재, 화살표 방향 = 시간 흐름)
+                lines.append(f"  {s['name']} {s['_r2']}→{s['_r1']}→{s.get('composite_rank', s['rank'])}위")
         else:
             for s in verified:
                 lines.append(f"  {s['name']} {s.get('composite_rank', s['rank'])}위")
@@ -282,9 +284,10 @@ def format_top30(pipeline: list, exited: list, cold_start: bool = False, has_nex
             lines.append("")
         lines.append(f"⏳ 내일 검증 {len(two_day)}개")
         if rankings_t1:
-            t1_map_td = {r['ticker']: r.get('composite_rank', r['rank']) for r in rankings_t1.get('rankings', []) if r['rank'] <= 30}
+            t1_map_td = {r['ticker']: r.get('composite_rank', r['rank']) for r in rankings_t1.get('rankings', [])}
             for s in two_day:
-                lines.append(f"  {s['name']} {s.get('composite_rank', s['rank'])}→{t1_map_td.get(s['ticker'], '?')}위")
+                # 시간순 표시: T-1→T0위 (과거→현재)
+                lines.append(f"  {s['name']} {t1_map_td.get(s['ticker'], '?')}→{s.get('composite_rank', s['rank'])}위")
         else:
             for s in two_day:
                 lines.append(f"  {s['name']} {s.get('composite_rank', s['rank'])}위")
@@ -299,7 +302,8 @@ def format_top30(pipeline: list, exited: list, cold_start: bool = False, has_nex
 
     if exited:
         lines.append("─────────────────")
-        t0_rank_map = {item['ticker']: item['rank'] for item in (rankings_t0 or {}).get('rankings', [])}
+        # composite_rank 사용 (Top 30 표시와 일관성 유지)
+        t0_crank_map = {item['ticker']: item.get('composite_rank', item['rank']) for item in (rankings_t0 or {}).get('rankings', [])}
 
         # 시장 위험에 따른 이탈 경보 차등 (HY quadrant 기반)
         hy_q = ''
@@ -312,8 +316,8 @@ def format_top30(pipeline: list, exited: list, cold_start: bool = False, has_nex
             lines.append(f"📉 어제 대비 이탈 {len(exited)}개")
 
         for e in exited:
-            prev = e['rank']
-            cur = t0_rank_map.get(e['ticker'])
+            prev = e.get('composite_rank', e['rank'])
+            cur = t0_crank_map.get(e['ticker'])
             reason = e.get('exit_reason', '')
             reason_tag = f" [{reason}]" if reason else ""
 
@@ -776,8 +780,9 @@ def main():
                 'tech': {k: v for k, v in (p.get('_tech') or {}).items() if k != 'ohlcv'},
             } for p in picks],
             'skipped': [{'name': s[0]['name'], 'ticker': s[0]['ticker'], 'daily_chg': s[1]} for s in skipped],
-            'exited': [{'ticker': e['ticker'], 'name': e['name'], 'rank': e['rank'],
-                        'prev_rank': e.get('prev_rank'), 'exit_reason': e.get('exit_reason', '')}
+            'exited': [{'ticker': e['ticker'], 'name': e['name'],
+                        'rank': e.get('composite_rank', e['rank']),
+                        'exit_reason': e.get('exit_reason', '')}
                        for e in exited],
             'sectors': {},
             'ai': {
