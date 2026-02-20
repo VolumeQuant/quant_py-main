@@ -2,36 +2,36 @@
 
 ## 문서 개요
 
-**버전**: 19.0
+**버전**: 19.1
 **최종 업데이트**: 2026-02-20
 **작성자**: Claude Opus 4.6
 
 ---
 
-## 핵심 변경사항 (v19.0 — 가중순위 기반 Top 30 선정)
+## 핵심 변경사항 (v19.1 — composite_rank 분리, 누적 방지)
 
 ### 2026-02-20
 
-**배경**: 미국 프로젝트와 동일한 문제 — Top 30 경계가 당일 멀티팩터 점수로만 결정되어, 가중순위(T0×0.5+T1×0.3+T2×0.2)가 교집합 내부 정렬에만 사용됨. 매수후보 30개 자체를 가중순위로 뽑아야 "Slow In" 철학이 일관됨.
+**배경**: v19.0에서 가중순위를 JSON `rank`에 저장 → 다음 날 그 가중순위를 T-1로 참조 → 또 가중 → 누적(cascading) 문제 발생. 올바른 구조: JSON에 `composite_rank`(순수 점수 순위)를 별도 저장, 가중순위는 항상 composite에서 계산.
 
-| 항목 | Before | After |
-|------|--------|-------|
-| Top 30 경계 | 멀티팩터 점수 순위 | **가중순위** (T0×0.5 + T1×0.3 + T2×0.2) |
-| T-1/T-2 참조 | 교집합(✅) 정렬에만 사용 | **Top 30 경계 결정에도 사용** |
-| 미등재 PENALTY | - | 50 (Top 30 밖 = 50점) |
+| 항목 | v19.0 (잘못됨) | v19.1 (수정) |
+|------|-------------|-------------|
+| JSON rank | 가중순위 | 가중순위 (Top 30 경계용) |
+| JSON composite_rank | 없음 | **신규** — 순수 멀티팩터 점수 순위 |
+| T-1/T-2 참조 | rank (가중→누적!) | **composite_rank** (순수→누적 없음) |
 
 #### 핵심 로직
 ```
-1. 멀티팩터 점수 → composite 순위 (1~200) = T0
-2. 이전 2일 JSON에서 Top 30 rank 조회 = T1, T2
-3. 가중순위 = T0 × 0.5 + T1 × 0.3 + T2 × 0.2
-4. 가중순위로 정렬 → 통합순위 1~N → Top 30 확정
+1. 멀티팩터 점수 → composite_rank (1~200) — 매일 독립적
+2. 이전 2일 JSON에서 composite_rank 조회 = T1, T2
+3. 가중순위 = composite_T0 × 0.5 + composite_T1 × 0.3 + composite_T2 × 0.2
+4. 가중순위로 정렬 → rank 1~N → Top 30 확정
 ```
 
 #### 변경 파일
-- `create_current_portfolio.py`: 가중순위 기반 Top 30 선정 (import 확장 + 순위 로직 전면 개편)
-- `state/ranking_*.json`: 6개 날짜 전부 가중순위로 재계산
-- `migrate_weighted_ranks.py`: 마이그레이션 스크립트
+- `create_current_portfolio.py`: composite_rank 필드 추가 + T-1/T-2 lookup 수정
+- `state/ranking_*.json`: 6개 날짜 composite_rank 추가 + rank 재계산
+- `migrate_weighted_ranks.py`: 마이그레이션 스크립트 수정
 
 ---
 

@@ -1,7 +1,8 @@
-"""과거 ranking JSON의 rank를 가중순위 기반으로 재계산
+"""과거 ranking JSON에 composite_rank 추가 + rank를 가중순위로 재계산
 
-가중순위 = T0(멀티팩터 점수순) × 0.5 + T1(prev_rank) × 0.3 + T2(prev2_rank) × 0.2
-날짜 순서대로 처리하여 이전 날짜의 가중순위가 다음 날짜에 반영됨.
+핵심: composite_rank = 당일 순수 점수 순위 (score 기반)
+      rank = 가중순위(composite × 0.5 + T1_composite × 0.3 + T2_composite × 0.2)
+      가중순위는 항상 composite_rank에서 계산 → 누적 방지
 """
 import json
 import sys
@@ -29,7 +30,6 @@ def save_json(date_str, data):
 
 
 def migrate():
-    # 모든 ranking JSON 날짜 (오래된 순)
     files = sorted(STATE_DIR.glob('ranking_*.json'))
     dates = []
     for f in files:
@@ -38,11 +38,13 @@ def migrate():
             dates.append(date_str)
 
     print(f"총 {len(dates)}개 날짜 재계산")
-    print(f"가중순위: T0×0.5 + T1×0.3 + T2×0.2 (PENALTY={PENALTY})")
+    print(f"composite_rank = score 기반 순수 순위")
+    print(f"rank = 가중순위(composite 기반) Top 30 + 나머지")
+    print(f"PENALTY={PENALTY}")
     print()
 
-    # 이전 날짜의 Top 30 rank 저장 (재계산된 값)
-    prev_ranks = {}  # {date: {ticker: rank}}
+    # 이전 날짜의 composite_rank (가중순위 계산용, 누적 없음)
+    prev_composites = {}  # {date: {ticker: composite_rank}}
 
     for date_str in dates:
         data = load_json(date_str)
@@ -52,47 +54,43 @@ def migrate():
 
         rankings = data['rankings']
 
-        # 1. 멀티팩터 점수(score)로 정렬 → composite 순위 (T0)
-        #    score가 높을수록 좋음 → descending
+        # 1. score로 정렬 → composite_rank (순수 점수 순위)
         scored = sorted(rankings, key=lambda x: x.get('score', 0), reverse=True)
-        composite_ranks = {item['ticker']: i + 1 for i, item in enumerate(scored)}
+        composite_map = {item['ticker']: i + 1 for i, item in enumerate(scored)}
 
-        # 2. 이전 2일의 Top 30 rank
-        prev_dates = sorted([d for d in prev_ranks.keys() if d < date_str])
+        # composite_rank 필드 추가
+        for item in rankings:
+            item['composite_rank'] = composite_map.get(item['ticker'], 999)
+
+        # 2. 이전 날짜의 composite_rank로 가중순위 계산 (누적 없음!)
+        prev_dates = sorted([d for d in prev_composites.keys() if d < date_str])
         t1 = prev_dates[-1] if len(prev_dates) >= 1 else None
         t2 = prev_dates[-2] if len(prev_dates) >= 2 else None
 
-        t1_map = prev_ranks.get(t1, {}) if t1 else {}
-        t2_map = prev_ranks.get(t2, {}) if t2 else {}
-
-        # 3. 가중순위 계산
         weighted = {}
-        for ticker, r0 in composite_ranks.items():
-            r1 = t1_map.get(ticker, PENALTY) if t1 else PENALTY
-            r2 = t2_map.get(ticker, PENALTY) if t2 else PENALTY
-            weighted[ticker] = r0 * 0.5 + r1 * 0.3 + r2 * 0.2
+        for ticker, cr in composite_map.items():
+            r1 = prev_composites.get(t1, {}).get(ticker, PENALTY) if t1 else PENALTY
+            r2 = prev_composites.get(t2, {}).get(ticker, PENALTY) if t2 else PENALTY
+            weighted[ticker] = cr * 0.5 + r1 * 0.3 + r2 * 0.2
 
-        # 4. 가중순위로 정렬 → 새 rank 부여
+        # 3. 가중순위로 정렬 → 새 rank 부여
         sorted_tickers = sorted(weighted.items(), key=lambda x: x[1])
         new_rank_map = {ticker: i + 1 for i, (ticker, _) in enumerate(sorted_tickers)}
 
-        # 5. JSON 업데이트
         for item in rankings:
             item['rank'] = new_rank_map.get(item['ticker'], 999)
         data['rankings'] = sorted(rankings, key=lambda x: x['rank'])
         save_json(date_str, data)
 
-        # 6. 재계산된 Top 30 저장 (다음 날짜 참조용)
-        prev_ranks[date_str] = {
-            ticker: rank for ticker, rank in new_rank_map.items() if rank <= TOP_N
-        }
+        # 4. 이 날짜의 composite_rank 저장 (다음 날짜 참조용)
+        prev_composites[date_str] = dict(composite_map)
 
         # 리포트
-        top5 = [f"{item['rank']}.{item['name']}" for item in data['rankings'][:5]]
+        top5 = [f"{item['rank']}.{item['name']}(c{item['composite_rank']})" for item in data['rankings'][:5]]
         has_history = "✅" if t1 else "🆕"
         print(f"  {date_str}: {len(rankings)}개, Top5=[{', '.join(top5)}] {has_history}")
 
-    print(f"\n완료 — {len(dates)}개 날짜 rank 가중순위로 재계산")
+    print(f"\n완료 — {len(dates)}개 날짜 composite_rank 추가 + rank 재계산")
 
 
 if __name__ == '__main__':

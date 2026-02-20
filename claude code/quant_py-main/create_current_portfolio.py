@@ -665,19 +665,23 @@ def main():
         t2_data = load_ranking(t2_date) if t2_date else None
 
         PENALTY = 50
-        # T-1, T-2의 Top 30 rank 맵 (Top 30 밖은 PENALTY)
+        # T-1, T-2의 composite_rank 맵 (가중순위가 아닌 순수 composite!)
         t1_map = {}
         if t1_data:
             for item in t1_data.get('rankings', []):
-                if item['rank'] <= 30:
+                if 'composite_rank' in item:
+                    t1_map[item['ticker']] = item['composite_rank']
+                elif item['rank'] <= 30:  # fallback: 이전 형식
                     t1_map[item['ticker']] = item['rank']
         t2_map = {}
         if t2_data:
             for item in t2_data.get('rankings', []):
-                if item['rank'] <= 30:
+                if 'composite_rank' in item:
+                    t2_map[item['ticker']] = item['composite_rank']
+                elif item['rank'] <= 30:
                     t2_map[item['ticker']] = item['rank']
 
-        # 가중순위 계산
+        # 가중순위 = composite_T0 × 0.5 + composite_T1 × 0.3 + composite_T2 × 0.2
         weighted_scores = []
         for _, row in scored_b.iterrows():
             ticker = str(row.get('종목코드', '')).zfill(6)
@@ -719,6 +723,7 @@ def main():
         for _, row in all_ranked.iterrows():
             entry = {
                 'rank': int(row.get('통합순위', 999)),
+                'composite_rank': int(row.get('멀티팩터_순위', 999)),
                 'ticker': str(row.get('종목코드', '')).zfill(6),
                 'name': str(row.get('종목명', '')),
                 'score': round(float(row.get('멀티팩터_점수', 0)), 4) if pd.notna(row.get('멀티팩터_점수')) else 0,
