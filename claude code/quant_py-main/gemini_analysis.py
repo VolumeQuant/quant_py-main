@@ -389,6 +389,7 @@ def build_final_picks_prompt(stock_list, weight_per_stock=20, base_date=None, ma
 - 날씨아이콘: 🔥 매우 좋음, ☀️ 좋음, 🌤️ 양호, ⛅ 보통
 - 종목과 종목 사이에 반드시 [SEP] 한 줄을 넣어서 구분해줘.
 - 맨 끝에 별도 문구 넣지 마. (코드에서 추가함)
+- 서두/인사말/도입문 금지. "다음은", "요청하신", "소개해", "분석해" 등 절대 쓰지 마. 첫 번째 종목부터 바로 시작.
 - 500자 이내
 
 각 종목의 비중과 선정 이유를 설명해줘.
@@ -397,6 +398,10 @@ def build_final_picks_prompt(stock_list, weight_per_stock=20, base_date=None, ma
 
 def _convert_picks_markdown(text):
     """최종 추천 마크다운 → HTML 변환"""
+    # Gemini 서두 제거: 첫 번째 종목(**1.) 전 텍스트 삭제
+    first_stock = re.search(r'\*\*1\.', text)
+    if first_stock and first_stock.start() > 0:
+        text = text[first_stock.start():]
     result = text
     result = result.replace('&', '&amp;')
     result = result.replace('<', '&lt;')

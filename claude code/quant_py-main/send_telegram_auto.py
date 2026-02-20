@@ -209,15 +209,7 @@ def format_overview(has_ai: bool = False):
         '✅ 3일 연속 Top 30 → 매수 후보',
         '⏳ 2일 연속 → 내일 검증 완료',
         '🆕 오늘 첫 진입 → 관찰',
-        '',
-        '📩 <b>오늘의 메시지</b>',
     ]
-    if has_ai:
-        lines.append('[1/3] 📊 시장 + Top 30')
-        lines.append('[2/3] 🤖 AI 리스크 필터')
-        lines.append('[3/3] 🎯 최종 추천')
-    else:
-        lines.append('📊 시장 + Top 30')
     return '\n'.join(lines)
 
 
