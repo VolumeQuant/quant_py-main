@@ -137,12 +137,12 @@ def compute_3day_intersection(
     if not common_tickers:
         return []
 
-    # 가중 평균 순위 계산
+    # 가중 평균 순위 계산 — composite_rank 기반 (누적 방지)
     results = []
     for ticker in common_tickers:
-        rank_t0 = top_t0[ticker]['rank']
-        rank_t1 = top_t1[ticker]['rank']
-        rank_t2 = top_t2[ticker]['rank']
+        rank_t0 = top_t0[ticker].get('composite_rank', top_t0[ticker]['rank'])
+        rank_t1 = top_t1[ticker].get('composite_rank', top_t1[ticker]['rank'])
+        rank_t2 = top_t2[ticker].get('composite_rank', top_t2[ticker]['rank'])
         weighted_rank = rank_t0 * 0.5 + rank_t1 * 0.3 + rank_t2 * 0.2
 
         # T-0 데이터를 기본으로 사용 (최신 정보)

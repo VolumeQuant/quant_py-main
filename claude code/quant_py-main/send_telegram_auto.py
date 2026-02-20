@@ -252,12 +252,13 @@ def format_top30(pipeline: list, exited: list, cold_start: bool = False, has_nex
     two_day = [s for s in pipeline if s['status'] == '⏳']
     new_stocks = [s for s in pipeline if s['status'] == '🆕']
 
-    # ✅ 종목: T-1, T-2 순위 조회 → 가중순위 계산 → 가중순위순 정렬
+    # ✅ 종목: T-1, T-2 composite_rank 조회 → 가중순위 계산 → 정렬
+    # composite_rank = 순수 점수 순위 (누적 없음), rank = 가중순위 (Top 30 결정)
     if verified and rankings_t1 and rankings_t2:
-        t1_map = {r['ticker']: r['rank'] for r in rankings_t1.get('rankings', []) if r['rank'] <= 30}
-        t2_map = {r['ticker']: r['rank'] for r in rankings_t2.get('rankings', []) if r['rank'] <= 30}
+        t1_map = {r['ticker']: r.get('composite_rank', r['rank']) for r in rankings_t1.get('rankings', []) if r['rank'] <= 30}
+        t2_map = {r['ticker']: r.get('composite_rank', r['rank']) for r in rankings_t2.get('rankings', []) if r['rank'] <= 30}
         for s in verified:
-            r0 = s['rank']
+            r0 = s.get('composite_rank', s['rank'])
             r1 = t1_map.get(s['ticker'], r0)
             r2 = t2_map.get(s['ticker'], r0)
             s['_r1'] = r1
@@ -270,10 +271,10 @@ def format_top30(pipeline: list, exited: list, cold_start: bool = False, has_nex
         lines.append(f"✅ 3일 검증 {len(verified)}개")
         if rankings_t1 and rankings_t2:
             for s in verified:
-                lines.append(f"  {s['name']} {s['rank']}→{s['_r1']}→{s['_r2']}위")
+                lines.append(f"  {s['name']} {s.get('composite_rank', s['rank'])}→{s['_r1']}→{s['_r2']}위")
         else:
             for s in verified:
-                lines.append(f"  {s['name']} {s['rank']}위")
+                lines.append(f"  {s['name']} {s.get('composite_rank', s['rank'])}위")
         groups_added = True
 
     if two_day:
@@ -281,12 +282,12 @@ def format_top30(pipeline: list, exited: list, cold_start: bool = False, has_nex
             lines.append("")
         lines.append(f"⏳ 내일 검증 {len(two_day)}개")
         if rankings_t1:
-            t1_map_td = {r['ticker']: r['rank'] for r in rankings_t1.get('rankings', []) if r['rank'] <= 30}
+            t1_map_td = {r['ticker']: r.get('composite_rank', r['rank']) for r in rankings_t1.get('rankings', []) if r['rank'] <= 30}
             for s in two_day:
-                lines.append(f"  {s['name']} {s['rank']}→{t1_map_td.get(s['ticker'], '?')}위")
+                lines.append(f"  {s['name']} {s.get('composite_rank', s['rank'])}→{t1_map_td.get(s['ticker'], '?')}위")
         else:
             for s in two_day:
-                lines.append(f"  {s['name']} {s['rank']}위")
+                lines.append(f"  {s['name']} {s.get('composite_rank', s['rank'])}위")
         groups_added = True
 
     if new_stocks:
@@ -294,7 +295,7 @@ def format_top30(pipeline: list, exited: list, cold_start: bool = False, has_nex
             lines.append("")
         lines.append(f"🆕 신규 진입 {len(new_stocks)}개")
         for s in new_stocks:
-            lines.append(f"  {s['name']} {s['rank']}위")
+            lines.append(f"  {s['name']} {s.get('composite_rank', s['rank'])}위")
 
     if exited:
         lines.append("─────────────────")

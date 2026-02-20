@@ -141,10 +141,10 @@ def format_top30(pipeline, exited, cold_start=False, has_next=False, rankings_t0
     new_stocks = [s for s in pipeline if s['status'] == '🆕']
 
     if verified and rankings_t1 and rankings_t2:
-        t1_map = {r['ticker']: r['rank'] for r in rankings_t1.get('rankings', []) if r['rank'] <= 30}
-        t2_map = {r['ticker']: r['rank'] for r in rankings_t2.get('rankings', []) if r['rank'] <= 30}
+        t1_map = {r['ticker']: r.get('composite_rank', r['rank']) for r in rankings_t1.get('rankings', []) if r['rank'] <= 30}
+        t2_map = {r['ticker']: r.get('composite_rank', r['rank']) for r in rankings_t2.get('rankings', []) if r['rank'] <= 30}
         for s in verified:
-            r0 = s['rank']
+            r0 = s.get('composite_rank', s['rank'])
             r1 = t1_map.get(s['ticker'], r0)
             r2 = t2_map.get(s['ticker'], r0)
             s['_r1'] = r1
@@ -155,25 +155,25 @@ def format_top30(pipeline, exited, cold_start=False, has_next=False, rankings_t0
     groups_added = False
     if verified:
         if rankings_t1 and rankings_t2:
-            names = ', '.join(f"{s['name']}({s['rank']}→{s['_r1']}→{s['_r2']})" for s in verified)
+            names = ', '.join(f"{s['name']}({s.get('composite_rank', s['rank'])}→{s['_r1']}→{s['_r2']})" for s in verified)
         else:
-            names = ', '.join(f"{s['name']}({s['rank']})" for s in verified)
+            names = ', '.join(f"{s['name']}({s.get('composite_rank', s['rank'])})" for s in verified)
         lines.append(f"✅ 3일 검증: {names}")
         groups_added = True
     if two_day:
         if groups_added:
             lines.append("")
         if rankings_t1:
-            t1_map_td = {r['ticker']: r['rank'] for r in rankings_t1.get('rankings', []) if r['rank'] <= 30}
-            names = ', '.join(f"{s['name']}({s['rank']}→{t1_map_td.get(s['ticker'], '?')})" for s in two_day)
+            t1_map_td = {r['ticker']: r.get('composite_rank', r['rank']) for r in rankings_t1.get('rankings', []) if r['rank'] <= 30}
+            names = ', '.join(f"{s['name']}({s.get('composite_rank', s['rank'])}→{t1_map_td.get(s['ticker'], '?')})" for s in two_day)
         else:
-            names = ', '.join(f"{s['name']}({s['rank']})" for s in two_day)
+            names = ', '.join(f"{s['name']}({s.get('composite_rank', s['rank'])})" for s in two_day)
         lines.append(f"⏳ 내일 검증: {names}")
         groups_added = True
     if new_stocks:
         if groups_added:
             lines.append("")
-        names = ', '.join(f"{s['name']}({s['rank']})" for s in new_stocks)
+        names = ', '.join(f"{s['name']}({s.get('composite_rank', s['rank'])})" for s in new_stocks)
         lines.append(f"🆕 신규 진입: {names}")
 
     if exited:
