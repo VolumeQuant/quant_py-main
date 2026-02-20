@@ -8,7 +8,7 @@
   → 일일 순위 JSON 저장 (3일 교집합용)
 
 팩터:
-  - Value 45% + Quality 25% + Growth 10% + Momentum 20%
+  - Value 45% + Quality 15% + Growth 10% + Momentum 30%
   - Growth: EPS개선도 (Forward PER) + 매출성장률 (YoY)
   - Momentum: (12M수익률 - 1M수익률) / 12M변동성 [리스크 조정]
 
@@ -33,7 +33,7 @@ from fnguide_crawler import get_consensus_batch, extract_revenue_growth
 from error_handler import ErrorTracker, ErrorCategory
 from strategy_a_magic import MagicFormulaStrategy
 from strategy_b_multifactor import MultiFactorStrategy
-from ranking_manager import save_ranking
+from ranking_manager import save_ranking, load_ranking, get_available_ranking_dates
 
 # 설정
 try:
@@ -653,16 +653,48 @@ def main():
         revenue_growth_df=revenue_growth_df
     )
 
-    # 멀티팩터 순위 100%로 전체 순위 산정 (A는 사전필터 역할만)
-    print(f"\n[최종순위] 멀티팩터 100% (A는 사전필터만)")
+    # 가중순위 기반 Top 30 선정: T0(멀티팩터) × 0.5 + T1 × 0.3 + T2 × 0.2
+    print(f"\n[최종순위] 가중순위 = 멀티팩터×0.5 + T1×0.3 + T2×0.2")
     if not scored_b.empty and '멀티팩터_순위' in scored_b.columns:
-        scored_b['통합순위'] = scored_b['멀티팩터_순위']
-        scored_b['통합순위_점수'] = scored_b['멀티팩터_순위']
-        scored_b = scored_b.sort_values('통합순위')
-        # CSV용: 상위 N_STOCKS개
+        # 이전 2일 순위 로드
+        available_dates = get_available_ranking_dates()
+        prev_dates = sorted([d for d in available_dates if d < BASE_DATE])
+        t1_date = prev_dates[-1] if len(prev_dates) >= 1 else None
+        t2_date = prev_dates[-2] if len(prev_dates) >= 2 else None
+        t1_data = load_ranking(t1_date) if t1_date else None
+        t2_data = load_ranking(t2_date) if t2_date else None
+
+        PENALTY = 50
+        # T-1, T-2의 Top 30 rank 맵 (Top 30 밖은 PENALTY)
+        t1_map = {}
+        if t1_data:
+            for item in t1_data.get('rankings', []):
+                if item['rank'] <= 30:
+                    t1_map[item['ticker']] = item['rank']
+        t2_map = {}
+        if t2_data:
+            for item in t2_data.get('rankings', []):
+                if item['rank'] <= 30:
+                    t2_map[item['ticker']] = item['rank']
+
+        # 가중순위 계산
+        weighted_scores = []
+        for _, row in scored_b.iterrows():
+            ticker = str(row.get('종목코드', '')).zfill(6)
+            r0 = int(row['멀티팩터_순위'])
+            r1 = t1_map.get(ticker, PENALTY) if t1_data else PENALTY
+            r2 = t2_map.get(ticker, PENALTY) if t2_data else PENALTY
+            weighted_scores.append(r0 * 0.5 + r1 * 0.3 + r2 * 0.2)
+
+        scored_b['가중순위_점수'] = weighted_scores
+        scored_b = scored_b.sort_values('가중순위_점수')
+        scored_b['통합순위'] = range(1, len(scored_b) + 1)
+        scored_b['통합순위_점수'] = scored_b['가중순위_점수']
+
         selected = scored_b.head(N_STOCKS).copy()
-        # 전체 순위: Death List(50위) + 여유분
         all_ranked = scored_b.copy()
+        history_str = f"T1={t1_date or '없음'}, T2={t2_date or '없음'}"
+        print(f"  가중순위 적용: {history_str}")
         print(f"  전체 순위: {len(all_ranked)}개, CSV 선정: {len(selected)}개 종목")
     else:
         selected = scored_b.head(N_STOCKS).copy() if not scored_b.empty else pd.DataFrame()
