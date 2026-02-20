@@ -164,11 +164,14 @@ def build_prompt(stock_list, base_date=None, market_context=None):
 - 한국어, 친절하고 따뜻한 말투 (~예요/~해요 체)
 - 예시: "주가가 많이 빠졌어요", "조심하시는 게 좋겠어요", "아직은 괜찮아 보여요"
 - 딱딱한 보고서 말투 금지. 친구에게 설명하듯 자연스럽게.
+- 인사말, 서두, 맺음말 금지. 아래 섹션부터 바로 시작.
 - 총 1500자 이내.
 
 📰 시장 동향
-이번 주 한국 주식시장 주요 이벤트를 Google 검색해서 2~3줄 요약해줘.
-매수 후보에 영향 줄 수 있는 것 위주로.
+어제 한국 주식시장 마감 결과를 Google 검색해서 2~3줄 요약해줘.
+- 어제 시장의 핵심 이슈(원인, 테마)만. 지수 수치(코스피 몇 포인트 등)는 반복하지 마.
+- "이번 주" 전체 요약은 하지 마. 어제 마감에 집중.
+- 매수 후보에 영향 줄 수 있는 것 위주로.
 
 ⚠️ 매수 주의 종목
 위 위험 신호를 종합해서 매수를 재고할 만한 종목을 골라줘.
@@ -371,29 +374,27 @@ def build_final_picks_prompt(stock_list, weight_per_stock=20, base_date=None, ma
 → 종목 설명에 시장 환경을 자연스럽게 반영해줘. 위험 높으면 "방어적", 안정적이면 "공격적" 톤으로.
 """
 
-    return f"""분석 기준일: {date_str}
+    return f"""아래 {len(stock_list)}종목 각각의 최근 실적/사업 성장 배경을 Google 검색해서 한 줄씩 써줘.
 
-아래는 한국주식 퀀트 시스템이 자동 선정한 {len(stock_list)}종목 최종 포트폴리오야.
-선정 기준: 밸류+퀄리티+모멘텀 멀티팩터 상위, 3거래일 연속 Top 30 유지, AI 리스크 필터 통과.
-{market_block}
-
-[포트폴리오]
+[종목]
 {stocks_data}
 
-[출력 형식]
-- 한국어, 친절하고 따뜻한 말투 (~예요/~해요 체)
-- 각 종목을 아래 형식으로 출력:
-  **N. 종목명(티커) · 순위 X→Y→Z**
-  **비중 {weight_per_stock}%** · 날씨아이콘 1~2줄 선정 이유
-- 순위는 데이터에 있는 3일 순위(rank_t0→rank_t1→rank_t2)를 그대로 사용해
-- 날씨아이콘: 🔥 매우 좋음, ☀️ 좋음, 🌤️ 양호, ⛅ 보통
-- 종목과 종목 사이에 반드시 [SEP] 한 줄을 넣어서 구분해줘.
-- 맨 끝에 별도 문구 넣지 마. (코드에서 추가함)
-- 서두/인사말/도입문 금지. "다음은", "요청하신", "소개해", "분석해" 등 절대 쓰지 마. 첫 번째 종목부터 바로 시작.
-- 500자 이내
+[형식]
+- 한국어, ~예요 체
+- 종목별: **N. 종목명(티커) · 비중 {weight_per_stock}%**
+  날씨아이콘 + 비즈니스 매력 한 줄
+- 종목 사이에 [SEP]
+- 맨 끝 별도 문구 없음
 
-각 종목의 비중과 선정 이유를 설명해줘.
-시스템 데이터에 없는 내용을 지어내지 마."""
+[규칙]
+- 각 종목의 실적/사업 성장 배경(왜 주가가 오르는지, 어떤 사업이 잘 되는지)을 검색해서 써.
+  예: "AI 반도체 수요 확대로 HBM 매출 급증 중이에요"
+  예: "전력 수요 폭증에 원전 재가동 기대감까지 더해졌어요"
+- 단순히 "PER 낮음", "ROE 높음"처럼 숫자만 반복하지 마. 그 숫자 뒤의 사업적 이유를 써.
+- 주의/경고/유의 표현 금지. 긍정적 매력만.
+- "선정", "포함", "선택" 같은 시스템 용어 금지.
+- 서두/인사말/도입문 금지. 첫 번째 종목부터 바로 시작.
+- 종목마다 다른 문장 구조로 써."""
 
 
 def _convert_picks_markdown(text):
@@ -433,12 +434,14 @@ def run_final_picks_analysis(stock_list, weight_per_stock=20, base_date=None, ma
         client = genai.Client(api_key=api_key)
         prompt = build_final_picks_prompt(stock_list, weight_per_stock, base_date, market_context)
 
-        print("[Gemini] 최종 추천 설명 요청 중...")
+        print("[Gemini] 최종 추천 설명 요청 중 (Google Search Grounding)...")
+        grounding_tool = types.Tool(google_search=types.GoogleSearch())
         response = client.models.generate_content(
             model='gemini-2.5-flash',
             contents=prompt,
             config=types.GenerateContentConfig(
-                temperature=0.2,
+                tools=[grounding_tool],
+                temperature=0.3,
             ),
         )
 
