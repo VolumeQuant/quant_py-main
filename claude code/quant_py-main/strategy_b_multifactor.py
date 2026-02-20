@@ -341,10 +341,10 @@ class MultiFactorStrategy:
                 print(f"모멘텀 데이터 없는 종목 제외: {excluded}개 → {len(data)}개 남음")
 
             data['멀티팩터_점수'] = (data['밸류_점수'] * 0.45 +
-                                    data['퀄리티_점수'] * 0.25 +
+                                    data['퀄리티_점수'] * 0.15 +
                                     data['성장_점수'] * 0.10 +
-                                    data['모멘텀_점수'] * 0.20)
-            print("멀티팩터 가중치: V45 + Q25 + G10 + M20")
+                                    data['모멘텀_점수'] * 0.30)
+            print("멀티팩터 가중치: V45 + Q15 + G10 + M30")
         else:
             # 모멘텀 팩터 자체가 없는 경우 (price_df가 None)
             data['멀티팩터_점수'] = (data['밸류_점수'] * 0.6 +
