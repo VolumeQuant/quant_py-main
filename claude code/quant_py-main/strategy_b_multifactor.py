@@ -187,8 +187,8 @@ class MultiFactorStrategy:
                     # 변동성 하한선 적용
                     annual_vol = max(annual_vol, VOL_FLOOR)
 
-                    # 리스크 조정 모멘텀 = 12M / Vol (단기 페널티 제거)
-                    momentum = ret_12m / annual_vol
+                    # 리스크 조정 모멘텀 = (12M - 1M) / Vol (단기 반전 보호)
+                    momentum = (ret_12m - ret_1m) / annual_vol
                     momentum_dict[ticker] = momentum
                     matched_count += 1
                 except (IndexError, KeyError):
@@ -196,7 +196,7 @@ class MultiFactorStrategy:
 
         data['모멘텀'] = data['종목코드'].map(momentum_dict)
         print(f"모멘텀 계산 완료: {matched_count}/{len(data)}개 매칭 (12M≤0 제외: {excluded_negative}개)")
-        print(f"  공식: 12M수익률 / 변동성(연환산, floor={VOL_FLOOR}%)")
+        print(f"  공식: (12M-1M)수익률 / 변동성(연환산, floor={VOL_FLOOR}%)")
 
         return data
 
