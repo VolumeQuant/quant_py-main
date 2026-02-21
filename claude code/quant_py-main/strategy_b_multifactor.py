@@ -332,13 +332,11 @@ class MultiFactorStrategy:
         data['모멘텀_점수'] = data[momentum_factors].mean(axis=1) if momentum_factors else 0
 
         # 5.5. 카테고리 점수 재정규화 — 분산 통일 후 비중이 실제 기여도를 반영
-        ZSCORE_CAP = 3.0
         for col in ['밸류_점수', '퀄리티_점수', '성장_점수', '모멘텀_점수']:
             if col in data.columns and data[col].std() > 0:
                 before_std = data[col].std()
                 data[col] = (data[col] - data[col].mean()) / data[col].std()
-                data[col] = data[col].clip(-ZSCORE_CAP, ZSCORE_CAP)
-                print(f"  {col}: std {before_std:.3f} → 1.000 (재정규화 + ±{ZSCORE_CAP} clip)")
+                print(f"  {col}: std {before_std:.3f} → 1.000 (재정규화)")
 
         # 최종 점수 (균등 가중: V25 + Q25 + G25 + M25)
         # 모멘텀 데이터가 없는 종목은 제외
