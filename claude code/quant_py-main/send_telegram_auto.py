@@ -283,7 +283,7 @@ def format_top30(pipeline: list, exited: list, cold_start: bool = False, has_nex
         if t1_full and t2_full:
             for s in verified:
                 # 시간순 표시: T-2→T-1→T0위 (과거→현재, 화살표 방향 = 시간 흐름)
-                driver = f" {s['_driver']}" if s.get('_driver') else ""
+                driver = f"({s['_driver']})" if s.get('_driver') else ""
                 lines.append(f"  {s['name']} {s['_r2']}→{s['_r1']}→{s.get('composite_rank', s['rank'])}위{driver}")
         else:
             for s in verified:
@@ -303,7 +303,7 @@ def format_top30(pipeline: list, exited: list, cold_start: bool = False, has_nex
                 driver = ''
                 if t1_item and abs(r0 - r1) >= MIN_RANK_CHANGE:
                     driver_tag = compute_rank_driver(s, t1_item, rank_improved=(r0 < r1))
-                    driver = f" {driver_tag}" if driver_tag else ""
+                    driver = f"({driver_tag})" if driver_tag else ""
                 # 시간순 표시: T-1→T0위 (과거→현재)
                 lines.append(f"  {s['name']} {r1}→{r0}위{driver}")
         else:
@@ -344,7 +344,7 @@ def format_top30(pipeline: list, exited: list, cold_start: bool = False, has_nex
             reason_tag = ''
             if t0_item:
                 tag = compute_rank_driver(t0_item, e, rank_improved=False)
-                reason_tag = f" {tag}" if tag else ""
+                reason_tag = f"({tag})" if tag else ""
 
             if cur:
                 lines.append(f"  {e['name']} {prev}위 → {cur}위{reason_tag}")
