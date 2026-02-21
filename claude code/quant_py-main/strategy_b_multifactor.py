@@ -331,7 +331,16 @@ class MultiFactorStrategy:
         data['성장_점수'] = data[growth_factors].mean(axis=1).fillna(0.0) if growth_factors else 0
         data['모멘텀_점수'] = data[momentum_factors].mean(axis=1) if momentum_factors else 0
 
-        # 최종 점수 (가중 평균: V45 + Q25 + G10 + M20)
+        # 5.5. 카테고리 점수 클리핑 (±3) — 비중이 실제 기여도를 반영하도록
+        ZSCORE_CAP = 3.0
+        for col in ['밸류_점수', '퀄리티_점수', '성장_점수', '모멘텀_점수']:
+            if col in data.columns:
+                clipped = (data[col] > ZSCORE_CAP).sum() + (data[col] < -ZSCORE_CAP).sum()
+                if clipped > 0:
+                    print(f"  {col}: {clipped}개 종목 클리핑 (±{ZSCORE_CAP})")
+                data[col] = data[col].clip(-ZSCORE_CAP, ZSCORE_CAP)
+
+        # 최종 점수 (가중 평균: V45 + Q15 + G10 + M30)
         # 모멘텀 데이터가 없는 종목은 제외
         if momentum_factors:
             before_count = len(data)
