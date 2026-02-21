@@ -160,18 +160,31 @@ def compute_3day_intersection(
     return results[:max_picks]
 
 
-PRICE_CHANGE_THRESHOLD = 0.03  # 3% 이상 변동만 가격 태그 표시
+PRICE_CHANGE_THRESHOLD = 0.03   # 3% 이상 변동만 가격 태그 표시
+EPS_CHANGE_THRESHOLD = 0.03     # 3% 이상 변동만 전망 태그 표시
+MIN_RANK_CHANGE = 3             # |변동| < 3 → 태그 생략
+
+
+def _get_forward_eps(item: dict) -> Optional[float]:
+    """Forward EPS 역산: price / fwd_per"""
+    price = item.get('price')
+    fwd_per = item.get('fwd_per')
+    if price and fwd_per and fwd_per > 0:
+        return price / fwd_per
+    return None
 
 
 def _compute_exit_reason(t0_item: dict, t1_item: dict) -> str:
-    """이탈 종목의 사유 태그 — 실적 vs 가격 이진 분류 (실제 주가 기반)"""
+    """이탈 종목의 사유 태그 — 전망 vs 가격 이진 분류"""
     tags = []
 
-    # 실적 (Q)
-    q0 = t0_item.get('quality_s')
-    q1 = t1_item.get('quality_s')
-    if q0 is not None and q1 is not None and q0 < q1 - 0.05:
-        tags.append('⚠️실적↓')
+    # 전망 (Forward EPS 컨센서스 변화)
+    eps0 = _get_forward_eps(t0_item)
+    eps1 = _get_forward_eps(t1_item)
+    if eps0 is not None and eps1 is not None and eps1 != 0:
+        eps_chg = (eps0 - eps1) / abs(eps1)
+        if abs(eps_chg) >= EPS_CHANGE_THRESHOLD:
+            tags.append('💪전망↑' if eps_chg > 0 else '⚠️전망↓')
 
     # 가격 (실제 주가 비교)
     p0 = t0_item.get('price')
@@ -184,34 +197,27 @@ def _compute_exit_reason(t0_item: dict, t1_item: dict) -> str:
     return ' '.join(tags) if tags else ''
 
 
-# 재정규화(std=1) 후 threshold — 전 팩터 동일 스케일 (~25% 초과율)
-THRESHOLDS_1D = {'value_s': 0.09, 'quality_s': 0.09, 'momentum_s': 0.09}
-THRESHOLDS_2D = {'value_s': 0.11, 'quality_s': 0.11, 'momentum_s': 0.11}
-MIN_RANK_CHANGE = 3  # |변동| < 3 → 태그 생략
-
-
 def compute_rank_driver(t0_item: dict, t_ref_item: dict,
                         rank_improved: bool = True,
                         multi_day: bool = False) -> str:
     """
-    순위 변동 원인을 이진 분류 태그로 반환 — 실적 vs 가격 독립 표시.
+    순위 변동 원인을 이진 분류 태그로 반환 — 전망 vs 가격 독립 표시.
 
     두 축을 독립적으로 판단:
-      - 실적 (Q): quality_s 변화 → 💪실적↑ / ⚠️실적↓
-      - 가격: 실제 주가(price 필드) 비교 → 📈가격↑ / 📉가격↓
+      - 전망: Forward EPS (price/fwd_per) 변화 → 💪전망↑ / ⚠️전망↓
+      - 가격: 실제 주가(price) 비교 → 📈가격↑ / 📉가격↓
 
-    Returns: 0~2개 태그 문자열 (예: '💪실적↑ 📉가격↓') 또는 ''
+    Returns: 0~2개 태그 문자열 (예: '💪전망↑ 📉가격↓') 또는 ''
     """
-    thresholds = THRESHOLDS_2D if multi_day else THRESHOLDS_1D
     tags = []
 
-    # --- 실적 축 (Q) ---
-    q0 = t0_item.get('quality_s')
-    q1 = t_ref_item.get('quality_s')
-    if q0 is not None and q1 is not None:
-        qd = q0 - q1
-        if abs(qd) > thresholds['quality_s']:
-            tags.append('💪실적↑' if qd > 0 else '⚠️실적↓')
+    # --- 전망 축 (Forward EPS 컨센서스) ---
+    eps0 = _get_forward_eps(t0_item)
+    eps1 = _get_forward_eps(t_ref_item)
+    if eps0 is not None and eps1 is not None and eps1 != 0:
+        eps_chg = (eps0 - eps1) / abs(eps1)
+        if abs(eps_chg) >= EPS_CHANGE_THRESHOLD:
+            tags.append('💪전망↑' if eps_chg > 0 else '⚠️전망↓')
 
     # --- 가격 축 (실제 주가 비교) ---
     p0 = t0_item.get('price')
