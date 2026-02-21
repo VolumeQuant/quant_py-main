@@ -172,9 +172,9 @@ def _compute_exit_reason(t0_item: dict, t1_item: dict) -> str:
     return ' '.join(tags) if tags else ''
 
 
-# 7일 데이터 분석 기반 threshold (~25% 초과율 목표)
-THRESHOLDS_1D = {'value_s': 0.06, 'quality_s': 0.06, 'momentum_s': 0.10}
-THRESHOLDS_2D = {'value_s': 0.08, 'quality_s': 0.06, 'momentum_s': 0.15}
+# 재정규화(std=1) 후 threshold — 전 팩터 동일 스케일 (~25% 초과율)
+THRESHOLDS_1D = {'value_s': 0.09, 'quality_s': 0.09, 'momentum_s': 0.09}
+THRESHOLDS_2D = {'value_s': 0.11, 'quality_s': 0.11, 'momentum_s': 0.11}
 MIN_RANK_CHANGE = 3  # |변동| < 3 → 태그 생략
 
 
