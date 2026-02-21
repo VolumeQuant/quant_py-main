@@ -201,12 +201,11 @@ def compute_rank_driver(t0_item: dict, t_ref_item: dict,
                         rank_improved: bool = True,
                         multi_day: bool = False) -> str:
     """
-    순위 변동 원인을 방향 일치 태그로 반환.
+    종목의 전망/가격 변화를 태그로 반환.
 
-    순위 방향에 맞는 원인만 표시:
-      순위 상승: 💪전망↑ (EPS 상향) / 📉가격↓ (싸져서)
-      순위 하락: ⚠️전망↓ (EPS 하향) / 📈가격↑ (비싸져서)
-      태그 없음 = 다른 종목들의 상대 변동
+    방향 필터 없이 실제 변화를 있는 그대로 표시:
+      💪전망↑ / ⚠️전망↓ — Forward EPS 컨센서스 변화
+      📈가격↑ / 📉가격↓ — 실제 주가 변화
 
     Returns: 0~2개 태그 문자열 또는 ''
     """
@@ -218,11 +217,7 @@ def compute_rank_driver(t0_item: dict, t_ref_item: dict,
     if eps0 is not None and eps1 is not None and eps1 != 0:
         eps_chg = (eps0 - eps1) / abs(eps1)
         if abs(eps_chg) >= EPS_CHANGE_THRESHOLD:
-            # 순위 상승 → 전망↑만, 순위 하락 → 전망↓만
-            if rank_improved and eps_chg > 0:
-                tags.append('💪전망↑')
-            elif not rank_improved and eps_chg < 0:
-                tags.append('⚠️전망↓')
+            tags.append('💪전망↑' if eps_chg > 0 else '⚠️전망↓')
 
     # --- 가격 축 (실제 주가 비교) ---
     p0 = t0_item.get('price')
@@ -230,11 +225,7 @@ def compute_rank_driver(t0_item: dict, t_ref_item: dict,
     if p0 and p1 and p1 > 0:
         pct = (p0 - p1) / p1
         if abs(pct) >= PRICE_CHANGE_THRESHOLD:
-            # 순위 상승 → 가격↓만(싸져서), 순위 하락 → 가격↑만(비싸져서)
-            if rank_improved and pct < 0:
-                tags.append('📉가격↓')
-            elif not rank_improved and pct > 0:
-                tags.append('📈가격↑')
+            tags.append('📈가격↑' if pct > 0 else '📉가격↓')
 
     return ' '.join(tags)
 
