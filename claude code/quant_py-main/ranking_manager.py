@@ -161,14 +161,30 @@ def compute_3day_intersection(
 
 
 def _compute_exit_reason(t0_item: dict, t1_item: dict) -> str:
-    """이탈 종목의 사유 태그 계산 — V/Q/M 스코어 비교"""
+    """이탈 종목의 사유 태그 — 실적 vs 가격 이진 분류"""
     tags = []
-    for key, label in [('value_s', 'V'), ('quality_s', 'Q'), ('momentum_s', 'M')]:
+
+    # 실적 (Q)
+    q0 = t0_item.get('quality_s')
+    q1 = t1_item.get('quality_s')
+    if q0 is not None and q1 is not None and q0 < q1 - 0.05:
+        tags.append('⚠️실적↓')
+
+    # 가격 (V/M → 주가 방향)
+    price_signal = 0.0
+    has_price = False
+    for key, sign in [('value_s', -1), ('momentum_s', 1)]:
         s0 = t0_item.get(key)
         s1 = t1_item.get(key)
         if s0 is not None and s1 is not None:
-            if s0 < s1 - 0.05:  # 의미 있는 하락만
-                tags.append(f"{label}↓")
+            d = s0 - s1
+            if abs(d) > 0.05:
+                price_signal += d * sign
+                has_price = True
+
+    if has_price and abs(price_signal) > 0:
+        tags.append('📈가격↑' if price_signal > 0 else '📉가격↓')
+
     return ' '.join(tags) if tags else ''
 
 
@@ -182,48 +198,43 @@ def compute_rank_driver(t0_item: dict, t_ref_item: dict,
                         rank_improved: bool = True,
                         multi_day: bool = False) -> str:
     """
-    순위 변동의 주요 원인을 사람이 읽을 수 있는 태그로 반환.
+    순위 변동 원인을 이진 분류 태그로 반환 — 실적 vs 가격 독립 표시.
 
-    1. threshold 초과 팩터 수집 (1일/2일 기준 별도)
-    2. 순위 방향에 맞는 delta만 필터링
-    3. 절대값 가장 큰 팩터 선택
+    두 축을 독립적으로 판단:
+      - 실적 (Q): quality_s 변화 → 💪실적↑ / ⚠️실적↓
+      - 가격 (V/M): value_s·momentum_s 변화 → 📈가격↑ / 📉가격↓
+        V↑(싸짐)=가격↓, V↓(비싸짐)=가격↑, M↑=가격↑, M↓=가격↓
 
-    Returns: 태그 1개 또는 '' (원인 불명 시 태그 없음)
+    Returns: 0~2개 태그 문자열 (예: '💪실적↑ 📉가격↓') 또는 ''
     """
     thresholds = THRESHOLDS_2D if multi_day else THRESHOLDS_1D
+    tags = []
 
-    deltas = {}
-    for key, threshold in thresholds.items():
+    # --- 실적 축 (Q) ---
+    q0 = t0_item.get('quality_s')
+    q1 = t_ref_item.get('quality_s')
+    if q0 is not None and q1 is not None:
+        qd = q0 - q1
+        if abs(qd) > thresholds['quality_s']:
+            tags.append('💪실적↑' if qd > 0 else '⚠️실적↓')
+
+    # --- 가격 축 (V/M → 주가 방향으로 통합) ---
+    # V↑(싸짐) = 주가↓ → sign -1,  M↑(추세↑) = 주가↑ → sign +1
+    price_signal = 0.0
+    has_price = False
+    for key, sign in [('value_s', -1), ('momentum_s', 1)]:
         s0 = t0_item.get(key)
         s1 = t_ref_item.get(key)
         if s0 is not None and s1 is not None:
             d = s0 - s1
-            if abs(d) > threshold:
-                label = {'value_s': 'V', 'quality_s': 'Q', 'momentum_s': 'M'}[key]
-                deltas[label] = d
+            if abs(d) > thresholds[key]:
+                price_signal += d * sign
+                has_price = True
 
-    if not deltas:
-        return ''
+    if has_price and abs(price_signal) > 0:
+        tags.append('📈가격↑' if price_signal > 0 else '📉가격↓')
 
-    # 순위 방향에 맞는 delta만 필터링
-    if rank_improved:
-        directed = {k: v for k, v in deltas.items() if v > 0}
-    else:
-        directed = {k: v for k, v in deltas.items() if v < 0}
-
-    if not directed:
-        return ''
-
-    # 절대값 가장 큰 팩터 선택
-    dominant = max(directed, key=lambda k: abs(directed[k]))
-    d = directed[dominant]
-
-    TAG_MAP = {
-        'V': ('💡더 싸졌어요' if d > 0 else '📈가격이 올랐어요'),
-        'Q': ('💪실적이 좋아졌어요' if d > 0 else '⚠️실적이 나빠졌어요'),
-        'M': ('📈추세가 강해졌어요' if d > 0 else '📉추세가 약해졌어요'),
-    }
-    return TAG_MAP[dominant]
+    return ' '.join(tags)
 
 
 def get_daily_changes(
