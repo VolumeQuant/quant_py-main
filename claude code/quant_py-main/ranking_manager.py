@@ -160,8 +160,11 @@ def compute_3day_intersection(
     return results[:max_picks]
 
 
+PRICE_CHANGE_THRESHOLD = 0.03  # 3% 이상 변동만 가격 태그 표시
+
+
 def _compute_exit_reason(t0_item: dict, t1_item: dict) -> str:
-    """이탈 종목의 사유 태그 — 실적 vs 가격 이진 분류"""
+    """이탈 종목의 사유 태그 — 실적 vs 가격 이진 분류 (실제 주가 기반)"""
     tags = []
 
     # 실적 (Q)
@@ -170,20 +173,13 @@ def _compute_exit_reason(t0_item: dict, t1_item: dict) -> str:
     if q0 is not None and q1 is not None and q0 < q1 - 0.05:
         tags.append('⚠️실적↓')
 
-    # 가격 (V/M → 주가 방향)
-    price_signal = 0.0
-    has_price = False
-    for key, sign in [('value_s', -1), ('momentum_s', 1)]:
-        s0 = t0_item.get(key)
-        s1 = t1_item.get(key)
-        if s0 is not None and s1 is not None:
-            d = s0 - s1
-            if abs(d) > 0.05:
-                price_signal += d * sign
-                has_price = True
-
-    if has_price and abs(price_signal) > 0:
-        tags.append('📈가격↑' if price_signal > 0 else '📉가격↓')
+    # 가격 (실제 주가 비교)
+    p0 = t0_item.get('price')
+    p1 = t1_item.get('price')
+    if p0 and p1 and p1 > 0:
+        pct = (p0 - p1) / p1
+        if abs(pct) >= PRICE_CHANGE_THRESHOLD:
+            tags.append('📈가격↑' if pct > 0 else '📉가격↓')
 
     return ' '.join(tags) if tags else ''
 
@@ -202,8 +198,7 @@ def compute_rank_driver(t0_item: dict, t_ref_item: dict,
 
     두 축을 독립적으로 판단:
       - 실적 (Q): quality_s 변화 → 💪실적↑ / ⚠️실적↓
-      - 가격 (V/M): value_s·momentum_s 변화 → 📈가격↑ / 📉가격↓
-        V↑(싸짐)=가격↓, V↓(비싸짐)=가격↑, M↑=가격↑, M↓=가격↓
+      - 가격: 실제 주가(price 필드) 비교 → 📈가격↑ / 📉가격↓
 
     Returns: 0~2개 태그 문자열 (예: '💪실적↑ 📉가격↓') 또는 ''
     """
@@ -218,21 +213,13 @@ def compute_rank_driver(t0_item: dict, t_ref_item: dict,
         if abs(qd) > thresholds['quality_s']:
             tags.append('💪실적↑' if qd > 0 else '⚠️실적↓')
 
-    # --- 가격 축 (V/M → 주가 방향으로 통합) ---
-    # V↑(싸짐) = 주가↓ → sign -1,  M↑(추세↑) = 주가↑ → sign +1
-    price_signal = 0.0
-    has_price = False
-    for key, sign in [('value_s', -1), ('momentum_s', 1)]:
-        s0 = t0_item.get(key)
-        s1 = t_ref_item.get(key)
-        if s0 is not None and s1 is not None:
-            d = s0 - s1
-            if abs(d) > thresholds[key]:
-                price_signal += d * sign
-                has_price = True
-
-    if has_price and abs(price_signal) > 0:
-        tags.append('📈가격↑' if price_signal > 0 else '📉가격↓')
+    # --- 가격 축 (실제 주가 비교) ---
+    p0 = t0_item.get('price')
+    p1 = t_ref_item.get('price')
+    if p0 and p1 and p1 > 0:
+        pct = (p0 - p1) / p1
+        if abs(pct) >= PRICE_CHANGE_THRESHOLD:
+            tags.append('📈가격↑' if pct > 0 else '📉가격↓')
 
     return ' '.join(tags)
 

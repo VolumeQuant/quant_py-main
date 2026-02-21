@@ -734,6 +734,12 @@ def main():
                 val = row.get(col)
                 if val is not None and pd.notna(val):
                     entry[key] = round(float(val), 4)
+            # 종가 (가격 변동 태그용)
+            ticker = entry['ticker']
+            if not price_df.empty and ticker in price_df.columns:
+                last_price = price_df[ticker].dropna()
+                if not last_price.empty:
+                    entry['price'] = int(last_price.iloc[-1])
             rankings_list.append(entry)
 
         save_ranking(BASE_DATE, rankings_list, metadata={
