@@ -22,6 +22,7 @@
 | 4 | HIGH | `create_current_portfolio.py:668` | T-1/T-2 맵 `rank<=30` 조건 + 불일치 fallback | `.get('composite_rank', item['rank'])` 통일 |
 | 5 | HIGH | `gemini_analysis.py:349` | AI 프롬프트 궤적 역순 | T-2→T-1→T0 시간순으로 수정 |
 | 6 | MEDIUM | `send_telegram_auto.py:782` | 웹 캐시 Death List `rank` 사용 | `composite_rank` 수정 |
+| 7 | MEDIUM | `gemini_analysis.py:171` | AI "어제 시장" → 기준일-1일 검색 | `{date_str}` 기준일 명시로 수정 |
 
 #### 설계 원리 (확인됨)
 ```
