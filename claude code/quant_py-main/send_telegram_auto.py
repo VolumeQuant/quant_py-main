@@ -270,8 +270,8 @@ def format_top30(pipeline: list, exited: list, cold_start: bool = False, has_nex
             s['_r1'] = r1
             s['_r2'] = r2
             s['_weighted'] = r0 * 0.5 + r1 * 0.3 + r2 * 0.2
-            # 순위 변동 사유 태그 (T-0 vs T-1, rank 변한 경우만)
-            s['_driver'] = compute_rank_driver(s, t1_item) if t1_item and r0 != r1 else ''
+            # 순위 변동 사유 태그 (T-0 vs T-2, 3일 궤적 전체 구간)
+            s['_driver'] = compute_rank_driver(s, t2_item) if t2_item and r0 != r2 else ''
         verified.sort(key=lambda x: x['_weighted'])
 
     groups_added = False
