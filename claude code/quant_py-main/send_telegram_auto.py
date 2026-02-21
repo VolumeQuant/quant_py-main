@@ -28,6 +28,7 @@ from ranking_manager import (
     load_ranking, load_recent_rankings, save_ranking,
     compute_3day_intersection, get_daily_changes,
     get_stock_status, cleanup_old_rankings, get_available_ranking_dates,
+    compute_rank_driver,
 )
 from credit_monitor import get_credit_status, format_credit_section
 
@@ -255,25 +256,32 @@ def format_top30(pipeline: list, exited: list, cold_start: bool = False, has_nex
     # ✅ 종목: T-1, T-2 composite_rank 조회 → 가중순위 계산 → 정렬
     # composite_rank = 순수 점수 순위 (누적 없음), rank = 가중순위 (Top 30 결정)
     # 주의: rank<=30 필터 없이 전체 종목의 composite_rank 조회 (이전에 30위 밖이었을 수 있음)
-    if verified and rankings_t1 and rankings_t2:
-        t1_map = {r['ticker']: r.get('composite_rank', r['rank']) for r in rankings_t1.get('rankings', [])}
-        t2_map = {r['ticker']: r.get('composite_rank', r['rank']) for r in rankings_t2.get('rankings', [])}
+    # T-1, T-2 full item dict (composite_rank + 팩터 점수 모두 접근)
+    t1_full = {r['ticker']: r for r in rankings_t1.get('rankings', [])} if rankings_t1 else {}
+    t2_full = {r['ticker']: r for r in rankings_t2.get('rankings', [])} if rankings_t2 else {}
+
+    if verified and t1_full and t2_full:
         for s in verified:
             r0 = s.get('composite_rank', s['rank'])
-            r1 = t1_map.get(s['ticker'], r0)
-            r2 = t2_map.get(s['ticker'], r0)
+            t1_item = t1_full.get(s['ticker'])
+            t2_item = t2_full.get(s['ticker'])
+            r1 = t1_item.get('composite_rank', t1_item['rank']) if t1_item else r0
+            r2 = t2_item.get('composite_rank', t2_item['rank']) if t2_item else r0
             s['_r1'] = r1
             s['_r2'] = r2
             s['_weighted'] = r0 * 0.5 + r1 * 0.3 + r2 * 0.2
+            # 순위 변동 사유 태그 (T-0 vs T-1, rank 변한 경우만)
+            s['_driver'] = compute_rank_driver(s, t1_item) if t1_item and r0 != r1 else ''
         verified.sort(key=lambda x: x['_weighted'])
 
     groups_added = False
     if verified:
         lines.append(f"✅ 3일 검증 {len(verified)}개")
-        if rankings_t1 and rankings_t2:
+        if t1_full and t2_full:
             for s in verified:
                 # 시간순 표시: T-2→T-1→T0위 (과거→현재, 화살표 방향 = 시간 흐름)
-                lines.append(f"  {s['name']} {s['_r2']}→{s['_r1']}→{s.get('composite_rank', s['rank'])}위")
+                driver = f" {s['_driver']}" if s.get('_driver') else ""
+                lines.append(f"  {s['name']} {s['_r2']}→{s['_r1']}→{s.get('composite_rank', s['rank'])}위{driver}")
         else:
             for s in verified:
                 lines.append(f"  {s['name']} {s.get('composite_rank', s['rank'])}위")
@@ -283,11 +291,18 @@ def format_top30(pipeline: list, exited: list, cold_start: bool = False, has_nex
         if groups_added:
             lines.append("")
         lines.append(f"⏳ 내일 검증 {len(two_day)}개")
-        if rankings_t1:
-            t1_map_td = {r['ticker']: r.get('composite_rank', r['rank']) for r in rankings_t1.get('rankings', [])}
+        if t1_full:
             for s in two_day:
+                t1_item = t1_full.get(s['ticker'])
+                r1 = t1_item.get('composite_rank', t1_item['rank']) if t1_item else '?'
+                r0 = s.get('composite_rank', s['rank'])
+                # 순위 변동 사유 태그
+                driver = ''
+                if t1_item and r0 != r1:
+                    driver_tag = compute_rank_driver(s, t1_item)
+                    driver = f" {driver_tag}" if driver_tag else ""
                 # 시간순 표시: T-1→T0위 (과거→현재)
-                lines.append(f"  {s['name']} {t1_map_td.get(s['ticker'], '?')}→{s.get('composite_rank', s['rank'])}위")
+                lines.append(f"  {s['name']} {r1}→{r0}위{driver}")
         else:
             for s in two_day:
                 lines.append(f"  {s['name']} {s.get('composite_rank', s['rank'])}위")

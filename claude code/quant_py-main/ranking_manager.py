@@ -172,6 +172,54 @@ def _compute_exit_reason(t0_item: dict, t1_item: dict) -> str:
     return ' '.join(tags) if tags else ''
 
 
+def compute_rank_driver(t0_item: dict, t1_item: dict) -> str:
+    """
+    순위 변동의 주요 원인을 사람이 읽을 수 있는 태그로 반환.
+
+    우선순위: Q(수익성) > V/M 중 delta 큰 쪽
+    Returns: "📈 가격 반영 중" 등 태그 1개, 또는 빈 문자열
+    """
+    FACTORS = {
+        'value_s':    ('V', 0.05),
+        'quality_s':  ('Q', 0.04),
+        'momentum_s': ('M', 0.10),
+    }
+
+    deltas = {}
+    for key, (label, threshold) in FACTORS.items():
+        s0 = t0_item.get(key)
+        s1 = t1_item.get(key)
+        if s0 is not None and s1 is not None:
+            d = s0 - s1
+            if abs(d) > threshold:
+                deltas[label] = d
+
+    if not deltas:
+        return ''
+
+    # 1. Q(수익성) 우선 — 가장 중요한 안심/주의 신호
+    if 'Q' in deltas:
+        return '⚠️ 수익성 악화' if deltas['Q'] < 0 else '💪 수익성 개선'
+
+    # 2. V vs M — delta 절대값이 큰 쪽이 주도 원인
+    v_d = deltas.get('V')
+    m_d = deltas.get('M')
+
+    if v_d is not None and m_d is not None:
+        if abs(v_d) >= abs(m_d):
+            return '📈 가격 반영 중' if v_d < 0 else '💰 저평가 확대'
+        else:
+            return '🔥 모멘텀 상승' if m_d > 0 else '📉 모멘텀 둔화'
+
+    if v_d is not None:
+        return '📈 가격 반영 중' if v_d < 0 else '💰 저평가 확대'
+
+    if m_d is not None:
+        return '🔥 모멘텀 상승' if m_d > 0 else '📉 모멘텀 둔화'
+
+    return ''
+
+
 def get_daily_changes(
     rankings_t0: dict,
     rankings_t1: dict,
