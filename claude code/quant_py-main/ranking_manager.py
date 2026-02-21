@@ -172,33 +172,38 @@ def _compute_exit_reason(t0_item: dict, t1_item: dict) -> str:
     return ' '.join(tags) if tags else ''
 
 
-def compute_rank_driver(t0_item: dict, t_ref_item: dict, rank_improved: bool = True) -> str:
+# 7일 데이터 분석 기반 threshold (~25% 초과율 목표)
+THRESHOLDS_1D = {'value_s': 0.06, 'quality_s': 0.06, 'momentum_s': 0.10}
+THRESHOLDS_2D = {'value_s': 0.08, 'quality_s': 0.06, 'momentum_s': 0.15}
+MIN_RANK_CHANGE = 3  # |변동| < 3 → 태그 생략
+
+
+def compute_rank_driver(t0_item: dict, t_ref_item: dict,
+                        rank_improved: bool = True,
+                        multi_day: bool = False) -> str:
     """
     순위 변동의 주요 원인을 사람이 읽을 수 있는 태그로 반환.
 
-    순위 방향에 맞는 delta만 필터링 → 절대값 가장 큰 팩터 선택.
-    - rank_improved=True  → 양(+) delta 중 최대 (순위 개선 원인)
-    - rank_improved=False → 음(-) delta 중 최대 (순위 하락 원인)
+    1. threshold 초과 팩터 수집 (1일/2일 기준 별도)
+    2. 순위 방향에 맞는 delta만 필터링
+    3. 절대값 가장 큰 팩터 선택
 
-    Returns: 태그 1개 또는 '🔄상대변동'
+    Returns: 태그 1개 또는 '' (원인 불명 시 태그 없음)
     """
-    FACTORS = {
-        'value_s':    ('V', 0.05),
-        'quality_s':  ('Q', 0.04),
-        'momentum_s': ('M', 0.10),
-    }
+    thresholds = THRESHOLDS_2D if multi_day else THRESHOLDS_1D
 
     deltas = {}
-    for key, (label, threshold) in FACTORS.items():
+    for key, threshold in thresholds.items():
         s0 = t0_item.get(key)
         s1 = t_ref_item.get(key)
         if s0 is not None and s1 is not None:
             d = s0 - s1
             if abs(d) > threshold:
+                label = {'value_s': 'V', 'quality_s': 'Q', 'momentum_s': 'M'}[key]
                 deltas[label] = d
 
     if not deltas:
-        return '🔄상대변동'
+        return ''
 
     # 순위 방향에 맞는 delta만 필터링
     if rank_improved:
@@ -207,7 +212,7 @@ def compute_rank_driver(t0_item: dict, t_ref_item: dict, rank_improved: bool = T
         directed = {k: v for k, v in deltas.items() if v < 0}
 
     if not directed:
-        return '🔄상대변동'
+        return ''
 
     # 절대값 가장 큰 팩터 선택
     dominant = max(directed, key=lambda k: abs(directed[k]))

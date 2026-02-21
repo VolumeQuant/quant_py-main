@@ -28,7 +28,7 @@ from ranking_manager import (
     load_ranking, load_recent_rankings, save_ranking,
     compute_3day_intersection, get_daily_changes,
     get_stock_status, cleanup_old_rankings, get_available_ranking_dates,
-    compute_rank_driver,
+    compute_rank_driver, MIN_RANK_CHANGE,
 )
 from credit_monitor import get_credit_status, format_credit_section
 
@@ -270,8 +270,11 @@ def format_top30(pipeline: list, exited: list, cold_start: bool = False, has_nex
             s['_r1'] = r1
             s['_r2'] = r2
             s['_weighted'] = r0 * 0.5 + r1 * 0.3 + r2 * 0.2
-            # 순위 변동 사유 태그 (T-0 vs T-2, 3일 궤적 전체 구간, 방향 일치)
-            s['_driver'] = compute_rank_driver(s, t2_item, rank_improved=(r0 < r2)) if t2_item and r0 != r2 else ''
+            # 순위 변동 사유 태그 (T-0 vs T-2, |변동|≥3만, 2일 threshold)
+            if t2_item and abs(r0 - r2) >= MIN_RANK_CHANGE:
+                s['_driver'] = compute_rank_driver(s, t2_item, rank_improved=(r0 < r2), multi_day=True)
+            else:
+                s['_driver'] = ''
         verified.sort(key=lambda x: x['_weighted'])
 
     groups_added = False
@@ -298,7 +301,7 @@ def format_top30(pipeline: list, exited: list, cold_start: bool = False, has_nex
                 r0 = s.get('composite_rank', s['rank'])
                 # 순위 변동 사유 태그
                 driver = ''
-                if t1_item and r0 != r1:
+                if t1_item and abs(r0 - r1) >= MIN_RANK_CHANGE:
                     driver_tag = compute_rank_driver(s, t1_item, rank_improved=(r0 < r1))
                     driver = f" {driver_tag}" if driver_tag else ""
                 # 시간순 표시: T-1→T0위 (과거→현재)
@@ -330,11 +333,18 @@ def format_top30(pipeline: list, exited: list, cold_start: bool = False, has_nex
         else:
             lines.append(f"📉 어제 대비 이탈 {len(exited)}개")
 
+        # T-0 전체 종목 맵 (이탈 종목의 현재 팩터 점수 조회)
+        t0_full_map = {item['ticker']: item for item in (rankings_t0 or {}).get('rankings', [])}
+
         for e in exited:
             prev = e.get('composite_rank', e['rank'])
             cur = t0_crank_map.get(e['ticker'])
-            reason = e.get('exit_reason', '')
-            reason_tag = f" [{reason}]" if reason else ""
+            # 이탈 = 항상 하락 방향, T-0 vs T-1 비교
+            t0_item = t0_full_map.get(e['ticker'])
+            reason_tag = ''
+            if t0_item:
+                tag = compute_rank_driver(t0_item, e, rank_improved=False)
+                reason_tag = f" {tag}" if tag else ""
 
             if cur:
                 lines.append(f"  {e['name']} {prev}위 → {cur}위{reason_tag}")
@@ -742,6 +752,7 @@ def main():
                     'rank_t0': pick.get('rank_t0'),
                     'rank_t1': pick.get('rank_t1'),
                     'rank_t2': pick.get('rank_t2'),
+                    'driver': pick.get('_driver', ''),
                     'per': pick.get('per'),
                     'fwd_per': pick.get('fwd_per'),
                     'roe': pick.get('roe'),
