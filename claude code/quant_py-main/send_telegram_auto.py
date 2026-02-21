@@ -30,7 +30,7 @@ from ranking_manager import (
     get_stock_status, cleanup_old_rankings, get_available_ranking_dates,
     compute_rank_driver, MIN_RANK_CHANGE,
 )
-from credit_monitor import get_credit_status, format_credit_section
+from credit_monitor import get_credit_status, format_credit_section, get_market_pick_level
 
 # ============================================================
 # 상수/설정
@@ -530,8 +530,10 @@ def main():
     ecos_key = getattr(__import__('config'), 'ECOS_API_KEY', None)
     credit = get_credit_status(ecos_api_key=ecos_key)
 
-    stock_weight = WEIGHT_PER_STOCK
-    print(f"\n[매수 추천 설정] 행동: {credit['final_action']} · 최대 {MAX_PICKS}종목 × {stock_weight}%")
+    pick_level = get_market_pick_level(credit)
+    market_max_picks = pick_level['max_picks']
+    stock_weight = WEIGHT_PER_STOCK if market_max_picks == 5 else (100 // market_max_picks if market_max_picks > 0 else 0)
+    print(f"\n[매수 추천 설정] 행동: {credit['final_action']} · 레벨: {pick_level['label']} · 최대 {market_max_picks}종목 × {stock_weight}%")
 
     # ============================================================
     # 순위 데이터 로드 (3일)
@@ -676,11 +678,11 @@ def main():
     else:
         print("\nAI 리스크 필터 스킵 (추천 종목 없음)")
 
-    # 리스크 플래그 없는 종목 우선, 항상 MAX_PICKS까지 추천
+    # 리스크 플래그 없는 종목 우선, market_max_picks까지 추천
     clean_candidates = [c for c in all_candidates if c['ticker'] not in risk_flagged_tickers]
     flagged_candidates = [c for c in all_candidates if c['ticker'] in risk_flagged_tickers]
-    picks = (clean_candidates + flagged_candidates)[:MAX_PICKS]
-    print(f"\n  최종 picks: {len(picks)}개 (최대{MAX_PICKS}, 클린{len(clean_candidates)}+플래그{len(flagged_candidates)})")
+    picks = (clean_candidates + flagged_candidates)[:market_max_picks]
+    print(f"\n  최종 picks: {len(picks)}개 (시장레벨: {pick_level['label']}, 최대{market_max_picks}, 클린{len(clean_candidates)}+플래그{len(flagged_candidates)})")
 
     # ============================================================
     # 메시지 구성 — Guide → [1/3] 시장+Top30 → [2/3] AI → [3/3] 최종
@@ -737,7 +739,25 @@ def main():
 
     # [3/3] 최종 추천 — AI 종목별 설명 (AI 있을 때만)
     msg_final = None
-    if ai_msg:
+    if market_max_picks == 0 and pick_level['warning']:
+        # 시장 위험으로 매수 중단 — [3/3] 대체 메시지
+        stop_lines = [
+            '━━━━━━━━━━━━━━━━━━━',
+            ' [3/3] 🎯 최종 추천',
+            '━━━━━━━━━━━━━━━━━━━',
+            f'📅 {base_date_str} 기준',
+            '',
+            pick_level['warning'],
+            '',
+            f'시장 위험 지표: {credit.get("final_action", "")}',
+            '',
+            '💡 Top 30 목록은 [1/3]에서 확인하세요.',
+            '시장이 안정되면 자동으로 추천이 재개됩니다.',
+            '⚠️ 참고용이며, 투자 판단은 본인 책임이에요.',
+        ]
+        msg_final = '\n'.join(stop_lines)
+        print(f"\n  [3/3] 시장 위험 매수 중단 메시지 생성 (레벨: {pick_level['label']})")
+    elif ai_msg:
         universe_count = (rankings_t0.get('metadata') or {}).get('total_universe', 0)
         ai_picks_text = None
         try:

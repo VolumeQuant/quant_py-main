@@ -627,6 +627,42 @@ def format_credit_section(credit: dict) -> str:
     return '\n'.join(lines)
 
 
+def get_market_pick_level(credit_status: dict) -> dict:
+    """시장 위험 상태에 따른 추천 종목 수 결정
+
+    final_action 문자열의 키워드를 기반으로 max_picks를 자동 조절.
+    종목 레벨 매도(Death List)와 별개로, 시스템 레벨에서 추천을 제한.
+
+    Returns:
+        dict: {'max_picks': int, 'label': str, 'warning': str or None}
+    """
+    action = credit_status.get('final_action', '')
+
+    if '즉시 매도' in action:
+        return {'max_picks': 0, 'label': '전량 매도',
+                'warning': '🚨 시장 위험으로 매수를 중단합니다. 보유 종목 매도를 검토하세요.'}
+    elif '매도하세요' in action:
+        return {'max_picks': 0, 'label': '매도',
+                'warning': '⚠️ 시장 위험으로 매수를 중단합니다. 보유 종목 매도를 검토하세요.'}
+    elif '멈추' in action:
+        return {'max_picks': 0, 'label': '매수 중단',
+                'warning': '⚠️ 시장 위험으로 신규 매수를 중단합니다.'}
+    elif '관망' in action:
+        return {'max_picks': 0, 'label': '관망',
+                'warning': '시장 불확실성으로 관망합니다.'}
+    elif '줄이' in action:
+        return {'max_picks': 3, 'label': '축소',
+                'warning': '⚠️ 시장 경고로 추천을 3종목으로 축소합니다.'}
+    elif '분할 매수' in action:
+        return {'max_picks': 3, 'label': '분할 매수', 'warning': None}
+    elif '신중' in action:
+        return {'max_picks': 5, 'label': '신중',
+                'warning': '신규 매수 시 신중하세요.'}
+    else:
+        # 적극 매수, 평소대로, 기본값
+        return {'max_picks': 5, 'label': '정상', 'warning': None}
+
+
 if __name__ == '__main__':
     import sys
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
@@ -640,3 +676,5 @@ if __name__ == '__main__':
     result = get_credit_status(ecos_api_key=ecos_key)
     print("\n" + "=" * 50)
     print(format_credit_section(result))
+    pick_level = get_market_pick_level(result)
+    print(f"\n추천 레벨: {pick_level}")
