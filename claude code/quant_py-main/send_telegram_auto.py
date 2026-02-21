@@ -270,8 +270,8 @@ def format_top30(pipeline: list, exited: list, cold_start: bool = False, has_nex
             s['_r1'] = r1
             s['_r2'] = r2
             s['_weighted'] = r0 * 0.5 + r1 * 0.3 + r2 * 0.2
-            # 순위 변동 사유 태그 (T-0 vs T-2, 3일 궤적 전체 구간)
-            s['_driver'] = compute_rank_driver(s, t2_item) if t2_item and r0 != r2 else ''
+            # 순위 변동 사유 태그 (T-0 vs T-2, 3일 궤적 전체 구간, 방향 일치)
+            s['_driver'] = compute_rank_driver(s, t2_item, rank_improved=(r0 < r2)) if t2_item and r0 != r2 else ''
         verified.sort(key=lambda x: x['_weighted'])
 
     groups_added = False
@@ -299,7 +299,7 @@ def format_top30(pipeline: list, exited: list, cold_start: bool = False, has_nex
                 # 순위 변동 사유 태그
                 driver = ''
                 if t1_item and r0 != r1:
-                    driver_tag = compute_rank_driver(s, t1_item)
+                    driver_tag = compute_rank_driver(s, t1_item, rank_improved=(r0 < r1))
                     driver = f" {driver_tag}" if driver_tag else ""
                 # 시간순 표시: T-1→T0위 (과거→현재)
                 lines.append(f"  {s['name']} {r1}→{r0}위{driver}")
