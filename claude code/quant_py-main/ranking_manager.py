@@ -177,7 +177,7 @@ def compute_rank_driver(t0_item: dict, t1_item: dict) -> str:
     순위 변동의 주요 원인을 사람이 읽을 수 있는 태그로 반환.
 
     우선순위: Q(수익성) > V/M 중 delta 큰 쪽
-    Returns: "📈 가격 반영 중" 등 태그 1개, 또는 빈 문자열
+    Returns: "📈 주가↑ 반영" 등 태그 1개, 또는 빈 문자열
     """
     FACTORS = {
         'value_s':    ('V', 0.05),
@@ -197,9 +197,9 @@ def compute_rank_driver(t0_item: dict, t1_item: dict) -> str:
     if not deltas:
         return ''
 
-    # 1. Q(수익성) 우선 — 가장 중요한 안심/주의 신호
+    # 1. Q(실적) 우선 — 가장 중요한 안심/주의 신호
     if 'Q' in deltas:
-        return '⚠️ 수익성 악화' if deltas['Q'] < 0 else '💪 수익성 개선'
+        return '⚠️ 실적 악화' if deltas['Q'] < 0 else '💪 실적 개선'
 
     # 2. V vs M — delta 절대값이 큰 쪽이 주도 원인
     v_d = deltas.get('V')
@@ -207,15 +207,15 @@ def compute_rank_driver(t0_item: dict, t1_item: dict) -> str:
 
     if v_d is not None and m_d is not None:
         if abs(v_d) >= abs(m_d):
-            return '📈 가격 반영 중' if v_d < 0 else '💰 저평가 확대'
+            return '📈 주가↑ 반영' if v_d < 0 else '🏷️ 더 저렴해짐'
         else:
-            return '🔥 모멘텀 상승' if m_d > 0 else '📉 모멘텀 둔화'
+            return '🔥 상승 탄력' if m_d > 0 else '📉 상승 주춤'
 
     if v_d is not None:
-        return '📈 가격 반영 중' if v_d < 0 else '💰 저평가 확대'
+        return '📈 주가↑ 반영' if v_d < 0 else '🏷️ 더 저렴해짐'
 
     if m_d is not None:
-        return '🔥 모멘텀 상승' if m_d > 0 else '📉 모멘텀 둔화'
+        return '🔥 상승 탄력' if m_d > 0 else '📉 상승 주춤'
 
     return ''
 
