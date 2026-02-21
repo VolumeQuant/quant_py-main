@@ -48,7 +48,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install pykrx pandas numpy requests beautifulsoup4 lxml pyarrow tqdm scipy html5lib google-genai
+          pip install pykrx==1.2.3 pandas numpy requests beautifulsoup4 lxml pyarrow tqdm scipy html5lib google-genai
 
       - name: Create config.py from secrets
         run: |

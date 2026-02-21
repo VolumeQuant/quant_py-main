@@ -82,7 +82,7 @@ def get_latest_trading_date() -> str:
                 return date
         except Exception:
             continue
-    return '20260129'
+    raise RuntimeError("최근 20일간 거래일을 찾을 수 없습니다. pykrx 버전 또는 네트워크를 확인하세요.")
 
 import sys
 if len(sys.argv) > 1 and len(sys.argv[1]) == 8 and sys.argv[1].isdigit():
