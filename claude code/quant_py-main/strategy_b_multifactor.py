@@ -331,16 +331,16 @@ class MultiFactorStrategy:
         data['성장_점수'] = data[growth_factors].mean(axis=1).fillna(0.0) if growth_factors else 0
         data['모멘텀_점수'] = data[momentum_factors].mean(axis=1) if momentum_factors else 0
 
-        # 5.5. 카테고리 점수 클리핑 (±3) — 비중이 실제 기여도를 반영하도록
+        # 5.5. 카테고리 점수 재정규화 — 분산 통일 후 비중이 실제 기여도를 반영
         ZSCORE_CAP = 3.0
         for col in ['밸류_점수', '퀄리티_점수', '성장_점수', '모멘텀_점수']:
-            if col in data.columns:
-                clipped = (data[col] > ZSCORE_CAP).sum() + (data[col] < -ZSCORE_CAP).sum()
-                if clipped > 0:
-                    print(f"  {col}: {clipped}개 종목 클리핑 (±{ZSCORE_CAP})")
+            if col in data.columns and data[col].std() > 0:
+                before_std = data[col].std()
+                data[col] = (data[col] - data[col].mean()) / data[col].std()
                 data[col] = data[col].clip(-ZSCORE_CAP, ZSCORE_CAP)
+                print(f"  {col}: std {before_std:.3f} → 1.000 (재정규화 + ±{ZSCORE_CAP} clip)")
 
-        # 최종 점수 (가중 평균: V45 + Q15 + G10 + M30)
+        # 최종 점수 (균등 가중: V25 + Q25 + G25 + M25)
         # 모멘텀 데이터가 없는 종목은 제외
         if momentum_factors:
             before_count = len(data)
@@ -349,16 +349,16 @@ class MultiFactorStrategy:
             if excluded > 0:
                 print(f"모멘텀 데이터 없는 종목 제외: {excluded}개 → {len(data)}개 남음")
 
-            data['멀티팩터_점수'] = (data['밸류_점수'] * 0.45 +
-                                    data['퀄리티_점수'] * 0.15 +
-                                    data['성장_점수'] * 0.10 +
-                                    data['모멘텀_점수'] * 0.30)
-            print("멀티팩터 가중치: V45 + Q15 + G10 + M30")
+            data['멀티팩터_점수'] = (data['밸류_점수'] * 0.25 +
+                                    data['퀄리티_점수'] * 0.25 +
+                                    data['성장_점수'] * 0.25 +
+                                    data['모멘텀_점수'] * 0.25)
+            print("멀티팩터 가중치: V25 + Q25 + G25 + M25 (재정규화)")
         else:
             # 모멘텀 팩터 자체가 없는 경우 (price_df가 None)
-            data['멀티팩터_점수'] = (data['밸류_점수'] * 0.6 +
-                                    data['퀄리티_점수'] * 0.4)
-            print("멀티팩터 가중치: Value 60% + Quality 40% (모멘텀 없음)")
+            data['멀티팩터_점수'] = (data['밸류_점수'] * 0.5 +
+                                    data['퀄리티_점수'] * 0.5)
+            print("멀티팩터 가중치: Value 50% + Quality 50% (모멘텀 없음)")
 
         # 순위 계산 (높을수록 좋음)
         data['멀티팩터_순위'] = data['멀티팩터_점수'].rank(ascending=False, method='first', na_option='bottom')
