@@ -195,11 +195,11 @@ def compute_rank_driver(t0_item: dict, t1_item: dict) -> str:
                 deltas[label] = d
 
     if not deltas:
-        return ''
+        return '🔄상대변동'
 
-    # 1. Q(실적) 우선 — 가장 중요한 안심/주의 신호
+    # 1. Q(실적) 우선
     if 'Q' in deltas:
-        return '⚠️ 실적 악화' if deltas['Q'] < 0 else '💪 실적 개선'
+        return '⚠️실적↓' if deltas['Q'] < 0 else '💪실적↑'
 
     # 2. V vs M — delta 절대값이 큰 쪽이 주도 원인
     v_d = deltas.get('V')
@@ -207,17 +207,17 @@ def compute_rank_driver(t0_item: dict, t1_item: dict) -> str:
 
     if v_d is not None and m_d is not None:
         if abs(v_d) >= abs(m_d):
-            return '📈 주가↑ 반영' if v_d < 0 else '🏷️ 더 저렴해짐'
+            return '📈주가↑' if v_d < 0 else '💡저평가↑'
         else:
-            return '🔥 상승 탄력' if m_d > 0 else '📉 상승 주춤'
+            return '📈모멘텀↑' if m_d > 0 else '📉모멘텀↓'
 
     if v_d is not None:
-        return '📈 주가↑ 반영' if v_d < 0 else '🏷️ 더 저렴해짐'
+        return '📈주가↑' if v_d < 0 else '💡저평가↑'
 
     if m_d is not None:
-        return '🔥 상승 탄력' if m_d > 0 else '📉 상승 주춤'
+        return '📈모멘텀↑' if m_d > 0 else '📉모멘텀↓'
 
-    return ''
+    return '🔄상대변동'
 
 
 def get_daily_changes(
