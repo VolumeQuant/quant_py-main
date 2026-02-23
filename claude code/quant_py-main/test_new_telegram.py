@@ -315,33 +315,6 @@ def _get_signal_summary(credit):
     return f"{icon} {label} — {basis}"
 
 
-def compute_factor_tags(ticker, fr_cur, fr_prev, min_change=5):
-    """팩터 등수 변화 태그 (가치↑ 품질↓ 등)"""
-    r0 = fr_cur.get(ticker, {})
-    rp = fr_prev.get(ticker, {})
-    if not r0 or not rp:
-        return ''
-    tags = []
-    for name in ['가치', '품질', '성장', '모멘텀']:
-        cur = r0.get(name)
-        prev = rp.get(name)
-        if cur is not None and prev is not None:
-            diff = prev - cur  # 양수 = 등수 개선 (숫자 줄어듦)
-            if abs(diff) >= min_change:
-                arrow = '↑' if diff > 0 else '↓'
-                tags.append(f"{name}{arrow}")
-    return ' '.join(tags)
-
-
-def _filter_neg_tags(tag_str):
-    """이탈 종목용: 부정 태그만 추출 (↓만)"""
-    if not tag_str:
-        return ''
-    parts = tag_str.split()
-    neg = [p for p in parts if '↓' in p]
-    return ' '.join(neg)
-
-
 def compute_factor_ranks(rankings):
     """각 팩터별 등수 계산 (높은 점수 = 높은 등수)"""
     stocks = rankings.get('rankings', [])
@@ -462,14 +435,10 @@ def format_msg1(
             else:
                 traj = f"순위 {rank}위"
 
-            # 변동 사유 태그
-            driver = pick.get('_driver', '')
-            driver_str = f" {driver}" if driver else ""
-
             price = pick.get('price')
             price_str = f" · {price:,.0f}원" if price else ""
             lines.append(f"<b>{i+1}. {name}</b> {sector}{price_str}")
-            lines.append(f"{traj}{driver_str}")
+            lines.append(f"{traj}")
 
             # 팩터 등수 (강한 팩터만)
             factor_str = _get_factor_rank_str(pick)
@@ -541,9 +510,7 @@ def format_msg1(
         lines.append("")
         lines.append(f"<b>🔔 매도 검토</b>")
         for e in exited:
-            tag = e.get('_exit_tag', '')
-            reason = f' {tag}' if tag else ''
-            lines.append(f"{e['name']}{reason} — 상위 30위 이탈")
+            lines.append(f"{e['name']} — 상위 30위 이탈")
         lines.append("보유 중이라면 매도를 검토하세요.")
         lines.append("<i>(상세 순위 변화는 다음 메시지)</i>")
 
@@ -597,9 +564,7 @@ def format_msg2(pipeline, exited, rankings_t0):
                 traj = f"{r1}→{rank}위"
             else:
                 traj = f"{rank}위"
-            driver = s.get('_driver', '')
-            d_str = f" {driver}" if driver else ""
-            lines.append(f"{s['name']} {traj}{d_str}")
+            lines.append(f"{s['name']} {traj}")
 
     # 🆕 오늘 첫 진입
     if new_stocks:
@@ -620,12 +585,10 @@ def format_msg2(pipeline, exited, rankings_t0):
             prev = e['rank']
             t0_item = t0_full.get(e['ticker'])
             cur = t0_item['rank'] if t0_item else None
-            tag = e.get('_exit_tag', '')
-            reason = f" {tag}" if tag else ""
             if cur:
-                lines.append(f"{e['name']} {prev}→{cur}위{reason}")
+                lines.append(f"{e['name']} {prev}→{cur}위")
             else:
-                lines.append(f"{e['name']} {prev}위 → 밖{reason}")
+                lines.append(f"{e['name']} {prev}위 → 밖")
 
     # 주도 업종
     sector_map = {}
@@ -726,8 +689,6 @@ def main():
 
     # 팩터별 등수 계산 (3일분)
     factor_ranks_t0 = compute_factor_ranks(rankings_t0)
-    factor_ranks_t1 = compute_factor_ranks(rankings_t1) if rankings_t1 else {}
-    factor_ranks_t2 = compute_factor_ranks(rankings_t2) if rankings_t2 else {}
 
     # 파이프라인
     pipeline = get_stock_status(rankings_t0, rankings_t1, rankings_t2)
@@ -748,31 +709,17 @@ def main():
         if s['status'] == '✅':
             s['_r1'] = t1_item['rank'] if t1_item else s['rank']
             s['_r2'] = t2_item['rank'] if t2_item else s.get('_r1', s['rank'])
-            # ✅: T-0 vs T-2 팩터 등수 변화
-            if t2_item and abs(s['rank'] - s['_r2']) >= MIN_RANK_CHANGE:
-                s['_driver'] = compute_factor_tags(s['ticker'], factor_ranks_t0, factor_ranks_t2)
-            else:
-                s['_driver'] = ''
         elif s['status'] == '⏳':
             s['_r1'] = t1_item['rank'] if t1_item else s['rank']
             s['_r2'] = None
-            # ⏳: T-0 vs T-1 팩터 등수 변화
-            if t1_item and abs(s['rank'] - s['_r1']) >= MIN_RANK_CHANGE:
-                s['_driver'] = compute_factor_tags(s['ticker'], factor_ranks_t0, factor_ranks_t1)
-            else:
-                s['_driver'] = ''
         else:
             s['_r1'] = None
             s['_r2'] = None
-            s['_driver'] = ''
 
     # 이탈 종목
     entered, exited = [], []
     if not cold_start and rankings_t1:
         entered, exited = get_daily_changes(rankings_t0, rankings_t1)
-        for e in exited:
-            full_tag = compute_factor_tags(e['ticker'], factor_ranks_t0, factor_ranks_t1)
-            e['_exit_tag'] = _filter_neg_tags(full_tag)
         print(f"일일 변동: 진입 {len(entered)}, 이탈 {len(exited)}")
 
     # ============================================================

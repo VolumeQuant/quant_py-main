@@ -583,7 +583,7 @@ def main():
                     date_dt = last_cached + timedelta(days=offset)
                     date_str = date_dt.strftime('%Y%m%d')
                     try:
-                        day_ohlcv = pykrx_stock.get_market_ohlcv_by_date(date_str, market='ALL')
+                        day_ohlcv = pykrx_stock.get_market_ohlcv_by_ticker(date_str, market='ALL')
                         if not day_ohlcv.empty and '종가' in day_ohlcv.columns:
                             row = day_ohlcv['종가']
                             row.name = pd.Timestamp(date_dt)
