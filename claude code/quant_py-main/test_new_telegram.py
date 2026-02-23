@@ -404,8 +404,8 @@ def format_msg1(
             lines.append("  품질 — ROE·매출이익률·현금흐름")
             lines.append("  성장 — 이익개선도·매출성장률")
             lines.append("  모멘텀 — 위험조정 수익률")
-            lines.append(f"→ 상위 30개 → 3일 검증 → {v_count}개 통과")
-            lines.append(f"→ 리스크 점검 → 최종 {len(picks)}종목")
+            lines.append(f"→ 상위 30종목 → 3일 검증 → {v_count}종목 통과")
+            lines.append(f"→ 위험 점검 → 최종 {len(picks)}종목")
 
     # ── ③ 종목별 근거 ──
     if picks:
@@ -516,7 +516,7 @@ def format_msg1(
     # 푸터
     lines.append("")
     lines.append("━━━━━━━━━━━━━━━")
-    lines.append("<i>순위는 그제→어제→오늘 · 등수는 채점 대상 중</i>")
+    lines.append("<i>순위: 2일 전 → 1일 전 → 오늘</i>")
     lines.append("<i>참고용이며, 투자 판단은 본인 책임이에요.</i>")
     return '\n'.join(lines)
 
@@ -527,8 +527,8 @@ def format_msg1(
 def format_msg2(pipeline, exited, rankings_t0):
     """Top 30 전 종목의 궤적 + 변동 사유."""
     lines = []
-    lines.append("<b>Top 30 전체 흐름</b>")
-    lines.append("이 목록에 있으면 보유, 빠지면 매도 검토.")
+    lines.append("<b>Top 30 종목 현황</b>")
+    lines.append("<i>이 목록에 있으면 보유, 빠지면 매도 검토.</i>")
 
     verified = [s for s in pipeline if s['status'] == '✅']
     two_day = [s for s in pipeline if s['status'] == '⏳']
@@ -539,7 +539,8 @@ def format_msg2(pipeline, exited, rankings_t0):
         verified.sort(key=lambda x: x['rank'])
         lines.append("")
         lines.append(f"<b>✅ 3일 검증 완료 ({len(verified)}종목)</b>")
-        lines.append("<b>3거래일 연속 상위 30위 유지 → 매수 대상</b>")
+        lines.append("3거래일 연속 상위 30위 유지 → 매수 대상")
+        lines.append("")
         for s in verified:
             r2 = s.get('_r2')
             r1 = s.get('_r1')
@@ -555,7 +556,8 @@ def format_msg2(pipeline, exited, rankings_t0):
         two_day.sort(key=lambda x: x['rank'])
         lines.append("")
         lines.append(f"<b>⏳ 2일째 관찰 ({len(two_day)}종목)</b>")
-        lines.append("<b>내일도 30위 이내 유지 시 매수 대상</b>")
+        lines.append("내일도 30위 이내 유지 시 매수 대상")
+        lines.append("")
         for s in two_day:
             r1 = s.get('_r1')
             rank = s['rank']
@@ -572,7 +574,8 @@ def format_msg2(pipeline, exited, rankings_t0):
         new_stocks.sort(key=lambda x: x['rank'])
         lines.append("")
         lines.append(f"<b>🆕 오늘 첫 진입 ({len(new_stocks)}종목)</b>")
-        lines.append("<b>3일 검증 시작 → 모레 매수 대상 가능</b>")
+        lines.append("3일 검증 시작 → 모레 매수 대상 가능")
+        lines.append("")
         for s in new_stocks:
             lines.append(f"{s['name']} {s['rank']}위")
 
@@ -581,7 +584,8 @@ def format_msg2(pipeline, exited, rankings_t0):
         t0_full = {item['ticker']: item for item in rankings_t0.get('rankings', [])}
         lines.append("")
         lines.append(f"<b>📉 이탈 ({len(exited)}종목)</b>")
-        lines.append("<b>상위 30위에서 밀려남 → 매도 검토</b>")
+        lines.append("상위 30위에서 밀려남 → 매도 검토")
+        lines.append("")
         for e in exited:
             prev = e['rank']
             t0_item = t0_full.get(e['ticker'])
