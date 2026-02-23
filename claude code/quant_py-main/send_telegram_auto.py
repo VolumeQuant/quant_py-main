@@ -253,29 +253,26 @@ def format_top30(pipeline: list, exited: list, cold_start: bool = False, has_nex
     two_day = [s for s in pipeline if s['status'] == '⏳']
     new_stocks = [s for s in pipeline if s['status'] == '🆕']
 
-    # ✅ 종목: T-1, T-2 composite_rank 조회 → 가중순위 계산 → 정렬
-    # composite_rank = 순수 점수 순위 (누적 없음), rank = 가중순위 (Top 30 결정)
-    # 주의: rank<=30 필터 없이 전체 종목의 composite_rank 조회 (이전에 30위 밖이었을 수 있음)
-    # T-1, T-2 full item dict (composite_rank + 팩터 점수 모두 접근)
+    # ✅ 종목: T-1, T-2 rank(가중순위) 조회 → 궤적 표시
+    # rank = 가중순위 (Top 30 결정), 모든 표시에 rank 사용
     t1_full = {r['ticker']: r for r in rankings_t1.get('rankings', [])} if rankings_t1 else {}
     t2_full = {r['ticker']: r for r in rankings_t2.get('rankings', [])} if rankings_t2 else {}
 
     if verified and t1_full and t2_full:
         for s in verified:
-            r0 = s.get('composite_rank', s['rank'])
+            r0 = s['rank']
             t1_item = t1_full.get(s['ticker'])
             t2_item = t2_full.get(s['ticker'])
-            r1 = t1_item.get('composite_rank', t1_item['rank']) if t1_item else r0
-            r2 = t2_item.get('composite_rank', t2_item['rank']) if t2_item else r0
+            r1 = t1_item['rank'] if t1_item else r0
+            r2 = t2_item['rank'] if t2_item else r0
             s['_r1'] = r1
             s['_r2'] = r2
-            s['_weighted'] = r0 * 0.5 + r1 * 0.3 + r2 * 0.2
             # 순위 변동 사유 태그 (T-0 vs T-2, |변동|≥3만, 2일 threshold)
             if t2_item and abs(r0 - r2) >= MIN_RANK_CHANGE:
                 s['_driver'] = compute_rank_driver(s, t2_item, rank_improved=(r0 < r2), multi_day=True)
             else:
                 s['_driver'] = ''
-        verified.sort(key=lambda x: x['_weighted'])
+        verified.sort(key=lambda x: x['rank'])
 
     groups_added = False
     if verified:
@@ -284,10 +281,10 @@ def format_top30(pipeline: list, exited: list, cold_start: bool = False, has_nex
             for s in verified:
                 # 시간순 표시: T-2→T-1→T0위 (과거→현재, 화살표 방향 = 시간 흐름)
                 driver = f"({s['_driver']})" if s.get('_driver') else ""
-                lines.append(f"  {s['name']} {s['_r2']}→{s['_r1']}→{s.get('composite_rank', s['rank'])}위{driver}")
+                lines.append(f"  {s['name']} {s['_r2']}→{s['_r1']}→{s['rank']}위{driver}")
         else:
             for s in verified:
-                lines.append(f"  {s['name']} {s.get('composite_rank', s['rank'])}위")
+                lines.append(f"  {s['name']} {s['rank']}위")
         groups_added = True
 
     if two_day:
@@ -297,18 +294,18 @@ def format_top30(pipeline: list, exited: list, cold_start: bool = False, has_nex
         if t1_full:
             for s in two_day:
                 t1_item = t1_full.get(s['ticker'])
-                r1 = t1_item.get('composite_rank', t1_item['rank']) if t1_item else '?'
-                r0 = s.get('composite_rank', s['rank'])
+                r1 = t1_item['rank'] if t1_item else '?'
+                r0 = s['rank']
                 # 순위 변동 사유 태그
                 driver = ''
-                if t1_item and abs(r0 - r1) >= MIN_RANK_CHANGE:
+                if t1_item and isinstance(r1, int) and abs(r0 - r1) >= MIN_RANK_CHANGE:
                     driver_tag = compute_rank_driver(s, t1_item, rank_improved=(r0 < r1))
                     driver = f"({driver_tag})" if driver_tag else ""
                 # 시간순 표시: T-1→T0위 (과거→현재)
                 lines.append(f"  {s['name']} {r1}→{r0}위{driver}")
         else:
             for s in two_day:
-                lines.append(f"  {s['name']} {s.get('composite_rank', s['rank'])}위")
+                lines.append(f"  {s['name']} {s['rank']}위")
         groups_added = True
 
     if new_stocks:
@@ -316,12 +313,12 @@ def format_top30(pipeline: list, exited: list, cold_start: bool = False, has_nex
             lines.append("")
         lines.append(f"🆕 신규 진입 {len(new_stocks)}개")
         for s in new_stocks:
-            lines.append(f"  {s['name']} {s.get('composite_rank', s['rank'])}위")
+            lines.append(f"  {s['name']} {s['rank']}위")
 
     if exited:
         lines.append("─────────────────")
-        # composite_rank 사용 (Top 30 표시와 일관성 유지)
-        t0_crank_map = {item['ticker']: item.get('composite_rank', item['rank']) for item in (rankings_t0 or {}).get('rankings', [])}
+        # rank(가중순위) 사용 (Top 30 판정 기준과 일치)
+        t0_rank_map = {item['ticker']: item['rank'] for item in (rankings_t0 or {}).get('rankings', [])}
 
         # 시장 위험에 따른 이탈 경보 차등 (HY quadrant 기반)
         hy_q = ''
@@ -337,8 +334,8 @@ def format_top30(pipeline: list, exited: list, cold_start: bool = False, has_nex
         t0_full_map = {item['ticker']: item for item in (rankings_t0 or {}).get('rankings', [])}
 
         for e in exited:
-            prev = e.get('composite_rank', e['rank'])
-            cur = t0_crank_map.get(e['ticker'])
+            prev = e['rank']
+            cur = t0_rank_map.get(e['ticker'])
             # 이탈 = 항상 하락 방향, T-0 vs T-1 비교
             t0_item = t0_full_map.get(e['ticker'])
             reason_tag = ''
@@ -400,7 +397,7 @@ def _get_buy_rationale(pick) -> str:
     return ' · '.join(reasons[:2])
 
 
-def format_buy_recommendations(picks: list, base_date_str: str, universe_count: int = 0, ai_picks_text: str = None, skipped: list = None, weight_per_stock: int = None, final_action: str = '') -> str:
+def format_buy_recommendations(picks: list, base_date_str: str, universe_count: int = 0, ai_picks_text: str = None, drop_info: list = None, weight_per_stock: int = None, final_action: str = '') -> str:
     """최종 추천 메시지 — AI 멘트 + 구분선"""
     if weight_per_stock is None:
         weight_per_stock = WEIGHT_PER_STOCK
@@ -431,14 +428,28 @@ def format_buy_recommendations(picks: list, base_date_str: str, universe_count: 
         funnel,
     ]
 
-    # 급락 제외 종목 안내
-    if skipped:
-        for candidate, chg in skipped:
-            lines.append(f"⚠️ {candidate['name']}(가중 {candidate['weighted_rank']}) 전일 {chg:.1f}% 급락 → 제외")
-
     # 종목별 설명
+    # 급락 종목 맵 (ticker → daily_chg)
+    drop_map = {}
+    if drop_info:
+        for candidate, chg in drop_info:
+            drop_map[candidate['ticker']] = chg
+
     lines.append("─────────────────")
     if ai_picks_text:
+        # AI 멘트에 급락 정보 삽입 (각 종목 설명 앞에)
+        if drop_map:
+            for ticker, chg in drop_map.items():
+                # picks에 포함된 급락 종목만 표시
+                pick_match = [p for p in picks if p['ticker'] == ticker]
+                if pick_match:
+                    name = pick_match[0]['name']
+                    # AI 텍스트에서 해당 종목 설명 앞에 급락 정보 삽입
+                    ai_picks_text = ai_picks_text.replace(
+                        f"{name}(",
+                        f"📉 전일 {chg:.1f}% (참고)\n{name}(",
+                        1
+                    )
         lines.append(ai_picks_text)
     else:
         # Fallback: AI 실패 시
@@ -447,6 +458,8 @@ def format_buy_recommendations(picks: list, base_date_str: str, universe_count: 
             ticker = pick['ticker']
             sector = pick.get('sector', '기타')
             rationale = _get_buy_rationale(pick)
+            if ticker in drop_map:
+                lines.append(f"📉 전일 {drop_map[ticker]:.1f}% (참고)")
             lines.append(f"<b>{i+1}. {name}({ticker}) · {weight_per_stock}%</b>")
             lines.append(f"{sector} · {rationale}")
             if i < n - 1:
@@ -592,35 +605,41 @@ def main():
             print(f"    ↓ {e['name']} ({e['rank']}위)")
 
     # ============================================================
-    # Section 2: 3일 교집합 매수 추천
+    # Section 2: ✅ 검증 종목에서 Top 추천 (가중순위 순)
     # ============================================================
-    print("\n[3일 교집합 매수 추천]")
+    print("\n[✅ 검증 종목 매수 추천]")
     all_candidates = []
-    skipped = []
+    drop_info = []  # 급락 정보 (제외 안 함, 표시만)
     if not cold_start:
-        all_intersection = compute_3day_intersection(rankings_t0, rankings_t1, rankings_t2, max_picks=30)
-        print(f"  3일 교집합 통과: {len(all_intersection)}개 종목")
+        # ✅ 3일 검증 종목 = rank(가중순위) 기준 Top 30에 3일 연속
+        verified_picks = [s for s in pipeline if s['status'] == '✅']
+        verified_picks.sort(key=lambda x: x['rank'])
+        print(f"  ✅ 검증 종목: {len(verified_picks)}개")
 
-        # 기술지표 보강 + 전일 급락 하드 필터 (전체 후보)
-        for candidate in all_intersection:
+        # T-1, T-2 rank 조회 (AI 분석용)
+        t1_rank_map = {r['ticker']: r['rank'] for r in rankings_t1.get('rankings', [])} if rankings_t1 else {}
+        t2_rank_map = {r['ticker']: r['rank'] for r in rankings_t2.get('rankings', [])} if rankings_t2 else {}
+
+        for candidate in verified_picks:
             tech = get_stock_technical(candidate['ticker'], BASE_DATE)
             candidate['_tech'] = tech
+            candidate['rank_t0'] = candidate['rank']
+            candidate['rank_t1'] = t1_rank_map.get(candidate['ticker'], candidate['rank'])
+            candidate['rank_t2'] = t2_rank_map.get(candidate['ticker'], candidate['rank'])
             daily_chg = (tech or {}).get('daily_chg', 0)
 
             if daily_chg <= -5:
-                skipped.append((candidate, daily_chg))
-                print(f"    ⛔ {candidate['name']}: 가중순위 {candidate['weighted_rank']}, 전일 {daily_chg:.1f}% 급락 → 제외")
-                continue
+                drop_info.append((candidate, daily_chg))
 
             all_candidates.append(candidate)
             if tech:
-                print(f"    {candidate['name']}: 가중순위 {candidate['weighted_rank']}, RSI {tech['rsi']:.0f}, 52주 {tech['w52_pct']:.0f}%")
+                print(f"    {candidate['name']}: rank {candidate['rank']}, RSI {tech['rsi']:.0f}, 52주 {tech['w52_pct']:.0f}%")
             else:
-                print(f"    {candidate['name']}: 가중순위 {candidate['weighted_rank']} (기술지표 실패)")
+                print(f"    {candidate['name']}: rank {candidate['rank']} (기술지표 실패)")
     else:
         print("  콜드 스타트 → 추천 없음 (관망)")
 
-    print(f"  하드필터 통과: {len(all_candidates)}개 종목")
+    print(f"  추천 후보: {len(all_candidates)}개 종목")
 
     # ============================================================
     # Section 3: Top 30 목록
@@ -651,7 +670,7 @@ def main():
                 stock_data = {
                     'ticker': pick['ticker'],
                     'name': pick['name'],
-                    'rank': pick['rank_t0'],
+                    'rank': pick['rank'],
                     'per': pick.get('per'),
                     'pbr': pick.get('pbr'),
                     'roe': pick.get('roe'),
@@ -782,7 +801,7 @@ def main():
             ai_picks_text = run_final_picks_analysis(final_stock_list, stock_weight, BASE_DATE, market_context=market_ctx)
         except Exception as e:
             print(f"최종 추천 AI 설명 실패 (fallback 사용): {e}")
-        msg_final = format_buy_recommendations(picks, base_date_str, universe_count, ai_picks_text, skipped=skipped, weight_per_stock=stock_weight, final_action=credit.get('final_action', ''))
+        msg_final = format_buy_recommendations(picks, base_date_str, universe_count, ai_picks_text, drop_info=drop_info, weight_per_stock=stock_weight, final_action=credit.get('final_action', ''))
 
     # 메시지 리스트: Guide → [1/3] 시장+Top30 → [2/3] AI → [3/3] 최종
     messages = [msg_overview, msg_main]
@@ -819,15 +838,15 @@ def main():
             },
             'picks': [{
                 'ticker': p['ticker'], 'name': p['name'], 'sector': p.get('sector', ''),
-                'weighted_rank': p.get('weighted_rank'), 'rank_t0': p.get('rank_t0'),
+                'rank': p.get('rank'), 'rank_t0': p.get('rank_t0'),
                 'rank_t1': p.get('rank_t1'), 'rank_t2': p.get('rank_t2'),
                 'per': p.get('per'), 'pbr': p.get('pbr'), 'roe': p.get('roe'), 'fwd_per': p.get('fwd_per'),
                 'score': p.get('score'), 'weight': stock_weight,
                 'tech': {k: v for k, v in (p.get('_tech') or {}).items() if k != 'ohlcv'},
             } for p in picks],
-            'skipped': [{'name': s[0]['name'], 'ticker': s[0]['ticker'], 'daily_chg': s[1]} for s in skipped],
+            'drop_info': [{'name': d[0]['name'], 'ticker': d[0]['ticker'], 'daily_chg': d[1]} for d in drop_info],
             'exited': [{'ticker': e['ticker'], 'name': e['name'],
-                        'rank': e.get('composite_rank', e['rank']),
+                        'rank': e['rank'],
                         'exit_reason': e.get('exit_reason', '')}
                        for e in exited],
             'sectors': {},
