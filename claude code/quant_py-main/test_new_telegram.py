@@ -96,6 +96,38 @@ def _escape_html(text):
 
 
 # ============================================================
+# 시장 이평선 경고
+# ============================================================
+def _calc_market_warnings(kospi_df, kosdaq_df):
+    """KOSPI/KOSDAQ 이평선 상태를 진단하여 경고 메시지 리스트 반환.
+    양호 시 빈 리스트 반환 → 경고 블록 생략."""
+    warnings = []
+    for name, df in [('코스피', kospi_df), ('코스닥', kosdaq_df)]:
+        if df is None or len(df) < 5:
+            continue
+        close = df.iloc[:, 3]
+        current = close.iloc[-1]
+        ma5 = close.rolling(5).mean().iloc[-1] if len(close) >= 5 else None
+        ma20 = close.rolling(20).mean().iloc[-1] if len(close) >= 20 else None
+        ma60 = close.rolling(60).mean().iloc[-1] if len(close) >= 60 else None
+        signals = []
+        if ma5 is not None:
+            signals.append("5일선↓" if current < ma5 else "5일선↑")
+        if ma20 is not None and current < ma20:
+            signals.append("20일선↓")
+        if ma60 is not None and current < ma60:
+            signals.append("60일선↓")
+        if ma5 is not None and ma20 is not None and ma5 < ma20:
+            signals.append("단기DC")
+        down_count = sum(1 for s in signals if '↓' in s or 'DC' in s)
+        if down_count == 0:
+            continue
+        icon = "⚡" if down_count <= 1 else "⚠️" if down_count <= 2 else "🚨"
+        warnings.append(f"{icon} {name}: {' '.join(signals)}")
+    return warnings
+
+
+# ============================================================
 # AI 브리핑 (Gemini) — US 프로젝트 패턴 참고
 # ============================================================
 def run_new_ai_analysis(picks, base_date, credit=None):
@@ -350,7 +382,7 @@ def format_msg1(
     base_date_str, kospi_close, kospi_chg, kosdaq_close, kosdaq_chg,
     credit, pick_level, market_max_picks, stock_weight,
     picks, risk_warnings, exited, rankings_t0, cold_start,
-    pipeline=None, ai_content=None,
+    pipeline=None, ai_content=None, market_warnings=None,
 ):
     lines = []
     narratives = ai_content.get('narratives', {}) if ai_content else {}
@@ -456,6 +488,9 @@ def format_msg1(
     lines.append("━━━━━━━━━━━━━━━")
     lines.append(f"코스피 {kospi_close:,.0f}({kospi_chg:+.1f}%)")
     lines.append(f"코스닥 {kosdaq_close:,.0f}({kosdaq_chg:+.1f}%)")
+    if market_warnings:
+        for w in market_warnings:
+            lines.append(w)
     lines.append("")
     # 시장 신호 — 카테고리별 분리
     hy = credit.get('hy')
@@ -657,6 +692,14 @@ def main():
     base_date_str = f"{BASE_DATE[:4]}.{BASE_DATE[4:6]}.{BASE_DATE[6:]}"
     print(f"코스피 {kospi_close:,.0f}({kospi_chg:+.1f}%) 코스닥 {kosdaq_close:,.0f}({kosdaq_chg:+.1f}%)")
 
+    # 시장 이평선 경고
+    market_warnings = _calc_market_warnings(kospi_idx, kosdaq_idx)
+    if market_warnings:
+        for w in market_warnings:
+            print(f"  {w}")
+    else:
+        print("  이평선 경고 없음")
+
     # 시장 위험 지표
     ecos_key = getattr(__import__('config'), 'ECOS_API_KEY', None)
     credit = get_credit_status(ecos_api_key=ecos_key)
@@ -797,6 +840,7 @@ def main():
         credit, pick_level, market_max_picks, stock_weight,
         picks, risk_warnings, exited, rankings_t0, cold_start,
         pipeline=pipeline, ai_content=ai_content,
+        market_warnings=market_warnings,
     )
 
     msg2 = format_msg2(pipeline, exited, rankings_t0)
