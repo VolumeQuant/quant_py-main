@@ -689,7 +689,9 @@ def main():
     kosdaq_prev = kosdaq_idx.iloc[-2, 3] if len(kosdaq_idx) > 1 else kosdaq_close
     kosdaq_chg = ((kosdaq_close / kosdaq_prev) - 1) * 100
 
-    base_date_str = f"{BASE_DATE[:4]}.{BASE_DATE[4:6]}.{BASE_DATE[6:]}"
+    _dow = ['월','화','수','목','금','토','일']
+    _dt = datetime.strptime(BASE_DATE, '%Y%m%d')
+    base_date_str = f"{_dt.year}.{_dt.month}.{_dt.day}({_dow[_dt.weekday()]})"
     print(f"코스피 {kospi_close:,.0f}({kospi_chg:+.1f}%) 코스닥 {kosdaq_close:,.0f}({kosdaq_chg:+.1f}%)")
 
     # 시장 이평선 경고
