@@ -527,10 +527,8 @@ def format_msg1(
 def format_msg2(pipeline, exited, rankings_t0):
     """Top 30 전 종목의 궤적 + 변동 사유."""
     lines = []
-    lines.append("<b>KOREA QUANT</b>")
     lines.append("<b>Top 30 전체 흐름</b>")
     lines.append("이 목록에 있으면 보유, 빠지면 매도 검토.")
-    lines.append("<i>↑ 개선 ↓ 악화 (가치·품질·성장·모멘텀)</i>")
 
     verified = [s for s in pipeline if s['status'] == '✅']
     two_day = [s for s in pipeline if s['status'] == '⏳']
