@@ -381,7 +381,7 @@ def format_msg1(
     elif picks:
         lines.append("")
         lines.append("━━━━━━━━━━━━━━━")
-        lines.append(f"<b>🛒 매수 후보 TOP {len(picks)}</b> (각 {stock_weight}%)")
+        lines.append(f"<b>🛒 매수 후보 TOP {len(picks)}</b> (종목당 {stock_weight}%)")
         lines.append("━━━━━━━━━━━━━━━")
         for i, p in enumerate(picks):
             ticker_str = str(p['ticker']).zfill(6)
@@ -398,7 +398,7 @@ def format_msg1(
         if universe_count > 0:
             lines.append(f"시총 3천억 이상 · 거래 활발한 {universe_count:,}종목에서")
             if prefilter_n > 0:
-                lines.append(f"→ 이익 대비 싸고 수익성 높은 상위 {prefilter_n}개 선별")
+                lines.append(f"→ 이익 대비 싸고 수익성 높은 상위 {prefilter_n}종목 선별")
             lines.append("→ 11개 지표로 종합 채점")
             lines.append("  가치 — PER·PBR·PCR·PSR·배당률")
             lines.append("  품질 — ROE·매출이익률·현금흐름")
@@ -409,7 +409,6 @@ def format_msg1(
 
     # ── ③ 종목별 근거 ──
     if picks:
-        universe_str = f" ({universe_count:,}종목 중)" if universe_count else ""
         lines.append("")
         lines.append("━━━━━━━━━━━━━━━")
         lines.append(f"<b>📌 종목별 근거</b>")
@@ -421,15 +420,15 @@ def format_msg1(
             rank = pick['rank']
             sector = pick.get('sector', '')
 
-            # 순위 — "(N종목 중)" 포함
+            # 순위
             r2 = pick.get('_r2')
             r1 = pick.get('_r1')
             if r2 is not None and r1 is not None:
-                traj = f"3일순위 {r2}→{r1}→{rank}위{universe_str}"
+                traj = f"순위 {r2}→{r1}→{rank}위"
             elif r1 is not None:
-                traj = f"2일순위 {r1}→{rank}위{universe_str}"
+                traj = f"순위 {r1}→{rank}위"
             else:
-                traj = f"순위 {rank}위{universe_str}"
+                traj = f"순위 {rank}위"
 
             # 변동 사유 태그
             driver = pick.get('_driver', '')
@@ -539,7 +538,7 @@ def format_msg2(pipeline, exited, rankings_t0):
         verified.sort(key=lambda x: x['rank'])
         lines.append("")
         lines.append(f"<b>✅ 3일 검증 완료 ({len(verified)}종목)</b>")
-        lines.append("3거래일 연속 상위 30위 유지 → 매수 대상")
+        lines.append("<i>3거래일 연속 상위 30위 유지 → 매수 대상</i>")
         for s in verified:
             r2 = s.get('_r2')
             r1 = s.get('_r1')
@@ -555,7 +554,7 @@ def format_msg2(pipeline, exited, rankings_t0):
         two_day.sort(key=lambda x: x['rank'])
         lines.append("")
         lines.append(f"<b>⏳ 2일째 관찰 ({len(two_day)}종목)</b>")
-        lines.append("내일도 30위 이내 유지 시 매수 대상")
+        lines.append("<i>내일도 30위 이내 유지 시 매수 대상</i>")
         for s in two_day:
             r1 = s.get('_r1')
             rank = s['rank']
@@ -572,7 +571,7 @@ def format_msg2(pipeline, exited, rankings_t0):
         new_stocks.sort(key=lambda x: x['rank'])
         lines.append("")
         lines.append(f"<b>🆕 오늘 첫 진입 ({len(new_stocks)}종목)</b>")
-        lines.append("3일 검증 시작 → 모레 매수 대상 가능")
+        lines.append("<i>3일 검증 시작 → 모레 매수 대상 가능</i>")
         for s in new_stocks:
             lines.append(f"{s['name']} {s['rank']}위")
 
@@ -581,7 +580,7 @@ def format_msg2(pipeline, exited, rankings_t0):
         t0_full = {item['ticker']: item for item in rankings_t0.get('rankings', [])}
         lines.append("")
         lines.append(f"<b>📉 이탈 ({len(exited)}종목)</b>")
-        lines.append("상위 30위에서 밀려남 → 매도 검토")
+        lines.append("<i>상위 30위에서 밀려남 → 매도 검토</i>")
         for e in exited:
             prev = e['rank']
             t0_item = t0_full.get(e['ticker'])
