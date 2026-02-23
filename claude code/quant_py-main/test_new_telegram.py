@@ -768,8 +768,6 @@ def main():
                 name = candidate['name']
                 if rsi >= 80:
                     risk_warnings.append(f"{name} 단기 과열 — 신규 매수 자제")
-                if chg <= -5:
-                    risk_warnings.append(f"{name} 전일 {chg:.1f}% 급락 — 원인 확인 필요")
                 if chg >= 8:
                     risk_warnings.append(f"{name} 전일 +{chg:.1f}% 급등 — 추격 매수 자제")
         print(f"최종 picks: {len(picks)}종목")
