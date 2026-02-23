@@ -457,31 +457,38 @@ def format_msg1(
     lines.append("━━━━━━━━━━━━━━━")
     lines.append(f"코스피 {kospi_close:,.0f}({kospi_chg:+.1f}%)")
     lines.append(f"코스닥 {kosdaq_close:,.0f}({kosdaq_chg:+.1f}%)")
-    signal = _get_signal_summary(credit)
-    lines.append(signal)
-    # 시장 수치 상세
+    lines.append("")
+    # 시장 신호 — 카테고리별 분리
     hy = credit.get('hy')
+    vix = credit.get('vix')
     if hy and hy.get('hy_spread'):
         spread = hy['hy_spread']
         median = hy.get('median_10y', 0)
-        comp = '이하' if spread < median else '이상'
-        hy_label = '안정' if spread < median else '경계'
-        lines.append(f"미국 회사채 위험도 {spread:.2f}% (기준 {median:.2f}% {comp} → {hy_label})")
-    vix = credit.get('vix')
+        ok = spread < median
+        icon = '🟢' if ok else '🔴'
+        desc = f"평균({median:.2f}%)보다 낮아 안정" if ok else f"평균({median:.2f}%)보다 높아 경계"
+        lines.append(f"{icon} 신용시장 — 회사채 위험도 {spread:.2f}%")
+        lines.append(f"  {desc}")
     if vix and vix.get('vix_current'):
         vix_desc = {
-            '안정': '평소 수준',
-            '보통': '평소보다 다소 높음',
-            '안정화': '높았지만 안정화 중',
-            '경계': '평소보다 높음',
-            '높지만안정': '높지만 안정화 중',
-            '상승경보': '빠르게 상승 중',
-            '위기': '매우 높음',
-            '공포완화': '공포에서 회복 중',
-            '안일': '너무 낮음',
+            '안정': ('🟢', '평소 수준'),
+            '보통': ('🟢', '평소보다 다소 높지만 정상 범위'),
+            '안정화': ('🟢', '높았지만 안정화 중'),
+            '경계': ('🟡', '평소보다 높음'),
+            '높지만안정': ('🟡', '높지만 안정화 중'),
+            '상승경보': ('🔴', '빠르게 상승 중'),
+            '위기': ('🔴', '매우 높음'),
+            '공포완화': ('🟡', '공포에서 회복 중'),
+            '안일': ('🟡', '너무 낮음'),
         }
-        desc = vix_desc.get(vix.get('regime_label', ''), '')
-        lines.append(f"변동성 지수 {vix['vix_current']:.1f} — {desc}" if desc else f"변동성 지수 {vix['vix_current']:.1f}")
+        regime = vix.get('regime_label', '')
+        icon, desc = vix_desc.get(regime, ('🟡', regime))
+        lines.append(f"{icon} 변동성 — VIX {vix['vix_current']:.1f}")
+        lines.append(f"  {desc}")
+    # 종합 판단
+    signal = _get_signal_summary(credit)
+    lines.append("")
+    lines.append(signal)
 
     # 📰 AI 시장 요약 — 당일 이슈 정리
     if market_summary:
@@ -520,7 +527,8 @@ def format_msg1(
 def format_msg2(pipeline, exited, rankings_t0):
     """Top 30 전 종목의 궤적 + 변동 사유."""
     lines = []
-    lines.append("<b>KOREA QUANT · Top 30 전체 흐름</b>")
+    lines.append("<b>KOREA QUANT</b>")
+    lines.append("<b>Top 30 전체 흐름</b>")
     lines.append("이 목록에 있으면 보유, 빠지면 매도 검토.")
     lines.append("<i>↑ 개선 ↓ 악화 (가치·품질·성장·모멘텀)</i>")
 
@@ -528,7 +536,7 @@ def format_msg2(pipeline, exited, rankings_t0):
     two_day = [s for s in pipeline if s['status'] == '⏳']
     new_stocks = [s for s in pipeline if s['status'] == '🆕']
 
-    # ✅ 3일 검증 완료 — 매수 대상
+    # ✅ 3일 검증 완료 — 매수 대상 (태그 없음, 안정 구간)
     if verified:
         verified.sort(key=lambda x: x['rank'])
         lines.append("")
@@ -542,9 +550,7 @@ def format_msg2(pipeline, exited, rankings_t0):
                 traj = f"{r2}→{r1}→{rank}위"
             else:
                 traj = f"{rank}위"
-            driver = s.get('_driver', '')
-            d_str = f" {driver}" if driver else ""
-            lines.append(f"{s['name']} {traj}{d_str}")
+            lines.append(f"{s['name']} {traj}")
 
     # ⏳ 2일째 관찰 — 내일 검증 완료
     if two_day:
