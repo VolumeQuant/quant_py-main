@@ -2,9 +2,59 @@
 
 ## 문서 개요
 
-**버전**: 20.6
+**버전**: v41
 **최종 업데이트**: 2026-02-24
 **작성자**: Claude Opus 4.6
+
+---
+
+## 핵심 변경사항 (v41 — UI 전면 개편 + 채널 실전 전환)
+
+### 2026-02-24
+
+**v41 UI 전면 개편** — 미국 프로젝트(eps-momentum-us)와 동일한 3메시지 철학 적용.
+
+#### 메시지 구조 변경
+| Before | After |
+|--------|-------|
+| 2메시지 (`test_new_telegram.py`) | **3메시지** (`send_telegram_auto.py`) |
+| KOREA QUANT 제목 | **📡 AI 종목 브리핑 KR** |
+| 결론+시장+AI 혼합 | **Signal(결론) / AI Risk(맥락) / Watchlist(데이터)** |
+| 팩터 등수 표시 | 제거 (업종별 기준 달라 절대값 무의미) |
+| 주도 업종 표시 | 제거 |
+| 이탤릭(`<i>`) 사용 | 제거 |
+| 그룹별 상태 헤더 | rank 순 정렬 + 인라인 배지(✅/⏳/🆕) |
+
+#### 워크플로우 전환
+- **루트 문제 발견**: 레포 루트(`C:/dev/`)의 `.github/workflows/telegram_daily.yml`이 GitHub Actions 실행 파일
+  - 기존: `python test_new_telegram.py` (구 v8 포맷)
+  - 변경: `python send_telegram_auto.py` (v41 포맷)
+- 프로젝트 하위 `claude code/quant_py-main/.github/workflows/`는 GitHub Actions가 사용하지 않음
+
+#### 채널 전송 활성화
+- **Before**: `TELEGRAM_CHAT_ID = "${{ secrets.TELEGRAM_PRIVATE_ID }}"` → 개인봇만
+- **After**: `TELEGRAM_CHAT_ID = "${{ secrets.TELEGRAM_CHAT_ID }}"` → 채널 + 개인봇
+- 중복 전송 방지: `PRIVATE_CHAT_ID != TELEGRAM_CHAT_ID` 체크 추가
+
+#### 워크플로우 구조
+| 워크플로우 | 파일 | 전송 대상 | 트리거 |
+|-----------|------|----------|--------|
+| **메인** | `telegram_daily.yml` | 채널 + 개인봇 | schedule(UTC 21:30) + manual |
+| **테스트** | `telegram_test.yml` | 개인봇만 | manual only |
+
+#### 수정 파일
+| 파일 | 변경 |
+|------|------|
+| `send_telegram_auto.py` | v41 3메시지 생성 + 📡 아이콘 + Watchlist 1줄 포맷 + 중복전송 방지 |
+| `credit_monitor.py` | `format_credit_compact()` 신규 (AI Risk 압축 포맷) |
+| `gemini_analysis.py` | 이탤릭 제거 + 프롬프트 개선(2000자/톤다양성/트럼프) + `parse_narratives()` |
+| `ranking_manager.py` | 이탈 태그 `[한글↓]` 형식 통일 |
+| `.github/workflows/telegram_daily.yml` | `test_new_telegram.py` → `send_telegram_auto.py` + 채널 전송 |
+| `.github/workflows/telegram_test.yml` | v41 전환 (개인봇만) |
+
+#### 채널 공지사항 (고정 메시지)
+- 서비스 안내: 작동 방식(3메시지), 활용법(매수/보유/매도), 한 줄 원칙, 면책
+- `send_announcement.py` → 전송 후 삭제 (일회성)
 
 ---
 
