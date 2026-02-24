@@ -1,11 +1,10 @@
 """
-한국주식 퀀트 텔레그램 v8.1 — 후보 → AI → 최종
+한국주식 퀀트 텔레그램 v41 — Signal + AI Risk + Watchlist
 
-메시지 구조:
-  📖 투자 가이드 — 시스템 소개 + 활용법
-  [1/3] 📊 시장 + Top 30 — 보유 확인
-  [2/3] 🤖 AI 리스크 필터 — 위험 요소 점검
-  [3/3] 🎯 최종 추천 — 최종 포트폴리오
+메시지 구조 (v41):
+  📊 Signal — 결론 (뭘 살까)
+  🤖 AI Risk — 맥락 (시장 환경 + 리스크)
+  📋 Watchlist — 데이터 (Top 30 모니터링)
 
 실행: python send_telegram_auto.py
 """
@@ -20,8 +19,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import requests
 import json
-import glob
 import os
+import time
 from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 from zoneinfo import ZoneInfo
 from ranking_manager import (
@@ -30,27 +29,22 @@ from ranking_manager import (
     get_stock_status, cleanup_old_rankings, get_available_ranking_dates,
     compute_rank_driver, MIN_RANK_CHANGE,
 )
-from credit_monitor import get_credit_status, format_credit_section, get_market_pick_level
+from credit_monitor import (
+    get_credit_status, format_credit_section, format_credit_compact,
+    get_market_pick_level,
+)
 
 # ============================================================
 # 상수/설정
 # ============================================================
 KST = ZoneInfo('Asia/Seoul')
+STATE_DIR = Path(__file__).parent / 'state'
 CACHE_DIR = Path('data_cache')
 OUTPUT_DIR = Path('output')
 MAX_PICKS = 5          # 최대 종목 수
 WEIGHT_PER_STOCK = 20  # 종목당 기본 비중 % (5종목 × 20% = 100%)
 
-def _get_sector_from_rankings(ticker: str, rankings_data: dict) -> str:
-    """ranking JSON에서 섹터 조회"""
-    for item in rankings_data.get('rankings', []):
-        if item.get('ticker') == ticker:
-            s = item.get('sector', '기타')
-            # 이전 JSON 호환 (sector가 종목명이던 시절)
-            if s == item.get('name', ''):
-                return '기타'
-            return s
-    return '기타'
+WEEKDAY_KR = ['월', '화', '수', '목', '금', '토', '일']
 
 
 # ============================================================
@@ -114,260 +108,8 @@ def get_stock_technical(ticker, base_date):
         return None
 
 
-# ============================================================
-# 시장 이평선 경고
-# ============================================================
-def _calc_market_warnings(kospi_df, kosdaq_df):
-    """KOSPI/KOSDAQ 이평선 상태를 진단하여 경고 메시지 리스트 반환"""
-    warnings = []
-
-    for name, df in [('코스피', kospi_df), ('코스닥', kosdaq_df)]:
-        if df is None or len(df) < 5:
-            continue
-
-        close = df.iloc[:, 3]  # 종가 컬럼
-        current = close.iloc[-1]
-
-        ma5 = close.rolling(5).mean().iloc[-1] if len(close) >= 5 else None
-        ma20 = close.rolling(20).mean().iloc[-1] if len(close) >= 20 else None
-        ma60 = close.rolling(60).mean().iloc[-1] if len(close) >= 60 else None
-
-        signals = []
-
-        # 1) 5일선 이탈/위
-        if ma5 is not None:
-            if current < ma5:
-                signals.append("5일선↓")
-            else:
-                signals.append("5일선↑")
-
-        # 2) 20일선 이탈/위
-        if ma20 is not None:
-            if current < ma20:
-                signals.append("20일선↓")
-
-        # 3) 60일선 이탈/위
-        if ma60 is not None:
-            if current < ma60:
-                signals.append("60일선↓")
-
-        # 4) 데드크로스 (MA5 < MA20)
-        if ma5 is not None and ma20 is not None:
-            if ma5 < ma20:
-                signals.append("단기DC")
-
-        # 경고 수준 판단
-        down_count = sum(1 for s in signals if '↓' in s or 'DC' in s)
-
-        if down_count == 0:
-            continue  # 양호 → 경고 안 함
-        elif down_count <= 1:
-            icon = "⚡"
-        elif down_count <= 2:
-            icon = "⚠️"
-        else:
-            icon = "🚨"
-
-        warnings.append(f"{icon} {name}: {' '.join(signals)}")
-
-    return warnings
-
-
-# ============================================================
-# 메시지 포맷터
-# ============================================================
-def format_overview(has_ai: bool = False):
-    """📖 투자 가이드 — 시스템 개요, 선정 과정, 보유/매도 기준"""
-    lines = [
-        '━━━━━━━━━━━━━━━━━━━',
-        '      📖 투자 가이드',
-        '━━━━━━━━━━━━━━━━━━━',
-        '🔎 <b>어떤 종목을 찾나요?</b>',
-        '국내 전 종목을 매일 자동 분석해서',
-        '"좋은 회사를 싸게 살 수 있는 타이밍"을 찾아요.',
-        '',
-        '📊 <b>어떻게 골라요?</b>',
-        '매일 새벽 5단계로 걸러요.',
-        '',
-        '① 시가총액·재무 건전성으로 1차 스크리닝',
-        '② 가치 + 수익성 + 성장성 + 모멘텀 멀티팩터 점수 산출',
-        '③ 120일 이동평균선 근처(95%) 이상 종목만 통과',
-        '④ 3거래일 연속 상위 30위 유지 → 검증 완료 ✅',
-        '⑤ AI 위험 점검 후 최종 매수 후보 선정',
-        '',
-        '⏱️ <b>얼마나 보유하나요?</b>',
-        'Top 30에 남아있는 동안은 계속 보유하세요.',
-        '목록에서 빠지면 매도를 검토하면 돼요.',
-        '',
-        '━━━━━━━━━━━━━━━━━━━',
-        '       💡 읽는 법',
-        '━━━━━━━━━━━━━━━━━━━',
-        '🚨 <b>시장 위험 신호</b>',
-        '🟢안정 🔴위험 — 🏦신용 · 🇰🇷한국 · ⚡변동성',
-        '🟢 많으면 적극, 🔴 많으면 매수 중단',
-        '',
-        '📋 <b>매수 후보</b>',
-        '✅ 3일 연속 Top 30 → 매수 후보',
-        '⏳ 2일 연속 → 내일 검증 완료',
-        '🆕 오늘 첫 진입 → 관찰',
-    ]
-    return '\n'.join(lines)
-
-
-def format_sector_distribution(pipeline: list, rankings_t0: dict) -> str:
-    """Top 30 주도 업종 한 줄 요약 (미국 프로젝트 스타일)"""
-    if not pipeline:
-        return ""
-
-    sector_map = {}
-    for item in rankings_t0.get('rankings', []):
-        s = item.get('sector', '기타')
-        if s == item.get('name', ''):
-            s = '기타'
-        sector_map[item['ticker']] = s
-
-    counts = {}
-    for s in pipeline:
-        sector = sector_map.get(s['ticker'], '기타')
-        counts[sector] = counts.get(sector, 0) + 1
-
-    sorted_sectors = sorted(counts.items(), key=lambda x: -x[1])
-
-    parts = [f"{sector} {count}" for sector, count in sorted_sectors]
-
-    return f"📊 주도 업종\n{' · '.join(parts)}"
-
-
-def format_top30(pipeline: list, exited: list, cold_start: bool = False, has_next: bool = False, rankings_t0: dict = None, rankings_t1: dict = None, rankings_t2: dict = None, credit: dict = None) -> str:
-    """Top 30 목록 — 상태별 그룹핑"""
-    if not pipeline:
-        return ""
-
-    lines = [
-        "─────────────────",
-        "<b>📋 Top 30 — 보유 확인</b>",
-        "목록에 있으면 보유, 없으면 매도 검토.",
-    ]
-
-    verified = [s for s in pipeline if s['status'] == '✅']
-    two_day = [s for s in pipeline if s['status'] == '⏳']
-    new_stocks = [s for s in pipeline if s['status'] == '🆕']
-
-    # ✅ 종목: T-1, T-2 rank(가중순위) 조회 → 궤적 표시
-    # rank = 가중순위 (Top 30 결정), 모든 표시에 rank 사용
-    t1_full = {r['ticker']: r for r in rankings_t1.get('rankings', [])} if rankings_t1 else {}
-    t2_full = {r['ticker']: r for r in rankings_t2.get('rankings', [])} if rankings_t2 else {}
-
-    if verified and t1_full and t2_full:
-        for s in verified:
-            r0 = s['rank']
-            t1_item = t1_full.get(s['ticker'])
-            t2_item = t2_full.get(s['ticker'])
-            r1 = t1_item['rank'] if t1_item else r0
-            r2 = t2_item['rank'] if t2_item else r0
-            s['_r1'] = r1
-            s['_r2'] = r2
-            # 순위 변동 사유 태그 (T-0 vs T-2, |변동|≥3만, 2일 threshold)
-            if t2_item and abs(r0 - r2) >= MIN_RANK_CHANGE:
-                s['_driver'] = compute_rank_driver(s, t2_item, rank_improved=(r0 < r2), multi_day=True)
-            else:
-                s['_driver'] = ''
-        verified.sort(key=lambda x: x['rank'])
-
-    groups_added = False
-    if verified:
-        lines.append(f"✅ 3일 검증 {len(verified)}개")
-        if t1_full and t2_full:
-            for s in verified:
-                # 시간순 표시: T-2→T-1→T0위 (과거→현재, 화살표 방향 = 시간 흐름)
-                driver = f"({s['_driver']})" if s.get('_driver') else ""
-                lines.append(f"  {s['name']} {s['_r2']}→{s['_r1']}→{s['rank']}위{driver}")
-        else:
-            for s in verified:
-                lines.append(f"  {s['name']} {s['rank']}위")
-        groups_added = True
-
-    if two_day:
-        if groups_added:
-            lines.append("")
-        lines.append(f"⏳ 내일 검증 {len(two_day)}개")
-        if t1_full:
-            for s in two_day:
-                t1_item = t1_full.get(s['ticker'])
-                r1 = t1_item['rank'] if t1_item else '?'
-                r0 = s['rank']
-                # 순위 변동 사유 태그
-                driver = ''
-                if t1_item and isinstance(r1, int) and abs(r0 - r1) >= MIN_RANK_CHANGE:
-                    driver_tag = compute_rank_driver(s, t1_item, rank_improved=(r0 < r1))
-                    driver = f"({driver_tag})" if driver_tag else ""
-                # 시간순 표시: T-1→T0위 (과거→현재)
-                lines.append(f"  {s['name']} {r1}→{r0}위{driver}")
-        else:
-            for s in two_day:
-                lines.append(f"  {s['name']} {s['rank']}위")
-        groups_added = True
-
-    if new_stocks:
-        if groups_added:
-            lines.append("")
-        lines.append(f"🆕 신규 진입 {len(new_stocks)}개")
-        for s in new_stocks:
-            lines.append(f"  {s['name']} {s['rank']}위")
-
-    if exited:
-        lines.append("─────────────────")
-        # rank(가중순위) 사용 (Top 30 판정 기준과 일치)
-        t0_rank_map = {item['ticker']: item['rank'] for item in (rankings_t0 or {}).get('rankings', [])}
-
-        # 시장 위험에 따른 이탈 경보 차등 (HY quadrant 기반)
-        hy_q = ''
-        if credit and credit.get('hy'):
-            hy_q = credit['hy'].get('quadrant', '')
-
-        if hy_q == 'Q4':
-            lines.append(f"🚨 어제 대비 이탈 {len(exited)}개")
-        else:
-            lines.append(f"📉 어제 대비 이탈 {len(exited)}개")
-
-        # T-0 전체 종목 맵 (이탈 종목의 현재 팩터 점수 조회)
-        t0_full_map = {item['ticker']: item for item in (rankings_t0 or {}).get('rankings', [])}
-
-        for e in exited:
-            prev = e['rank']
-            cur = t0_rank_map.get(e['ticker'])
-            # 이탈 = 항상 하락 방향, T-0 vs T-1 비교
-            t0_item = t0_full_map.get(e['ticker'])
-            reason_tag = ''
-            if t0_item:
-                tag = compute_rank_driver(t0_item, e, rank_improved=False)
-                reason_tag = f"({tag})" if tag else ""
-
-            if cur:
-                lines.append(f"  {e['name']} {prev}위 → {cur}위{reason_tag}")
-            else:
-                lines.append(f"  {e['name']} {prev}위 → 순위권 밖{reason_tag}")
-
-        # 시장 위험에 따른 경보 톤 차등 (HY quadrant 기반)
-        if hy_q == 'Q4':
-            lines.append("🚨 위험 구간이에요. 보유 중이라면 즉시 매도하세요.")
-        elif hy_q == 'Q3':
-            lines.append("⛔ 경계 구간이에요. 보유 중이라면 매도를 검토하세요.")
-        else:
-            lines.append("⛔ 보유 중이라면 매도를 검토하세요.")
-
-    if cold_start:
-        lines.append("─────────────────")
-        lines.append("📊 데이터 축적 중 — 3일 완료 시 매수 후보가 선정돼요.")
-
-    if has_next:
-        lines.append("─────────────────")
-        lines.append("👉 다음: AI 리스크 필터 [2/3]")
-    return '\n'.join(lines)
-
-
 def _get_buy_rationale(pick) -> str:
-    """한 줄 투자 근거 생성"""
+    """한 줄 투자 근거 생성 (AI fallback용)"""
     reasons = []
 
     fwd = pick.get('fwd_per')
@@ -397,86 +139,334 @@ def _get_buy_rationale(pick) -> str:
     return ' · '.join(reasons[:2])
 
 
-def format_buy_recommendations(picks: list, base_date_str: str, universe_count: int = 0, ai_picks_text: str = None, drop_info: list = None, weight_per_stock: int = None, final_action: str = '') -> str:
-    """최종 추천 메시지 — AI 멘트 + 구분선"""
-    if weight_per_stock is None:
-        weight_per_stock = WEIGHT_PER_STOCK
+# ============================================================
+# 시장 이평선 경고
+# ============================================================
+def _calc_market_warnings(kospi_df, kosdaq_df):
+    """KOSPI/KOSDAQ 이평선 상태를 진단하여 경고 메시지 리스트 반환"""
+    warnings = []
 
+    for name, df in [('코스피', kospi_df), ('코스닥', kosdaq_df)]:
+        if df is None or len(df) < 5:
+            continue
+
+        close = df.iloc[:, 3]  # 종가 컬럼
+        current = close.iloc[-1]
+
+        ma5 = close.rolling(5).mean().iloc[-1] if len(close) >= 5 else None
+        ma20 = close.rolling(20).mean().iloc[-1] if len(close) >= 20 else None
+        ma60 = close.rolling(60).mean().iloc[-1] if len(close) >= 60 else None
+
+        signals = []
+
+        if ma5 is not None:
+            if current < ma5:
+                signals.append("5일선↓")
+            else:
+                signals.append("5일선↑")
+
+        if ma20 is not None:
+            if current < ma20:
+                signals.append("20일선↓")
+
+        if ma60 is not None:
+            if current < ma60:
+                signals.append("60일선↓")
+
+        if ma5 is not None and ma20 is not None:
+            if ma5 < ma20:
+                signals.append("단기DC")
+
+        down_count = sum(1 for s in signals if '↓' in s or 'DC' in s)
+
+        if down_count == 0:
+            continue
+        elif down_count <= 1:
+            icon = "⚡"
+        elif down_count <= 2:
+            icon = "⚠️"
+        else:
+            icon = "🚨"
+
+        warnings.append(f"{icon} {name}: {' '.join(signals)}")
+
+    return warnings
+
+
+# ============================================================
+# 텔레그램 전송 유틸리티
+# ============================================================
+def send_telegram_long(text, bot_token, chat_id):
+    """긴 메시지 자동 분할 전송 (4000자 기준)"""
+    MAX_LEN = 4000
+    url = f'https://api.telegram.org/bot{bot_token}/sendMessage'
+
+    if len(text) <= MAX_LEN:
+        return [requests.post(url, data={'chat_id': chat_id, 'text': text, 'parse_mode': 'HTML'})]
+
+    lines = text.split('\n')
+    chunks = []
+    current = []
+    current_len = 0
+    for line in lines:
+        if current_len + len(line) + 1 > MAX_LEN and current:
+            chunks.append('\n'.join(current))
+            current = [line]
+            current_len = len(line)
+        else:
+            current.append(line)
+            current_len += len(line) + 1
+    if current:
+        chunks.append('\n'.join(current))
+
+    results = []
+    for chunk in chunks:
+        r = requests.post(url, data={'chat_id': chat_id, 'text': chunk, 'parse_mode': 'HTML'})
+        results.append(r)
+        time.sleep(0.3)
+    return results
+
+
+# ============================================================
+# v41 메시지 포맷터 — Signal / AI Risk / Watchlist
+# ============================================================
+def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
+                          market_max_picks, stock_weight, rankings_t0,
+                          rankings_t1, rankings_t2, cold_start,
+                          final_action, pick_level):
+    """Message 1: Signal — 결론 (뭘 살까)
+
+    종목당 3줄: 이름·업종·가격 / 순위 / AI 내러티브
+    """
+    wd = WEEKDAY_KR[biz_day.weekday()]
+    date_str = f"{biz_day.year}.{biz_day.month}.{biz_day.day}({wd})"
+
+    lines = [
+        f'📡 AI 종목 브리핑 KR · {date_str}',
+        '국내 전 종목을 매일 자동 분석해',
+        '유망 종목을 선별해 드려요.',
+    ]
+
+    # ── stop 모드 (시장 위험으로 매수 중단) ──
+    if market_max_picks == 0 and pick_level and pick_level.get('warning'):
+        lines.append('')
+        lines.append('━━━━━━━━━━━━━━━')
+        lines.append('🚫 신규 매수 중단')
+        lines.append('━━━━━━━━━━━━━━━')
+        lines.append(pick_level['warning'])
+        if final_action:
+            lines.append(f'→ {final_action}')
+        lines.append('')
+        lines.append('━━━━━━━━━━━━━━━')
+        lines.append('참고용이며, 투자 판단은 본인 책임이에요.')
+        return '\n'.join(lines)
+
+    # ── 결론 섹션 ──
     if not picks:
-        lines = [
-            "━━━━━━━━━━━━━━━━━━━",
-            "    🎯 최종 추천",
-            "━━━━━━━━━━━━━━━━━━━",
-            "",
-            "3일 연속 상위권을 유지한 종목이 없어요.",
-            "무리한 진입보다 관망도 전략이에요.",
-        ]
+        lines.append('')
+        lines.append('━━━━━━━━━━━━━━━')
+        lines.append('3일 연속 상위권을 유지한 종목이 없어요.')
+        lines.append('무리한 진입보다 관망도 전략이에요.')
+        lines.append('')
+        lines.append('━━━━━━━━━━━━━━━')
+        lines.append('참고용이며, 투자 판단은 본인 책임이에요.')
         return '\n'.join(lines)
 
     n = len(picks)
+    lines.append('')
+    lines.append('━━━━━━━━━━━━━━━')
+    lines.append(f'🛒 <b>매수 후보 TOP {n}</b> (각 {stock_weight}%)')
+    lines.append('━━━━━━━━━━━━━━━')
+    for i, pick in enumerate(picks):
+        lines.append(f'<b>{i+1}. {pick["name"]}({pick["ticker"]})</b>')
 
-    if universe_count > 0:
-        funnel = f"{universe_count:,}종목 → Top 30 → ✅ 검증 → 최종 {n}종목"
+    # ── 선정 과정 (퍼널) ──
+    meta = rankings_t0.get('metadata') or {}
+    universe_count = meta.get('total_universe', 0)
+    prefilter_count = meta.get('prefilter_passed', 0)
+    scored_count = meta.get('scored_count', 0)
+    v_count = sum(1 for s in pipeline if s['status'] == '✅')
+    lines.append('')
+    lines.append('📋 선정 과정')
+    if universe_count > 0 and prefilter_count:
+        lines.append(f'{universe_count:,}종목 중 스크리닝 상위 {prefilter_count}종목')
     else:
-        funnel = f"Top 30 → ✅ 검증 → 최종 {n}종목"
+        lines.append('국내 전 종목 스크리닝')
+    lines.append('→ 멀티팩터 채점 → 상위 30')
+    lines.append(f'→ 3일 검증({v_count}종목) → 최종 {n}종목')
 
-    lines = [
-        "━━━━━━━━━━━━━━━━━━━",
-        " [3/3] 🎯 최종 추천",
-        "━━━━━━━━━━━━━━━━━━━",
-        f"📅 {base_date_str} 기준",
-        funnel,
-    ]
+    # ── 종목별 근거 (3줄) ──
+    lines.append('')
+    lines.append('━━━━━━━━━━━━━━━')
+    lines.append('📌 <b>종목별 근거</b>')
+    lines.append('━━━━━━━━━━━━━━━')
 
-    # 종목별 설명
-    # 급락 종목 맵 (ticker → daily_chg)
-    drop_map = {}
-    if drop_info:
-        for candidate, chg in drop_info:
-            drop_map[candidate['ticker']] = chg
+    t1_rank_map = {r['ticker']: r['rank'] for r in rankings_t1.get('rankings', [])} if rankings_t1 else {}
+    t2_rank_map = {r['ticker']: r['rank'] for r in rankings_t2.get('rankings', [])} if rankings_t2 else {}
 
-    lines.append("─────────────────")
-    if ai_picks_text:
-        # AI 멘트에 급락 정보 삽입 (각 종목 설명 앞에)
-        if drop_map:
-            for ticker, chg in drop_map.items():
-                # picks에 포함된 급락 종목만 표시
-                pick_match = [p for p in picks if p['ticker'] == ticker]
-                if pick_match:
-                    name = pick_match[0]['name']
-                    # AI 텍스트에서 해당 종목 설명 앞에 급락 정보 삽입
-                    ai_picks_text = ai_picks_text.replace(
-                        f"{name}(",
-                        f"📉 전일 {chg:.1f}% (참고)\n{name}(",
-                        1
-                    )
-        lines.append(ai_picks_text)
-    else:
-        # Fallback: AI 실패 시
-        for i, pick in enumerate(picks):
-            name = pick['name']
-            ticker = pick['ticker']
-            sector = pick.get('sector', '기타')
-            rationale = _get_buy_rationale(pick)
-            if ticker in drop_map:
-                lines.append(f"📉 전일 {drop_map[ticker]:.1f}% (참고)")
-            lines.append(f"<b>{i+1}. {name}({ticker}) · {weight_per_stock}%</b>")
-            lines.append(f"{sector} · {rationale}")
-            if i < n - 1:
-                lines.append("")
+    for i, pick in enumerate(picks):
+        ticker = pick['ticker']
+        name = pick['name']
+        sector = pick.get('sector', '기타')
+        price = (pick.get('_tech') or {}).get('price', 0)
 
-    lines.append("─────────────────")
-    lines.append("💡 <b>활용법</b>")
-    lines.append("· 비중대로 분산 투자를 권장해요")
-    if final_action:
-        lines.append(f"· 시장 위험 지표: {final_action}")
-    lines.append("· Top 30에서 빠지면 매도 검토")
-    lines.append("⚠️ 참고용이며, 투자 판단은 본인 책임이에요.")
+        # L0: 이름·업종·가격 (볼드)
+        price_str = f'₩{price:,.0f}' if price else ''
+        lines.append(f'<b>{i+1}. {name}({ticker}) {sector} · {price_str}</b>')
+
+        # L1: 순위 궤적
+        r0 = pick.get('rank_t0', pick.get('rank', '?'))
+        r1 = t1_rank_map.get(ticker, '-')
+        r2 = t2_rank_map.get(ticker, '-')
+        lines.append(f'순위 {r2}→{r1}→{r0}위')
+
+        # L2: AI 내러티브 (fallback: _get_buy_rationale)
+        narrative = ''
+        if ai_narratives and ticker in ai_narratives:
+            narrative = ai_narratives[ticker]
+        if not narrative:
+            narrative = _get_buy_rationale(pick)
+        lines.append(f'💬 {narrative}')
+
+        if i < n - 1:
+            lines.append('─ ─ ─ ─ ─ ─ ─ ─')
+
+    # ── 이탈 알림 (1줄만) ──
+    if exited:
+        exited_names = ', '.join(e['name'] for e in exited[:5])
+        if len(exited) > 5:
+            exited_names += f' 외 {len(exited)-5}개'
+        lines.append('')
+        lines.append(f'⚠️ 이탈: {exited_names} → Watchlist 참고')
+
+    # ── 범례 + 면책 ──
+    lines.append('')
+    lines.append('━━━━━━━━━━━━━━━')
+    lines.append('순위: 2일전→1일전→오늘')
+    lines.append('참고용이며, 투자 판단은 본인 책임이에요.')
 
     return '\n'.join(lines)
 
 
+def create_ai_risk_message(credit, kospi_data, kosdaq_data, market_warnings,
+                           ai_msg, biz_day, picks, final_action):
+    """Message 2: AI Risk — 맥락 (시장 환경 + 리스크)
 
+    시장 데이터(코스피/코스닥/HY/BBB-/VIX/사계절) + AI 해석 + 매수 주의
+    """
+    kospi_close, kospi_chg, kospi_color = kospi_data
+    kosdaq_close, kosdaq_chg, kosdaq_color = kosdaq_data
+
+    lines = [
+        '━━━━━━━━━━━━━━━━━━━',
+        '  🤖 AI 리스크 필터',
+        '━━━━━━━━━━━━━━━━━━━',
+        '매수 후보의 위험 요소를 AI가 걸러냈어요.',
+        '',
+        '📊 시장 환경',
+        f'{kospi_color} 코스피 {kospi_close:,.0f}({kospi_chg:+.2f}%) · {kosdaq_color} 코스닥 {kosdaq_close:,.0f}({kosdaq_chg:+.2f}%)',
+    ]
+
+    # 신용시장 압축 표시
+    credit_lines = format_credit_compact(credit)
+    for cl in credit_lines:
+        lines.append(cl)
+
+    # final_action
+    if final_action:
+        lines.append(f'→ {final_action}')
+
+    # 이평선 경고 (있을 때만)
+    if market_warnings:
+        lines.append('')
+        for w in market_warnings:
+            lines.append(w)
+
+    # AI 해석 (통째 삽입)
+    if ai_msg:
+        lines.append('')
+        lines.append(ai_msg)
+
+    return '\n'.join(lines)
+
+
+def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
+                             rankings_t2, cold_start=False, credit=None):
+    """Message 3: Watchlist — 데이터 (Top 30 모니터링)
+
+    종목당 1줄: 상태+순위+이름(업종)+순위궤적
+    rank 순 정렬 (✅/⏳/🆕 인라인 마커)
+    """
+    lines = [
+        '📋 <b>Top 30 종목 현황</b>',
+        '이 목록에 있으면 보유, 빠지면 매도 검토.',
+        '━━━━━━━━━━━━━━━',
+    ]
+
+    if not pipeline:
+        lines.append('데이터 없음')
+        return '\n'.join(lines)
+
+    # T-1, T-2 rank 맵
+    t1_full = {r['ticker']: r for r in rankings_t1.get('rankings', [])} if rankings_t1 else {}
+    t2_full = {r['ticker']: r for r in rankings_t2.get('rankings', [])} if rankings_t2 else {}
+
+    for s in pipeline:
+        t1_item = t1_full.get(s['ticker'])
+        t2_item = t2_full.get(s['ticker'])
+        s['_r1'] = t1_item['rank'] if t1_item else '-'
+        s['_r2'] = t2_item['rank'] if t2_item else '-'
+
+    # rank 순 정렬 (✅/⏳/🆕 혼합)
+    sorted_pipeline = sorted(pipeline, key=lambda x: x['rank'])
+
+    for s in sorted_pipeline:
+        name = s['name']
+        sector = s.get('sector', '기타')
+        status = s['status']
+        r0 = s['rank']
+        r1 = s.get('_r1', '-')
+        r2 = s.get('_r2', '-')
+
+        # 1줄: 상태 순위. 이름(업종) 순위궤적
+        if status == '✅':
+            lines.append(f'{status} {r0}. {name}({sector}) {r2}→{r1}→{r0}위')
+        elif status == '⏳':
+            lines.append(f'{status} {r0}. {name}({sector}) -→{r1}→{r0}위')
+        else:
+            lines.append(f'{status} {r0}. {name}({sector}) -→-→{r0}위')
+
+    # ── 이탈 섹션 ──
+    if exited:
+        lines.append('')
+        lines.append('━━━━━━━━━━━━━━━')
+        t0_rank_map = {item['ticker']: item['rank'] for item in (rankings_t0 or {}).get('rankings', [])}
+
+        lines.append('📉 <b>이탈 — 매도 검토</b>')
+        for e in exited:
+            prev = e['rank']
+            cur = t0_rank_map.get(e['ticker'])
+
+            if cur:
+                lines.append(f'{e["name"]} {prev}→{cur}위')
+            else:
+                lines.append(f'{e["name"]} {prev}위→밖')
+
+        lines.append('보유 중이라면 매도를 검토하세요.')
+
+    # ── cold start ──
+    if cold_start:
+        lines.append('')
+        lines.append('━━━━━━━━━━━━━━━')
+        lines.append('📊 데이터 축적 중 — 3일 완료 시 매수 후보가 선정돼요.')
+
+    # ── 범례 + 면책 ──
+    lines.append('')
+    lines.append('━━━━━━━━━━━━━━━')
+    lines.append('순위: 2일전→1일전→오늘')
+    lines.append('참고용이며, 투자 판단은 본인 책임이에요.')
+
+    return '\n'.join(lines)
 
 
 # ============================================================
@@ -494,6 +484,7 @@ def main():
         sys.exit(1)
 
     BASE_DATE = trading_dates[0]  # T-0
+    biz_day = datetime.strptime(BASE_DATE, '%Y%m%d')
     print(f"오늘: {TODAY}")
     print(f"최근 3거래일: T-0={trading_dates[0]}, ", end="")
     if len(trading_dates) >= 2:
@@ -526,8 +517,6 @@ def main():
     kospi_color = _idx_color(kospi_chg)
     kosdaq_color = _idx_color(kosdaq_chg)
 
-    base_date_str = f"{BASE_DATE[:4]}년 {BASE_DATE[4:6]}월 {BASE_DATE[6:]}일"
-
     # 이평선 경고 계산
     market_warnings = _calc_market_warnings(kospi_idx, kosdaq_idx)
     print(f"\n[시장 이평선 경고]")
@@ -546,7 +535,8 @@ def main():
     pick_level = get_market_pick_level(credit)
     market_max_picks = pick_level['max_picks']
     stock_weight = WEIGHT_PER_STOCK if market_max_picks == 5 else (100 // market_max_picks if market_max_picks > 0 else 0)
-    print(f"\n[매수 추천 설정] 행동: {credit['final_action']} · 레벨: {pick_level['label']} · 최대 {market_max_picks}종목 × {stock_weight}%")
+    final_action = credit.get('final_action', '')
+    print(f"\n[매수 추천 설정] 행동: {final_action} · 레벨: {pick_level['label']} · 최대 {market_max_picks}종목 × {stock_weight}%")
 
     # ============================================================
     # 순위 데이터 로드 (3일)
@@ -558,7 +548,6 @@ def main():
     rankings_t1 = ranking_data.get(trading_dates[1]) if len(trading_dates) >= 2 else None
     rankings_t2 = ranking_data.get(trading_dates[2]) if len(trading_dates) >= 3 else None
 
-    # T-0 필수
     if rankings_t0 is None:
         print(f"T-0 ({trading_dates[0]}) 순위 없음! create_current_portfolio.py를 먼저 실행하세요.")
         sys.exit(1)
@@ -590,7 +579,7 @@ def main():
     print(f"\n[파이프라인] ✅ {v_count}개, ⏳ {d_count}개, 🆕 {n_count}개 (데이터 {available_days}일)")
 
     # ============================================================
-    # Section 1: 일일 변동 (콜드 스타트 시 생략)
+    # 일일 변동 (콜드 스타트 시 생략)
     # ============================================================
     print("\n[일일 변동]")
     entered, exited = [], []
@@ -605,18 +594,16 @@ def main():
             print(f"    ↓ {e['name']} ({e['rank']}위)")
 
     # ============================================================
-    # Section 2: ✅ 검증 종목에서 Top 추천 (가중순위 순)
+    # ✅ 검증 종목에서 Top 추천 (가중순위 순)
     # ============================================================
     print("\n[✅ 검증 종목 매수 추천]")
     all_candidates = []
-    drop_info = []  # 급락 정보 (제외 안 함, 표시만)
+    drop_info = []
     if not cold_start:
-        # ✅ 3일 검증 종목 = rank(가중순위) 기준 Top 30에 3일 연속
         verified_picks = [s for s in pipeline if s['status'] == '✅']
         verified_picks.sort(key=lambda x: x['rank'])
         print(f"  ✅ 검증 종목: {len(verified_picks)}개")
 
-        # T-1, T-2 rank 조회 (AI 분석용)
         t1_rank_map = {r['ticker']: r['rank'] for r in rankings_t1.get('rankings', [])} if rankings_t1 else {}
         t2_rank_map = {r['ticker']: r['rank'] for r in rankings_t2.get('rankings', [])} if rankings_t2 else {}
 
@@ -642,14 +629,8 @@ def main():
     print(f"  추천 후보: {len(all_candidates)}개 종목")
 
     # ============================================================
-    # Section 3: Top 30 목록
-    # ============================================================
-    print(f"\n[Top 30] {len(pipeline)}개 종목")
-
-    # ============================================================
     # AI 리스크 필터 생성 (Gemini) — 전체 후보 대상
     # ============================================================
-    # 시장 환경 컨텍스트 구성 (AI에 전달)
     market_ctx = None
     hy_data = credit.get('hy')
     if hy_data:
@@ -660,6 +641,7 @@ def main():
         }
 
     ai_msg = None
+    ai_msg_raw = None  # AI 원본 (create_ai_risk_message에 전달)
     risk_flagged_tickers = set()
     if all_candidates:
         try:
@@ -686,10 +668,10 @@ def main():
                 if compute_risk_flags(stock_data):
                     risk_flagged_tickers.add(pick['ticker'])
             print(f"\n  AI 리스크 대상: {len(stock_list)}개 (위험 플래그: {len(risk_flagged_tickers)}개)")
-            ai_msg = run_ai_analysis(None, stock_list, base_date=BASE_DATE, market_context=market_ctx)
-            if ai_msg:
-                print(f"\n=== AI 리스크 필터 ({len(ai_msg)}자) ===")
-                print(ai_msg[:500] + '...' if len(ai_msg) > 500 else ai_msg)
+            ai_msg_raw = run_ai_analysis(None, stock_list, base_date=BASE_DATE, market_context=market_ctx)
+            if ai_msg_raw:
+                print(f"\n=== AI 리스크 필터 ({len(ai_msg_raw)}자) ===")
+                print(ai_msg_raw[:500] + '...' if len(ai_msg_raw) > 500 else ai_msg_raw)
             else:
                 print("\nAI 리스크 필터 스킵 (결과 없음)")
         except Exception as e:
@@ -704,83 +686,13 @@ def main():
     print(f"\n  최종 picks: {len(picks)}개 (시장레벨: {pick_level['label']}, 최대{market_max_picks}, 클린{len(clean_candidates)}+플래그{len(flagged_candidates)})")
 
     # ============================================================
-    # 메시지 구성 — Guide → [1/3] 시장+Top30 → [2/3] AI → [3/3] 최종
+    # AI 종목별 내러티브 (Signal 💬 줄용)
     # ============================================================
-    has_ai = ai_msg is not None
-
-    # 경고 블록
-    warning_block = ""
-    if market_warnings:
-        warning_block = "\n" + "\n".join(market_warnings)
-        warning_block += "\n신규 매수 시 유의하세요.\n"
-
-    # [1/2] 본문 헤더 (타이틀 + 시장 + 읽는 법)
-    header_lines = []
-    header_lines.append('━━━━━━━━━━━━━━━━━━━')
-    if has_ai:
-        header_lines.append(' [1/3] 📊 시장 + Top 30')
-    else:
-        header_lines.append('    📊 시장 + Top 30')
-    header_lines.append('━━━━━━━━━━━━━━━━━━━')
-    header_lines.append(f'📅 {base_date_str} 기준')
-    header_lines.append(f'{kospi_color} 코스피  {kospi_close:,.0f} ({kospi_chg:+.2f}%)')
-    header_lines.append(f'{kosdaq_color} 코스닥  {kosdaq_close:,.0f} ({kosdaq_chg:+.2f}%)')
-    if warning_block:
-        header_lines.append(warning_block.rstrip())
-    # 시장 위험 지표 섹션 (format_credit_section 자체가 ─── 로 시작)
-    header_lines.append(format_credit_section(credit))
-
-    # 주도 업종 한 줄
-    sector_line = format_sector_distribution(pipeline, rankings_t0)
-    if sector_line:
-        header_lines.append('─────────────────')
-        header_lines.append(sector_line)
-
-    header = '\n'.join(header_lines)
-
-    # [1/2] 섹션: Top 30만 (상세 카드는 [2/2]에서)
-    top30_section = format_top30(pipeline, exited, cold_start, has_next=has_ai, rankings_t0=rankings_t0, rankings_t1=rankings_t1, rankings_t2=rankings_t2, credit=credit)
-
-    # 개요 (첫 번째 메시지)
-    msg_overview = format_overview(has_ai)
-
-    # [1/2] 본문 (시장 + Top 30)
-    msg_main = header
-    if top30_section:
-        msg_main += '\n' + top30_section
-
-    # 섹터 분포는 header에서 상단 표시 (format_sector_distribution)
-
-    # [2/3] AI 리스크 필터 (AI 있을 때만)
-    msg_ai = None
-    if ai_msg:
-        msg_ai = ai_msg + '\n─────────────────\n👉 다음: 최종 추천 [3/3]'
-
-    # [3/3] 최종 추천 — AI 종목별 설명 (AI 있을 때만)
-    msg_final = None
-    if market_max_picks == 0 and pick_level['warning']:
-        # 시장 위험으로 매수 중단 — [3/3] 대체 메시지
-        stop_lines = [
-            '━━━━━━━━━━━━━━━━━━━',
-            ' [3/3] 🎯 최종 추천',
-            '━━━━━━━━━━━━━━━━━━━',
-            f'📅 {base_date_str} 기준',
-            '',
-            pick_level['warning'],
-            '',
-            f'시장 위험 지표: {credit.get("final_action", "")}',
-            '',
-            '💡 Top 30 목록은 [1/3]에서 확인하세요.',
-            '시장이 안정되면 자동으로 추천이 재개됩니다.',
-            '⚠️ 참고용이며, 투자 판단은 본인 책임이에요.',
-        ]
-        msg_final = '\n'.join(stop_lines)
-        print(f"\n  [3/3] 시장 위험 매수 중단 메시지 생성 (레벨: {pick_level['label']})")
-    elif ai_msg:
-        universe_count = (rankings_t0.get('metadata') or {}).get('total_universe', 0)
-        ai_picks_text = None
+    ai_narratives = {}
+    ai_picks_text = None
+    if picks and ai_msg_raw:
         try:
-            from gemini_analysis import run_final_picks_analysis
+            from gemini_analysis import run_final_picks_analysis, parse_narratives
             final_stock_list = []
             for pick in picks:
                 tech = pick.get('_tech', {}) or {}
@@ -799,16 +711,62 @@ def main():
                     'w52_pct': tech.get('w52_pct', 0),
                 })
             ai_picks_text = run_final_picks_analysis(final_stock_list, stock_weight, BASE_DATE, market_context=market_ctx)
+            if ai_picks_text:
+                ai_narratives = parse_narratives(ai_picks_text)
+                print(f"  AI 내러티브: {len(ai_narratives)}종목 추출")
         except Exception as e:
             print(f"최종 추천 AI 설명 실패 (fallback 사용): {e}")
-        msg_final = format_buy_recommendations(picks, base_date_str, universe_count, ai_picks_text, drop_info=drop_info, weight_per_stock=stock_weight, final_action=credit.get('final_action', ''))
 
-    # 메시지 리스트: Guide → [1/3] 시장+Top30 → [2/3] AI → [3/3] 최종
-    messages = [msg_overview, msg_main]
-    if msg_ai:
-        messages.append(msg_ai)
-    if msg_final:
-        messages.append(msg_final)
+    # ============================================================
+    # v41 메시지 구성 — Signal + AI Risk + Watchlist
+    # ============================================================
+    # AI Risk에서 사용할 AI 원본 텍스트: 헤더/포맷은 run_ai_analysis가 이미 생성
+    # create_ai_risk_message에는 시장 데이터만 별도 전달하고 AI 텍스트는 통째 삽입
+
+    # AI Risk용 AI 텍스트 추출 (run_ai_analysis 반환값에서 헤더 제거)
+    ai_risk_ai_text = None
+    if ai_msg_raw:
+        # run_ai_analysis는 이미 ━━━ 🤖 AI 리스크 필터 ━━━ 헤더 포함
+        # create_ai_risk_message에서 자체 헤더를 만드므로, AI 텍스트만 추출
+        # AI 텍스트는 '후보 종목 중 주의할 점을' 이후부터
+        raw_lines = ai_msg_raw.split('\n')
+        ai_text_start = 0
+        for idx, line in enumerate(raw_lines):
+            if '📰' in line or '시장 동향' in line or '⚠️' in line:
+                ai_text_start = idx
+                break
+        if ai_text_start > 0:
+            ai_risk_ai_text = '\n'.join(raw_lines[ai_text_start:])
+        else:
+            # 헤더 4줄(━━━, 🤖, ━━━, 빈줄, 소개문, 빈줄) 건너뛰기
+            for idx, line in enumerate(raw_lines):
+                if idx > 3 and line.strip() and '━━━' not in line and '🤖' not in line and '후보' not in line:
+                    ai_text_start = idx
+                    break
+            ai_risk_ai_text = '\n'.join(raw_lines[ai_text_start:]) if ai_text_start > 0 else ai_msg_raw
+
+    msg_signal = create_signal_message(
+        picks, pipeline, exited, biz_day, ai_narratives,
+        market_max_picks, stock_weight, rankings_t0,
+        rankings_t1, rankings_t2, cold_start,
+        final_action, pick_level,
+    )
+
+    msg_ai_risk = create_ai_risk_message(
+        credit,
+        (kospi_close, kospi_chg, kospi_color),
+        (kosdaq_close, kosdaq_chg, kosdaq_color),
+        market_warnings,
+        ai_risk_ai_text,
+        biz_day, picks, final_action,
+    )
+
+    msg_watchlist = create_watchlist_message(
+        pipeline, exited, rankings_t0, rankings_t1, rankings_t2,
+        cold_start=cold_start, credit=credit,
+    )
+
+    messages = [msg_signal, msg_ai_risk, msg_watchlist]
 
     # ============================================================
     # 웹 대시보드용 데이터 캐시 저장
@@ -851,12 +809,12 @@ def main():
                        for e in exited],
             'sectors': {},
             'ai': {
-                'risk_filter': ai_msg,
-                'picks_text': ai_picks_text if 'ai_picks_text' in dir() else None,
+                'risk_filter': ai_msg_raw,
+                'picks_text': ai_picks_text,
                 'flagged_tickers': list(risk_flagged_tickers),
+                'narratives': ai_narratives,
             },
         }
-        # 섹터 분포
         for s in pipeline:
             sec = s.get('sector', '기타')
             web_data['sectors'][sec] = web_data['sectors'].get(sec, 0) + 1
@@ -871,14 +829,14 @@ def main():
     # ============================================================
     # 텔레그램 전송
     # ============================================================
-    url = f'https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage'
-
     PRIVATE_CHAT_ID = getattr(__import__('config'), 'TELEGRAM_PRIVATE_ID', None)
     IS_GITHUB_ACTIONS = os.environ.get('GITHUB_ACTIONS') == 'true'
 
     print("\n=== 메시지 미리보기 ===")
+    msg_labels = ['Signal', 'AI Risk', 'Watchlist']
     for i, msg in enumerate(messages):
-        print(f"\n--- 메시지 {i+1}/{len(messages)} ({len(msg)}자) ---")
+        label = msg_labels[i] if i < len(msg_labels) else f'#{i+1}'
+        print(f"\n--- {label} ({len(msg)}자) ---")
         print(msg[:500])
     msg_sizes = ', '.join(f'{len(m)}자' for m in messages)
     print(f"\n메시지 수: {len(messages)}개 ({msg_sizes})")
@@ -887,31 +845,30 @@ def main():
         if cold_start:
             target = PRIVATE_CHAT_ID or TELEGRAM_CHAT_ID
             print(f'\n콜드 스타트 — 채널 전송 스킵, 개인봇으로 전송 ({target[:6]}...)')
-            results_cs = []
-            for msg in messages:
-                r = requests.post(url, data={'chat_id': target, 'text': msg, 'parse_mode': 'HTML'})
-                results_cs.append(r.status_code)
-            print(f'콜드 스타트 메시지 전송: {", ".join(map(str, results_cs))}')
+            for i, msg in enumerate(messages):
+                results = send_telegram_long(msg, TELEGRAM_BOT_TOKEN, target)
+                codes = [str(r.status_code) for r in results]
+                print(f'  {msg_labels[i]}: {", ".join(codes)}')
         else:
-            results = []
-            for msg in messages:
-                r = requests.post(url, data={'chat_id': TELEGRAM_CHAT_ID, 'text': msg, 'parse_mode': 'HTML'})
-                results.append(r.status_code)
-            print(f'\n채널 메시지 전송: {", ".join(map(str, results))}')
+            print(f'\n채널 전송...')
+            for i, msg in enumerate(messages):
+                results = send_telegram_long(msg, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
+                codes = [str(r.status_code) for r in results]
+                print(f'  {msg_labels[i]}: {", ".join(codes)}')
 
             if PRIVATE_CHAT_ID:
-                results_p = []
-                for msg in messages:
-                    r = requests.post(url, data={'chat_id': PRIVATE_CHAT_ID, 'text': msg, 'parse_mode': 'HTML'})
-                    results_p.append(r.status_code)
-                print(f'개인 메시지 전송: {", ".join(map(str, results_p))}')
+                print(f'개인봇 전송...')
+                for i, msg in enumerate(messages):
+                    results = send_telegram_long(msg, TELEGRAM_BOT_TOKEN, PRIVATE_CHAT_ID)
+                    codes = [str(r.status_code) for r in results]
+                    print(f'  {msg_labels[i]}: {", ".join(codes)}')
     else:
         target_id = PRIVATE_CHAT_ID or TELEGRAM_CHAT_ID
-        results = []
-        for msg in messages:
-            r = requests.post(url, data={'chat_id': target_id, 'text': msg, 'parse_mode': 'HTML'})
-            results.append(r.status_code)
-        print(f'\n테스트 메시지 전송: {", ".join(map(str, results))}')
+        print(f'\n테스트 전송 ({target_id[:6]}...)...')
+        for i, msg in enumerate(messages):
+            results = send_telegram_long(msg, TELEGRAM_BOT_TOKEN, target_id)
+            codes = [str(r.status_code) for r in results]
+            print(f'  {msg_labels[i]}: {", ".join(codes)}')
 
     # ============================================================
     # 정리
