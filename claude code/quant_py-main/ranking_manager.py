@@ -175,7 +175,7 @@ def _get_forward_eps(item: dict) -> Optional[float]:
 
 
 def _compute_exit_reason(t0_item: dict, t1_item: dict) -> str:
-    """이탈 종목의 사유 태그 — 전망 vs 가격 이진 분류"""
+    """이탈 종목의 사유 태그 — US 스타일 [한글↓] 형식"""
     tags = []
 
     # 전망 (Forward EPS 컨센서스 변화)
@@ -184,7 +184,7 @@ def _compute_exit_reason(t0_item: dict, t1_item: dict) -> str:
     if eps0 is not None and eps1 is not None and eps1 != 0:
         eps_chg = (eps0 - eps1) / abs(eps1)
         if abs(eps_chg) >= EPS_CHANGE_THRESHOLD:
-            tags.append('💪전망↑' if eps_chg > 0 else '⚠️전망↓')
+            tags.append('[전망↑]' if eps_chg > 0 else '[전망↓]')
 
     # 가격 (실제 주가 비교)
     p0 = t0_item.get('price')
@@ -192,7 +192,7 @@ def _compute_exit_reason(t0_item: dict, t1_item: dict) -> str:
     if p0 and p1 and p1 > 0:
         pct = (p0 - p1) / p1
         if abs(pct) >= PRICE_CHANGE_THRESHOLD:
-            tags.append('📈가격↑' if pct > 0 else '📉가격↓')
+            tags.append('[가격↑]' if pct > 0 else '[가격↓]')
 
     return ' '.join(tags) if tags else ''
 

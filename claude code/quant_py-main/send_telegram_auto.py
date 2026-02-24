@@ -856,7 +856,7 @@ def main():
                 codes = [str(r.status_code) for r in results]
                 print(f'  {msg_labels[i]}: {", ".join(codes)}')
 
-            if PRIVATE_CHAT_ID:
+            if PRIVATE_CHAT_ID and PRIVATE_CHAT_ID != TELEGRAM_CHAT_ID:
                 print(f'개인봇 전송...')
                 for i, msg in enumerate(messages):
                     results = send_telegram_long(msg, TELEGRAM_BOT_TOKEN, PRIVATE_CHAT_ID)

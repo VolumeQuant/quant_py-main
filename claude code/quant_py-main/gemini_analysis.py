@@ -162,7 +162,9 @@ def build_prompt(stock_list, base_date=None, market_context=None):
 - 예시: "주가가 많이 빠졌어요", "조심하시는 게 좋겠어요", "아직은 괜찮아 보여요"
 - 딱딱한 보고서 말투 금지. 친구에게 설명하듯 자연스럽게.
 - 인사말, 서두, 맺음말 금지. 아래 섹션부터 바로 시작.
-- 총 1500자 이내.
+- 종목마다 문장 구조를 다르게 써. 같은 패턴 반복 금지.
+- 트럼프는 2025년 1월 재취임한 현직 미국 대통령이야.
+- 총 2000자 이내.
 
 📰 시장 동향
 {date_str} 한국 주식시장 마감 결과를 Google 검색해서 2~3줄 요약해줘.
@@ -198,9 +200,8 @@ def convert_markdown_to_html(text):
     result = result.replace('&', '&amp;')
     result = result.replace('<', '&lt;')
     result = result.replace('>', '&gt;')
-    # Step 3: 마크다운 → HTML 태그
+    # Step 3: 마크다운 → HTML 태그 (이탤릭 제거 v41)
     result = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', result)
-    result = re.sub(r'(?<!\w)\*(?!\s)(.+?)(?<!\s)\*(?!\w)', r'<i>\1</i>', result)
     # Step 4: 헤더/구분선
     result = re.sub(r'#{1,3}\s*', '', result)
     result = result.replace('---', '━━━')
@@ -381,8 +382,8 @@ def build_final_picks_prompt(stock_list, weight_per_stock=20, base_date=None, ma
 
 [형식]
 - 한국어, ~예요 체
-- 종목별: **N. 종목명(티커) · 비중 {weight_per_stock}%**
-  날씨아이콘 + 비즈니스 매력 한 줄
+- 종목별: **종목명(티커)**
+  비즈니스 매력 한 줄 (가장 의미있는 수치를 맥락과 함께)
 - 종목 사이에 [SEP]
 - 맨 끝 별도 문구 없음
 
@@ -390,11 +391,16 @@ def build_final_picks_prompt(stock_list, weight_per_stock=20, base_date=None, ma
 - 각 종목의 실적/사업 성장 배경(왜 주가가 오르는지, 어떤 사업이 잘 되는지)을 검색해서 써.
   예: "AI 반도체 수요 확대로 HBM 매출 급증 중이에요"
   예: "전력 수요 폭증에 원전 재가동 기대감까지 더해졌어요"
+  예: "Fwd PER 5.5로 성장 대비 저평가. 배당수익률 3.2%도 매력적이에요."
+- 종목에 따라 가장 의미있는 지표를 골라서 맥락과 함께 설명해.
+  반도체면 Fwd PER, 고배당주면 배당률, 성장주면 매출성장률.
 - 단순히 "PER 낮음", "ROE 높음"처럼 숫자만 반복하지 마. 그 숫자 뒤의 사업적 이유를 써.
+- 날씨 아이콘(☀️🌤️🌧️ 등) 넣지 마.
 - 주의/경고/유의 표현 금지. 긍정적 매력만.
 - "선정", "포함", "선택" 같은 시스템 용어 금지.
 - 서두/인사말/도입문 금지. 첫 번째 종목부터 바로 시작.
-- 종목마다 다른 문장 구조로 써."""
+- 종목마다 다른 문장 구조로 써. 같은 패턴 반복 금지.
+- 트럼프는 2025년 1월 재취임한 현직 미국 대통령이야."""
 
 
 def _convert_picks_markdown(text):
@@ -408,12 +414,57 @@ def _convert_picks_markdown(text):
     result = result.replace('<', '&lt;')
     result = result.replace('>', '&gt;')
     result = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', result)
-    result = re.sub(r'(?<!\w)\*(?!\s)(.+?)(?<!\s)\*(?!\w)', r'<i>\1</i>', result)
+    # 이탤릭 제거 (v41)
     result = re.sub(r'\n*\[SEP\]\n*', '\n──────────────────\n', result)
     result = re.sub(r'#{1,3}\s*', '', result)
     result = re.sub(r'\n{3,}', '\n\n', result)
     result = re.sub(r'\n+──────────────────\n+', '\n──────────────────\n', result)
     return result.strip()
+
+
+def parse_narratives(html_text: str) -> dict:
+    """AI 최종 추천 HTML에서 종목별 내러티브 1줄 추출
+
+    Returns:
+        {ticker: narrative_text} dict
+    """
+    narratives = {}
+    if not html_text:
+        return narratives
+
+    # HTML 태그 제거 후 파싱
+    clean = re.sub(r'<[^>]+>', '', html_text)
+
+    # 패턴: "종목명(6자리티커)" 다음 줄이 내러티브
+    # 또는 같은 줄에 이어서 나오는 경우
+    parts = re.split(r'──────────────────', clean)
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+        # 티커 6자리 추출
+        ticker_match = re.search(r'\((\d{6})\)', part)
+        if not ticker_match:
+            continue
+        ticker = ticker_match.group(1)
+
+        # 티커가 포함된 줄 이후의 텍스트가 내러티브
+        lines = [l.strip() for l in part.split('\n') if l.strip()]
+        narrative = ''
+        found_header = False
+        for line in lines:
+            if ticker in line:
+                found_header = True
+                continue
+            if found_header and line:
+                # 날씨 아이콘 제거
+                narrative = re.sub(r'^[☀️🌤️☁️🌧️🔥⛈️❄️🌈]+\s*', '', line).strip()
+                break
+
+        if narrative:
+            narratives[ticker] = narrative
+
+    return narratives
 
 
 def run_final_picks_analysis(stock_list, weight_per_stock=20, base_date=None, market_context=None):

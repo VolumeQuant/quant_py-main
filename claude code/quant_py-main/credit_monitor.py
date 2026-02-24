@@ -627,6 +627,42 @@ def format_credit_section(credit: dict) -> str:
     return '\n'.join(lines)
 
 
+def format_credit_compact(credit: dict) -> list:
+    """AI Risk 메시지용 압축 포맷 → 리스트 반환
+
+    기존 format_credit_section()은 웹 캐시용으로 유지.
+    이 함수는 텔레그램 AI Risk 메시지의 📊 시장 환경 섹션에 사용.
+    """
+    lines = []
+    hy = credit.get('hy')
+    kr = credit.get('kr')
+    vix = credit.get('vix')
+
+    if hy:
+        hy_val = hy['hy_spread']
+        icon = '🟢' if hy_val < 3.0 else ('🟡' if hy_val < 4.5 else '🔴')
+        ctx = '안정' if hy_val < 3.0 else ('보통' if hy_val < 4.5 else '주의')
+        lines.append(f'{icon} HY {hy_val:.2f}% — {ctx}')
+
+    if kr:
+        kr_icon = '🟢' if kr['regime_label'] == '정상' else ('🟡' if kr['regime_label'] == '경계' else '🔴')
+        lines.append(f'{kr_icon} 한국 BBB- {kr["spread"]:.1f}%p — {kr["regime_label"]}')
+
+    if vix:
+        v = vix['vix_current']
+        pct = vix['vix_pct']
+        slope = '↑' if vix['vix_slope_dir'] == 'rising' else ('↓' if vix['vix_slope_dir'] == 'falling' else '')
+        icon = '🟢' if pct < 67 else ('🟡' if pct < 80 else '🔴')
+        ctx = '안정' if pct < 67 else ('다소 높음' if pct < 80 else ('주의' if pct < 90 else '위험'))
+        lines.append(f'{icon} VIX {v:.1f}{slope} — {ctx}')
+
+    if hy:
+        q_days = hy.get('q_days', 0)
+        lines.append(f'{hy["quadrant_icon"]} {hy["quadrant_label"]} {q_days}일째')
+
+    return lines
+
+
 def get_market_pick_level(credit_status: dict) -> dict:
     """시장 위험 상태에 따른 추천 종목 수 결정
 
