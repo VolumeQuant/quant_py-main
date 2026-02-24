@@ -66,8 +66,8 @@ jobs:
       - name: Generate ranking (latest)
         run: python create_current_portfolio.py
 
-      - name: Send Telegram message (v9 new format)
-        run: python test_new_telegram.py
+      - name: Send Telegram message (v41 test)
+        run: python send_telegram_auto.py
 
       - name: Commit ranking state
         run: |
