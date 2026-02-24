@@ -2,9 +2,44 @@
 
 ## 문서 개요
 
-**버전**: 20.4
-**최종 업데이트**: 2026-02-21
+**버전**: 20.6
+**최종 업데이트**: 2026-02-24
 **작성자**: Claude Opus 4.6
+
+---
+
+## 핵심 변경사항 (v20.6 — OHLCV 증분 수정 + 태그 제거 + 급락 플래그 제거)
+
+### 2026-02-24
+
+**배경 1**: OHLCV 증분 업데이트 API 버그 — ranking JSON의 `price` 필드에 stale 가격 저장.
+- `create_current_portfolio.py`의 증분 업데이트가 `get_market_ohlcv_by_date(date_str, market='ALL')` 호출
+- 올바른 함수는 `get_market_ohlcv_by_ticker(date_str, market='ALL')` (전종목 하루치 데이터)
+- `by_date`는 per-ticker 함수(fromdate, todate, ticker 시그니처) → TypeError → `except Exception: pass`로 무시
+- 결과: 갭 ≤10일일 때 증분 실패 → stale cache 가격 사용 → 테스 0220 가격이 66,200(0212 가격)으로 기록
+- 갭 >10일이면 전체 재수집하므로 정상 작동 → 간헐적 버그
+
+**배경 2**: 팩터 변화 태그(가치↓ 품질↑ 등)가 노이즈 > 정보.
+- 일간 팩터 등수 변화는 다른 종목의 상대 이동이 원인인 경우가 대부분
+- 핵심 정보는 순위 변화(29→38위)와 이탈 여부로 충분
+- ranking JSON price 버그로 전망/가격 태그 신뢰도도 낮았음
+
+**배경 3**: 전일 급락(-5%) 리스크 플래그가 전략 철학과 모순.
+- 4겹 검증(유니버스→MA120→멀티팩터→3일교집합) 통과 종목의 급락은 매수 기회
+- 테스(5위)가 -5.83% 급락으로 flagged → 삼성전자(6위, clean)에 밀려 TOP 5에서 탈락
+- 사용자에게 테스 탈락 이유가 표시되지 않아 혼란 유발
+
+**수정**:
+| 파일 | 변경 |
+|------|------|
+| `create_current_portfolio.py` | `get_market_ohlcv_by_date` → `get_market_ohlcv_by_ticker` (증분 API 수정) |
+| `test_new_telegram.py` | `compute_factor_tags()`, `_filter_neg_tags()` 함수 삭제, 태그 표시 3곳 제거, `factor_ranks_t1`/`t2` 계산 제거 |
+| `gemini_analysis.py` | `compute_risk_flags()`에서 `daily_chg <= -5` 급락 플래그 제거 |
+
+**효과**:
+- OHLCV 증분 업데이트 정상 작동 → ranking JSON price 정확
+- 메시지에서 팩터 태그 노이즈 제거 → 깔끔한 순위 표시
+- 급락 종목도 순위 그대로 TOP 5 선정 → 테스(5위) 정상 진입
 
 ---
 
