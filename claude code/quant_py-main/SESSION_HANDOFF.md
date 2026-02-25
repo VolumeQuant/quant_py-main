@@ -8,7 +8,7 @@
 
 ---
 
-## 핵심 변경사항 (v42 — 가중순위 일관 적용 + 리스크 필터 정비)
+## 핵심 변경사항 (v42 — 가중순위 일관 적용 + 액션 메시지 개편 + 리스크 필터 정비)
 
 ### 2026-02-24
 
@@ -36,6 +36,25 @@
 | `send_telegram_auto.py` | 호출부 수정, 가중순위 정렬, vol_ratio 제거, 미사용 import 제거 |
 | `gemini_analysis.py` | tech_missing 플래그 추가, vol_ratio 체크 제거, 독스트링 정리 |
 | `README.md` | 가중순위·리스크 필터 변경 반영 |
+
+#### 액션 메시지 개편 (v42)
+
+| Before | After |
+|--------|-------|
+| `_synthesize_action` → n_ok(보조지표 0~2) 기반 | **HY 분면 × VIX 방향** 2열 매트릭스 + KR 에스컬레이션 |
+| 계절 라벨 (☀️ 여름 37일째) 표시 | **계절 라벨 제거** (행동 가이드가 직접 의미 전달) |
+| 반환값: action_text 문자열 | 반환값: **(action_text, max_picks) 튜플** |
+| max_picks: 키워드 파싱으로 역산 | max_picks: `_synthesize_action`이 직접 반환 |
+| 톤: 경어체 혼합 | **해요체 통일** |
+| KR BBB-: 표시만 | **에스컬레이션**: 경계=경고추가, 위기=picks -2 |
+| 선정과정 퍼널: "상위 30" | "상위 30**(3일 평균)**" |
+
+#### 수정 파일 (액션 메시지)
+| 파일 | 변경 |
+|------|------|
+| `credit_monitor.py` | `_synthesize_action()` 전면 교체, `format_credit_compact()` 계절 라벨 제거, `get_market_pick_level()` 단순화 |
+| `send_telegram_auto.py` | 퍼널 텍스트 "(3일 평균)" 추가, action 호출부 튜플 언팩 |
+| `README.md` | 행동 등급 매트릭스·텔레그램 표시 예시 갱신 |
 
 ---
 

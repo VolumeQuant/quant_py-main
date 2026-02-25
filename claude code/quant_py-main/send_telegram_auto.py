@@ -292,7 +292,7 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         lines.append(f'{universe_count:,}종목 중 스크리닝 상위 {prefilter_count}종목')
     else:
         lines.append('국내 전 종목 스크리닝')
-    lines.append('→ 멀티팩터 채점 → 상위 30')
+    lines.append('→ 멀티팩터 채점 → 상위 30(3일 평균)')
     lines.append(f'→ 3일 검증({v_count}종목) → 최종 {n}종목')
 
     # ── 종목별 근거 (3줄) ──
