@@ -360,87 +360,74 @@ def fetch_kr_credit_spread(api_key: str = None):
 
 
 def _synthesize_action(hy, kr, vix):
-    """HY 분면 × q_days × n_ok(보조지표) × Concordance(톤) → 최종 행동 멘트
+    """HY 분면 × q_days × VIX 방향 → 행동 가이드 + max_picks
 
-    30년 데이터 기반 설계:
-      - Q4 초기(≤20일) = 가장 위험 (폭풍의 한가운데)
-      - Q4 후기(>60일) = Q1 전환 접근 (분할 매수 사전 포석)
-      - Concordance: both_warn → 한단계↑, vix_only → 한단계↓
-      - VIX crisis_relief = 해빙 신호 동급 (12개월 +23.4%)
+    1단계: HY 분면 × VIX 방향으로 기본 액션 결정
+    2단계: KR BBB- 에스컬레이션 (경계=경고 추가, 위기=한 단계 하향)
+
+    톤 스펙트럼:
+    적극 매수 → 정상 매수 → 매수 유지 → 매수 축소
+    → 매수 보류/중단 → 비중 축소 → 매도 검토
+
+    Returns:
+        (action_text, max_picks) 튜플
     """
     q = hy['quadrant']
     q_days = hy.get('q_days', 1)
-
-    # 보조 지표 안정 여부 (HY 제외: KR, VIX만)
-    kr_ok = kr is None or kr['regime'] == 'normal'
     vix_ok = vix is None or vix['direction'] == 'stable'
-    n_ok = sum([kr_ok, vix_ok])  # 0~2
 
-    # VIX crisis_relief(90th+ 퍼센타일, 하락 전환) = 해빙 신호 동급
-    if vix and vix['regime'] == 'crisis_relief':
-        return '공포가 꺾이고 있어요. 분할 매수를 시작하세요!'
-
-    # 해빙 신호 우선
-    if hy.get('signals'):
-        for sig in hy['signals']:
-            if '💎' in sig:
-                return '회복 전환 신호가 감지됐어요. 분할 매수를 시작하세요!'
-
-    # ── Q1 봄 — 회복기, 역사적 최고 수익률 ──
+    # 1단계: HY × VIX 기본 액션
     if q == 'Q1':
-        if n_ok == 2:
-            return '모든 지표가 매수를 가리켜요. 적극 매수하세요!'
-        elif kr_ok and not vix_ok:
-            return '회복 구간이에요. VIX가 높지만 신용시장이 안정적이니 적극 매수하세요.'
-        elif not kr_ok:
-            return '회복 구간이지만 한국 신용시장이 불안해요. 분할 매수하세요.'
-        return '회복 구간이에요. 적극 매수하세요.'
-
-    # ── Q2 여름 — 성장기, 정상 투자 ──
-    if q == 'Q2':
-        if n_ok == 2:
-            return '모든 지표가 안정적이에요. 평소대로 투자하세요.'
-        elif not vix_ok and kr_ok:
-            return '신용시장은 안정적이지만 변동성이 높아요. 신규 매수 시 신중하세요.'
-        elif not kr_ok and vix_ok:
-            return '한국 신용시장이 경계 수준이에요. 신규 매수 시 신중하세요.'
-        return '한국 신용시장과 변동성 모두 불안해요. 신규 매수를 줄이세요.'
-
-    # ── Q3 가을 — 과열기, 시간 경과 = 위험 증가 ──
-    if q == 'Q3':
+        if vix_ok:
+            text, picks = '적극 매수 구간이에요 (과거 연 +14.3%)', 5
+        else:
+            text, picks = '변동성이 높지만, 분할 매수 유효 구간이에요', 5
+    elif q == 'Q2':
+        if vix_ok:
+            text, picks = '정상 매수 구간이에요 (과거 연 +9.4%)', 5
+        else:
+            text, picks = '매수는 유지하되, 신규 비중은 줄여가세요', 5
+    elif q == 'Q3':
         if q_days < 60:
-            if n_ok >= 1:
-                return '과열 초기 신호에요. 신규 매수 시 신중하세요.'
-            return '과열 신호에 경고가 겹쳤어요. 신규 매수를 줄이세요.'
-        else:  # q_days >= 60
-            if n_ok == 2:
-                return '과열이 2개월 넘게 지속 중이에요. 신규 매수를 줄이세요.'
-            elif n_ok == 1:
-                return '장기 과열에 경고가 겹쳤어요. 신규 매수를 멈추고 보유 종목을 점검하세요.'
-            return '⚠️ 장기 과열 + 전 지표 경고에요. 보유 종목을 줄이고 신규 매수를 멈추세요.'
+            if vix_ok:
+                text, picks = '매수를 줄이고 급전환에 대비하세요', 3
+            else:
+                text, picks = '신규 매수를 보류하세요', 0
+        else:
+            if vix_ok:
+                text, picks = '신규 매수를 중단하고 보유 종목을 점검하세요', 0
+            else:
+                text, picks = '매도를 검토하고 비중을 축소하세요', 0
+    else:  # Q4
+        if q_days <= 20:
+            if vix_ok:
+                text, picks = '급매도는 불필요해요. 관망하세요', 0
+            else:
+                text, picks = '매수를 중단하고 관망하세요', 0
+        elif q_days <= 60:
+            if vix_ok:
+                text, picks = '신규 매수는 대기하고, 보유는 유지하세요', 0
+            else:
+                text, picks = '보유 비중 축소를 검토하세요', 0
+        else:
+            if vix_ok:
+                text, picks = '회복 초입이에요. 분할 매수를 검토하세요', 3
+            else:
+                text, picks = '바닥권으로 추정돼요. 소액 분할 매수를 검토하세요', 3
 
-    # ── Q4 겨울 — 침체기, 초기가 가장 위험, 후기는 Q1 전환 접근 ──
-    if q_days <= 20:
-        # 진입 직후 — 폭풍의 한가운데 (20일 수익 -0.5~0%)
-        if n_ok >= 2:
-            return '⚠️ 침체에 진입했어요. 신규 매수를 멈추고 보유 종목을 줄이세요.'
-        elif n_ok == 1:
-            return '⚠️ 침체 진입 + 경고 신호. 보유 종목을 매도하세요.'
-        return '🚨 모든 지표가 위험해요. 보유 종목을 즉시 매도하세요.'
-    elif q_days <= 60:
-        # 턴어라운드 시작 (60일 수익 +0.5~1.5%)
-        if n_ok >= 2:
-            return '침체가 지속 중이지만 보조 지표는 안정적이에요. 신규 매수를 멈추고 관망하세요.'
-        elif n_ok == 1:
-            return '침체 지속 + 경고 신호에요. 보유 종목을 줄여가세요.'
-        return '⚠️ 침체 + 전 지표 경고에요. 보유 종목을 매도하세요.'
-    else:
-        # Q1 전환 접근 — 사전 포석 (60일 수익 +1.5~2.5%, Q1과 유사)
-        if n_ok >= 2:
-            return '바닥권에 접근하고 있어요. 분할 매수를 시작하세요.'
-        elif n_ok == 1:
-            return '바닥권이지만 일부 경고가 있어요. 소규모 분할 매수를 고려하세요.'
-        return '장기 침체 + 전 지표 경고에요. 관망하며 회복 신호를 기다리세요.'
+    # 2단계: KR BBB- 에스컬레이션
+    kr_regime = kr['regime_label'] if kr else '정상'
+
+    if kr_regime == '위기':
+        picks = max(picks - 2, 0)  # 한 단계 하향 (5→3, 3→0)
+        # picks=5→3, picks=3→1→0으로 맞추기
+        if picks == 1:
+            picks = 0
+        text = '국내 신용시장이 위험 수준이에요. ' + text
+    elif kr_regime == '경계':
+        text += ' (국내 신용시장 경계)'
+
+    return text, picks
 
 
 def get_credit_status(ecos_api_key: str = None):
@@ -506,12 +493,13 @@ def get_credit_status(ecos_api_key: str = None):
 
     # 최종 행동 멘트
     if hy:
-        final_action = _synthesize_action(hy, kr, vix)
+        final_action, action_max_picks = _synthesize_action(hy, kr, vix)
     else:
-        if kr and vix:
-            final_action = '신용시장 메인 지표 수집 실패. 보조 지표 기준으로 기본값을 적용했어요.'
+        vix_ok = vix is None or vix.get('direction') == 'stable'
+        if not vix_ok:
+            final_action, action_max_picks = '신규 매수 보수적 접근', 5
         else:
-            final_action = '데이터 수집 실패로 기본값을 적용했어요.'
+            final_action, action_max_picks = '', 5
 
     print(f"  → 행동: {final_action}")
 
@@ -521,6 +509,7 @@ def get_credit_status(ecos_api_key: str = None):
         'vix': vix,
         'concordance': concordance,
         'final_action': final_action,
+        'action_max_picks': action_max_picks,
     }
 
 
@@ -656,46 +645,34 @@ def format_credit_compact(credit: dict) -> list:
         ctx = '안정' if pct < 67 else ('다소 높음' if pct < 80 else ('주의' if pct < 90 else '위험'))
         lines.append(f'{icon} VIX {v:.1f}{slope} — {ctx}')
 
-    if hy:
-        q_days = hy.get('q_days', 0)
-        lines.append(f'{hy["quadrant_icon"]} {hy["quadrant_label"]} {q_days}일째')
-
     return lines
 
 
 def get_market_pick_level(credit_status: dict) -> dict:
     """시장 위험 상태에 따른 추천 종목 수 결정
 
-    final_action 문자열의 키워드를 기반으로 max_picks를 자동 조절.
+    _synthesize_action이 반환한 action_max_picks를 직접 사용.
     종목 레벨 매도(Death List)와 별개로, 시스템 레벨에서 추천을 제한.
 
     Returns:
         dict: {'max_picks': int, 'label': str, 'warning': str or None}
     """
+    max_picks = credit_status.get('action_max_picks', 5)
     action = credit_status.get('final_action', '')
 
-    if '즉시 매도' in action:
-        return {'max_picks': 0, 'label': '전량 매도',
-                'warning': '🚨 시장 위험으로 매수를 중단합니다. 보유 종목 매도를 검토하세요.'}
-    elif '매도하세요' in action:
-        return {'max_picks': 0, 'label': '매도',
-                'warning': '⚠️ 시장 위험으로 매수를 중단합니다. 보유 종목 매도를 검토하세요.'}
-    elif '멈추' in action:
-        return {'max_picks': 0, 'label': '매수 중단',
-                'warning': '⚠️ 시장 위험으로 신규 매수를 중단합니다.'}
-    elif '관망' in action:
-        return {'max_picks': 0, 'label': '관망',
-                'warning': '시장 불확실성으로 관망합니다.'}
-    elif '줄이' in action:
-        return {'max_picks': 3, 'label': '축소',
-                'warning': '⚠️ 시장 경고로 추천을 3종목으로 축소합니다.'}
-    elif '분할 매수' in action:
-        return {'max_picks': 3, 'label': '분할 매수', 'warning': None}
-    elif '신중' in action:
-        return {'max_picks': 5, 'label': '신중',
-                'warning': '신규 매수 시 신중하세요.'}
+    if max_picks == 0:
+        if '매도 검토' in action:
+            return {'max_picks': 0, 'label': '매도 검토',
+                    'warning': '⚠️ 시장 위험으로 매수를 중단합니다. 보유 종목 매도를 검토하세요.'}
+        elif '관망' in action:
+            return {'max_picks': 0, 'label': '관망',
+                    'warning': '시장 불확실성으로 관망합니다.'}
+        else:
+            return {'max_picks': 0, 'label': '매수 중단',
+                    'warning': '⚠️ 시장 위험으로 신규 매수를 중단합니다.'}
+    elif max_picks == 3:
+        return {'max_picks': 3, 'label': '축소', 'warning': None}
     else:
-        # 적극 매수, 평소대로, 기본값
         return {'max_picks': 5, 'label': '정상', 'warning': None}
 
 
