@@ -536,8 +536,8 @@ def main():
     credit = get_credit_status(ecos_api_key=ecos_key)
 
     pick_level = get_market_pick_level(credit)
-    market_max_picks = pick_level['max_picks']
-    stock_weight = WEIGHT_PER_STOCK if market_max_picks == 5 else (100 // market_max_picks if market_max_picks > 0 else 0)
+    market_max_picks = 5  # 항상 TOP 5 추천 — 시장 경고는 AI 리스크 필터에서 별도 안내
+    stock_weight = WEIGHT_PER_STOCK
     final_action = credit.get('final_action', '')
     print(f"\n[매수 추천 설정] 행동: {final_action} · 레벨: {pick_level['label']} · 최대 {market_max_picks}종목 × {stock_weight}%")
 
