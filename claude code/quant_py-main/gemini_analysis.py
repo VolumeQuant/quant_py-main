@@ -127,13 +127,9 @@ def build_prompt(stock_list, base_date=None, market_context=None):
     # 시장 환경 컨텍스트 블록
     market_block = ""
     if market_context:
-        season = market_context.get('season', '')
-        concordance = market_context.get('concordance_text', '')
         action = market_context.get('action', '')
         market_block = f"""
 [현재 시장 환경 — 시스템이 판단한 베타 위험]
-시장 국면: {season}
-지표 일치도: {concordance}
 행동 권장: {action}
 
 → 이 시장 환경을 종목 분석에 반영해줘.
@@ -251,7 +247,7 @@ def run_ai_analysis(portfolio_message, stock_list, base_date=None, market_contex
     - 코드가 6가지 위험 플래그를 팩트로 계산
     - AI는 시장 동향 검색(1회) + 위험 신호 해석만 수행
     - Markdown → Telegram HTML 변환
-    - market_context: 시장 환경 (계절, 현금비중, concordance)
+    - market_context: 시장 환경 (행동 권장)
 
     Returns:
         str: HTML 포맷된 AI 브리핑 메시지 (실패 시 None)
@@ -365,11 +361,9 @@ def build_final_picks_prompt(stock_list, weight_per_stock=20, base_date=None, ma
     # 시장 환경 블록
     market_block = ""
     if market_context:
-        season = market_context.get('season', '')
         action = market_context.get('action', '')
         market_block = f"""
 [시장 위험 상태]
-국면: {season}
 행동 권장: {action}
 → 종목 설명에 시장 환경을 자연스럽게 반영해줘. 위험 높으면 "방어적", 안정적이면 "공격적" 톤으로.
 """

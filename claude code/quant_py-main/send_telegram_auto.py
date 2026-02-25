@@ -638,8 +638,6 @@ def main():
     hy_data = credit.get('hy')
     if hy_data:
         market_ctx = {
-            'season': f"{hy_data['quadrant_icon']} {hy_data['quadrant_label']}",
-            'concordance_text': credit.get('concordance', ''),
             'action': credit.get('final_action', ''),
         }
 
