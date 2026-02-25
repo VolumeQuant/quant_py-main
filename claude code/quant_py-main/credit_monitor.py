@@ -386,34 +386,34 @@ def _synthesize_action(hy, kr, vix):
         if vix_ok:
             text, picks = '정상 매수 구간이에요 (과거 연 +9.4%)', 5
         else:
-            text, picks = '매수는 유지하되, 신규 비중은 줄여가세요', 5
+            text, picks = '매수 유지, 변동성에 유의하세요', 5
     elif q == 'Q3':
         if q_days < 60:
             if vix_ok:
-                text, picks = '매수를 줄이고 급전환에 대비하세요', 3
+                text, picks = '매수 유지, 시장 변화에 주의하세요', 5
             else:
-                text, picks = '신규 매수를 보류하세요', 0
+                text, picks = '매수 유지하되, 신중하게 접근하세요', 5
         else:
             if vix_ok:
-                text, picks = '신규 매수를 중단하고 보유 종목을 점검하세요', 0
+                text, picks = '신규 매수는 신중하게, 보유 종목 점검하세요', 5
             else:
-                text, picks = '매도를 검토하고 비중을 축소하세요', 0
+                text, picks = '신규 매수는 보수적으로 접근하세요', 5
     else:  # Q4
         if q_days <= 20:
             if vix_ok:
-                text, picks = '급매도는 불필요해요. 관망하세요', 0
+                text, picks = '급매도 불필요, 관망하세요', 5
             else:
-                text, picks = '매수를 중단하고 관망하세요', 0
+                text, picks = '매수 중단, 관망하세요', 5
         elif q_days <= 60:
             if vix_ok:
-                text, picks = '신규 매수는 대기하고, 보유는 유지하세요', 0
+                text, picks = '신규 매수 대기, 보유는 유지하세요', 5
             else:
-                text, picks = '보유 비중 축소를 검토하세요', 0
+                text, picks = '보유 비중 축소를 검토하세요', 5
         else:
             if vix_ok:
-                text, picks = '회복 초입이에요. 분할 매수를 검토하세요', 3
+                text, picks = '회복 초입, 분할 매수를 검토하세요', 5
             else:
-                text, picks = '바닥권으로 추정돼요. 소액 분할 매수를 검토하세요', 3
+                text, picks = '바닥권 추정, 소액 분할 매수를 검토하세요', 5
 
     # 2단계: KR BBB- 에스컬레이션
     kr_regime = kr['regime_label'] if kr else '정상'
