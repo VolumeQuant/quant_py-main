@@ -6,7 +6,7 @@ v18.2: 현금비중 % 제거 → 행동 등급(Action) 기반 시스템
   - VIX: 절대값 기준 → 252일 퍼센타일 기반 레짐
   - HY: cash_pct 제거, q_days 기반 행동 강화
   - KR: adjustment 제거, 레짐 정보만 유지
-  - _synthesize_action: HY 분면 × q_days × n_ok(보조지표) × Concordance(톤)
+  - _synthesize_action: HY 분면 × VIX 방향 → (action_text, max_picks) + KR 에스컬레이션
 
 Verdad 4분면 모델:
   수준: HY vs 10년 롤링 중위수 (넓/좁)
@@ -529,11 +529,8 @@ def format_credit_section(credit: dict) -> str:
 
     lines = ['─────────────────']
 
-    # 타이틀 + 사계절
-    if hy:
-        lines.append(f"🌡️ <b>시장 위험 지표</b> — {hy['quadrant_icon']} {hy['quadrant_label']}")
-    else:
-        lines.append('🌡️ <b>시장 위험 지표</b>')
+    # 타이틀
+    lines.append('🌡️ <b>시장 위험 지표</b>')
 
     # ── 신용시장 카테고리 ──
     lines.append('')

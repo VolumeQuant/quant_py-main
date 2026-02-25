@@ -353,7 +353,7 @@ def create_ai_risk_message(credit, kospi_data, kosdaq_data, market_warnings,
                            ai_msg, biz_day, picks, final_action):
     """Message 2: AI Risk — 맥락 (시장 환경 + 리스크)
 
-    시장 데이터(코스피/코스닥/HY/BBB-/VIX/사계절) + AI 해석 + 매수 주의
+    시장 데이터(코스피/코스닥/HY/BBB-/VIX) + AI 해석 + 매수 주의
     """
     kospi_close, kospi_chg, kospi_color = kospi_data
     kosdaq_close, kosdaq_chg, kosdaq_color = kosdaq_data
