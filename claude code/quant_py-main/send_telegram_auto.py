@@ -25,7 +25,7 @@ from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 from zoneinfo import ZoneInfo
 from ranking_manager import (
     load_ranking, load_recent_rankings, save_ranking,
-    compute_3day_intersection, get_daily_changes,
+    get_daily_changes,
     get_stock_status, cleanup_old_rankings, get_available_ranking_dates,
     compute_rank_driver, MIN_RANK_CHANGE,
 )
@@ -417,24 +417,24 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         s['_r1'] = t1_item['rank'] if t1_item else '-'
         s['_r2'] = t2_item['rank'] if t2_item else '-'
 
-    # rank 순 정렬 (✅/⏳/🆕 혼합)
-    sorted_pipeline = sorted(pipeline, key=lambda x: x['rank'])
+    # 가중순위 기준 정렬 (✅/⏳/🆕 혼합)
+    sorted_pipeline = sorted(pipeline, key=lambda x: x.get('weighted_rank', x['rank']))
 
-    for s in sorted_pipeline:
+    for idx, s in enumerate(sorted_pipeline, 1):
         name = s['name']
         sector = s.get('sector', '기타')
         status = s['status']
-        r0 = s['rank']
+        r0 = s['rank']       # T-0 단일일 순위 (추이 표시용)
         r1 = s.get('_r1', '-')
         r2 = s.get('_r2', '-')
 
-        # 1줄: 상태 순위. 이름(업종) 순위궤적
+        # 1줄: 상태 가중순번. 이름(업종) 일별순위궤적
         if status == '✅':
-            lines.append(f'{status} {r0}. {name}({sector}) {r2}→{r1}→{r0}위')
+            lines.append(f'{status} {idx}. {name}({sector}) {r2}→{r1}→{r0}위')
         elif status == '⏳':
-            lines.append(f'{status} {r0}. {name}({sector}) -→{r1}→{r0}위')
+            lines.append(f'{status} {idx}. {name}({sector}) -→{r1}→{r0}위')
         else:
-            lines.append(f'{status} {r0}. {name}({sector}) -→-→{r0}위')
+            lines.append(f'{status} {idx}. {name}({sector}) -→-→{r0}위')
 
     # ── 이탈 섹션 ──
     if exited:
@@ -586,7 +586,7 @@ def main():
     if cold_start:
         print("  콜드 스타트 → 일일 변동 생략")
     elif rankings_t1:
-        entered, exited = get_daily_changes(rankings_t0, rankings_t1)
+        entered, exited = get_daily_changes(pipeline, rankings_t0, rankings_t1)
         print(f"  진입: {len(entered)}개, 이탈: {len(exited)}개")
         for e in entered:
             print(f"    ↑ {e['name']} ({e['rank']}위)")
@@ -601,7 +601,7 @@ def main():
     drop_info = []
     if not cold_start:
         verified_picks = [s for s in pipeline if s['status'] == '✅']
-        verified_picks.sort(key=lambda x: x['rank'])
+        verified_picks.sort(key=lambda x: x.get('weighted_rank', x['rank']))
         print(f"  ✅ 검증 종목: {len(verified_picks)}개")
 
         t1_rank_map = {r['ticker']: r['rank'] for r in rankings_t1.get('rankings', [])} if rankings_t1 else {}
@@ -649,6 +649,7 @@ def main():
             stock_list = []
             for pick in all_candidates:
                 tech = pick.get('_tech', {}) or {}
+                tech_missing = not pick.get('_tech')
                 stock_data = {
                     'ticker': pick['ticker'],
                     'name': pick['name'],
@@ -661,8 +662,8 @@ def main():
                     'rsi': tech.get('rsi', 50),
                     'w52_pct': tech.get('w52_pct', 0),
                     'daily_chg': tech.get('daily_chg', 0),
-                    'vol_ratio': 1,
                     'price': tech.get('price', 0),
+                    'tech_missing': tech_missing,
                 }
                 stock_list.append(stock_data)
                 if compute_risk_flags(stock_data):

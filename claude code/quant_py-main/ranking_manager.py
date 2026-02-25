@@ -231,15 +231,20 @@ def compute_rank_driver(t0_item: dict, t_ref_item: dict,
 
 
 def get_daily_changes(
+    pipeline: List[dict],
     rankings_t0: dict,
     rankings_t1: dict,
     threshold: int = 30,
 ) -> Tuple[List[dict], List[dict]]:
     """
-    일일 변동 — 어제 vs 오늘 Top 30 단순 set 비교
+    일일 변동 — 가중순위 기반 Top 30 비교
+
+    오늘의 가중순위 Top 30(pipeline)과 어제의 단일일 Top 30을 비교.
+    pipeline은 get_stock_status()가 이미 가중순위로 계산한 결과.
 
     Args:
-        rankings_t0: 오늘(T-0) 순위
+        pipeline: 오늘의 가중순위 Top 30 (get_stock_status 결과)
+        rankings_t0: 오늘(T-0) 원본 순위 (exit_reason 계산용)
         rankings_t1: 어제(T-1) 순위
         threshold: 기준 (기본 30위)
 
@@ -247,26 +252,28 @@ def get_daily_changes(
         (entered, exited) — 신규 진입 종목, 이탈 종목
         이탈 종목에 'exit_reason' 필드 추가 ([V↓ Q↓ M↓])
     """
-    # T-0 전체 맵 (이탈 종목의 현재 스코어 조회용)
+    # 오늘의 가중순위 Top 30 ticker set
+    today_tickers = {s['ticker'] for s in pipeline}
+    today_map = {s['ticker']: s for s in pipeline}
+
+    # T-0 전체 맵 (exit_reason 계산용)
     t0_all = {item['ticker']: item for item in rankings_t0.get('rankings', [])}
 
-    t0_map = {}
-    for item in rankings_t0.get('rankings', []):
-        if item['rank'] <= threshold:
-            t0_map[item['ticker']] = item
-
+    # 어제의 단일일 Top 30
     t1_map = {}
     for item in rankings_t1.get('rankings', []):
         if item['rank'] <= threshold:
             t1_map[item['ticker']] = item
+    yesterday_tickers = set(t1_map)
 
-    entered = [t0_map[t] for t in (set(t0_map) - set(t1_map))]
+    # 진입: 오늘 가중 Top 30에 있는데 어제 Top 30에 없었던 종목
+    entered = [today_map[t] for t in (today_tickers - yesterday_tickers)]
 
-    exited_tickers = set(t1_map) - set(t0_map)
+    # 이탈: 어제 Top 30에 있었는데 오늘 가중 Top 30에 없는 종목
+    exited_tickers = yesterday_tickers - today_tickers
     exited = []
     for t in exited_tickers:
         item = t1_map[t].copy()
-        # T-0에서 해당 종목의 현재 스코어 찾기
         t0_item = t0_all.get(t)
         if t0_item:
             item['exit_reason'] = _compute_exit_reason(t0_item, item)
@@ -274,7 +281,7 @@ def get_daily_changes(
             item['exit_reason'] = ''
         exited.append(item)
 
-    entered.sort(key=lambda x: x['rank'])
+    entered.sort(key=lambda x: x.get('weighted_rank', x['rank']))
     exited.sort(key=lambda x: x['rank'])
 
     return entered, exited
@@ -282,36 +289,57 @@ def get_daily_changes(
 
 def get_stock_status(rankings_t0, rankings_t1=None, rankings_t2=None, top_n=30):
     """
-    Top N 종목의 연속 진입 상태 판별
+    3일 가중순위 기반 Top N 종목 + 연속 진입 상태 판별
+
+    가중순위: T-0 × 0.5 + T-1 × 0.3 + T-2 × 0.2
+    Top N 여부와 정렬 모두 가중순위 기반.
+    상태(✅/⏳/🆕)는 각 날의 개별 Top N 포함 여부로 판별.
 
     Returns:
-        list of dicts sorted by rank, each with 'status' key:
-        ✅ = 3일 연속 (매수 대상)
-        ⏳ = 2일 연속 (관찰)
-        🆕 = 신규 진입 (관찰)
+        list of dicts sorted by weighted_rank, each with:
+        - 'weighted_rank': 가중순위 (정렬·Top N 기준)
+        - 'rank': T-0 단일일 순위 (추이 표시용)
+        - 'status': ✅/⏳/🆕
     """
-    top_t0 = {}
-    for item in rankings_t0.get('rankings', []):
-        if item['rank'] <= top_n:
-            top_t0[item['ticker']] = item
-
-    top_t1 = set()
+    # 전체 종목 맵 (Top N 제한 없이)
+    all_t0 = {item['ticker']: item for item in rankings_t0.get('rankings', [])}
+    all_t1 = {}
+    top_t1_set = set()
     if rankings_t1:
         for item in rankings_t1.get('rankings', []):
+            all_t1[item['ticker']] = item
             if item['rank'] <= top_n:
-                top_t1.add(item['ticker'])
+                top_t1_set.add(item['ticker'])
 
-    top_t2 = set()
+    all_t2 = {}
+    top_t2_set = set()
     if rankings_t2:
         for item in rankings_t2.get('rankings', []):
+            all_t2[item['ticker']] = item
             if item['rank'] <= top_n:
-                top_t2.add(item['ticker'])
+                top_t2_set.add(item['ticker'])
 
-    result = []
-    for ticker, item in top_t0.items():
+    # 모든 T-0 종목에 대해 가중순위 계산
+    scored = []
+    for ticker, item in all_t0.items():
         entry = item.copy()
-        in_t1 = ticker in top_t1
-        in_t2 = ticker in top_t2
+        rank_t0 = item.get('composite_rank', item['rank'])
+
+        if rankings_t1 and rankings_t2:
+            rank_t1 = all_t1[ticker].get('composite_rank', all_t1[ticker]['rank']) if ticker in all_t1 else rank_t0
+            rank_t2 = all_t2[ticker].get('composite_rank', all_t2[ticker]['rank']) if ticker in all_t2 else rank_t0
+            weighted = rank_t0 * 0.5 + rank_t1 * 0.3 + rank_t2 * 0.2
+        elif rankings_t1:
+            rank_t1 = all_t1[ticker].get('composite_rank', all_t1[ticker]['rank']) if ticker in all_t1 else rank_t0
+            weighted = rank_t0 * 0.6 + rank_t1 * 0.4
+        else:
+            weighted = float(rank_t0)
+
+        entry['weighted_rank'] = round(weighted, 1)
+
+        # 상태: 각 날의 개별 Top N 포함 여부
+        in_t1 = ticker in top_t1_set
+        in_t2 = ticker in top_t2_set
 
         if in_t1 and in_t2:
             entry['status'] = '✅'
@@ -319,10 +347,11 @@ def get_stock_status(rankings_t0, rankings_t1=None, rankings_t2=None, top_n=30):
             entry['status'] = '⏳'
         else:
             entry['status'] = '🆕'
-        result.append(entry)
+        scored.append(entry)
 
-    result.sort(key=lambda x: x['rank'])
-    return result
+    # 가중순위 기준 Top N 선택
+    scored.sort(key=lambda x: x['weighted_rank'])
+    return scored[:top_n]
 
 
 def cleanup_old_rankings(keep_days: int = 30):
