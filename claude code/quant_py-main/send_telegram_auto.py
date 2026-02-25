@@ -343,6 +343,7 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
     lines.append('')
     lines.append('━━━━━━━━━━━━━━━')
     lines.append('순위: 2일전→1일전→오늘')
+    lines.append('목록 순서: 3일 가중순위')
     lines.append('참고용이며, 투자 판단은 본인 책임이에요.')
 
     return '\n'.join(lines)
@@ -464,6 +465,7 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
     lines.append('')
     lines.append('━━━━━━━━━━━━━━━')
     lines.append('순위: 2일전→1일전→오늘')
+    lines.append('목록 순서: 3일 가중순위')
     lines.append('참고용이며, 투자 판단은 본인 책임이에요.')
 
     return '\n'.join(lines)
