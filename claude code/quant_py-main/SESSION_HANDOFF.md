@@ -2,9 +2,48 @@
 
 ## 문서 개요
 
-**버전**: v42
-**최종 업데이트**: 2026-02-24
+**버전**: v43
+**최종 업데이트**: 2026-02-26
 **작성자**: Claude Opus 4.6
+
+---
+
+## 핵심 변경사항 (v43 — Dead Code 제거 + 괴리율 팩터 탐색)
+
+### 2026-02-26
+
+**Dead Code 제거** — KR 10개 파일(~4,662줄), US 18개 파일 + daily_runner.py v1 코드(~896줄) 삭제.
+
+#### KR 삭제 파일 (10개)
+| 파일 | 줄 수 | 사유 |
+|------|-------|------|
+| `test_new_telegram.py` | ~830 | v41에서 send_telegram_auto.py로 교체 |
+| `config_template.py` | ~40 | 문서용, import 없음 |
+| `backtest_comparison.py` | ~417 | 탐색적 분석, 워크플로우 미참조 |
+| `full_backtest.py` | ~711 | 탐색적 분석 |
+| `run_full_backtest.py` | ~654 | 탐색적 분석 |
+| `compare_momentum.py` | ~303 | 과거 A/B 비교 |
+| `visualize_backtest.py` | ~407 | 시각화 |
+| `generate_report_pdf.py` | ~771 | 미사용, reportlab 미설치 |
+| `test_ui_preview.py` | ~432 | 수동 테스트 |
+| `migrate_weighted_ranks.py` | ~97 | 일회성 마이그레이션 완료 |
+
+**유지**: `refresh_fnguide_cache.py` — `fnguide_weekly.yml`이 호출
+
+#### US 삭제 (18개 독립 파일 + daily_runner.py v1)
+- 빈 스텁 9개 + 일회성 스크립트 5개 + EDA 분석 4개
+- `daily_runner.py`: v1 전용 함수 5개 삭제 (~896줄), 기본 message_version `"v1"` → `"v3"`
+
+#### 괴리율 팩터 탐색 — 결론: **보류**
+
+모멘텀-밸류 상쇄 문제(가격 상승 시 M25↑ Q25↓ 상쇄 → 고평가 고착)의 자기보정 팩터를 탐색.
+
+| 팩터 | 테스트 결과 | 결론 |
+|------|-----------|------|
+| **FnGuide 목표주가 괴리율** | Top30 9개 교체, 고평가 감지 작동 | **폐기** — 한국 애널리스트 매도 리포트 안 씀, 목표주가 뻥튀기, 커버리지 편중(29% 미확보), analyst_count 1명 하드코딩 |
+| **PER 팽창 속도** (3개월 전 vs 현재) | 삼성전자 5위→27위 등 과도한 변동 | **폐기** — 12월 결산 법인 연간 실적 반영으로 trailing PER 요동(시즌 노이즈), 실적 악화와 주가 상승 구분 불가 |
+
+**현행 안전장치**: PER>60 하드캡, MA120 필터, 3일 교집합, Death List, 밸류 25% 자연 드래그 — 이미 다층 방어 중.
 
 ---
 
