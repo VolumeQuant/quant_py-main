@@ -42,7 +42,7 @@
 | Before | After |
 |--------|-------|
 | `_synthesize_action` → n_ok(보조지표 0~2) 기반 | **HY 분면 × VIX 방향** 2열 매트릭스 + KR 에스컬레이션 |
-| 계절 라벨 (☀️ 여름 37일째) 표시 | **계절 라벨 제거** (행동 가이드가 직접 의미 전달) |
+| 계절 라벨 (☀️ 여름 37일째) 표시 | **계절 라벨 전면 제거** (포맷 + Gemini 프롬프트 + format_credit_section) |
 | 반환값: action_text 문자열 | 반환값: **(action_text, max_picks) 튜플** |
 | max_picks: 키워드 파싱으로 역산 | max_picks: `_synthesize_action`이 직접 반환 |
 | 톤: 경어체 혼합 | **해요체 통일** |
@@ -52,8 +52,9 @@
 #### 수정 파일 (액션 메시지)
 | 파일 | 변경 |
 |------|------|
-| `credit_monitor.py` | `_synthesize_action()` 전면 교체, `format_credit_compact()` 계절 라벨 제거, `get_market_pick_level()` 단순화 |
-| `send_telegram_auto.py` | 퍼널 텍스트 "(3일 평균)" 추가, action 호출부 튜플 언팩 |
+| `credit_monitor.py` | `_synthesize_action()` 전면 교체, 계절 라벨 제거 (compact+section), `get_market_pick_level()` 단순화 |
+| `send_telegram_auto.py` | 퍼널 텍스트 "(3일 평균)" 추가, action 호출부 튜플 언팩, market_ctx에서 season/concordance 제거 |
+| `gemini_analysis.py` | 프롬프트에서 season/concordance 제거 (action만 전달), 독스트링 정리 |
 | `README.md` | 행동 등급 매트릭스·텔레그램 표시 예시 갱신 |
 
 ---
