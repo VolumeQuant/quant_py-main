@@ -681,11 +681,9 @@ def main():
     else:
         print("\nAI 리스크 필터 스킵 (추천 종목 없음)")
 
-    # 리스크 플래그 없는 종목 우선, market_max_picks까지 추천
-    clean_candidates = [c for c in all_candidates if c['ticker'] not in risk_flagged_tickers]
-    flagged_candidates = [c for c in all_candidates if c['ticker'] in risk_flagged_tickers]
-    picks = (clean_candidates + flagged_candidates)[:market_max_picks]
-    print(f"\n  최종 picks: {len(picks)}개 (시장레벨: {pick_level['label']}, 최대{market_max_picks}, 클린{len(clean_candidates)}+플래그{len(flagged_candidates)})")
+    # 순위 그대로 Top N 추천 — 리스크 플래그는 AI 메시지에서 경고만 표시
+    picks = all_candidates[:market_max_picks]
+    print(f"\n  최종 picks: {len(picks)}개 (시장레벨: {pick_level['label']}, 최대{market_max_picks})")
 
     # ============================================================
     # AI 종목별 내러티브 (Signal 💬 줄용)
