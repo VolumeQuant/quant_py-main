@@ -40,7 +40,7 @@ try:
     from config import (
         MIN_MARKET_CAP,
         MAX_CONCURRENT_REQUESTS, PYKRX_WORKERS, CACHE_DIR,
-        PREFILTER_N, N_STOCKS, PER_MAX_LIMIT, PBR_MAX_LIMIT
+        PREFILTER_N, N_STOCKS
     )
 except ImportError:
     MIN_MARKET_CAP = 3000
@@ -49,8 +49,6 @@ except ImportError:
     CACHE_DIR = "data_cache"
     PREFILTER_N = 200
     N_STOCKS = 30
-    PER_MAX_LIMIT = 60
-    PBR_MAX_LIMIT = 10
 
 # 최근 거래일 자동 탐지 (한국 시간 기준)
 from pykrx import stock as pykrx_stock
@@ -411,7 +409,6 @@ def generate_report(
 - 필터 조건:
   * 시가총액 >= {MIN_MARKET_CAP}억원
   * 거래대금: 대형(1조+)≥50억, 중소형≥20억
-  * PER <= {PER_MAX_LIMIT}, PBR <= {PBR_MAX_LIMIT}
   * 금융업/지주사 제외
   * MA120 추세 필터 (현재가 < 120일 이동평균×0.95 제외)
 
@@ -525,32 +522,12 @@ def main():
         print("  pykrx 펀더멘털 수집 실패 - FnGuide 캐시로 fallback")
 
     # =========================================================================
-    # 3.6단계: PER/PBR 상한 필터 (고평가 잡주 제거)
-    # =========================================================================
-    if not fundamental_df.empty and not magic_df.empty:
-        print(f"\n[3.6단계] PER/PBR 상한 필터 (PER>{PER_MAX_LIMIT}, PBR>{PBR_MAX_LIMIT} 제외)")
-        before_count = len(magic_df)
-        exclude_tickers = set()
-        for ticker in magic_df['종목코드']:
-            if ticker in fundamental_df.index:
-                per = fundamental_df.loc[ticker, 'PER'] if 'PER' in fundamental_df.columns else 0
-                pbr = fundamental_df.loc[ticker, 'PBR'] if 'PBR' in fundamental_df.columns else 0
-                if (per > PER_MAX_LIMIT and per > 0) or (pbr > PBR_MAX_LIMIT and pbr > 0):
-                    exclude_tickers.add(ticker)
-        if exclude_tickers:
-            magic_df = magic_df[~magic_df['종목코드'].isin(exclude_tickers)].copy()
-            print(f"  고평가 종목 제외: {len(exclude_tickers)}개 → {len(magic_df)}개 남음")
-        else:
-            print(f"  제외 종목 없음 ({before_count}개 유지)")
-
-    # =========================================================================
     # 4단계: OHLCV 수집 (캐시 + 증분 업데이트)
     # =========================================================================
     print("\n[4단계] OHLCV 데이터 로드 (캐시 + 증분)")
 
-    # PER/PBR 필터 통과 종목만 수집 (571 → ~383)
     ohlcv_tickers = magic_df['종목코드'].tolist() if not magic_df.empty else universe_tickers
-    print(f"  OHLCV 대상: {len(ohlcv_tickers)}개 종목 (PER/PBR 필터 후)")
+    print(f"  OHLCV 대상: {len(ohlcv_tickers)}개 종목")
 
     end_date_dt = datetime.strptime(BASE_DATE, '%Y%m%d')
     start_date_dt = end_date_dt - timedelta(days=450)
