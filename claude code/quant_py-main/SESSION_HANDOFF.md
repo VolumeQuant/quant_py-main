@@ -2,9 +2,74 @@
 
 ## 문서 개요
 
-**버전**: v43
-**최종 업데이트**: 2026-02-26
+**버전**: v44
+**최종 업데이트**: 2026-02-27
 **작성자**: Claude Opus 4.6
+
+---
+
+## 핵심 변경사항 (v44 — PER/PBR 하드 필터 제거 + 리스크 재정렬 제거 + 궤적 composite_rank)
+
+### 2026-02-27
+
+#### 1. PER/PBR 하드 필터 제거
+
+**배경**: SK하이닉스(000660)가 2/26 +7.96% 급등으로 PBR 9.49→10.25가 되면서 `PBR_MAX_LIMIT=10` 하드 필터에 걸려 **1위→완전 제거**. 스코어링 단계에 도달하지도 못하고 파이프라인 3.6단계에서 바이너리 클리프(binary cliff) 방식으로 탈락.
+
+**문제점**:
+- 하드 필터(PBR>10 OR PER>60)는 "고평가 잡주 제거" 목적인데, 반도체 호황기 대형주까지 잡음
+- Value 팩터(V25)가 PER/PBR z-score로 이미 고평가 종목을 소프트 패널티 → 하드 필터는 이중 처벌
+- BPS가 분기 결산 기준(업데이트 지연) → PBR 과대 계산
+- 2/25 PBR 9.49 = 상한까지 5.4% 여유 → 하루 급등으로 1위가 즉시 제거되는 취약 구조
+
+**수정**: 3.6단계 PER/PBR 하드 필터 블록 전체 삭제
+
+| 파일 | 변경 |
+|------|------|
+| `create_current_portfolio.py` | 3.6단계 필터 블록 삭제, `PER_MAX_LIMIT`/`PBR_MAX_LIMIT` import·fallback 제거 |
+| `telegram_daily.yml` | config 생성에서 `PER_MAX_LIMIT`/`PBR_MAX_LIMIT` 제거 |
+
+**유지**: `strategy_b_multifactor.py`의 Value 팩터 PER/PBR z-score (소프트 패널티 역할)
+
+#### 2. 리스크 플래그로 Top 5 순위 밀어내기 제거
+
+**배경**: 리스크 플래그(RSI≥80, 급등≥8%) 종목을 뒤로 밀어 Top 5에서 탈락시키는 로직이 존재. 삼성전자(4위, RSI 85)·테스(6위, +8.2%)가 밀려서 케이카(7위)가 Top 5에 선정되는 문제.
+
+**수정 전**:
+```python
+clean_candidates = [c for c in all_candidates if c['ticker'] not in risk_flagged_tickers]
+flagged_candidates = [c for c in all_candidates if c['ticker'] in risk_flagged_tickers]
+picks = (clean_candidates + flagged_candidates)[:market_max_picks]
+```
+
+**수정 후**:
+```python
+picks = all_candidates[:market_max_picks]
+```
+
+4겹 검증 통과 종목의 급등은 추세 확인이지 리스크가 아님. 리스크 플래그는 AI 메시지에서 경고만 표시.
+
+| 파일 | 변경 |
+|------|------|
+| `send_telegram_auto.py` | clean/flagged 재정렬 제거, 순위 그대로 Top N 선정 |
+
+#### 3. 궤적 표시를 composite_rank(순수 점수 순위)로 수정
+
+**배경**: 궤적(r2→r1→r0)이 `rank`(가중순위)를 표시하고 있어서 목록 순서(idx)와 오늘 순위(r0)가 항상 일치. 각 날의 독립적인 점수 순위(`composite_rank`)를 보여줘야 "어제 5위에서 오늘 3위로 올랐다"가 의미를 가짐.
+
+| Before | After |
+|--------|-------|
+| 궤적 r0/r1/r2 = `rank` (가중순위) | `composite_rank` (순수 점수 순위) |
+| idx와 r0 항상 일치 | idx(가중순위 정렬) ≠ r0(오늘 점수 순위) 가능 |
+| 지엔씨 `4→4→3위` (가중순위) | 지엔씨 `4→4→5위` (오늘 점수 순위) |
+
+**수정**: Signal 궤적, Watchlist 궤적, 이탈 섹션 — 총 5곳에서 `rank` → `composite_rank`
+
+| 파일 | 변경 |
+|------|------|
+| `send_telegram_auto.py` | rank_t0/t1/t2, _r1/_r2, r0, 이탈 prev/cur 모두 composite_rank 사용 |
+
+**검증**: 테스트 워크플로우 통과 — SK하이닉스 1위 복귀, Top 5 순위대로 선정, 궤적 composite_rank 표시
 
 ---
 
@@ -81,7 +146,7 @@
 | **FnGuide 목표주가 괴리율** | Top30 9개 교체, 고평가 감지 작동 | **폐기** — 한국 애널리스트 매도 리포트 안 씀, 목표주가 뻥튀기, 커버리지 편중(29% 미확보), analyst_count 1명 하드코딩 |
 | **PER 팽창 속도** (3개월 전 vs 현재) | 삼성전자 5위→27위 등 과도한 변동 | **폐기** — 12월 결산 법인 연간 실적 반영으로 trailing PER 요동(시즌 노이즈), 실적 악화와 주가 상승 구분 불가 |
 
-**현행 안전장치**: PER>60 하드캡, MA120 필터, 3일 교집합, Death List, 밸류 25% 자연 드래그 — 이미 다층 방어 중.
+**현행 안전장치**: MA120 필터, 3일 교집합, Death List, 밸류 25% 자연 드래그 — 이미 다층 방어 중. (v44에서 PER/PBR 하드캡 제거 → Value z-score 소프트 패널티로 전환)
 
 ---
 
