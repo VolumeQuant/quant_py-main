@@ -301,8 +301,8 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
     lines.append('📌 <b>종목별 근거</b>')
     lines.append('━━━━━━━━━━━━━━━')
 
-    t1_rank_map = {r['ticker']: r['rank'] for r in rankings_t1.get('rankings', [])} if rankings_t1 else {}
-    t2_rank_map = {r['ticker']: r['rank'] for r in rankings_t2.get('rankings', [])} if rankings_t2 else {}
+    t1_rank_map = {r['ticker']: r.get('composite_rank', r['rank']) for r in rankings_t1.get('rankings', [])} if rankings_t1 else {}
+    t2_rank_map = {r['ticker']: r.get('composite_rank', r['rank']) for r in rankings_t2.get('rankings', [])} if rankings_t2 else {}
 
     for i, pick in enumerate(picks):
         ticker = pick['ticker']
@@ -314,8 +314,8 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         price_str = f'₩{price:,.0f}' if price else ''
         lines.append(f'<b>{i+1}. {name}({ticker}) {sector} · {price_str}</b>')
 
-        # L1: 순위 궤적
-        r0 = pick.get('rank_t0', pick.get('rank', '?'))
+        # L1: 순위 궤적 (각 날의 순수 점수 순위)
+        r0 = pick.get('rank_t0', pick.get('composite_rank', pick.get('rank', '?')))
         r1 = t1_rank_map.get(ticker, '-')
         r2 = t2_rank_map.get(ticker, '-')
         lines.append(f'순위 {r2}→{r1}→{r0}위')
@@ -409,15 +409,15 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         lines.append('데이터 없음')
         return '\n'.join(lines)
 
-    # T-1, T-2 rank 맵
+    # T-1, T-2 composite_rank 맵 (각 날의 순수 점수 순위)
     t1_full = {r['ticker']: r for r in rankings_t1.get('rankings', [])} if rankings_t1 else {}
     t2_full = {r['ticker']: r for r in rankings_t2.get('rankings', [])} if rankings_t2 else {}
 
     for s in pipeline:
         t1_item = t1_full.get(s['ticker'])
         t2_item = t2_full.get(s['ticker'])
-        s['_r1'] = t1_item['rank'] if t1_item else '-'
-        s['_r2'] = t2_item['rank'] if t2_item else '-'
+        s['_r1'] = t1_item.get('composite_rank', t1_item['rank']) if t1_item else '-'
+        s['_r2'] = t2_item.get('composite_rank', t2_item['rank']) if t2_item else '-'
 
     # 가중순위 기준 정렬 (✅/⏳/🆕 혼합)
     sorted_pipeline = sorted(pipeline, key=lambda x: x.get('weighted_rank', x['rank']))
@@ -426,7 +426,7 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         name = s['name']
         sector = s.get('sector', '기타')
         status = s['status']
-        r0 = s['rank']       # T-0 단일일 순위 (추이 표시용)
+        r0 = s.get('composite_rank', s['rank'])  # T-0 순수 점수 순위
         r1 = s.get('_r1', '-')
         r2 = s.get('_r2', '-')
 
@@ -442,11 +442,11 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
     if exited:
         lines.append('')
         lines.append('━━━━━━━━━━━━━━━')
-        t0_rank_map = {item['ticker']: item['rank'] for item in (rankings_t0 or {}).get('rankings', [])}
+        t0_rank_map = {item['ticker']: item.get('composite_rank', item['rank']) for item in (rankings_t0 or {}).get('rankings', [])}
 
         lines.append('📉 <b>이탈 — 매도 검토</b>')
         for e in exited:
-            prev = e['rank']
+            prev = e.get('composite_rank', e['rank'])
             cur = t0_rank_map.get(e['ticker'])
 
             if cur:
@@ -607,15 +607,15 @@ def main():
         verified_picks.sort(key=lambda x: x.get('weighted_rank', x['rank']))
         print(f"  ✅ 검증 종목: {len(verified_picks)}개")
 
-        t1_rank_map = {r['ticker']: r['rank'] for r in rankings_t1.get('rankings', [])} if rankings_t1 else {}
-        t2_rank_map = {r['ticker']: r['rank'] for r in rankings_t2.get('rankings', [])} if rankings_t2 else {}
+        t1_rank_map = {r['ticker']: r.get('composite_rank', r['rank']) for r in rankings_t1.get('rankings', [])} if rankings_t1 else {}
+        t2_rank_map = {r['ticker']: r.get('composite_rank', r['rank']) for r in rankings_t2.get('rankings', [])} if rankings_t2 else {}
 
         for candidate in verified_picks:
             tech = get_stock_technical(candidate['ticker'], BASE_DATE)
             candidate['_tech'] = tech
-            candidate['rank_t0'] = candidate['rank']
-            candidate['rank_t1'] = t1_rank_map.get(candidate['ticker'], candidate['rank'])
-            candidate['rank_t2'] = t2_rank_map.get(candidate['ticker'], candidate['rank'])
+            candidate['rank_t0'] = candidate.get('composite_rank', candidate['rank'])
+            candidate['rank_t1'] = t1_rank_map.get(candidate['ticker'], candidate.get('composite_rank', candidate['rank']))
+            candidate['rank_t2'] = t2_rank_map.get(candidate['ticker'], candidate.get('composite_rank', candidate['rank']))
             daily_chg = (tech or {}).get('daily_chg', 0)
 
             if daily_chg <= -5:
