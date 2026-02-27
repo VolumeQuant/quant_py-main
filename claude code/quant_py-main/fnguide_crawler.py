@@ -61,13 +61,14 @@ def clean_fs(df, ticker, frequency):
     return df
 
 
-def get_financial_statement(ticker, use_cache=True):
+def get_financial_statement(ticker, use_cache=True, cache_max_age_days=7):
     """
     FnGuide에서 특정 종목의 재무제표 크롤링
 
     Args:
         ticker: 6자리 종목코드
         use_cache: 캐시 사용 여부
+        cache_max_age_days: 캐시 유효 기간 (일). 이보다 오래된 캐시는 자동 갱신.
 
     Returns:
         dict: {'annual': 연간 데이터, 'quarter': 분기 데이터}
@@ -75,8 +76,14 @@ def get_financial_statement(ticker, use_cache=True):
     cache_file = DATA_DIR / f'fs_fnguide_{ticker}.parquet'
 
     if use_cache and cache_file.exists():
-        print(f"캐시에서 재무제표 로드: {ticker}")
-        return pd.read_parquet(cache_file)
+        import os
+        from datetime import datetime, timedelta
+        cache_age = datetime.now() - datetime.fromtimestamp(os.path.getmtime(cache_file))
+        if cache_age <= timedelta(days=cache_max_age_days):
+            print(f"캐시에서 재무제표 로드: {ticker}")
+            return pd.read_parquet(cache_file)
+        else:
+            print(f"캐시 만료 ({cache_age.days}일 경과), 재수집: {ticker}")
 
     try:
         # URL 생성
