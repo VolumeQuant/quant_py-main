@@ -70,16 +70,25 @@ def get_broad_sector(krx_sector: str) -> str:
     return KRX_SECTOR_MAP.get(krx_sector, krx_sector or '기타')
 
 def get_latest_trading_date() -> str:
-    """최근 거래일 찾기 (한국 시간 기준)"""
+    """최근 거래일 찾기 (한국 시간 기준, 재시도 포함)"""
+    import time
     today = datetime.now(KST)
-    for i in range(1, 20):
-        date = (today - timedelta(days=i)).strftime('%Y%m%d')
-        try:
-            df = pykrx_stock.get_market_cap(date, market='KOSPI')
-            if not df.empty and df['시가총액'].sum() > 0:
-                return date
-        except Exception:
-            continue
+    max_retries = 3
+    for attempt in range(1, max_retries + 1):
+        for i in range(1, 20):
+            date = (today - timedelta(days=i)).strftime('%Y%m%d')
+            try:
+                df = pykrx_stock.get_market_cap(date, market='KOSPI')
+                if not df.empty and df['시가총액'].sum() > 0:
+                    return date
+            except Exception as e:
+                if i == 1:
+                    print(f"  [거래일 탐색] {date} 실패: {type(e).__name__}: {e}")
+                continue
+        if attempt < max_retries:
+            wait = attempt * 5
+            print(f"[거래일 탐색] {attempt}/{max_retries} 실패 — {wait}초 후 재시도...")
+            time.sleep(wait)
     raise RuntimeError("최근 20일간 거래일을 찾을 수 없습니다. pykrx 버전 또는 네트워크를 확인하세요.")
 
 import sys
