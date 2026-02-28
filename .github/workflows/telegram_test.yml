@@ -70,9 +70,18 @@ jobs:
 
       - name: Send data source error notification
         if: steps.gen.outcome == 'failure'
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_PRIVATE_ID }}
         run: |
-          MSG="<b>[시스템 알림]</b>%0A%0A데이터 소스(KRX) 점검 중으로 오늘 리포트를 생성하지 못했습니다.%0A기존 포트폴리오를 유지해 주세요.%0A%0A<i>pykrx/KRX API 복구 시 자동 정상화됩니다.</i>"
-          curl -s "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage?chat_id=${{ secrets.TELEGRAM_PRIVATE_ID }}&text=${MSG}&parse_mode=HTML" > /dev/null
+          python3 -c "
+          import requests, os
+          token = os.environ['TG_TOKEN']
+          chat_id = os.environ['TG_CHAT']
+          msg = '<b>[시스템 알림]</b>\n\n데이터 소스(KRX) 점검 중으로 오늘 리포트를 생성하지 못했습니다.\n기존 포트폴리오를 유지해 주세요.\n\n<i>pykrx/KRX API 복구 시 자동 정상화됩니다.</i>'
+          requests.post(f'https://api.telegram.org/bot{token}/sendMessage', data={'chat_id': chat_id, 'text': msg, 'parse_mode': 'HTML'})
+          print('알림 전송 완료')
+          "
           echo "::warning::데이터 소스 장애로 리포트 생략 — 텔레그램 알림 전송 완료"
 
       - name: Send Telegram message (v41 test)
