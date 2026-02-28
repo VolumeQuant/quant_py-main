@@ -48,7 +48,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install pykrx==1.2.3 pandas numpy requests beautifulsoup4 lxml pyarrow tqdm scipy html5lib google-genai
+          pip install pykrx pandas numpy requests beautifulsoup4 lxml pyarrow tqdm scipy html5lib google-genai
 
       - name: Create config.py from secrets
         run: |
@@ -69,12 +69,24 @@ jobs:
           EOF
 
       - name: Generate portfolio (create CSV)
+        id: gen
+        continue-on-error: true
         run: python create_current_portfolio.py
 
+      - name: Send data source error notification
+        if: steps.gen.outcome == 'failure'
+        run: |
+          MSG="<b>[시스템 알림]</b>%0A%0A데이터 소스(KRX) 점검 중으로 오늘 리포트를 생성하지 못했습니다.%0A기존 포트폴리오를 유지해 주세요.%0A%0A<i>pykrx/KRX API 복구 시 자동 정상화됩니다.</i>"
+          curl -s "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage?chat_id=${{ secrets.TELEGRAM_CHAT_ID }}&text=${MSG}&parse_mode=HTML" > /dev/null
+          curl -s "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage?chat_id=${{ secrets.TELEGRAM_PRIVATE_ID }}&text=${MSG}&parse_mode=HTML" > /dev/null
+          echo "::warning::데이터 소스 장애로 리포트 생략 — 텔레그램 알림 전송 완료"
+
       - name: Send Telegram message (v41)
+        if: steps.gen.outcome == 'success'
         run: python send_telegram_auto.py
 
       - name: Commit ranking state
+        if: steps.gen.outcome == 'success'
         run: |
           cd "${{ github.workspace }}"
           git config user.name "github-actions[bot]"
