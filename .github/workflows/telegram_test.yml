@@ -65,6 +65,33 @@ jobs:
           KRX_PASSWORD = "${{ secrets.KRX_PASSWORD }}"
           EOF
 
+      - name: Debug KRX connectivity
+        continue-on-error: true
+        run: |
+          python3 -c "
+          import requests
+          s = requests.Session()
+          # 초기 접속
+          r1 = s.get('https://data.krx.co.kr/', timeout=15)
+          print(f'초기 접속: HTTP {r1.status_code}')
+          # 로그인 시도 (더미)
+          r2 = s.post('https://data.krx.co.kr/contents/MDC/COMS/client/MDCCOMS001D1.cmd',
+              data={'mbrId': 'test', 'pw': 'test'}, timeout=15)
+          print(f'로그인 테스트: HTTP {r2.status_code}, body={repr(r2.text[:100])}')
+          # API 직접 호출
+          r3 = s.post('https://data.krx.co.kr/comm/bldAttendant/getJsonData.cmd',
+              data={'bld': 'dbms/MDC/STAT/standard/MDCSTAT01501', 'mktId': 'STK', 'trdDd': '20260228'},
+              timeout=15)
+          print(f'API 직접: HTTP {r3.status_code}, body={repr(r3.text[:100])}')
+          "
+          echo "---"
+          echo "Config check:"
+          python3 -c "
+          import config
+          print(f'KRX_USER_ID length: {len(getattr(config, \"KRX_USER_ID\", \"\"))}')
+          print(f'KRX_PASSWORD length: {len(getattr(config, \"KRX_PASSWORD\", \"\"))}')
+          "
+
       - name: Generate ranking (latest)
         id: gen
         continue-on-error: true

@@ -81,9 +81,9 @@ def login(user_id: str = None, password: str = None) -> bool:
                 print(f"[KRX 인증] 로그인 실패: {msg}")
                 return False
 
-        except requests.exceptions.JSONDecodeError:
-            body_preview = resp.text[:200] if resp else '(no response)'
-            print(f"[KRX 인증] JSON 파싱 실패 (attempt {attempt}/{max_retries}): {body_preview}")
+        except (requests.exceptions.JSONDecodeError, ValueError):
+            body_preview = resp.text[:200] if resp is not None else '(no response)'
+            print(f"[KRX 인증] JSON 파싱 실패 (attempt {attempt}/{max_retries}): [{resp.status_code}] {body_preview}")
             if attempt < max_retries:
                 time.sleep(3)
                 continue
