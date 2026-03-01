@@ -1,12 +1,11 @@
 name: Daily Telegram Report
 
 on:
-  schedule:
-    # UTC 21:30 = KST 06:30 (다음날)
-    # 일-목 21:30 UTC = 월-금 06:30 KST
-    - cron: '30 21 * * 0-4'
+  # schedule 비활성화 (KRX 해외 IP 차단으로 GitHub Actions 불가)
+  # schedule:
+  #   - cron: '30 21 * * 0-4'
 
-  # 수동 실행 가능
+  # 수동 실행만 가능
   workflow_dispatch:
 
 env:

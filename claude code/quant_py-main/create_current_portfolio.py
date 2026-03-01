@@ -604,6 +604,15 @@ def main():
             collector, ohlcv_tickers, price_start, BASE_DATE, error_tracker
         )
 
+    # 주말/휴장일 0원 데이터 제거 (pct_change에서 inf 방지)
+    if not price_df.empty:
+        zero_rows = (price_df == 0).all(axis=1)
+        if zero_rows.any():
+            removed_dates = price_df.index[zero_rows].strftime('%Y-%m-%d').tolist()
+            price_df = price_df[~zero_rows]
+            print(f"  0원 행 제거: {len(removed_dates)}일 ({', '.join(removed_dates)})")
+        price_df = price_df.replace(0, np.nan)
+
     # =========================================================================
     # 4.5단계: MA120 추세 필터 (가치 함정 원천 차단, 5% 버퍼)
     # =========================================================================

@@ -336,13 +336,17 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         if i < n - 1:
             lines.append('─ ─ ─ ─ ─ ─ ─ ─')
 
-    # ── 이탈 알림 (1줄만) ──
+    # ── 이탈 알림 (사유 포함) ──
     if exited:
-        exited_names = ', '.join(e['name'] for e in exited[:5])
+        parts = []
+        for e in exited[:5]:
+            reason = e.get('exit_reason', '')
+            parts.append(f'{e["name"]}({reason})' if reason else e['name'])
+        exited_str = ', '.join(parts)
         if len(exited) > 5:
-            exited_names += f' 외 {len(exited)-5}개'
+            exited_str += f' 외 {len(exited)-5}개'
         lines.append('')
-        lines.append(f'⚠️ 이탈: {exited_names} → Watchlist 참고')
+        lines.append(f'⚠️ 이탈: {exited_str} → Watchlist 참고')
 
     # ── 범례 + 면책 ──
     lines.append('')
@@ -452,12 +456,13 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         lines.append('📉 <b>이탈 — 매도 검토</b>')
         for e in exited:
             prev = e.get('composite_rank', e['rank'])
-            cur = t0_rank_map.get(e['ticker'])
+            cur = e.get('t0_rank') or t0_rank_map.get(e['ticker'])
+            reason = e.get('exit_reason', '')
 
             if cur:
-                lines.append(f'{e["name"]} {prev}→{cur}위')
+                lines.append(f'{e["name"]} {prev}→{cur}위 ({reason})')
             else:
-                lines.append(f'{e["name"]} {prev}위→밖')
+                lines.append(f'{e["name"]} {prev}위→제외 ({reason})')
 
         lines.append('보유 중이라면 매도를 검토하세요.')
 
@@ -809,7 +814,7 @@ def main():
             } for p in picks],
             'drop_info': [{'name': d[0]['name'], 'ticker': d[0]['ticker'], 'daily_chg': d[1]} for d in drop_info],
             'exited': [{'ticker': e['ticker'], 'name': e['name'],
-                        'rank': e['rank'],
+                        'rank': e['rank'], 't0_rank': e.get('t0_rank'),
                         'exit_reason': e.get('exit_reason', '')}
                        for e in exited],
             'sectors': {},
@@ -868,12 +873,26 @@ def main():
                     codes = [str(r.status_code) for r in results]
                     print(f'  {msg_labels[i]}: {", ".join(codes)}')
     else:
-        target_id = PRIVATE_CHAT_ID or TELEGRAM_CHAT_ID
-        print(f'\n테스트 전송 ({target_id[:6]}...)...')
-        for i, msg in enumerate(messages):
-            results = send_telegram_long(msg, TELEGRAM_BOT_TOKEN, target_id)
-            codes = [str(r.status_code) for r in results]
-            print(f'  {msg_labels[i]}: {", ".join(codes)}')
+        if cold_start:
+            target = PRIVATE_CHAT_ID or TELEGRAM_CHAT_ID
+            print(f'\n콜드 스타트 — 채널 전송 스킵, 개인봇으로 전송')
+            for i, msg in enumerate(messages):
+                results = send_telegram_long(msg, TELEGRAM_BOT_TOKEN, target)
+                codes = [str(r.status_code) for r in results]
+                print(f'  {msg_labels[i]}: {", ".join(codes)}')
+        else:
+            print(f'\n채널 전송 ({TELEGRAM_CHAT_ID})...')
+            for i, msg in enumerate(messages):
+                results = send_telegram_long(msg, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
+                codes = [str(r.status_code) for r in results]
+                print(f'  {msg_labels[i]}: {", ".join(codes)}')
+
+            if PRIVATE_CHAT_ID and PRIVATE_CHAT_ID != TELEGRAM_CHAT_ID:
+                print(f'개인봇 전송...')
+                for i, msg in enumerate(messages):
+                    results = send_telegram_long(msg, TELEGRAM_BOT_TOKEN, PRIVATE_CHAT_ID)
+                    codes = [str(r.status_code) for r in results]
+                    print(f'  {msg_labels[i]}: {", ".join(codes)}')
 
     # ============================================================
     # 정리

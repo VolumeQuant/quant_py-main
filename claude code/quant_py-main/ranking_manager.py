@@ -175,26 +175,36 @@ def _get_forward_eps(item: dict) -> Optional[float]:
 
 
 def _compute_exit_reason(t0_item: dict, t1_item: dict) -> str:
-    """이탈 종목의 사유 태그 — US 스타일 [한글↓] 형식"""
-    tags = []
+    """이탈 종목의 사유 태그 — 팩터 변화 기반
 
-    # 전망 (Forward EPS 컨센서스 변화)
-    eps0 = _get_forward_eps(t0_item)
-    eps1 = _get_forward_eps(t1_item)
-    if eps0 is not None and eps1 is not None and eps1 != 0:
-        eps_chg = (eps0 - eps1) / abs(eps1)
-        if abs(eps_chg) >= EPS_CHANGE_THRESHOLD:
-            tags.append('[전망↑]' if eps_chg > 0 else '[전망↓]')
+    T-0(오늘)과 T-1(어제) 팩터 점수를 비교해서
+    가장 크게 하락한 팩터를 사유로 반환.
 
-    # 가격 (실제 주가 비교)
-    p0 = t0_item.get('price')
-    p1 = t1_item.get('price')
-    if p0 and p1 and p1 > 0:
-        pct = (p0 - p1) / p1
-        if abs(pct) >= PRICE_CHANGE_THRESHOLD:
-            tags.append('[가격↑]' if pct > 0 else '[가격↓]')
+    Returns: '모멘텀↓', '가치↓', '품질↓', '성장↓', '순위경쟁' 등
+    """
+    FACTOR_MAP = {
+        'value_s':    '가치',
+        'quality_s':  '품질',
+        'growth_s':   '성장',
+        'momentum_s': '모멘텀',
+    }
 
-    return ' '.join(tags) if tags else ''
+    # 팩터 점수 변화량 계산 (T-0 - T-1)
+    deltas = {}
+    for key, label in FACTOR_MAP.items():
+        v0 = t0_item.get(key)
+        v1 = t1_item.get(key)
+        if v0 is not None and v1 is not None:
+            deltas[label] = v0 - v1
+
+    if deltas:
+        # 가장 크게 하락한 팩터
+        worst_factor = min(deltas, key=deltas.get)
+        worst_delta = deltas[worst_factor]
+        if worst_delta < -0.1:
+            return f'{worst_factor}↓'
+
+    return '순위경쟁'
 
 
 def compute_rank_driver(t0_item: dict, t_ref_item: dict,
@@ -277,8 +287,10 @@ def get_daily_changes(
         t0_item = t0_all.get(t)
         if t0_item:
             item['exit_reason'] = _compute_exit_reason(t0_item, item)
+            item['t0_rank'] = t0_item.get('composite_rank')
         else:
-            item['exit_reason'] = ''
+            item['exit_reason'] = '필터탈락'
+            item['t0_rank'] = None
         exited.append(item)
 
     entered.sort(key=lambda x: x.get('weighted_rank', x['rank']))
