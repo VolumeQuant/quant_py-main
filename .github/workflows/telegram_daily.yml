@@ -66,6 +66,8 @@ jobs:
           N_STOCKS = 30
           GEMINI_API_KEY = "${{ secrets.GEMINI_API_KEY }}"
           ECOS_API_KEY = "${{ secrets.ECOS_API_KEY }}"
+          KRX_USER_ID = "${{ secrets.KRX_USER_ID }}"
+          KRX_PASSWORD = "${{ secrets.KRX_PASSWORD }}"
           EOF
 
       - name: Generate portfolio (create CSV)

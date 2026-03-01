@@ -14,6 +14,11 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 import pandas as pd
 import numpy as np
+
+# KRX 인증 (2026-02-27~ 로그인 필수)
+import krx_auth
+krx_auth.login()
+
 from pykrx import stock
 from datetime import datetime, timedelta
 from pathlib import Path

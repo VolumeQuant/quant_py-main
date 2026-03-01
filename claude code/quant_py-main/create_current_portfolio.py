@@ -50,6 +50,10 @@ except ImportError:
     PREFILTER_N = 200
     N_STOCKS = 30
 
+# KRX 인증 (2026-02-27~ 로그인 필수)
+import krx_auth
+krx_auth.login()
+
 # 최근 거래일 자동 탐지 (한국 시간 기준)
 from pykrx import stock as pykrx_stock
 from zoneinfo import ZoneInfo
