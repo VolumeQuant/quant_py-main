@@ -627,20 +627,21 @@ def format_credit_compact(credit: dict) -> list:
     if hy:
         hy_val = hy['hy_spread']
         icon = '🟢' if hy_val < 3.0 else ('🟡' if hy_val < 4.5 else '🔴')
-        ctx = '안정' if hy_val < 3.0 else ('보통' if hy_val < 4.5 else '주의')
-        lines.append(f'{icon} HY {hy_val:.2f}% — {ctx}')
+        ctx = '안정' if hy_val < 3.0 else ('주의' if hy_val < 4.5 else '경고')
+        lines.append(f'{icon} 회사채 금리차(미국) {hy_val:.2f}% — {ctx}')
 
     if kr:
         kr_icon = '🟢' if kr['regime_label'] == '정상' else ('🟡' if kr['regime_label'] == '경계' else '🔴')
-        lines.append(f'{kr_icon} 한국 BBB- {kr["spread"]:.1f}%p — {kr["regime_label"]}')
+        kr_ctx = '안정' if kr['regime_label'] == '정상' else ('주의' if kr['regime_label'] == '경계' else '경고')
+        lines.append(f'{kr_icon} 회사채 금리차(한국) {kr["spread"]:.1f}%p — {kr_ctx}')
 
     if vix:
         v = vix['vix_current']
         pct = vix['vix_pct']
         slope = '↑' if vix['vix_slope_dir'] == 'rising' else ('↓' if vix['vix_slope_dir'] == 'falling' else '')
         icon = '🟢' if pct < 67 else ('🟡' if pct < 80 else '🔴')
-        ctx = '안정' if pct < 67 else ('다소 높음' if pct < 80 else ('주의' if pct < 90 else '위험'))
-        lines.append(f'{icon} VIX {v:.1f}{slope} — {ctx}')
+        ctx = '안정' if pct < 67 else ('주의' if pct < 80 else ('경고' if pct < 90 else '위험'))
+        lines.append(f'{icon} 변동성지수(VIX) {v:.1f}{slope} — {ctx}')
 
     return lines
 

@@ -114,34 +114,37 @@ def get_stock_technical(ticker, base_date):
 
 
 def _get_buy_rationale(pick) -> str:
-    """한 줄 투자 근거 생성 (AI fallback용)"""
-    reasons = []
+    """한 줄 투자 근거 — 실제 팩터 점수 기반"""
+    # 팩터 점수: value_s, quality_s, growth_s, momentum_s
+    factors = [
+        ('V', pick.get('value_s')),
+        ('Q', pick.get('quality_s')),
+        ('G', pick.get('growth_s')),
+        ('M', pick.get('momentum_s')),
+    ]
 
-    fwd = pick.get('fwd_per')
-    per = pick.get('per')
-    roe = pick.get('roe')
-    tech = pick.get('_tech') or {}
+    strong = []   # z > 1.0
+    weak = []     # z < -1.0
+    for label, z in factors:
+        if z is None:
+            continue
+        if z >= 1.0:
+            strong.append(label)
+        elif z <= -1.0:
+            weak.append(label)
 
-    if fwd and per and fwd < per and per > 0:
-        reasons.append(f"실적 개선 (PER {per:.0f}→{fwd:.0f})")
-    elif per and per < 10:
-        reasons.append(f"저평가 PER {per:.1f}")
+    NAMES = {'V': '밸류', 'Q': '퀄리티', 'G': '성장', 'M': '모멘텀'}
 
-    if roe and roe > 15:
-        reasons.append(f"ROE {roe:.0f}%")
+    if not strong and not weak:
+        return '멀티팩터 균형'
 
-    rsi = tech.get('rsi')
-    if rsi and rsi < 35:
-        reasons.append("과매도 구간")
+    parts = []
+    if strong:
+        parts.append('·'.join(NAMES[s] for s in strong) + ' 상위')
+    if weak:
+        parts.append('·'.join(NAMES[w] for w in weak) + ' 약세')
 
-    w52 = tech.get('w52_pct')
-    if w52 and w52 < -30:
-        reasons.append("52주 저점 부근")
-
-    if not reasons:
-        reasons.append("멀티팩터 상위")
-
-    return ' · '.join(reasons[:2])
+    return ' | '.join(parts)
 
 
 # ============================================================
@@ -248,42 +251,42 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
 
     lines = [
         f'📡 AI 종목 브리핑 KR · {date_str}',
-        '국내 전 종목을 매일 자동 분석해',
-        '유망 종목을 선별해 드려요.',
+        '국내 전 종목을 매일 자동 분석한',
+        '종합 점수 상위 종목입니다.',
     ]
 
-    # ── stop 모드 (시장 위험으로 매수 중단) ──
+    # ── stop 모드 (시장 경고) ──
     if market_max_picks == 0 and pick_level and pick_level.get('warning'):
         lines.append('')
         lines.append('━━━━━━━━━━━━━━━')
-        lines.append('🚫 신규 매수 중단')
+        lines.append('🚫 시장 경고 — 스크리닝 일시 중단')
         lines.append('━━━━━━━━━━━━━━━')
         lines.append(pick_level['warning'])
-        if final_action:
-            lines.append(f'→ {final_action}')
         lines.append('')
         lines.append('━━━━━━━━━━━━━━━')
-        lines.append('참고용이며, 투자 판단은 본인 책임이에요.')
+        lines.append('멀티팩터 순위는 종목 선별 기준이며,')
+        lines.append('포트폴리오 비중은 투자자의 판단입니다.')
         return '\n'.join(lines)
 
     # ── 결론 섹션 ──
     if not picks:
         lines.append('')
         lines.append('━━━━━━━━━━━━━━━')
-        lines.append('3일 연속 상위권을 유지한 종목이 없어요.')
-        lines.append('무리한 진입보다 관망도 전략이에요.')
+        lines.append('3일 연속 상위권 유지 종목이 없습니다.')
         lines.append('')
         lines.append('━━━━━━━━━━━━━━━')
-        lines.append('참고용이며, 투자 판단은 본인 책임이에요.')
+        lines.append('멀티팩터 순위는 종목 선별 기준이며,')
+        lines.append('포트폴리오 비중은 투자자의 판단입니다.')
         return '\n'.join(lines)
 
     n = len(picks)
     lines.append('')
     lines.append('━━━━━━━━━━━━━━━')
-    lines.append(f'🛒 <b>매수 후보 TOP {n}</b> (각 {stock_weight}%)')
+    lines.append(f'📡 <b>종합 점수 상위 {n}</b>')
     lines.append('━━━━━━━━━━━━━━━')
     for i, pick in enumerate(picks):
-        lines.append(f'<b>{i+1}. {pick["name"]}({pick["ticker"]})</b>')
+        sector = pick.get('sector', '기타')
+        lines.append(f'<b>{i+1}. {pick["name"]}({pick["ticker"]}) · {sector}</b>')
 
     # ── 선정 과정 (퍼널) ──
     meta = rankings_t0.get('metadata') or {}
@@ -346,14 +349,15 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         if len(exited) > 5:
             exited_str += f' 외 {len(exited)-5}개'
         lines.append('')
-        lines.append(f'⚠️ 이탈: {exited_str} → Watchlist 참고')
+        lines.append(f'📉 순위 이탈: {exited_str}')
 
     # ── 범례 + 면책 ──
     lines.append('')
     lines.append('━━━━━━━━━━━━━━━')
     lines.append('순위: 2일전→1일전→오늘')
     lines.append('목록 순서: 3일 가중순위')
-    lines.append('참고용이며, 투자 판단은 본인 책임이에요.')
+    lines.append('멀티팩터 순위는 종목 선별 기준이며,')
+    lines.append('포트폴리오 비중은 투자자의 판단입니다.')
 
     return '\n'.join(lines)
 
@@ -371,20 +375,19 @@ def create_ai_risk_message(credit, kospi_data, kosdaq_data, market_warnings,
         '━━━━━━━━━━━━━━━━━━━',
         '  🤖 AI 리스크 필터',
         '━━━━━━━━━━━━━━━━━━━',
-        '매수 후보의 위험 요소를 AI가 걸러냈어요.',
+        '상위 종목의 리스크 요소를 AI가 분석했어요.',
         '',
-        '📊 시장 환경',
-        f'{kospi_color} 코스피 {kospi_close:,.0f}({kospi_chg:+.2f}%) · {kosdaq_color} 코스닥 {kosdaq_close:,.0f}({kosdaq_chg:+.2f}%)',
+        '📊 시장 지수',
+        f'{kospi_color} 코스피 {kospi_close:,.0f}({kospi_chg:+.2f}%)',
+        f'{kosdaq_color} 코스닥 {kosdaq_close:,.0f}({kosdaq_chg:+.2f}%)',
+        '',
+        '📉 신용·변동성',
     ]
 
     # 신용시장 압축 표시
     credit_lines = format_credit_compact(credit)
     for cl in credit_lines:
         lines.append(cl)
-
-    # final_action
-    if final_action:
-        lines.append(f'→ {final_action}')
 
     # 이평선 경고 (있을 때만)
     if market_warnings:
@@ -409,14 +412,24 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
     """
     lines = [
         '📋 <b>Top 30 종목 현황</b>',
-        '이 목록에 있으면 보유, 빠지면 매도 검토.',
+        '상위 30종목과 순위 변동 현황입니다.',
         '✅ 3일 검증 ⏳ 2일 관찰 🆕 신규 진입',
-        '━━━━━━━━━━━━━━━',
     ]
 
     if not pipeline:
+        lines.append('━━━━━━━━━━━━━━━')
         lines.append('데이터 없음')
         return '\n'.join(lines)
+
+    # 섹터 분포
+    from collections import Counter
+    sec_counter = Counter(s.get('sector', '기타') for s in pipeline)
+    sec_parts = [f'{sec} {cnt}' for sec, cnt in sec_counter.most_common(4)]
+    others = sum(cnt for sec, cnt in sec_counter.most_common() if sec not in dict(sec_counter.most_common(4)))
+    if others > 0:
+        sec_parts.append(f'기타 {others}')
+    lines.append(' | '.join(sec_parts))
+    lines.append('━━━━━━━━━━━━━━━')
 
     # T-1, T-2 composite_rank 맵 (각 날의 순수 점수 순위)
     t1_full = {r['ticker']: r for r in rankings_t1.get('rankings', [])} if rankings_t1 else {}
@@ -453,7 +466,7 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         lines.append('━━━━━━━━━━━━━━━')
         t0_rank_map = {item['ticker']: item.get('composite_rank', item['rank']) for item in (rankings_t0 or {}).get('rankings', [])}
 
-        lines.append('📉 <b>이탈 — 매도 검토</b>')
+        lines.append('📉 <b>순위 이탈</b>')
         for e in exited:
             prev = e.get('composite_rank', e['rank'])
             cur = e.get('t0_rank') or t0_rank_map.get(e['ticker'])
@@ -464,20 +477,19 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
             else:
                 lines.append(f'{e["name"]} {prev}위→제외 ({reason})')
 
-        lines.append('보유 중이라면 매도를 검토하세요.')
-
     # ── cold start ──
     if cold_start:
         lines.append('')
         lines.append('━━━━━━━━━━━━━━━')
-        lines.append('📊 데이터 축적 중 — 3일 완료 시 매수 후보가 선정돼요.')
+        lines.append('📊 데이터 축적 중 — 3일 완료 시 상위 종목이 표시됩니다.')
 
     # ── 범례 + 면책 ──
     lines.append('')
     lines.append('━━━━━━━━━━━━━━━')
     lines.append('순위: 2일전→1일전→오늘')
     lines.append('목록 순서: 3일 가중순위')
-    lines.append('참고용이며, 투자 판단은 본인 책임이에요.')
+    lines.append('멀티팩터 순위는 종목 선별 기준이며,')
+    lines.append('포트폴리오 비중은 투자자의 판단입니다.')
 
     return '\n'.join(lines)
 
@@ -487,10 +499,32 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
 # ============================================================
 def main():
     # ============================================================
+    # TEST_MODE / --dates 인수 처리
+    # ============================================================
+    TEST_MODE = os.environ.get('TEST_MODE') == '1'
+    if TEST_MODE:
+        print("⚠️  TEST_MODE=1 — 개인봇으로만 전송합니다.")
+
+    # --dates 20260227,20260226,20260225 형태로 거래일 직접 지정 (테스트용)
+    manual_dates = None
+    for i, arg in enumerate(sys.argv[1:], 1):
+        if arg == '--dates' and i < len(sys.argv):
+            manual_dates = sys.argv[i + 1].split(',') if i + 1 <= len(sys.argv) else None
+            break
+        elif arg.startswith('--dates='):
+            manual_dates = arg.split('=', 1)[1].split(',')
+            break
+
+    # ============================================================
     # 날짜 계산 (최근 3거래일)
     # ============================================================
     TODAY = get_korea_now().strftime('%Y%m%d')
-    trading_dates = get_recent_trading_dates(3)
+
+    if manual_dates:
+        trading_dates = [d.strip() for d in manual_dates if d.strip()]
+        print(f"--dates 지정: {trading_dates}")
+    else:
+        trading_dates = get_recent_trading_dates(3)
 
     if not trading_dates:
         print("거래일을 찾을 수 없습니다.")
@@ -851,7 +885,15 @@ def main():
     msg_sizes = ', '.join(f'{len(m)}자' for m in messages)
     print(f"\n메시지 수: {len(messages)}개 ({msg_sizes})")
 
-    if IS_GITHUB_ACTIONS:
+    # TEST_MODE: 개인봇으로만 전송 (채널 절대 안 건드림)
+    if TEST_MODE:
+        target = PRIVATE_CHAT_ID or TELEGRAM_CHAT_ID
+        print(f'\n🧪 TEST_MODE — 개인봇으로만 전송 ({target[:6]}...)')
+        for i, msg in enumerate(messages):
+            results = send_telegram_long(msg, TELEGRAM_BOT_TOKEN, target)
+            codes = [str(r.status_code) for r in results]
+            print(f'  {msg_labels[i]}: {", ".join(codes)}')
+    elif IS_GITHUB_ACTIONS:
         if cold_start:
             target = PRIVATE_CHAT_ID or TELEGRAM_CHAT_ID
             print(f'\n콜드 스타트 — 채널 전송 스킵, 개인봇으로 전송 ({target[:6]}...)')
