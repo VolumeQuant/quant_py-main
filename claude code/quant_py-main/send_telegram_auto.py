@@ -288,8 +288,22 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         sector = pick.get('sector', '기타')
         lines.append(f'<b>{i+1}. {pick["name"]}({pick["ticker"]}) · {sector}</b>')
 
-    # ── 선정 과정 (퍼널) ──
+    # ── Top 5 상관관계 정보 (corr > 0.7 페어만) ──
     meta = rankings_t0.get('metadata') or {}
+    corr_pairs = meta.get('correlation_60d', {})
+    if corr_pairs and len(picks) >= 2:
+        high_corr = []
+        for i in range(len(picks)):
+            for j in range(i + 1, len(picks)):
+                key = '_'.join(sorted([picks[i]['ticker'], picks[j]['ticker']]))
+                c = corr_pairs.get(key)
+                if c is not None and c > 0.7:
+                    high_corr.append((picks[i]['name'], picks[j]['name'], c))
+        if high_corr:
+            pairs_text = ', '.join(f'{a}·{b}' for a, b, _ in high_corr)
+            lines.append(f'ℹ️ {pairs_text} 주가 상관관계 높음')
+
+    # ── 선정 과정 (퍼널) ──
     universe_count = meta.get('total_universe', 0)
     prefilter_count = meta.get('prefilter_passed', 0)
     scored_count = meta.get('scored_count', 0)

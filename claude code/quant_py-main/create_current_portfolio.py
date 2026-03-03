@@ -741,11 +741,29 @@ def main():
                     entry['price'] = int(last_price.iloc[-1])
             rankings_list.append(entry)
 
+        # 6.5단계: Top 30 상관관계 계산 (60일 수익률, 정보 표시용)
+        corr_60d = {}
+        top30_tickers = [r['ticker'] for r in rankings_list[:30]]
+        valid_tickers = [t for t in top30_tickers if t in price_df.columns]
+        if len(valid_tickers) >= 2 and len(price_df) >= 20:
+            rets = price_df[valid_tickers].tail(60).pct_change().dropna()
+            if len(rets) >= 20:
+                corr_matrix = rets.corr()
+                for i in range(len(valid_tickers)):
+                    for j in range(i + 1, len(valid_tickers)):
+                        t1, t2 = valid_tickers[i], valid_tickers[j]
+                        c = corr_matrix.iloc[i, j]
+                        if not pd.isna(c):
+                            key = '_'.join(sorted([t1, t2]))
+                            corr_60d[key] = round(float(c), 3)
+                print(f"  상관관계 계산: {len(corr_60d)}개 페어 (Top 30, 60일)")
+
         save_ranking(BASE_DATE, rankings_list, metadata={
             'total_universe': len(universe_tickers),
             'prefilter_passed': len(prefiltered) if not prefiltered.empty else 0,
             'scored_count': len(all_ranked),
             'version': '6.0',
+            'correlation_60d': corr_60d,
         })
         print(f"  일일 순위 JSON: state/ranking_{BASE_DATE}.json ({len(rankings_list)}개 종목)")
 

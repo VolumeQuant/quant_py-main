@@ -91,13 +91,22 @@ v45 롤백 시 손실된 TEST_MODE와 --dates 기능 재추가:
 
 | 파일 | 변경 |
 |------|------|
-| `send_telegram_auto.py` | 전체 메시지 스크리닝 프레이밍 전환, 섹터 표시, 팩터 fallback, TEST_MODE/--dates 복원 |
+| `send_telegram_auto.py` | 전체 메시지 스크리닝 프레이밍 전환, 섹터 표시, 팩터 fallback, 상관관계 ℹ️ 표시, TEST_MODE/--dates 복원 |
+| `create_current_portfolio.py` | 6.5단계 Top 30 상관관계 계산 → `metadata.correlation_60d` 저장 |
 | `credit_monitor.py` | `format_credit_compact()` 약어→한국어, 색상·라벨 통일, 액션 텍스트 제거 |
-| `README.md` | v46 프레이밍 반영, 텔레그램 메시지 예시 갱신 |
+| `README.md` | v46 프레이밍 + 상관관계 정보 반영 |
 
-#### v45 상관관계 분산 — 롤백
+#### 상관관계 정보 표시 (선정 로직 변경 없음)
 
-v45에서 구현한 Top 5 상관관계 기반 분산(direct-pair greedy, corr > 0.7 스킵)은 **롤백**됨. `create_current_portfolio.py`의 6.5단계 상관관계 계산 코드와 `send_telegram_auto.py`의 분산 선정 로직 제거. 백업은 `backup_v44/` 디렉토리에 보관.
+v45에서 구현한 상관관계 기반 **선정 분산**(direct-pair greedy)은 롤백됨. 대신 상관관계를 **정보로만** 표시:
+- `create_current_portfolio.py` 6.5단계: Top 30의 60일 수익률 상관관계 계산 → `metadata.correlation_60d`에 저장
+- `send_telegram_auto.py`: Top 5 중 corr > 0.7인 페어를 `ℹ️ SK하이닉스·삼성전자 주가 상관관계 높음`으로 표시
+- 순위 선정 로직은 순수 점수 그대로 — 판단은 투자자에게
+
+| 파일 | 변경 |
+|------|------|
+| `create_current_portfolio.py` | 6.5단계 상관관계 계산 복원 (metadata 저장만, 선정 로직 미변경) |
+| `send_telegram_auto.py` | Top 5 상관관계 ℹ️ 정보 라인 추가 |
 
 ---
 
