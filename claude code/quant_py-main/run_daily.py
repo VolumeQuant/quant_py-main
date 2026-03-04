@@ -37,6 +37,8 @@ def run_script(name: str, timeout: int, logfile):
         capture_output=True,
         text=True,
         timeout=timeout,
+        encoding="utf-8",
+        errors="replace",
         env={**os.environ, "PYTHONIOENCODING": "utf-8"},
     )
     if result.stdout:
@@ -98,6 +100,12 @@ def git_push_state(logfile):
 def main():
     today = datetime.now().strftime("%Y%m%d")
     log_path = LOG_DIR / f"daily_{today}.log"
+    lock_file = LOG_DIR / f"daily_{today}.lock"
+
+    # 중복 실행 방지
+    if lock_file.exists():
+        print(f"[스킵] 오늘({today}) 이미 실행 완료됨 ({lock_file})")
+        return
 
     with open(log_path, "a", encoding="utf-8") as logfile:
         log("=" * 50, logfile)
@@ -134,6 +142,8 @@ def main():
         except Exception as e:
             log(f"git push 오류: {e}", logfile)
 
+        # 완료 lock 생성
+        lock_file.write_text(datetime.now().isoformat(), encoding="utf-8")
         log("파이프라인 완료", logfile)
 
 
