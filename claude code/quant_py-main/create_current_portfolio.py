@@ -143,12 +143,12 @@ def apply_ma120_filter(price_df: pd.DataFrame, universe_tickers: list) -> list:
         ma120 = prices.tail(120).mean()
         current_price = prices.iloc[-1]
 
-        if current_price >= ma120 * 0.95:
+        if current_price >= ma120:
             passed.append(ticker)
         else:
             failed_tickers.append(ticker)
 
-    print(f"  MA120 필터: {len(passed)}개 통과 / {len(failed_tickers)}개 제외 (현재가 < MA120×0.95)")
+    print(f"  MA120 필터: {len(passed)}개 통과 / {len(failed_tickers)}개 제외 (현재가 < MA120)")
     return passed, failed_tickers
 
 
