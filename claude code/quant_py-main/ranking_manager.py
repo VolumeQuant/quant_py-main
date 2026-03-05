@@ -180,7 +180,7 @@ def _compute_exit_reason(t0_item: dict, t1_item: dict) -> str:
     T-0(오늘)과 T-1(어제) 팩터 점수를 비교해서
     가장 크게 하락한 팩터를 사유로 반환.
 
-    Returns: '모멘텀↓', '가치↓', '품질↓', '성장↓', '순위경쟁' 등
+    Returns: '모멘텀↓', '가치↓', '품질↓', '성장↓', '순위밀림' 등
     """
     FACTOR_MAP = {
         'value_s':    '가치',
@@ -204,7 +204,7 @@ def _compute_exit_reason(t0_item: dict, t1_item: dict) -> str:
         if worst_delta < -0.1:
             return f'{worst_factor}↓'
 
-    return '순위경쟁'
+    return '순위밀림'
 
 
 def compute_rank_driver(t0_item: dict, t_ref_item: dict,
@@ -281,6 +281,9 @@ def get_daily_changes(
 
     # 이탈: 어제 Top 30에 있었는데 오늘 가중 Top 30에 없는 종목
     exited_tickers = yesterday_tickers - today_tickers
+    meta = rankings_t0.get('metadata') or {}
+    ma120_failed = set(meta.get('ma120_failed', []))
+    has_ma120_data = 'ma120_failed' in meta
     exited = []
     for t in exited_tickers:
         item = t1_map[t].copy()
@@ -288,8 +291,15 @@ def get_daily_changes(
         if t0_item:
             item['exit_reason'] = _compute_exit_reason(t0_item, item)
             item['t0_rank'] = t0_item.get('composite_rank')
+        elif has_ma120_data and t in ma120_failed:
+            item['exit_reason'] = '120일선하락'
+            item['t0_rank'] = None
+        elif has_ma120_data and t not in ma120_failed:
+            item['exit_reason'] = '거래부족'
+            item['t0_rank'] = None
         else:
-            item['exit_reason'] = '필터탈락'
+            # ma120_failed 데이터 없음 — ranking에 아예 없으면 120일선 탈락이 대부분
+            item['exit_reason'] = '120일선하락'
             item['t0_rank'] = None
         exited.append(item)
 
@@ -337,12 +347,14 @@ def get_stock_status(rankings_t0, rankings_t1=None, rankings_t2=None, top_n=30):
         entry = item.copy()
         rank_t0 = item.get('composite_rank', item['rank'])
 
+        # 과거 데이터 없으면 50위로 간주 (신규 종목 페널티)
+        DEFAULT_MISSING_RANK = 50
         if rankings_t1 and rankings_t2:
-            rank_t1 = all_t1[ticker].get('composite_rank', all_t1[ticker]['rank']) if ticker in all_t1 else rank_t0
-            rank_t2 = all_t2[ticker].get('composite_rank', all_t2[ticker]['rank']) if ticker in all_t2 else rank_t0
+            rank_t1 = all_t1[ticker].get('composite_rank', all_t1[ticker]['rank']) if ticker in all_t1 else DEFAULT_MISSING_RANK
+            rank_t2 = all_t2[ticker].get('composite_rank', all_t2[ticker]['rank']) if ticker in all_t2 else DEFAULT_MISSING_RANK
             weighted = rank_t0 * 0.5 + rank_t1 * 0.3 + rank_t2 * 0.2
         elif rankings_t1:
-            rank_t1 = all_t1[ticker].get('composite_rank', all_t1[ticker]['rank']) if ticker in all_t1 else rank_t0
+            rank_t1 = all_t1[ticker].get('composite_rank', all_t1[ticker]['rank']) if ticker in all_t1 else DEFAULT_MISSING_RANK
             weighted = rank_t0 * 0.6 + rank_t1 * 0.4
         else:
             weighted = float(rank_t0)

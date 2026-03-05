@@ -639,8 +639,8 @@ def format_credit_compact(credit: dict) -> list:
         v = vix['vix_current']
         pct = vix['vix_pct']
         slope = '↑' if vix['vix_slope_dir'] == 'rising' else ('↓' if vix['vix_slope_dir'] == 'falling' else '')
-        icon = '🟢' if pct < 67 else ('🟡' if pct < 80 else '🔴')
-        ctx = '안정' if pct < 67 else ('주의' if pct < 80 else ('경고' if pct < 90 else '위험'))
+        icon = '🟢' if pct < 67 else ('🟡' if pct < 90 else '🔴')
+        ctx = '안정' if pct < 67 else ('주의' if pct < 90 else '경고')
         lines.append(f'{icon} 변동성지수(VIX) {v:.1f}{slope} — {ctx}')
 
     return lines
