@@ -347,12 +347,14 @@ def get_stock_status(rankings_t0, rankings_t1=None, rankings_t2=None, top_n=30):
         entry = item.copy()
         rank_t0 = item.get('composite_rank', item['rank'])
 
+        # 과거 데이터 없으면 50위로 간주 (신규 종목 페널티)
+        DEFAULT_MISSING_RANK = 50
         if rankings_t1 and rankings_t2:
-            rank_t1 = all_t1[ticker].get('composite_rank', all_t1[ticker]['rank']) if ticker in all_t1 else rank_t0
-            rank_t2 = all_t2[ticker].get('composite_rank', all_t2[ticker]['rank']) if ticker in all_t2 else rank_t0
+            rank_t1 = all_t1[ticker].get('composite_rank', all_t1[ticker]['rank']) if ticker in all_t1 else DEFAULT_MISSING_RANK
+            rank_t2 = all_t2[ticker].get('composite_rank', all_t2[ticker]['rank']) if ticker in all_t2 else DEFAULT_MISSING_RANK
             weighted = rank_t0 * 0.5 + rank_t1 * 0.3 + rank_t2 * 0.2
         elif rankings_t1:
-            rank_t1 = all_t1[ticker].get('composite_rank', all_t1[ticker]['rank']) if ticker in all_t1 else rank_t0
+            rank_t1 = all_t1[ticker].get('composite_rank', all_t1[ticker]['rank']) if ticker in all_t1 else DEFAULT_MISSING_RANK
             weighted = rank_t0 * 0.6 + rank_t1 * 0.4
         else:
             weighted = float(rank_t0)
