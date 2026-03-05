@@ -180,7 +180,7 @@ def _compute_exit_reason(t0_item: dict, t1_item: dict) -> str:
     T-0(오늘)과 T-1(어제) 팩터 점수를 비교해서
     가장 크게 하락한 팩터를 사유로 반환.
 
-    Returns: '모멘텀↓', '가치↓', '품질↓', '성장↓', '순위경쟁' 등
+    Returns: '모멘텀↓', '가치↓', '품질↓', '성장↓', '순위밀림' 등
     """
     FACTOR_MAP = {
         'value_s':    '가치',
@@ -204,7 +204,7 @@ def _compute_exit_reason(t0_item: dict, t1_item: dict) -> str:
         if worst_delta < -0.1:
             return f'{worst_factor}↓'
 
-    return '순위경쟁'
+    return '순위밀림'
 
 
 def compute_rank_driver(t0_item: dict, t_ref_item: dict,
@@ -281,7 +281,9 @@ def get_daily_changes(
 
     # 이탈: 어제 Top 30에 있었는데 오늘 가중 Top 30에 없는 종목
     exited_tickers = yesterday_tickers - today_tickers
-    ma120_failed = set((rankings_t0.get('metadata') or {}).get('ma120_failed', []))
+    meta = rankings_t0.get('metadata') or {}
+    ma120_failed = set(meta.get('ma120_failed', []))
+    has_ma120_data = 'ma120_failed' in meta
     exited = []
     for t in exited_tickers:
         item = t1_map[t].copy()
@@ -289,11 +291,15 @@ def get_daily_changes(
         if t0_item:
             item['exit_reason'] = _compute_exit_reason(t0_item, item)
             item['t0_rank'] = t0_item.get('composite_rank')
-        elif t in ma120_failed:
-            item['exit_reason'] = 'MA120↓'
+        elif has_ma120_data and t in ma120_failed:
+            item['exit_reason'] = '120일선하락'
+            item['t0_rank'] = None
+        elif has_ma120_data and t not in ma120_failed:
+            item['exit_reason'] = '거래부족'
             item['t0_rank'] = None
         else:
-            item['exit_reason'] = '유니버스제외'
+            # ma120_failed 데이터 없음 — ranking에 아예 없으면 120일선 탈락이 대부분
+            item['exit_reason'] = '120일선하락'
             item['t0_rank'] = None
         exited.append(item)
 
