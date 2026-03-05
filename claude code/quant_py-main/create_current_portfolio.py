@@ -130,7 +130,7 @@ def apply_ma120_filter(price_df: pd.DataFrame, universe_tickers: list) -> list:
         return universe_tickers
 
     passed = []
-    failed = 0
+    failed_tickers = []
 
     for ticker in universe_tickers:
         if ticker not in price_df.columns:
@@ -146,10 +146,10 @@ def apply_ma120_filter(price_df: pd.DataFrame, universe_tickers: list) -> list:
         if current_price >= ma120 * 0.95:
             passed.append(ticker)
         else:
-            failed += 1
+            failed_tickers.append(ticker)
 
-    print(f"  MA120 필터: {len(passed)}개 통과 / {failed}개 제외 (현재가 < MA120×0.95)")
-    return passed
+    print(f"  MA120 필터: {len(passed)}개 통과 / {len(failed_tickers)}개 제외 (현재가 < MA120×0.95)")
+    return passed, failed_tickers
 
 
 def collect_consensus_data(
@@ -617,8 +617,9 @@ def main():
     # 4.5단계: MA120 추세 필터 (가치 함정 원천 차단, 5% 버퍼)
     # =========================================================================
     print(f"\n[4.5단계] MA120 추세 필터 (현재가 < MA120×0.95 종목 제외)")
+    ma120_failed = []
     if not price_df.empty and not magic_df.empty:
-        ma120_tickers = apply_ma120_filter(price_df, magic_df['종목코드'].tolist())
+        ma120_tickers, ma120_failed = apply_ma120_filter(price_df, magic_df['종목코드'].tolist())
         before_count = len(magic_df)
         magic_df = magic_df[magic_df['종목코드'].isin(ma120_tickers)].copy()
         print(f"  MA120 필터 후: {before_count}개 → {len(magic_df)}개")
@@ -764,6 +765,7 @@ def main():
             'scored_count': len(all_ranked),
             'version': '6.0',
             'correlation_60d': corr_60d,
+            'ma120_failed': ma120_failed,
         })
         print(f"  일일 순위 JSON: state/ranking_{BASE_DATE}.json ({len(rankings_list)}개 종목)")
 

@@ -108,6 +108,22 @@ v45에서 구현한 상관관계 기반 **선정 분산**(direct-pair greedy)은
 | `create_current_portfolio.py` | 6.5단계 상관관계 계산 복원 (metadata 저장만, 선정 로직 미변경) |
 | `send_telegram_auto.py` | Top 5 상관관계 ℹ️ 정보 라인 추가 |
 
+#### 이탈 사유 구체화
+
+기존 "필터탈락" 일괄 표시 → 구체적 사유 분류:
+
+| 사유 | 조건 | 예시 |
+|------|------|------|
+| `MA120↓` | 현재가 < MA120×0.95 (추세 하락) | 폭락장에서 이평선 이탈 |
+| `유니버스제외` | 시총/거래대금 미달 | 소형주 전환 |
+| `가치↓`/`모멘텀↓` 등 | 팩터 점수 하락 (T-0 vs T-1) | 실적 악화, 주가 급등 |
+| `순위경쟁` | 팩터 변화 미미, 다른 종목에 밀림 | 순위 경합 지역 |
+
+| 파일 | 변경 |
+|------|------|
+| `create_current_portfolio.py` | `apply_ma120_filter` → `(passed, failed_tickers)` 튜플 반환, `metadata.ma120_failed` 저장 |
+| `ranking_manager.py` | `get_daily_changes()` — ma120_failed 목록 참조하여 이탈 사유 분류 |
+
 ---
 
 ## 핵심 변경사항 (v44 — PER/PBR 하드 필터 제거 + 리스크 재정렬 제거 + 궤적 composite_rank)

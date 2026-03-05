@@ -281,6 +281,7 @@ def get_daily_changes(
 
     # 이탈: 어제 Top 30에 있었는데 오늘 가중 Top 30에 없는 종목
     exited_tickers = yesterday_tickers - today_tickers
+    ma120_failed = set((rankings_t0.get('metadata') or {}).get('ma120_failed', []))
     exited = []
     for t in exited_tickers:
         item = t1_map[t].copy()
@@ -288,8 +289,11 @@ def get_daily_changes(
         if t0_item:
             item['exit_reason'] = _compute_exit_reason(t0_item, item)
             item['t0_rank'] = t0_item.get('composite_rank')
+        elif t in ma120_failed:
+            item['exit_reason'] = 'MA120↓'
+            item['t0_rank'] = None
         else:
-            item['exit_reason'] = '필터탈락'
+            item['exit_reason'] = '유니버스제외'
             item['t0_rank'] = None
         exited.append(item)
 
