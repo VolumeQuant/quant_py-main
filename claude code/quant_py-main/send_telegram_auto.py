@@ -181,11 +181,7 @@ def _calc_market_warnings(kospi_df, kosdaq_df):
             if current < ma60:
                 signals.append("60일선↓")
 
-        if ma5 is not None and ma20 is not None:
-            if ma5 < ma20:
-                signals.append("단기하락전환")
-
-        down_count = sum(1 for s in signals if '↓' in s or 'DC' in s)
+        down_count = sum(1 for s in signals if '↓' in s)
 
         if down_count == 0:
             continue
@@ -325,7 +321,8 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         lines.append(f'{universe_count:,}종목 중 스크리닝 상위 {prefilter_count}종목')
     else:
         lines.append('국내 전 종목 스크리닝')
-    lines.append('→ 가치·퀄리티·성장·모멘텀 채점 → 상위 30(3일 평균)')
+    lines.append('→ 가치·퀄리티·성장·모멘텀 채점')
+    lines.append('→ 상위 30(3일 평균)')
     lines.append(f'→ 3일 검증({v_count}종목) → 최종 {n}종목')
 
     # ── 종목별 근거 (3줄) ──
@@ -534,9 +531,9 @@ def main():
     # ============================================================
     # TEST_MODE / --dates 인수 처리
     # ============================================================
-    TEST_MODE = os.environ.get('TEST_MODE') == '1'
+    TEST_MODE = os.environ.get('TEST_MODE') == '1' or '--private-only' in sys.argv
     if TEST_MODE:
-        print("⚠️  TEST_MODE=1 — 개인봇으로만 전송합니다.")
+        print("⚠️  TEST_MODE — 개인봇으로만 전송합니다.")
 
     # --dates 20260227,20260226,20260225 형태로 거래일 직접 지정 (테스트용)
     manual_dates = None

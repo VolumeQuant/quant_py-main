@@ -332,12 +332,16 @@ class MultiFactorStrategy:
         data['성장_점수'] = data[growth_factors].mean(axis=1).fillna(0.0) if growth_factors else 0
         data['모멘텀_점수'] = data[momentum_factors].mean(axis=1) if momentum_factors else 0
 
-        # 5.5. 카테고리 점수 재정규화 — 분산 통일 후 비중이 실제 기여도를 반영
+        # 5.5. 카테고리 점수 MinMax 정규화 [-1, 1] — 극단값 억제, 팩터 간 동일 범위
         for col in ['밸류_점수', '퀄리티_점수', '성장_점수', '모멘텀_점수']:
-            if col in data.columns and data[col].std() > 0:
-                before_std = data[col].std()
-                data[col] = (data[col] - data[col].mean()) / data[col].std()
-                print(f"  {col}: std {before_std:.3f} → 1.000 (재정규화)")
+            if col in data.columns:
+                col_min = data[col].min()
+                col_max = data[col].max()
+                if col_max > col_min:
+                    data[col] = 2 * (data[col] - col_min) / (col_max - col_min) - 1
+                    print(f"  {col}: [{col_min:.3f}, {col_max:.3f}] → [-1, 1] (MinMax)")
+                else:
+                    data[col] = 0.0
 
         # 최종 점수 (V25 + Q25 + G30 + M20)
         # 모멘텀 데이터가 없는 종목은 제외
@@ -352,7 +356,7 @@ class MultiFactorStrategy:
                                     data['퀄리티_점수'] * 0.25 +
                                     data['성장_점수'] * 0.30 +
                                     data['모멘텀_점수'] * 0.20)
-            print("멀티팩터 가중치: V25 + Q25 + G30 + M20 (재정규화)")
+            print("멀티팩터 가중치: V25 + Q25 + G30 + M20 (MinMax[-1,1])")
         else:
             # 모멘텀 팩터 자체가 없는 경우 (price_df가 None)
             data['멀티팩터_점수'] = (data['밸류_점수'] * 0.5 +

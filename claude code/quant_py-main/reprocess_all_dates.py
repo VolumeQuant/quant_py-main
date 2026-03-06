@@ -8,8 +8,11 @@
 
 import subprocess
 import sys
+import io
 import json
 from pathlib import Path
+
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
 STATE_DIR = Path(__file__).parent / 'state'
 PYTHON = sys.executable
