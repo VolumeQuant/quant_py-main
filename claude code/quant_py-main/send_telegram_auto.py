@@ -183,7 +183,7 @@ def _calc_market_warnings(kospi_df, kosdaq_df):
 
         if ma5 is not None and ma20 is not None:
             if ma5 < ma20:
-                signals.append("단기DC")
+                signals.append("단기하락전환")
 
         down_count = sum(1 for s in signals if '↓' in s or 'DC' in s)
 
@@ -264,9 +264,11 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         lines.append(pick_level['warning'])
         lines.append('')
         lines.append('━━━━━━━━━━━━━━━')
-        lines.append('💡 분할매수 권장: 한 번에 전량 매수보다')
-        lines.append('2~3회 나눠서 조정 시 진입이 유리합니다.')
-        lines.append('멀티팩터 순위는 종목 선별 기준이며,')
+        lines.append('💡 분할매수 권장')
+        lines.append('한 번에 전량 매수보다 2~3회 나눠서')
+        lines.append('조정 시 진입이 유리합니다.')
+        lines.append('')
+        lines.append('⚖️ 멀티팩터 순위는 종목 선별 기준이며,')
         lines.append('포트폴리오 비중은 투자자의 판단입니다.')
         return '\n'.join(lines)
 
@@ -277,9 +279,11 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         lines.append('3일 연속 상위권 유지 종목이 없습니다.')
         lines.append('')
         lines.append('━━━━━━━━━━━━━━━')
-        lines.append('💡 분할매수 권장: 한 번에 전량 매수보다')
-        lines.append('2~3회 나눠서 조정 시 진입이 유리합니다.')
-        lines.append('멀티팩터 순위는 종목 선별 기준이며,')
+        lines.append('💡 분할매수 권장')
+        lines.append('한 번에 전량 매수보다 2~3회 나눠서')
+        lines.append('조정 시 진입이 유리합니다.')
+        lines.append('')
+        lines.append('⚖️ 멀티팩터 순위는 종목 선별 기준이며,')
         lines.append('포트폴리오 비중은 투자자의 판단입니다.')
         return '\n'.join(lines)
 
@@ -321,7 +325,7 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         lines.append(f'{universe_count:,}종목 중 스크리닝 상위 {prefilter_count}종목')
     else:
         lines.append('국내 전 종목 스크리닝')
-    lines.append('→ 멀티팩터 채점 → 상위 30(3일 평균)')
+    lines.append('→ 가치·퀄리티·성장·모멘텀 채점 → 상위 30(3일 평균)')
     lines.append(f'→ 3일 검증({v_count}종목) → 최종 {n}종목')
 
     # ── 종목별 근거 (3줄) ──
@@ -372,14 +376,16 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         lines.append('')
         lines.append(f'📉 순위 이탈: {exited_str}')
 
-    # ── 범례 + 면책 ──
+    # ── 범례 + 면책 (Signal) ──
     lines.append('')
     lines.append('━━━━━━━━━━━━━━━')
-    lines.append('순위: 2일전→1일전→오늘')
-    lines.append('목록 순서: 3일 가중순위')
-    lines.append('💡 분할매수 권장: 한 번에 전량 매수보다')
-    lines.append('2~3회 나눠서 조정 시 진입이 유리합니다.')
-    lines.append('멀티팩터 순위는 종목 선별 기준이며,')
+    lines.append('📐 순위: 3일 가중순위 (2일전→1일전→오늘)')
+    lines.append('')
+    lines.append('💡 분할매수 권장')
+    lines.append('한 번에 전량 매수보다 2~3회 나눠서')
+    lines.append('조정 시 진입이 유리합니다.')
+    lines.append('')
+    lines.append('⚖️ 멀티팩터 순위는 종목 선별 기준이며,')
     lines.append('포트폴리오 비중은 투자자의 판단입니다.')
 
     return '\n'.join(lines)
@@ -506,14 +512,16 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         lines.append('━━━━━━━━━━━━━━━')
         lines.append('📊 데이터 축적 중 — 3일 완료 시 상위 종목이 표시됩니다.')
 
-    # ── 범례 + 면책 ──
+    # ── 범례 + 면책 (Watchlist) ──
     lines.append('')
     lines.append('━━━━━━━━━━━━━━━')
-    lines.append('순위: 2일전→1일전→오늘')
-    lines.append('목록 순서: 3일 가중순위')
-    lines.append('💡 분할매수 권장: 한 번에 전량 매수보다')
-    lines.append('2~3회 나눠서 조정 시 진입이 유리합니다.')
-    lines.append('멀티팩터 순위는 종목 선별 기준이며,')
+    lines.append('📐 Top 30 순위: 3일 가중순위 (2일전→1일전→오늘)')
+    lines.append('')
+    lines.append('💡 분할매수 권장')
+    lines.append('한 번에 전량 매수보다 2~3회 나눠서')
+    lines.append('조정 시 진입이 유리합니다.')
+    lines.append('')
+    lines.append('⚖️ 멀티팩터 순위는 종목 선별 기준이며,')
     lines.append('포트폴리오 비중은 투자자의 판단입니다.')
 
     return '\n'.join(lines)

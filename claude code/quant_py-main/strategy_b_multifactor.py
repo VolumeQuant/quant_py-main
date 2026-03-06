@@ -278,17 +278,10 @@ class MultiFactorStrategy:
             data['PBR_z'] = -self.calculate_zscore_by_sector(data, 'PBR')
             value_factors.append('PBR_z')
 
-        if 'PCR' in data.columns:
-            data['PCR_z'] = -self.calculate_zscore_by_sector(data, 'PCR')
-            value_factors.append('PCR_z')
-
-        if 'PSR' in data.columns:
-            data['PSR_z'] = -self.calculate_zscore_by_sector(data, 'PSR')
-            value_factors.append('PSR_z')
-
-        if '배당수익률' in data.columns:
-            data['배당_z'] = self.calculate_zscore_by_sector(data, '배당수익률')
-            value_factors.append('배당_z')
+        # PCR, PSR, 배당수익률 제거 (v47: PER+PBR만 사용)
+        # - PCR: Quality의 CFO와 중복
+        # - PSR: PER와 높은 상관관계
+        # - 배당수익률: 성장주 역차별 (anti-growth bias)
 
         # 퀄리티 팩터 (높을수록 좋음)
         if 'ROE' in data.columns:
@@ -322,6 +315,17 @@ class MultiFactorStrategy:
         else:
             momentum_factors = []
 
+        # 전체 z-score ±3σ 클리핑 (극단값이 특정 팩터를 지배하는 것 방지)
+        all_z_cols = value_factors + quality_factors + growth_factors + momentum_factors
+        n_total_clipped = 0
+        for col in all_z_cols:
+            if col in data.columns:
+                before = data[col].copy()
+                data[col] = data[col].clip(-3, 3)
+                n_total_clipped += (before != data[col]).sum()
+        if n_total_clipped > 0:
+            print(f"z-score ±3σ 클리핑: 총 {n_total_clipped}건")
+
         # 5. 종합 점수 계산 (각 팩터 카테고리의 평균)
         data['밸류_점수'] = data[value_factors].mean(axis=1) if value_factors else 0
         data['퀄리티_점수'] = data[quality_factors].mean(axis=1) if quality_factors else 0
@@ -335,7 +339,7 @@ class MultiFactorStrategy:
                 data[col] = (data[col] - data[col].mean()) / data[col].std()
                 print(f"  {col}: std {before_std:.3f} → 1.000 (재정규화)")
 
-        # 최종 점수 (균등 가중: V25 + Q25 + G25 + M25)
+        # 최종 점수 (V30 + Q25 + G30 + M15)
         # 모멘텀 데이터가 없는 종목은 제외
         if momentum_factors:
             before_count = len(data)
@@ -344,11 +348,11 @@ class MultiFactorStrategy:
             if excluded > 0:
                 print(f"모멘텀 데이터 없는 종목 제외: {excluded}개 → {len(data)}개 남음")
 
-            data['멀티팩터_점수'] = (data['밸류_점수'] * 0.25 +
+            data['멀티팩터_점수'] = (data['밸류_점수'] * 0.30 +
                                     data['퀄리티_점수'] * 0.25 +
-                                    data['성장_점수'] * 0.25 +
-                                    data['모멘텀_점수'] * 0.25)
-            print("멀티팩터 가중치: V25 + Q25 + G25 + M25 (재정규화)")
+                                    data['성장_점수'] * 0.30 +
+                                    data['모멘텀_점수'] * 0.15)
+            print("멀티팩터 가중치: V30 + Q25 + G30 + M15 (재정규화)")
         else:
             # 모멘텀 팩터 자체가 없는 경우 (price_df가 None)
             data['멀티팩터_점수'] = (data['밸류_점수'] * 0.5 +
