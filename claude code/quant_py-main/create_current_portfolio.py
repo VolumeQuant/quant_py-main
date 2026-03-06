@@ -43,7 +43,7 @@ try:
         PREFILTER_N, N_STOCKS, SKIP_PREFILTER
     )
 except ImportError:
-    MIN_MARKET_CAP = 3000
+    MIN_MARKET_CAP = 1000
     MAX_CONCURRENT_REQUESTS = 10
     PYKRX_WORKERS = 10
     CACHE_DIR = "data_cache"

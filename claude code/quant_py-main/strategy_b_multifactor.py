@@ -115,16 +115,23 @@ class MultiFactorStrategy:
                 / data.loc[mask, 'PER'] * 100
             )
             eps_count = data['EPS개선도'].notna().sum()
-            print(f"EPS개선도 계산: {eps_count}/{len(data)}개 종목 (Forward PER 기반)")
+            # FWD PER 없는 종목 = 애널리스트 커버리지 없음 → 중앙값으로 neutral 처리
+            eps_median = data['EPS개선도'].median()
+            fill_count = data['EPS개선도'].isna().sum()
+            if fill_count > 0 and not np.isnan(eps_median):
+                data['EPS개선도'] = data['EPS개선도'].fillna(eps_median)
+            print(f"EPS개선도 계산: {eps_count}/{len(data)}개 종목 (Forward PER 기반, {fill_count}개 중앙값 대체)")
 
         return data
 
     def calculate_momentum(self, data, price_df):
         """
-        모멘텀 팩터 계산 — 리스크 조정 모멘텀 (v5.0)
+        모멘텀 팩터 계산 — 리스크 조정 모멘텀 (v6.0)
 
-        Score = (12M수익률 - 1M수익률) / 12M변동성(연환산)
-        - 12M수익률 > 0인 종목만 산정 (하락 추세 제외)
+        Score = 6M수익률 / 6M변동성(연환산)
+        - 6개월 기준으로 브레이크아웃 초기 포착
+        - 1M 차감 없음 (최근 급등 종목 감점 방지)
+        - MA120 필터가 하락 추세를 이미 걸러줌
         - 변동성 하한선 15% (저변동 종목 점수 폭발 방지)
 
         Args:
@@ -134,8 +141,7 @@ class MultiFactorStrategy:
         Returns:
             data: 모멘텀 팩터가 추가된 데이터프레임
         """
-        lookback_days = 12 * 21  # 12개월 (약 252 거래일)
-        skip_days = 1 * 21  # 1개월 (약 21 거래일)
+        lookback_days = 6 * 21  # 6개월 (약 126 거래일)
         VOL_FLOOR = 15.0  # 연환산 변동성 하한선 (%)
 
         if price_df is None or price_df.empty:
@@ -143,16 +149,16 @@ class MultiFactorStrategy:
             data['모멘텀'] = np.nan
             return data
 
-        if len(price_df) < lookback_days + skip_days:
-            print(f"경고: 가격 데이터가 부족합니다. (현재: {len(price_df)}일, 필요: {lookback_days + skip_days}일)")
+        min_required = lookback_days + 1
+
+        if len(price_df) < min_required:
+            print(f"경고: 가격 데이터가 부족합니다. (현재: {len(price_df)}일, 필요: {min_required}일)")
             data['모멘텀'] = np.nan
             return data
 
         # 리스크 조정 모멘텀 계산
         momentum_dict = {}
         matched_count = 0
-        excluded_negative = 0
-        min_required = lookback_days + skip_days + 1
 
         for ticker in data['종목코드']:
             if ticker in price_df.columns:
@@ -162,41 +168,32 @@ class MultiFactorStrategy:
                     continue
 
                 try:
-                    # 12개월 수익률 (전체)
-                    price_12m_ago = prices.iloc[-min_required]
+                    # 6개월 수익률
+                    price_6m_ago = prices.iloc[-min_required]
                     price_current = prices.iloc[-1]
 
-                    if price_12m_ago <= 0:
+                    if price_6m_ago <= 0:
                         continue
 
-                    ret_12m = (price_current / price_12m_ago - 1) * 100
+                    ret_6m = (price_current / price_6m_ago - 1) * 100
 
-                    # 12M 수익률 <= 0이면 제외 (하락 추세)
-                    if ret_12m <= 0:
-                        excluded_negative += 1
-                        continue
-
-                    # 1개월 수익률
-                    price_1m_ago = prices.iloc[-(skip_days + 1)]
-                    ret_1m = (price_current / price_1m_ago - 1) * 100 if price_1m_ago > 0 else 0
-
-                    # 12개월 변동성 (일간 수익률 표준편차 → 연환산)
+                    # 6개월 변동성 (일간 수익률 표준편차 → 연환산)
                     daily_returns = prices.iloc[-min_required:].pct_change().dropna()
                     annual_vol = daily_returns.std() * np.sqrt(252) * 100  # %
 
                     # 변동성 하한선 적용
                     annual_vol = max(annual_vol, VOL_FLOOR)
 
-                    # 리스크 조정 모멘텀 = (12M - 1M) / Vol (단기 반전 보호)
-                    momentum = (ret_12m - ret_1m) / annual_vol
+                    # 리스크 조정 모멘텀 = 6M수익률 / Vol
+                    momentum = ret_6m / annual_vol
                     momentum_dict[ticker] = momentum
                     matched_count += 1
                 except (IndexError, KeyError):
                     continue
 
         data['모멘텀'] = data['종목코드'].map(momentum_dict)
-        print(f"모멘텀 계산 완료: {matched_count}/{len(data)}개 매칭 (12M≤0 제외: {excluded_negative}개)")
-        print(f"  공식: (12M-1M)수익률 / 변동성(연환산, floor={VOL_FLOOR}%)")
+        print(f"모멘텀 계산 완료: {matched_count}/{len(data)}개 매칭")
+        print(f"  공식: 6M수익률 / 변동성(연환산, floor={VOL_FLOOR}%)")
 
         return data
 
