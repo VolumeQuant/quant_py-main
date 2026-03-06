@@ -40,7 +40,7 @@ try:
     from config import (
         MIN_MARKET_CAP,
         MAX_CONCURRENT_REQUESTS, PYKRX_WORKERS, CACHE_DIR,
-        PREFILTER_N, N_STOCKS
+        PREFILTER_N, N_STOCKS, SKIP_PREFILTER
     )
 except ImportError:
     MIN_MARKET_CAP = 3000
@@ -49,6 +49,7 @@ except ImportError:
     CACHE_DIR = "data_cache"
     PREFILTER_N = 200
     N_STOCKS = 30
+    SKIP_PREFILTER = True
 
 # KRX 인증 (2026-02-27~ 로그인 필수)
 import krx_auth
@@ -430,7 +431,10 @@ def generate_report(
 """
 
     if not prefiltered.empty and '종목명' in prefiltered.columns:
-        report += f"- 상위 10종목:\n{prefiltered.head(10)[['종목코드', '종목명', '마법공식_순위']].to_string()}\n"
+        if '마법공식_순위' in prefiltered.columns:
+            report += f"- 상위 10종목:\n{prefiltered.head(10)[['종목코드', '종목명', '마법공식_순위']].to_string()}\n"
+        else:
+            report += f"- 전체 {len(prefiltered)}개 종목 (사전필터 스킵)\n"
 
     report += f"""
 [최종 포트폴리오 - 멀티팩터 상위 {N_STOCKS}개]
@@ -629,7 +633,16 @@ def main():
     # =========================================================================
     # 5단계: FnGuide 컨센서스 수집 (Forward PER)
     # =========================================================================
-    prefiltered = run_strategy_a_prefilter(magic_df, universe_df, error_tracker)
+    if SKIP_PREFILTER:
+        # 사전필터 건너뜀 — MA120 통과한 전체 종목 멀티팩터 채점
+        prefiltered = magic_df.merge(
+            universe_df[['시가총액', '종목명']],
+            left_on='종목코드', right_index=True, how='left'
+        )
+        prefiltered['시가총액'] = prefiltered['시가총액'] / 100_000_000
+        print(f"\n[전략 A] 사전 필터 스킵 — 전체 {len(prefiltered)}개 종목 멀티팩터 채점")
+    else:
+        prefiltered = run_strategy_a_prefilter(magic_df, universe_df, error_tracker)
 
     consensus_df = pd.DataFrame()
     revenue_growth_df = pd.DataFrame()
