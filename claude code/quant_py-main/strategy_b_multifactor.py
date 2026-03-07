@@ -126,37 +126,29 @@ class MultiFactorStrategy:
 
     def calculate_momentum(self, data, price_df):
         """
-        모멘텀 팩터 계산 — 리스크 조정 모멘텀 (v6.0)
+        모멘텀 팩터 계산 — 리스크 조정 12M-1M 모멘텀
 
-        Score = 6M수익률 / 6M변동성(연환산)
-        - 6개월 기준으로 브레이크아웃 초기 포착
-        - 1M 차감 없음 (최근 급등 종목 감점 방지)
-        - MA120 필터가 하락 추세를 이미 걸러줌
+        Score = (12M수익률 - 1M수익률) / 12M변동성(연환산)
+        - 12개월 장기 추세 포착
+        - 1M 차감: 최근 1개월 mean-reversion 노이즈 제거
         - 변동성 하한선 15% (저변동 종목 점수 폭발 방지)
-
-        Args:
-            data: 재무 데이터프레임
-            price_df: 가격 데이터프레임 (날짜 인덱스, 종목코드 컬럼)
-
-        Returns:
-            data: 모멘텀 팩터가 추가된 데이터프레임
         """
-        lookback_days = 6 * 21  # 6개월 (약 126 거래일)
-        VOL_FLOOR = 15.0  # 연환산 변동성 하한선 (%)
+        LOOKBACK_12M = 12 * 21  # 252 거래일
+        LOOKBACK_1M = 1 * 21    # 21 거래일
+        VOL_FLOOR = 15.0
 
         if price_df is None or price_df.empty:
             print(f"경고: 가격 데이터가 없습니다.")
             data['모멘텀'] = np.nan
             return data
 
-        min_required = lookback_days + 1
+        min_required = LOOKBACK_12M + 1
 
         if len(price_df) < min_required:
             print(f"경고: 가격 데이터가 부족합니다. (현재: {len(price_df)}일, 필요: {min_required}일)")
             data['모멘텀'] = np.nan
             return data
 
-        # 리스크 조정 모멘텀 계산
         momentum_dict = {}
         matched_count = 0
 
@@ -168,24 +160,23 @@ class MultiFactorStrategy:
                     continue
 
                 try:
-                    # 6개월 수익률
-                    price_6m_ago = prices.iloc[-min_required]
                     price_current = prices.iloc[-1]
+                    price_12m_ago = prices.iloc[-(LOOKBACK_12M + 1)]
+                    price_1m_ago = prices.iloc[-(LOOKBACK_1M + 1)]
 
-                    if price_6m_ago <= 0:
+                    if price_12m_ago <= 0 or price_1m_ago <= 0:
                         continue
 
-                    ret_6m = (price_current / price_6m_ago - 1) * 100
+                    ret_12m = (price_current / price_12m_ago - 1) * 100
+                    ret_1m = (price_current / price_1m_ago - 1) * 100
 
-                    # 6개월 변동성 (일간 수익률 표준편차 → 연환산)
-                    daily_returns = prices.iloc[-min_required:].pct_change().dropna()
-                    annual_vol = daily_returns.std() * np.sqrt(252) * 100  # %
-
-                    # 변동성 하한선 적용
+                    # 12M 변동성 (연환산)
+                    daily_returns = prices.iloc[-(LOOKBACK_12M + 1):].pct_change().dropna()
+                    annual_vol = daily_returns.std() * np.sqrt(252) * 100
                     annual_vol = max(annual_vol, VOL_FLOOR)
 
-                    # 리스크 조정 모멘텀 = 6M수익률 / Vol
-                    momentum = ret_6m / annual_vol
+                    # 리스크 조정 모멘텀 = (12M - 1M) / Vol
+                    momentum = (ret_12m - ret_1m) / annual_vol
                     momentum_dict[ticker] = momentum
                     matched_count += 1
                 except (IndexError, KeyError):
@@ -193,7 +184,7 @@ class MultiFactorStrategy:
 
         data['모멘텀'] = data['종목코드'].map(momentum_dict)
         print(f"모멘텀 계산 완료: {matched_count}/{len(data)}개 매칭")
-        print(f"  공식: 6M수익률 / 변동성(연환산, floor={VOL_FLOOR}%)")
+        print(f"  공식: (12M-1M) / 변동성(연환산, floor={VOL_FLOOR}%)")
 
         return data
 
@@ -251,100 +242,50 @@ class MultiFactorStrategy:
         if price_df is not None:
             data = self.calculate_momentum(data, price_df)
 
-        # 3.5. 이상치 전처리 (Z-Score 왜곡 방지)
-        # PER/PBR: 0 이하(적자/자본잠식) → NaN, 극단값 윈저라이징
-        for col in ['PER', 'PBR', 'PCR', 'PSR']:
+        # 3.5. 이상치 전처리 — PER/PBR 0 이하 → NaN
+        for col in ['PER', 'PBR']:
             if col in data.columns:
                 data.loc[data[col] <= 0, col] = np.nan
-                valid_mask = data[col].notna()
-                if valid_mask.sum() > 0:
-                    data.loc[valid_mask, col] = self._winsorize(data.loc[valid_mask, col])
-        # ROE/GPA/CFO/EPS개선도/매출성장률 극단값 윈저라이징
-        for col in ['ROE', 'GPA', 'CFO', 'EPS개선도', '매출성장률']:
-            if col in data.columns:
-                valid_mask = data[col].notna()
-                if valid_mask.sum() > 0:
-                    data.loc[valid_mask, col] = self._winsorize(data.loc[valid_mask, col])
-        # 4. 각 팩터별 Z-Score 계산
+
+        # 4. Rank Percentile 변환 (v50: 분포 불변, 극단값 면역)
+        #    높은 pct = 좋은 종목 (1위 ≈ 1.0, 꼴찌 ≈ 0.004)
         value_factors = []
         quality_factors = []
 
-        # 밸류 팩터 (낮을수록 좋음 → 음수로 변환)
-        if 'PER' in data.columns:
-            data['PER_z'] = -self.calculate_zscore_by_sector(data, 'PER')
-            value_factors.append('PER_z')
-
-        if 'PBR' in data.columns:
-            data['PBR_z'] = -self.calculate_zscore_by_sector(data, 'PBR')
-            value_factors.append('PBR_z')
-
-        # PCR, PSR, 배당수익률 제거 (v47: PER+PBR만 사용)
-        # - PCR: Quality의 CFO와 중복
-        # - PSR: PER와 높은 상관관계
-        # - 배당수익률: 성장주 역차별 (anti-growth bias)
-
-        # 퀄리티 팩터 (높을수록 좋음)
-        if 'ROE' in data.columns:
-            data['ROE_z'] = self.calculate_zscore_by_sector(data, 'ROE')
-            quality_factors.append('ROE_z')
-
-        if 'GPA' in data.columns:
-            data['GPA_z'] = self.calculate_zscore_by_sector(data, 'GPA')
-            quality_factors.append('GPA_z')
-
-        if 'CFO' in data.columns:
-            data['CFO_z'] = self.calculate_zscore_by_sector(data, 'CFO')
-            quality_factors.append('CFO_z')
-
-        # Growth 팩터 (높을수록 좋음)
-        growth_factors = []
-        if 'EPS개선도' in data.columns and data['EPS개선도'].notna().sum() > 0:
-            data['EPS개선_z'] = self.calculate_zscore_by_sector(data, 'EPS개선도')
-            growth_factors.append('EPS개선_z')
-
-        if '매출성장률' in data.columns and data['매출성장률'].notna().sum() > 0:
-            data['매출성장_z'] = self.calculate_zscore_by_sector(data, '매출성장률')
-            growth_factors.append('매출성장_z')
-            rev_count = data['매출성장률'].notna().sum()
-            print(f"매출성장률 z-score: {rev_count}개 종목")
-
-        # 모멘텀 팩터 (높을수록 좋음)
-        if '모멘텀' in data.columns:
-            data['모멘텀_z'] = self.calculate_zscore_by_sector(data, '모멘텀')
-            momentum_factors = ['모멘텀_z']
-        else:
-            momentum_factors = []
-
-        # 전체 z-score ±3σ 클리핑 (극단값이 특정 팩터를 지배하는 것 방지)
-        all_z_cols = value_factors + quality_factors + growth_factors + momentum_factors
-        n_total_clipped = 0
-        for col in all_z_cols:
+        # 밸류 (낮을수록 좋음 → ascending=False: 낮은 값이 높은 pct)
+        for col, pct_col in [('PER', 'PER_pct'), ('PBR', 'PBR_pct')]:
             if col in data.columns:
-                before = data[col].copy()
-                data[col] = data[col].clip(-3, 3)
-                n_total_clipped += (before != data[col]).sum()
-        if n_total_clipped > 0:
-            print(f"z-score ±3σ 클리핑: 총 {n_total_clipped}건")
+                data[pct_col] = data[col].rank(ascending=False, pct=True, na_option='bottom')
+                value_factors.append(pct_col)
 
-        # 5. 종합 점수 계산 (각 팩터 카테고리의 평균)
+        # 퀄리티 (높을수록 좋음 → ascending=True: 높은 값이 높은 pct)
+        for col, pct_col in [('ROE', 'ROE_pct'), ('GPA', 'GPA_pct'), ('CFO', 'CFO_pct')]:
+            if col in data.columns:
+                data[pct_col] = data[col].rank(ascending=True, pct=True, na_option='bottom')
+                quality_factors.append(pct_col)
+
+        # Growth (높을수록 좋음 → ascending=True)
+        growth_factors = []
+        for col, pct_col in [('EPS개선도', 'EPS개선_pct'), ('매출성장률', '매출성장_pct')]:
+            if col in data.columns and data[col].notna().sum() > 0:
+                data[pct_col] = data[col].rank(ascending=True, pct=True, na_option='bottom')
+                growth_factors.append(pct_col)
+
+        # 모멘텀 (높을수록 좋음 → ascending=True)
+        momentum_factors = []
+        if '모멘텀' in data.columns:
+            data['모멘텀_pct'] = data['모멘텀'].rank(ascending=True, pct=True, na_option='bottom')
+            momentum_factors.append('모멘텀_pct')
+
+        print(f"Rank Percentile: V{len(value_factors)} Q{len(quality_factors)} G{len(growth_factors)} M{len(momentum_factors)}")
+
+        # 5. 카테고리 평균 (이미 0~1 범위)
         data['밸류_점수'] = data[value_factors].mean(axis=1) if value_factors else 0
         data['퀄리티_점수'] = data[quality_factors].mean(axis=1) if quality_factors else 0
-        data['성장_점수'] = data[growth_factors].mean(axis=1).fillna(0.0) if growth_factors else 0
+        data['성장_점수'] = data[growth_factors].mean(axis=1).fillna(0.5) if growth_factors else 0
         data['모멘텀_점수'] = data[momentum_factors].mean(axis=1) if momentum_factors else 0
 
-        # 5.5. 카테고리 점수 MinMax 정규화 [-1, 1] — 극단값 억제, 팩터 간 동일 범위
-        for col in ['밸류_점수', '퀄리티_점수', '성장_점수', '모멘텀_점수']:
-            if col in data.columns:
-                col_min = data[col].min()
-                col_max = data[col].max()
-                if col_max > col_min:
-                    data[col] = 2 * (data[col] - col_min) / (col_max - col_min) - 1
-                    print(f"  {col}: [{col_min:.3f}, {col_max:.3f}] → [-1, 1] (MinMax)")
-                else:
-                    data[col] = 0.0
-
-        # 최종 점수 (V25 + Q25 + G30 + M20)
-        # 모멘텀 데이터가 없는 종목은 제외
+        # 최종 점수 (V25 + Q25 + G25 + M25 균등)
         if momentum_factors:
             before_count = len(data)
             data = data[data['모멘텀_점수'].notna()].copy()
@@ -356,9 +297,8 @@ class MultiFactorStrategy:
                                     data['퀄리티_점수'] * 0.25 +
                                     data['성장_점수'] * 0.30 +
                                     data['모멘텀_점수'] * 0.20)
-            print("멀티팩터 가중치: V25 + Q25 + G30 + M20 (MinMax[-1,1])")
+            print("멀티팩터 가중치: V25 + Q25 + G30 + M20 (Rank Percentile)")
         else:
-            # 모멘텀 팩터 자체가 없는 경우 (price_df가 None)
             data['멀티팩터_점수'] = (data['밸류_점수'] * 0.5 +
                                     data['퀄리티_점수'] * 0.5)
             print("멀티팩터 가중치: Value 50% + Quality 50% (모멘텀 없음)")

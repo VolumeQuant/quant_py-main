@@ -292,11 +292,10 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         sector = pick.get('sector', '기타')
         lines.append(f'<b>{i+1}. {pick["name"]}({pick["ticker"]}) · {sector}</b>')
 
-    # ── Top 5 상관관계 정보 (corr > 0.7 페어 → 그룹으로 묶기) ──
+    # ── Top 5 상관관계 경고 (corr > 0.7 → 동일 섹터 선택 가이드) ──
     meta = rankings_t0.get('metadata') or {}
     corr_pairs = meta.get('correlation_60d', {})
     if corr_pairs and len(picks) >= 2:
-        # 상관관계 높은 종목 그룹 구성 (union-find)
         corr_members = set()
         for i in range(len(picks)):
             for j in range(i + 1, len(picks)):
@@ -306,9 +305,9 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
                     corr_members.add(picks[i]['ticker'])
                     corr_members.add(picks[j]['ticker'])
         if corr_members:
-            # 원래 순위 순서 유지
             names = [p['name'] for p in picks if p['ticker'] in corr_members]
-            lines.append(f'ℹ️ {"·".join(names)} 주가 상관관계 높음')
+            n_corr = len(names)
+            lines.append(f'⚠️ {"·".join(names)} 동일 섹터 — 이 중 1~2개 선택 권장')
 
     # ── 선정 과정 (퍼널) ──
     universe_count = meta.get('total_universe', 0)
