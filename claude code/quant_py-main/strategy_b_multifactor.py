@@ -313,7 +313,18 @@ class MultiFactorStrategy:
             else:
                 data[score_col] = 0.0
 
-        # 7. 최종 가중합 (V25 + Q25 + G30 + M20)
+        # 7. 과락 필터: 4개 카테고리 중 2개 이상 -0.5σ 미만 → 제외
+        FAIL_THRESHOLD = -0.5
+        FAIL_COUNT = 2
+        cat_cols = ['밸류_점수', '퀄리티_점수', '성장_점수', '모멘텀_점수']
+        fail_mask = (data[cat_cols] < FAIL_THRESHOLD).sum(axis=1) >= FAIL_COUNT
+        fail_count = fail_mask.sum()
+        if fail_count > 0:
+            failed_names = data.loc[fail_mask, '종목명'].tolist() if '종목명' in data.columns else []
+            data = data[~fail_mask].copy()
+            print(f"과락 필터: {fail_count}개 제외 (2개 이상 <-0.5σ) {failed_names[:5]}")
+
+        # 8. 최종 가중합 (V25 + Q25 + G30 + M20)
         if momentum_zs:
             before_count = len(data)
             data = data[data['모멘텀_점수'].notna()].copy()
