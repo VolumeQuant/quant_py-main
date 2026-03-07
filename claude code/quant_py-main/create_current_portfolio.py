@@ -649,10 +649,56 @@ def main():
     if not prefiltered.empty:
         print(f"\n[4.5단계] FnGuide 컨센서스 수집 (Forward PER) - {len(prefiltered)}개 종목")
         prefiltered_tickers = prefiltered['종목코드'].tolist()
-        consensus_df = collect_consensus_data(prefiltered_tickers, error_tracker)
-        if not consensus_df.empty:
+
+        # 과거 재계산 모드: 기존 ranking JSON에서 Forward PER 로드
+        use_json_consensus = os.environ.get('CONSENSUS_FROM_JSON') == '1'
+        if use_json_consensus:
+            print(f"  [재계산 모드] 기존 ranking JSON에서 Forward PER 로드 (BASE_DATE={BASE_DATE})")
+            fwd_map = {}
+            # 해당 날짜 → 직전 날짜 순으로 탐색 (해당 날짜 우선)
+            all_dates = sorted(get_available_ranking_dates())
+            target_dates = [d for d in all_dates if d <= BASE_DATE]
+            for prev_date in reversed(target_dates):
+                prev_data = load_ranking(prev_date)
+                if prev_data:
+                    for r in prev_data.get('rankings', []):
+                        t = r.get('ticker', '')
+                        if t and r.get('fwd_per') is not None and t not in fwd_map:
+                            fwd_map[t] = r['fwd_per']
+            rows = []
+            for t in prefiltered_tickers:
+                rows.append({
+                    'ticker': t,
+                    'forward_per': fwd_map.get(t),
+                    'has_consensus': t in fwd_map,
+                })
+            consensus_df = pd.DataFrame(rows)
             has_fwd = consensus_df['forward_per'].notna().sum()
             print(f"  Forward PER 확보: {has_fwd}/{len(consensus_df)}개 ({has_fwd/len(consensus_df)*100:.0f}%)")
+        else:
+            consensus_df = collect_consensus_data(prefiltered_tickers, error_tracker)
+
+        if not consensus_df.empty:
+            if not use_json_consensus:
+                has_fwd = consensus_df['forward_per'].notna().sum()
+                print(f"  Forward PER 확보: {has_fwd}/{len(consensus_df)}개 ({has_fwd/len(consensus_df)*100:.0f}%)")
+
+            # Forward PER fallback: 크롤링 실패 시 직전 ranking에서 보충
+            missing_fwd = consensus_df[consensus_df['forward_per'].isna()]['ticker'].tolist()
+            if missing_fwd:
+                prev_dates = get_available_ranking_dates()
+                fwd_fallback = {}
+                for prev_date in prev_dates[:3]:
+                    prev_data = load_ranking(prev_date)
+                    if prev_data:
+                        for r in prev_data.get('rankings', []):
+                            t = r.get('ticker', '')
+                            if t in missing_fwd and t not in fwd_fallback and r.get('fwd_per') is not None:
+                                fwd_fallback[t] = r['fwd_per']
+                if fwd_fallback:
+                    for t, fwd_val in fwd_fallback.items():
+                        consensus_df.loc[consensus_df['ticker'] == t, 'forward_per'] = fwd_val
+                    print(f"  Forward PER fallback: {len(fwd_fallback)}개 종목 (직전 순위에서 보충)")
 
         # 매출성장률(YoY) 추출 (fs_data에서 연간 매출액 2개년 비교)
         revenue_growth_df = extract_revenue_growth(fs_data, base_date=BASE_DATE)

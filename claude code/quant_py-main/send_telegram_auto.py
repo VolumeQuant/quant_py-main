@@ -307,7 +307,8 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         if corr_members:
             names = [p['name'] for p in picks if p['ticker'] in corr_members]
             n_corr = len(names)
-            lines.append(f'⚠️ {"·".join(names)} 동일 섹터 — 이 중 1~2개 선택 권장')
+            lines.append(f'⚠️ {"·".join(names)}')
+            lines.append('동일 섹터 — 이 중 1~2개 선택 권장')
 
     # ── 선정 과정 (퍼널) ──
     universe_count = meta.get('total_universe', 0)

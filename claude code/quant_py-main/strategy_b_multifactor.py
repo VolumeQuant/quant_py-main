@@ -115,12 +115,10 @@ class MultiFactorStrategy:
                 / data.loc[mask, 'PER'] * 100
             )
             eps_count = data['EPS개선도'].notna().sum()
-            # FWD PER 없는 종목 = 애널리스트 커버리지 없음 → 중앙값으로 neutral 처리
-            eps_median = data['EPS개선도'].median()
             fill_count = data['EPS개선도'].isna().sum()
-            if fill_count > 0 and not np.isnan(eps_median):
-                data['EPS개선도'] = data['EPS개선도'].fillna(eps_median)
-            print(f"EPS개선도 계산: {eps_count}/{len(data)}개 종목 (Forward PER 기반, {fill_count}개 중앙값 대체)")
+            # FWD PER 없는 종목 = NaN 유지 → rank percentile에서 bottom 처리
+            # 매출성장률도 없으면 G=0.3 페널티 (calculate_multifactor_score에서)
+            print(f"EPS개선도 계산: {eps_count}/{len(data)}개 종목 (Forward PER 기반, {fill_count}개 미커버)")
 
         return data
 
@@ -265,10 +263,11 @@ class MultiFactorStrategy:
                 quality_factors.append(pct_col)
 
         # Growth (높을수록 좋음 → ascending=True)
+        # na_option='keep': NaN 유지 → 부분 결측은 있는 것만 사용, 둘 다 없으면 G=0.3
         growth_factors = []
         for col, pct_col in [('EPS개선도', 'EPS개선_pct'), ('매출성장률', '매출성장_pct')]:
             if col in data.columns and data[col].notna().sum() > 0:
-                data[pct_col] = data[col].rank(ascending=True, pct=True, na_option='bottom')
+                data[pct_col] = data[col].rank(ascending=True, pct=True, na_option='keep')
                 growth_factors.append(pct_col)
 
         # 모멘텀 (높을수록 좋음 → ascending=True)
@@ -282,7 +281,15 @@ class MultiFactorStrategy:
         # 5. 카테고리 평균 (이미 0~1 범위)
         data['밸류_점수'] = data[value_factors].mean(axis=1) if value_factors else 0
         data['퀄리티_점수'] = data[quality_factors].mean(axis=1) if quality_factors else 0
-        data['성장_점수'] = data[growth_factors].mean(axis=1).fillna(0.5) if growth_factors else 0
+        # Growth: 부분 결측 → 있는 것만 사용, 둘 다 없음 → 0.3 페널티
+        if growth_factors:
+            data['성장_점수'] = data[growth_factors].mean(axis=1)
+            growth_missing = data['성장_점수'].isna().sum()
+            if growth_missing > 0:
+                data['성장_점수'] = data['성장_점수'].fillna(0.3)
+                print(f"Growth 둘 다 없는 종목: {growth_missing}개 → G=0.3 페널티")
+        else:
+            data['성장_점수'] = 0
         data['모멘텀_점수'] = data[momentum_factors].mean(axis=1) if momentum_factors else 0
 
         # 최종 점수 (V25 + Q25 + G25 + M25 균등)
