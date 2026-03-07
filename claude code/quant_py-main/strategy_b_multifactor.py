@@ -245,55 +245,76 @@ class MultiFactorStrategy:
             if col in data.columns:
                 data.loc[data[col] <= 0, col] = np.nan
 
-        # 4. Rank Percentile 변환 (v50: 분포 불변, 극단값 면역)
-        #    높은 pct = 좋은 종목 (1위 ≈ 1.0, 꼴찌 ≈ 0.004)
-        value_factors = []
-        quality_factors = []
+        # 4. Winsorized z-score + 카테고리 재표준화 (v51)
+        #    크기 정보 보존 + 이상치 억제 + 카테고리 간 분산 통일
+        def winsorized_zscore(series, invert=False, lower=0.025, upper=0.975):
+            valid = series.dropna()
+            if len(valid) < 5:
+                return pd.Series(np.nan, index=series.index)
+            q_lo, q_hi = valid.quantile(lower), valid.quantile(upper)
+            clipped = series.clip(q_lo, q_hi)
+            mean_val, std_val = clipped.mean(), clipped.std()
+            if std_val == 0 or pd.isna(std_val):
+                return pd.Series(0.0, index=series.index)
+            z = (clipped - mean_val) / std_val
+            if invert:
+                z = -z
+            return z
 
-        # 밸류 (낮을수록 좋음 → ascending=False: 낮은 값이 높은 pct)
-        for col, pct_col in [('PER', 'PER_pct'), ('PBR', 'PBR_pct')]:
+        # 서브팩터별 Winsorized z-score
+        value_zs = []
+        for col in ['PER', 'PBR']:
             if col in data.columns:
-                data[pct_col] = data[col].rank(ascending=False, pct=True, na_option='bottom')
-                value_factors.append(pct_col)
+                data[f'{col}_z'] = winsorized_zscore(data[col], invert=True)
+                value_zs.append(f'{col}_z')
 
-        # 퀄리티 (높을수록 좋음 → ascending=True: 높은 값이 높은 pct)
-        for col, pct_col in [('ROE', 'ROE_pct'), ('GPA', 'GPA_pct'), ('CFO', 'CFO_pct')]:
+        quality_zs = []
+        for col in ['ROE', 'GPA', 'CFO']:
             if col in data.columns:
-                data[pct_col] = data[col].rank(ascending=True, pct=True, na_option='bottom')
-                quality_factors.append(pct_col)
+                data[f'{col}_z'] = winsorized_zscore(data[col])
+                quality_zs.append(f'{col}_z')
 
-        # Growth (높을수록 좋음 → ascending=True)
-        # na_option='keep': NaN 유지 → 부분 결측은 있는 것만 사용, 둘 다 없으면 G=0.3
-        growth_factors = []
-        for col, pct_col in [('EPS개선도', 'EPS개선_pct'), ('매출성장률', '매출성장_pct')]:
+        growth_zs = []
+        for col in ['EPS개선도', '매출성장률']:
             if col in data.columns and data[col].notna().sum() > 0:
-                data[pct_col] = data[col].rank(ascending=True, pct=True, na_option='keep')
-                growth_factors.append(pct_col)
+                data[f'{col}_z'] = winsorized_zscore(data[col])
+                growth_zs.append(f'{col}_z')
 
-        # 모멘텀 (높을수록 좋음 → ascending=True)
-        momentum_factors = []
+        momentum_zs = []
         if '모멘텀' in data.columns:
-            data['모멘텀_pct'] = data['모멘텀'].rank(ascending=True, pct=True, na_option='bottom')
-            momentum_factors.append('모멘텀_pct')
+            data['모멘텀_z'] = winsorized_zscore(data['모멘텀'])
+            momentum_zs.append('모멘텀_z')
 
-        print(f"Rank Percentile: V{len(value_factors)} Q{len(quality_factors)} G{len(growth_factors)} M{len(momentum_factors)}")
+        print(f"Winsorized z-score: V{len(value_zs)} Q{len(quality_zs)} G{len(growth_zs)} M{len(momentum_zs)}")
 
-        # 5. 카테고리 평균 (이미 0~1 범위)
-        data['밸류_점수'] = data[value_factors].mean(axis=1) if value_factors else 0
-        data['퀄리티_점수'] = data[quality_factors].mean(axis=1) if quality_factors else 0
-        # Growth: 부분 결측 → 있는 것만 사용, 둘 다 없음 → 0.3 페널티
-        if growth_factors:
-            data['성장_점수'] = data[growth_factors].mean(axis=1)
-            growth_missing = data['성장_점수'].isna().sum()
+        # 5. 카테고리 평균
+        data['밸류_raw'] = data[value_zs].mean(axis=1) if value_zs else 0
+        data['퀄리티_raw'] = data[quality_zs].mean(axis=1) if quality_zs else 0
+
+        # Growth: NaN은 keep → 부분 결측은 있는 것만, 둘 다 없으면 페널티
+        if growth_zs:
+            data['성장_raw'] = data[growth_zs].mean(axis=1)
+            growth_missing = data['성장_raw'].isna().sum()
             if growth_missing > 0:
-                data['성장_점수'] = data['성장_점수'].fillna(0.3)
-                print(f"Growth 둘 다 없는 종목: {growth_missing}개 → G=0.3 페널티")
+                data['성장_raw'] = data['성장_raw'].fillna(-0.5)
+                print(f"Growth 둘 다 없는 종목: {growth_missing}개 → G=-0.5σ 페널티")
         else:
-            data['성장_점수'] = 0
-        data['모멘텀_점수'] = data[momentum_factors].mean(axis=1) if momentum_factors else 0
+            data['성장_raw'] = 0
 
-        # 최종 점수 (V25 + Q25 + G25 + M25 균등)
-        if momentum_factors:
+        data['모멘텀_raw'] = data[momentum_zs].mean(axis=1) if momentum_zs else 0
+
+        # 6. 카테고리별 재표준화 (std=1) — 서브팩터 수 차이로 인한 분산 불균형 해소
+        for raw_col, score_col in [('밸류_raw', '밸류_점수'), ('퀄리티_raw', '퀄리티_점수'),
+                                    ('성장_raw', '성장_점수'), ('모멘텀_raw', '모멘텀_점수')]:
+            cat_mean = data[raw_col].mean()
+            cat_std = data[raw_col].std()
+            if cat_std > 0:
+                data[score_col] = (data[raw_col] - cat_mean) / cat_std
+            else:
+                data[score_col] = 0.0
+
+        # 7. 최종 가중합 (V25 + Q25 + G30 + M20)
+        if momentum_zs:
             before_count = len(data)
             data = data[data['모멘텀_점수'].notna()].copy()
             excluded = before_count - len(data)
@@ -304,7 +325,7 @@ class MultiFactorStrategy:
                                     data['퀄리티_점수'] * 0.25 +
                                     data['성장_점수'] * 0.30 +
                                     data['모멘텀_점수'] * 0.20)
-            print("멀티팩터 가중치: V25 + Q25 + G30 + M20 (Rank Percentile)")
+            print("멀티팩터 가중치: V25 + Q25 + G30 + M20 (WZ+Renorm)")
         else:
             data['멀티팩터_점수'] = (data['밸류_점수'] * 0.5 +
                                     data['퀄리티_점수'] * 0.5)
