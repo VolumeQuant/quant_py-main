@@ -237,7 +237,7 @@ def send_telegram_long(text, bot_token, chat_id):
 def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
                           market_max_picks, stock_weight, rankings_t0,
                           rankings_t1, rankings_t2, cold_start,
-                          final_action, pick_level):
+                          final_action, pick_level, credit=None):
     """Message 1: Signal — 결론 (뭘 살까)
 
     종목당 3줄: 이름·업종·가격 / 순위 / AI 내러티브
@@ -361,17 +361,41 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         if i < n - 1:
             lines.append('─ ─ ─ ─ ─ ─ ─ ─')
 
-    # ── 이탈 알림 (사유 포함) ──
+    # ── 이탈 알림 (사유별 묶기) ──
     if exited:
-        parts = []
-        for e in exited[:5]:
-            reason = e.get('exit_reason', '')
-            parts.append(f'{e["name"]}({reason})' if reason else e['name'])
-        exited_str = ', '.join(parts)
-        if len(exited) > 5:
-            exited_str += f' 외 {len(exited)-5}개'
+        from collections import defaultdict
+        reason_groups = defaultdict(list)
+        for e in exited:
+            reason = e.get('exit_reason', '순위밀림') or '순위밀림'
+            reason_groups[reason].append(e['name'])
         lines.append('')
-        lines.append(f'📉 순위 이탈: {exited_str}')
+        parts = []
+        for reason, names in reason_groups.items():
+            names_str = '·'.join(names[:4])
+            if len(names) > 4:
+                names_str += f' 외 {len(names)-4}'
+            parts.append(f'{names_str}({reason})')
+        lines.append(f'📉 순위 이탈: {" ".join(parts)}')
+
+    # ── 시장 경고 배너 (VIX/HY 주의 이상 시 1줄) ──
+    if credit:
+        warn_parts = []
+        hy = credit.get('hy')
+        vix = credit.get('vix')
+        if hy:
+            val = hy['hy_spread']
+            if val >= 3.0:
+                icon = '🟡' if val < 4.5 else '🔴'
+                warn_parts.append(f'{icon} HY {val:.2f}%')
+        if vix:
+            v = vix['vix_current']
+            pct = vix['vix_pct']
+            if pct >= 67:
+                icon = '🟡' if pct < 80 else ('🟠' if pct < 90 else '🔴')
+                warn_parts.append(f'{icon} VIX {v:.1f}')
+        if warn_parts:
+            lines.append('')
+            lines.append(' · '.join(warn_parts))
 
     # ── 범례 + 면책 (Signal) ──
     lines.append('')
@@ -486,22 +510,21 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         else:
             lines.append(f'{status} {idx}. {name}({sector}) -→-→{r0}위')
 
-    # ── 이탈 섹션 ──
+    # ── 이탈 섹션 (사유별 묶기) ──
     if exited:
         lines.append('')
         lines.append('━━━━━━━━━━━━━━━')
-        t0_rank_map = {item['ticker']: item.get('composite_rank', item['rank']) for item in (rankings_t0 or {}).get('rankings', [])}
-
         lines.append('📉 <b>순위 이탈</b>')
+        from collections import defaultdict
+        reason_groups = defaultdict(list)
         for e in exited:
-            prev = e.get('composite_rank', e['rank'])
-            cur = e.get('t0_rank') or t0_rank_map.get(e['ticker'])
-            reason = e.get('exit_reason', '')
-
-            if cur:
-                lines.append(f'{e["name"]} {prev}→{cur}위 ({reason})')
-            else:
-                lines.append(f'{e["name"]} {prev}위→제외 ({reason})')
+            reason = e.get('exit_reason', '순위밀림') or '순위밀림'
+            reason_groups[reason].append(e['name'])
+        for reason, names in reason_groups.items():
+            names_str = '·'.join(names[:4])
+            if len(names) > 4:
+                names_str += f' 외 {len(names)-4}'
+            lines.append(f'{names_str}({reason})')
 
     # ── cold start ──
     if cold_start:
@@ -509,17 +532,11 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         lines.append('━━━━━━━━━━━━━━━')
         lines.append('📊 데이터 축적 중 — 3일 완료 시 상위 종목이 표시됩니다.')
 
-    # ── 범례 + 면책 (Watchlist) ──
+    # ── 범례 (Watchlist — 면책은 Signal에만) ──
     lines.append('')
     lines.append('━━━━━━━━━━━━━━━')
     lines.append('📐 Top 30 순위: 3일 가중순위 (2일전→1일전→오늘)')
-    lines.append('')
-    lines.append('💡 분할매수 권장')
-    lines.append('한 번에 전량 매수보다 2~3회 나눠서')
-    lines.append('조정 시 진입이 유리합니다.')
-    lines.append('')
-    lines.append('⚖️ 멀티팩터 순위는 종목 선별 기준이며,')
-    lines.append('포트폴리오 비중은 투자자의 판단입니다.')
+    lines.append('보유 종목이 상위 30 내라면 유지를 참고하세요.')
 
     return '\n'.join(lines)
 
@@ -823,7 +840,7 @@ def main():
         picks, pipeline, exited, biz_day, ai_narratives,
         market_max_picks, stock_weight, rankings_t0,
         rankings_t1, rankings_t2, cold_start,
-        final_action, pick_level,
+        final_action, pick_level, credit=credit,
     )
 
     msg_ai_risk = create_ai_risk_message(
