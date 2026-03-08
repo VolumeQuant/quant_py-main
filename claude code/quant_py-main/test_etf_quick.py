@@ -4,14 +4,14 @@ import json, sys
 date = sys.argv[1] if len(sys.argv) > 1 else '20260306'
 with open(f'state/ranking_{date}.json', 'r', encoding='utf-8') as f:
     data = json.load(f)
-top10 = data['rankings'][:10]
+top5 = data['rankings'][:5]
 
-names = [f'{r.get("composite_rank", r.get("rank", i+1))}.{r["name"]}' for i, r in enumerate(top10)]
+names = [f'{r.get("composite_rank", r.get("rank", i+1))}.{r["name"]}' for i, r in enumerate(top5)]
 print(f'날짜: {date}')
 print(' | '.join(names))
 
 from gemini_analysis import run_etf_matching
-result = run_etf_matching(top10, base_date=date)
+result = run_etf_matching(top5, base_date=date)
 if result:
     print('\n=== ETF 메시지 ===')
     print(result)

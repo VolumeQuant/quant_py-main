@@ -508,11 +508,11 @@ def run_final_picks_analysis(stock_list, weight_per_stock=20, base_date=None, ma
         return None
 
 
-def run_etf_matching(rankings_top10, base_date=None):
+def run_etf_matching(rankings_top5, base_date=None):
     """ETF 매칭 — Pro 2-step (검색→조합최적화)
 
     Step 1: Gemini Pro + Google Search — 종목별 ETF 검색
-    Step 2: Gemini Pro — Greedy 알고리즘으로 최적 3 ETF 조합 선택 (Top 5 우선)
+    Step 2: Gemini Pro — Greedy 알고리즘으로 최적 2~3 ETF 조합 선택
 
     Returns:
         str: 포맷된 ETF 추천 텍스트 (실패 시 None)
@@ -531,11 +531,11 @@ def run_etf_matching(rankings_top10, base_date=None):
         print("[ETF] google-genai 패키지 미설치 — ETF 매칭 스킵")
         return None
 
-    n_stocks = len(rankings_top10)
+    n_stocks = len(rankings_top5)
     # 종목 텍스트 구성
     stock_text = '\n'.join(
         f'{r.get("composite_rank", r.get("rank", i+1))}. {r["name"]}({r["ticker"]}) {r.get("sector","")}'
-        for i, r in enumerate(rankings_top10)
+        for i, r in enumerate(rankings_top5)
     )
 
     try:
@@ -544,14 +544,14 @@ def run_etf_matching(rankings_top10, base_date=None):
         # ── Step 1: Pro + Google Search — 종목별 ETF 검색 ──
         prompt_step1 = f"""당신은 한국 ETF 전문가입니다.
 
-아래 10종목 각각에 대해, 해당 종목을 구성종목으로 포함하는 한국 상장 테마/섹터 ETF를 찾아주세요.
+아래 {n_stocks}종목 각각에 대해, 해당 종목을 구성종목으로 포함하는 한국 상장 테마/섹터 ETF를 찾아주세요.
 
 {stock_text}
 
 [규칙]
 - KOSPI200, KOSPI100, KRX300 등 광범위 시장지수 ETF 제외
 - 레버리지/인버스 ETF 제외
-- "가치주" "배당" "고배당" "중소형" 등 광범위 스타일 ETF 제외 (특정 산업/테마 ETF만)
+- "가치주" "배당" "고배당" "중소형" "코리아밸류업" 등 광범위 스타일 ETF 제외 (특정 산업/테마 ETF만)
 - 각 종목별로 포함된 ETF 1~3개와 해당 ETF 내 비중(%)을 명시
 - 찾을 수 없으면 "테마 ETF 미확인"으로 표기
 - 반드시 Google 검색으로 확인
@@ -602,31 +602,30 @@ def run_etf_matching(rankings_top10, base_date=None):
         # ── Step 2: Pro — Greedy 최적 조합 선택 ──
         prompt_step2 = f"""당신은 한국 ETF 포트폴리오 전문가입니다.
 
-[상위 10종목]
+[상위 {n_stocks}종목]
 {stock_text}
 
 [종목별 ETF 매핑 — Step 1 검색 결과]
 {step1_text}
 
 [과제]
-위 매핑을 분석하여, 10종목 커버리지를 극대화하는 ETF 3개 조합을 선택하세요.
+위 매핑을 분석하여, {n_stocks}종목 커버리지를 극대화하는 ETF 2~3개 조합을 선택하세요.
+(2개로 충분히 커버되면 2개만, 부족하면 3개까지)
 
 [선택 기준 — 우선순위 순서대로]
-1. **Top 5(1~5위) 커버가 최우선**: 1~5위 종목을 최대한 많이 커버하는 조합을 선택
-2. 커버리지 극대화: Top 5 커버 후, 6~10위도 추가로 커버하면 가산점
-3. 중복 커버 최소화: ETF끼리 같은 종목을 중복으로 커버하지 말고, 서로 다른 종목을 커버
-4. ETF 내 해당 종목 비중이 높을수록 좋음
-5. 테마 분산은 부차적 — 커버리지가 더 높다면 같은 반도체 카테고리에서 2개 ETF 선택 가능
+1. 커버리지 극대화: {n_stocks}종목 중 최대한 많이 커버
+2. 중복 커버 최소화: ETF끼리 같은 종목을 중복으로 커버하지 말고, 서로 다른 종목을 커버
+3. ETF 내 해당 종목 비중이 높을수록 좋음
+4. 테마 분산은 부차적 — 커버리지가 더 높다면 같은 카테고리에서 2개 ETF 선택 가능
 
 [선택 방법 — 반드시 이 단계를 밟으세요]
 1단계: Step 1 결과에서 모든 ETF와 해당 ETF가 커버하는 종목을 표로 정리
 2단계: 가장 많은 종목을 커버하는 ETF를 1번으로 선택
-   → "1번 ETF 선택: XXX → 커버됨: A, B / 남은 미커버: C, D, E, F, G, H"
+   → "1번 ETF 선택: XXX → 커버됨: A, B / 남은 미커버: C, D, E"
 3단계: 남은 미커버 종목 중 가장 많이 커버하는 ETF를 2번으로 선택
-   → "2번 ETF 선택: YYY → 추가 커버: C, D / 남은 미커버: E, F, G, H"
+   → "2번 ETF 선택: YYY → 추가 커버: C / 남은 미커버: D, E"
    ⚠️ 이미 커버된 종목만 포함하는 ETF는 "추가 커버 0개"이므로 절대 선택하지 마세요!
-   예: ①에서 SK하이닉스+삼성전자를 커버했으면, SK하이닉스+삼성전자만 포함하는 ETF는 추가 커버 0개입니다.
-4단계: 같은 방식으로 3번 선택
+4단계: 미커버 종목이 남아있으면 3번 선택, 없으면 2개로 종료
 
 핵심 원칙: 각 단계에서 "새로 추가되는 종목 수"만 세세요. 이미 커버된 종목은 무시!
 
@@ -635,14 +634,12 @@ def run_etf_matching(rankings_top10, base_date=None):
 → 종목A(N위)·종목B(N위)
 
 ② ETF명 (운용사)
-→ 종목C(N위)·종목D(N위)
+→ 종목C(N위)
 
-③ ETF명 (운용사)
-→ 종목E(N위)
+(③은 필요한 경우에만)
 
-Top 5 커버: N/5
-전체 커버: N/10
-미포함: 종목F·종목G·종목H"""
+커버: N/{n_stocks}
+미포함: 종목D(N위)·종목E(N위)"""
 
         print("[ETF] Step 2: Pro 모델로 최적 조합 선택 중...")
         step2_text = None
