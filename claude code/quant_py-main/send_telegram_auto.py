@@ -237,7 +237,7 @@ def send_telegram_long(text, bot_token, chat_id):
 def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
                           market_max_picks, stock_weight, rankings_t0,
                           rankings_t1, rankings_t2, cold_start,
-                          final_action, pick_level, credit=None):
+                          final_action, pick_level):
     """Message 1: Signal — 결론 (뭘 살까)
 
     종목당 3줄: 이름·업종·가격 / 순위 / AI 내러티브
@@ -291,25 +291,6 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
     for i, pick in enumerate(picks):
         sector = pick.get('sector', '기타')
         lines.append(f'<b>{i+1}. {pick["name"]}({pick["ticker"]}) · {sector}</b>')
-
-    # ── 시장 경고 배너 (Top 5 바로 아래, VIX/HY 주의 이상 시 1줄) ──
-    if credit:
-        warn_parts = []
-        hy = credit.get('hy')
-        vix = credit.get('vix')
-        if hy:
-            val = hy['hy_spread']
-            if val >= 3.0:
-                icon = '🟡' if val < 4.5 else '🔴'
-                warn_parts.append(f'{icon} HY {val:.2f}%')
-        if vix:
-            v = vix['vix_current']
-            pct = vix['vix_pct']
-            if pct >= 67:
-                icon = '🟡' if pct < 80 else ('🟠' if pct < 90 else '🔴')
-                warn_parts.append(f'{icon} VIX {v:.1f}')
-        if warn_parts:
-            lines.append(' · '.join(warn_parts))
 
     # ── Top 5 상관관계 경고 (corr > 0.7 → 동일 섹터 선택 가이드) ──
     meta = rankings_t0.get('metadata') or {}
@@ -839,7 +820,7 @@ def main():
         picks, pipeline, exited, biz_day, ai_narratives,
         market_max_picks, stock_weight, rankings_t0,
         rankings_t1, rankings_t2, cold_start,
-        final_action, pick_level, credit=credit,
+        final_action, pick_level,
     )
 
     msg_ai_risk = create_ai_risk_message(
