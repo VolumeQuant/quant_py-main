@@ -508,6 +508,206 @@ def run_final_picks_analysis(stock_list, weight_per_stock=20, base_date=None, ma
         return None
 
 
+def run_etf_matching(rankings_top10, base_date=None):
+    """ETF 매칭 — Pro 2-step (검색→조합최적화)
+
+    Step 1: Gemini Pro + Google Search — 종목별 ETF 검색
+    Step 2: Gemini Pro — Greedy 알고리즘으로 최적 3 ETF 조합 선택 (Top 5 우선)
+
+    Returns:
+        str: 포맷된 ETF 추천 텍스트 (실패 시 None)
+    """
+    import time
+
+    api_key = get_gemini_api_key()
+    if not api_key:
+        print("[ETF] GEMINI_API_KEY 미설정 — ETF 매칭 스킵")
+        return None
+
+    try:
+        from google import genai
+        from google.genai import types
+    except ImportError:
+        print("[ETF] google-genai 패키지 미설치 — ETF 매칭 스킵")
+        return None
+
+    n_stocks = len(rankings_top10)
+    # 종목 텍스트 구성
+    stock_text = '\n'.join(
+        f'{r.get("composite_rank", r.get("rank", i+1))}. {r["name"]}({r["ticker"]}) {r.get("sector","")}'
+        for i, r in enumerate(rankings_top10)
+    )
+
+    try:
+        client = genai.Client(api_key=api_key)
+
+        # ── Step 1: Pro + Google Search — 종목별 ETF 검색 ──
+        prompt_step1 = f"""당신은 한국 ETF 전문가입니다.
+
+아래 10종목 각각에 대해, 해당 종목을 구성종목으로 포함하는 한국 상장 테마/섹터 ETF를 찾아주세요.
+
+{stock_text}
+
+[규칙]
+- KOSPI200, KOSPI100, KRX300 등 광범위 시장지수 ETF 제외
+- 레버리지/인버스 ETF 제외
+- "가치주" "배당" "고배당" "중소형" 등 광범위 스타일 ETF 제외 (특정 산업/테마 ETF만)
+- 각 종목별로 포함된 ETF 1~3개와 해당 ETF 내 비중(%)을 명시
+- 찾을 수 없으면 "테마 ETF 미확인"으로 표기
+- 반드시 Google 검색으로 확인
+- 특히 위 종목 중 2개 이상을 동시에 포함하는 ETF가 있다면 반드시 명시 (커버리지 극대화에 중요)
+
+[검색 키워드 힌트 — 이 키워드들로 Google 검색하세요]
+- 반도체 대형: "반도체TOP10" "AI반도체TOP" "반도체" ETF
+- 반도체 밸류체인: "SK하이닉스밸류체인" "반도체밸류체인" "반도체전공정" ETF (여러 반도체 종목을 동시 포함하는 ETF 탐색에 중요!)
+- 반도체 소부장: "반도체소부장" "반도체핵심장비" "반도체핵심공정" "비메모리반도체" ETF
+- 전력/에너지: "AI전력" "전력설비" "전력인프라" "전력기기" ETF
+- 지주/밸류업: "지주회사" "5대그룹" ETF
+- 조선/해운: "친환경조선" "조선해운" ETF
+- 기타: "2차전지" "여행레저" "원자력" ETF
+
+[출력 형식]
+1. 종목명(티커): ETF명1(비중X%), ETF명2(비중Y%)
+2. ...
+
+마지막에 "복수 종목 포함 ETF" 섹션을 추가하여, 위 종목 중 2개 이상을 동시에 포함하는 ETF를 정리해주세요."""
+
+        print("[ETF] Step 1: Pro 모델로 종목별 ETF 검색 중...")
+        grounding_tool = types.Tool(google_search=types.GoogleSearch())
+        step1_text = None
+        for attempt in range(3):
+            try:
+                resp1 = client.models.generate_content(
+                    model='gemini-2.5-pro',
+                    contents=prompt_step1,
+                    config=types.GenerateContentConfig(
+                        tools=[grounding_tool],
+                        temperature=0.1,
+                    ),
+                )
+                step1_text = extract_text(resp1)
+                if step1_text:
+                    break
+            except Exception as e:
+                print(f"[ETF] Step 1 재시도 {attempt+1}/3: {e}")
+                time.sleep(10 * (attempt + 1))
+
+        if not step1_text:
+            print("[ETF] Step 1 실패 — ETF 매칭 스킵")
+            return None
+
+        print(f"[ETF] Step 1 완료: {len(step1_text)}자")
+        time.sleep(3)
+
+        # ── Step 2: Pro — Greedy 최적 조합 선택 ──
+        prompt_step2 = f"""당신은 한국 ETF 포트폴리오 전문가입니다.
+
+[상위 10종목]
+{stock_text}
+
+[종목별 ETF 매핑 — Step 1 검색 결과]
+{step1_text}
+
+[과제]
+위 매핑을 분석하여, 10종목 커버리지를 극대화하는 ETF 3개 조합을 선택하세요.
+
+[선택 기준 — 우선순위 순서대로]
+1. **Top 5(1~5위) 커버가 최우선**: 1~5위 종목을 최대한 많이 커버하는 조합을 선택
+2. 커버리지 극대화: Top 5 커버 후, 6~10위도 추가로 커버하면 가산점
+3. 중복 커버 최소화: ETF끼리 같은 종목을 중복으로 커버하지 말고, 서로 다른 종목을 커버
+4. ETF 내 해당 종목 비중이 높을수록 좋음
+5. 테마 분산은 부차적 — 커버리지가 더 높다면 같은 반도체 카테고리에서 2개 ETF 선택 가능
+
+[선택 방법 — 반드시 이 단계를 밟으세요]
+1단계: Step 1 결과에서 모든 ETF와 해당 ETF가 커버하는 종목을 표로 정리
+2단계: 가장 많은 종목을 커버하는 ETF를 1번으로 선택
+   → "1번 ETF 선택: XXX → 커버됨: A, B / 남은 미커버: C, D, E, F, G, H"
+3단계: 남은 미커버 종목 중 가장 많이 커버하는 ETF를 2번으로 선택
+   → "2번 ETF 선택: YYY → 추가 커버: C, D / 남은 미커버: E, F, G, H"
+   ⚠️ 이미 커버된 종목만 포함하는 ETF는 "추가 커버 0개"이므로 절대 선택하지 마세요!
+   예: ①에서 SK하이닉스+삼성전자를 커버했으면, SK하이닉스+삼성전자만 포함하는 ETF는 추가 커버 0개입니다.
+4단계: 같은 방식으로 3번 선택
+
+핵심 원칙: 각 단계에서 "새로 추가되는 종목 수"만 세세요. 이미 커버된 종목은 무시!
+
+[출력 형식 — 분석 후 맨 마지막에 아래 형식으로 최종 결과를 써주세요]
+① ETF명 (운용사)
+→ 종목A(N위)·종목B(N위)
+
+② ETF명 (운용사)
+→ 종목C(N위)·종목D(N위)
+
+③ ETF명 (운용사)
+→ 종목E(N위)
+
+Top 5 커버: N/5
+전체 커버: N/10
+미포함: 종목F·종목G·종목H"""
+
+        print("[ETF] Step 2: Pro 모델로 최적 조합 선택 중...")
+        step2_text = None
+        for attempt in range(3):
+            try:
+                resp2 = client.models.generate_content(
+                    model='gemini-2.5-pro',
+                    contents=prompt_step2,
+                    config=types.GenerateContentConfig(
+                        temperature=0.1,
+                    ),
+                )
+                step2_text = extract_text(resp2)
+                if step2_text:
+                    break
+            except Exception as e:
+                print(f"[ETF] Step 2 재시도 {attempt+1}/3: {e}")
+                time.sleep(10 * (attempt + 1))
+
+        if not step2_text:
+            print("[ETF] Step 2 실패 — ETF 매칭 스킵")
+            return None
+
+        print(f"[ETF] Step 2 완료: {len(step2_text)}자")
+
+        # Step 2 결과에서 최종 추천 블록 추출 (① 부터)
+        return _extract_etf_block(step2_text)
+
+    except Exception as e:
+        print(f"[ETF] ETF 매칭 실패: {e}")
+        return None
+
+
+def _extract_etf_block(text):
+    """Step 2 출력에서 최종 ETF 추천 블록 추출 (① ~ 미포함)"""
+    lines = text.split('\n')
+
+    # 마지막 ① 위치 찾기 (분석 과정에도 ①이 나올 수 있으므로 마지막 것 사용)
+    start_idx = None
+    for i in range(len(lines) - 1, -1, -1):
+        if lines[i].strip().startswith('①'):
+            start_idx = i
+            break
+
+    if start_idx is None:
+        print("[ETF] ① 블록 미발견 — 전체 텍스트 반환")
+        return text
+
+    # ① 부터 끝까지 추출, 불필요한 후행 빈줄 제거
+    result_lines = []
+    for line in lines[start_idx:]:
+        stripped = line.strip()
+        # 마크다운 볼드 제거
+        stripped = re.sub(r'\*\*(.+?)\*\*', r'\1', stripped)
+        # 불릿 포인트 정리
+        stripped = stripped.lstrip('* ')
+        result_lines.append(stripped)
+
+    # 후행 빈줄 제거
+    while result_lines and not result_lines[-1].strip():
+        result_lines.pop()
+
+    return '\n'.join(result_lines)
+
+
 if __name__ == '__main__':
     test_stocks = [
         {'ticker': '402340', 'name': 'SK스퀘어', 'rank': 1, 'sector': '투자지주/AI반도체',

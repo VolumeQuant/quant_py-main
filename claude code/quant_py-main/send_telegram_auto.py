@@ -837,7 +837,35 @@ def main():
         cold_start=cold_start, credit=credit,
     )
 
+    # ============================================================
+    # ETF 매칭 (Gemini Pro 2-step)
+    # ============================================================
+    msg_etf = None
+    if picks and not cold_start:
+        try:
+            from gemini_analysis import run_etf_matching
+            top10 = rankings_t0.get('rankings', [])[:10]
+            print("\n[ETF 매칭] Gemini Pro 2-step 시작...")
+            etf_text = run_etf_matching(top10, base_date=BASE_DATE)
+            if etf_text:
+                etf_lines = [
+                    '━━━━━━━━━━━━━━━',
+                    '📊 <b>맞춤형 ETF</b>',
+                    '━━━━━━━━━━━━━━━',
+                    'Top 10 종목을 담은 테마 ETF 조합이에요.',
+                    '',
+                    etf_text,
+                    '',
+                    f'{biz_day.month}/{biz_day.day} Top 10 기준 · AI 분석 참고용',
+                ]
+                msg_etf = '\n'.join(etf_lines)
+                print(f"[ETF 매칭] 메시지 생성 완료 ({len(msg_etf)}자)")
+        except Exception as e:
+            print(f"[ETF 매칭] 실패 (무시): {e}")
+
     messages = [msg_signal, msg_ai_risk, msg_watchlist]
+    if msg_etf:
+        messages.append(msg_etf)
 
     # ============================================================
     # 웹 대시보드용 데이터 캐시 저장
@@ -904,7 +932,7 @@ def main():
     IS_GITHUB_ACTIONS = os.environ.get('GITHUB_ACTIONS') == 'true'
 
     print("\n=== 메시지 미리보기 ===")
-    msg_labels = ['Signal', 'AI Risk', 'Watchlist']
+    msg_labels = ['Signal', 'AI Risk', 'Watchlist', 'ETF']
     for i, msg in enumerate(messages):
         label = msg_labels[i] if i < len(msg_labels) else f'#{i+1}'
         print(f"\n--- {label} ({len(msg)}자) ---")

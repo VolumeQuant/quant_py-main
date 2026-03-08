@@ -21,7 +21,8 @@ KOSPI/KOSDAQ 대상 멀티팩터 퀀트 전략 — **Slow In, Fast Out**
 | **변동성** | CBOE VIX 252일 퍼센타일 기반 레짐 판단, Concordance로 행동 톤 조절 |
 | **시장 경고 정지** | 시장 위험 지표(final_action) → 스크리닝 일시 중단 |
 | **콜드 스타트** | 3거래일 데이터 확보 전까지 채널 전송 스킵 (개인봇에만 전송) |
-| **텔레그램** | 매일 06:30 KST 자동 전송 (3메시지: Signal → AI Risk → Watchlist), 스크리닝 프레이밍 |
+| **텔레그램** | 매일 06:30 KST 자동 전송 (4메시지: Signal → AI Risk → Watchlist → ETF), 스크리닝 프레이밍 |
+| **ETF 매칭** | Gemini 2.5 Pro 2-step: Top 10 종목별 ETF 검색(Google Search) → Greedy 최적 조합 3개 선택 (Top 5 우선 커버) |
 
 ### 백테스트 성과 (2015-2025)
 
