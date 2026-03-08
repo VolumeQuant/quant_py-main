@@ -292,6 +292,25 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         sector = pick.get('sector', '기타')
         lines.append(f'<b>{i+1}. {pick["name"]}({pick["ticker"]}) · {sector}</b>')
 
+    # ── 시장 경고 배너 (Top 5 바로 아래, VIX/HY 주의 이상 시 1줄) ──
+    if credit:
+        warn_parts = []
+        hy = credit.get('hy')
+        vix = credit.get('vix')
+        if hy:
+            val = hy['hy_spread']
+            if val >= 3.0:
+                icon = '🟡' if val < 4.5 else '🔴'
+                warn_parts.append(f'{icon} HY {val:.2f}%')
+        if vix:
+            v = vix['vix_current']
+            pct = vix['vix_pct']
+            if pct >= 67:
+                icon = '🟡' if pct < 80 else ('🟠' if pct < 90 else '🔴')
+                warn_parts.append(f'{icon} VIX {v:.1f}')
+        if warn_parts:
+            lines.append(' · '.join(warn_parts))
+
     # ── Top 5 상관관계 경고 (corr > 0.7 → 동일 섹터 선택 가이드) ──
     meta = rankings_t0.get('metadata') or {}
     corr_pairs = meta.get('correlation_60d', {})
@@ -308,7 +327,7 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
             names = [p['name'] for p in picks if p['ticker'] in corr_members]
             n_corr = len(names)
             lines.append(f'⚠️ {"·".join(names)}')
-            lines.append('동일 섹터 — 이 중 1~2개 선택 권장')
+            lines.append('주가 상관관계 높음 — 이 중 1~2개 선택 권장')
 
     # ── 선정 과정 (퍼널) ──
     universe_count = meta.get('total_universe', 0)
@@ -376,26 +395,6 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
                 names_str += f' 외 {len(names)-4}'
             parts.append(f'{names_str}({reason})')
         lines.append(f'📉 순위 이탈: {" ".join(parts)}')
-
-    # ── 시장 경고 배너 (VIX/HY 주의 이상 시 1줄) ──
-    if credit:
-        warn_parts = []
-        hy = credit.get('hy')
-        vix = credit.get('vix')
-        if hy:
-            val = hy['hy_spread']
-            if val >= 3.0:
-                icon = '🟡' if val < 4.5 else '🔴'
-                warn_parts.append(f'{icon} HY {val:.2f}%')
-        if vix:
-            v = vix['vix_current']
-            pct = vix['vix_pct']
-            if pct >= 67:
-                icon = '🟡' if pct < 80 else ('🟠' if pct < 90 else '🔴')
-                warn_parts.append(f'{icon} VIX {v:.1f}')
-        if warn_parts:
-            lines.append('')
-            lines.append(' · '.join(warn_parts))
 
     # ── 범례 + 면책 (Signal) ──
     lines.append('')
