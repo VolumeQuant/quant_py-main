@@ -3,16 +3,34 @@
 ## 문서 개요
 
 **버전**: v52
-**최종 업데이트**: 2026-03-08
+**최종 업데이트**: 2026-03-10
 **작성자**: Claude Opus 4.6
 
 ---
 
 ## 핵심 변경사항 (v52 — ETF 매칭 추가)
 
-### 2026-03-08
+### 2026-03-08 ~ 03-10
 
 **배경**: 스크리닝 상위 종목에 대한 ETF 투자 대안 제시. Gemini 2.5 Pro + Google Search Grounding 2-step 전략.
+
+**v52 변경 이력**:
+- 03-08: Top 10 기준 ETF 3개 조합으로 첫 구현
+- 03-09: Top 10 → Top 5 전환 (추천 종목에 집중, 커버리지 수치 깔끔)
+- 03-10: 코드 기반(yfinance) 전환 검토 → 한국 ETF 홀딩스 데이터 소스 부재로 보류, 현행 Gemini 방식 유지
+
+**ETF 홀딩스 데이터 소스 조사 결과 (2026-03-10)**:
+| 소스 | 결과 |
+|------|------|
+| yfinance `get_funds_data()` | 한국 ETF 미지원 ("No Fund data") |
+| yfinance `mutualfund_holders` | 미국 펀드만 반환 (Vanguard, iShares 등) |
+| pykrx `get_etf_portfolio_deposit_file()` | KRX API 변경으로 깨짐 (`KeyError: 'isin'`) |
+| 네이버 CompanyGuide (wisereport) | JavaScript 동적 로딩, 정적 스크래핑 불가 |
+| KRX data.krx.co.kr 직접 | 세션 인증 필요 ("LOGOUT" 반환) |
+| etfcheck.co.kr | SPA, API 엔드포인트 미확인 |
+| 삼성자산운용 (kodex.com) | HTML 페이지만 반환, JSON API 미공개 |
+
+→ **결론**: 한국은 미국과 달리 ETF 홀딩스 공개 API가 없음. Gemini + Google Search 방식이 현재 최선.
 
 #### 변경 사항
 
