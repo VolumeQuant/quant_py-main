@@ -151,48 +151,38 @@ def _get_buy_rationale(pick) -> str:
 # 시장 이평선 경고
 # ============================================================
 def _calc_market_warnings(kospi_df, kosdaq_df):
-    """KOSPI/KOSDAQ 이평선 상태를 진단하여 경고 메시지 리스트 반환"""
+    """KOSPI/KOSDAQ 이평선 돌파/이탈 이벤트만 반환 (매일 표시 X)"""
     warnings = []
 
     for name, df in [('코스피', kospi_df), ('코스닥', kosdaq_df)]:
-        if df is None or len(df) < 5:
+        if df is None or len(df) < 6:
             continue
 
         close = df.iloc[:, 3]  # 종가 컬럼
-        current = close.iloc[-1]
+        today = close.iloc[-1]
+        yesterday = close.iloc[-2]
 
-        ma5 = close.rolling(5).mean().iloc[-1] if len(close) >= 5 else None
-        ma20 = close.rolling(20).mean().iloc[-1] if len(close) >= 20 else None
-        ma60 = close.rolling(60).mean().iloc[-1] if len(close) >= 60 else None
+        events = []
+        for period, label in [(5, '5일선'), (20, '20일선'), (60, '60일선')]:
+            if len(close) < period + 1:
+                continue
+            ma = close.rolling(period).mean()
+            ma_today = ma.iloc[-1]
+            ma_yesterday = ma.iloc[-2]
 
-        signals = []
+            was_above = yesterday >= ma_yesterday
+            is_above = today >= ma_today
 
-        if ma5 is not None:
-            if current < ma5:
-                signals.append("5일선↓")
+            if was_above and not is_above:
+                events.append(f"{label} 이탈")
+            elif not was_above and is_above:
+                events.append(f"{label} 돌파")
+
+        for evt in events:
+            if '이탈' in evt:
+                warnings.append(f"📉 {name} {evt}")
             else:
-                signals.append("5일선↑")
-
-        if ma20 is not None:
-            if current < ma20:
-                signals.append("20일선↓")
-
-        if ma60 is not None:
-            if current < ma60:
-                signals.append("60일선↓")
-
-        down_count = sum(1 for s in signals if '↓' in s)
-
-        if down_count == 0:
-            continue
-        elif down_count <= 1:
-            icon = "⚡"
-        elif down_count <= 2:
-            icon = "⚠️"
-        else:
-            icon = "🚨"
-
-        warnings.append(f"{icon} {name}: {' '.join(signals)}")
+                warnings.append(f"📈 {name} {evt}")
 
     return warnings
 
