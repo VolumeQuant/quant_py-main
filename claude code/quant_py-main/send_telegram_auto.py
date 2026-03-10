@@ -506,7 +506,7 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
     lines.append('')
     lines.append('━━━━━━━━━━━━━━━')
     lines.append('📐 Top 30 순위: 3일 가중순위 (2일전→1일전→오늘)')
-    lines.append('보유 종목이 상위 30 내라면 유지를 참고하세요.')
+    lines.append('보유 종목이 상위 30 안에 있다면 유지해도 좋습니다.')
 
     return '\n'.join(lines)
 
@@ -708,6 +708,7 @@ def main():
     if all_candidates:
         try:
             from gemini_analysis import run_ai_analysis, compute_risk_flags
+            # 시장 평균 등락률 (KOSPI/KOSDAQ 평균) — 초과 수익률 계산용
             stock_list = []
             for pick in all_candidates:
                 tech = pick.get('_tech', {}) or {}
