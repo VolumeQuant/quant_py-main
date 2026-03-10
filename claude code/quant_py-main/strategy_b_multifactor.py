@@ -124,15 +124,13 @@ class MultiFactorStrategy:
 
     def calculate_momentum(self, data, price_df):
         """
-        모멘텀 팩터 계산 — 리스크 조정 12M-1M 모멘텀
+        모멘텀 팩터 계산 — 리스크 조정 6M 모멘텀
 
-        Score = (12M수익률 - 1M수익률) / 12M변동성(연환산)
-        - 12개월 장기 추세 포착
-        - 1M 차감: 최근 1개월 mean-reversion 노이즈 제거
+        Score = 6M수익률 / 6M변동성(연환산)
+        - 6개월 중기 추세 포착 (정책/회복 국면에 최적)
         - 변동성 하한선 15% (저변동 종목 점수 폭발 방지)
         """
-        LOOKBACK_12M = 12 * 21  # 252 거래일
-        LOOKBACK_1M = 1 * 21    # 21 거래일
+        LOOKBACK_6M = 6 * 21    # 126 거래일
         VOL_FLOOR = 15.0
 
         if price_df is None or price_df.empty:
@@ -140,7 +138,7 @@ class MultiFactorStrategy:
             data['모멘텀'] = np.nan
             return data
 
-        min_required = LOOKBACK_12M + 1
+        min_required = LOOKBACK_6M + 1
 
         if len(price_df) < min_required:
             print(f"경고: 가격 데이터가 부족합니다. (현재: {len(price_df)}일, 필요: {min_required}일)")
@@ -159,22 +157,19 @@ class MultiFactorStrategy:
 
                 try:
                     price_current = prices.iloc[-1]
-                    price_12m_ago = prices.iloc[-(LOOKBACK_12M + 1)]
-                    price_1m_ago = prices.iloc[-(LOOKBACK_1M + 1)]
+                    price_6m_ago = prices.iloc[-(LOOKBACK_6M + 1)]
 
-                    if price_12m_ago <= 0 or price_1m_ago <= 0:
+                    if price_6m_ago <= 0:
                         continue
 
-                    ret_12m = (price_current / price_12m_ago - 1) * 100
-                    ret_1m = (price_current / price_1m_ago - 1) * 100
+                    ret_6m = (price_current / price_6m_ago - 1) * 100
 
-                    # 12M 변동성 (연환산)
-                    daily_returns = prices.iloc[-(LOOKBACK_12M + 1):].pct_change().dropna()
+                    # 6M 변동성 (연환산)
+                    daily_returns = prices.iloc[-(LOOKBACK_6M + 1):].pct_change().dropna()
                     annual_vol = daily_returns.std() * np.sqrt(252) * 100
                     annual_vol = max(annual_vol, VOL_FLOOR)
 
-                    # 리스크 조정 모멘텀 = (12M - 1M) / Vol
-                    momentum = (ret_12m - ret_1m) / annual_vol
+                    momentum = ret_6m / annual_vol
                     momentum_dict[ticker] = momentum
                     matched_count += 1
                 except (IndexError, KeyError):
@@ -182,7 +177,7 @@ class MultiFactorStrategy:
 
         data['모멘텀'] = data['종목코드'].map(momentum_dict)
         print(f"모멘텀 계산 완료: {matched_count}/{len(data)}개 매칭")
-        print(f"  공식: (12M-1M) / 변동성(연환산, floor={VOL_FLOOR}%)")
+        print(f"  공식: 6M수익률 / 변동성(연환산, floor={VOL_FLOOR}%)")
 
         return data
 

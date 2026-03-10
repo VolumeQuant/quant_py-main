@@ -10,7 +10,7 @@
 팩터:
   - Value 45% + Quality 15% + Growth 10% + Momentum 30%
   - Growth: EPS개선도 (Forward PER) + 매출성장률 (YoY)
-  - Momentum: (12M수익률 - 1M수익률) / 12M변동성 [리스크 조정]
+  - Momentum: 6M수익률 / 6M변동성 [리스크 조정]
 
 데이터 소스:
   - FnGuide 캐시: 재무제표 (Quality 팩터, PCR/PSR용)
@@ -443,7 +443,7 @@ def generate_report(
 - Value 팩터 45%: PER(실시간) + PBR(실시간) + PCR + PSR + DIV(실시간)
 - Quality 팩터 25%: ROE + GPA + CFO
 - Growth 팩터 10%: EPS개선도 (Forward PER) + 매출성장률 (YoY)
-- Momentum 팩터 20%: (12M수익률 - 1M수익률) / 12M변동성 [리스크 조정]
+- Momentum 팩터 20%: 6M수익률 / 6M변동성 [리스크 조정]
 """
 
     if not selected.empty and '종목명' in selected.columns:
@@ -471,7 +471,7 @@ def main():
     print("퀀트 포트폴리오 생성 v6.0 — Slow In, Fast Out")
     print(f"기준일: {BASE_DATE}")
     print(f"파이프라인: 유니버스 → MA120 필터 → A 사전필터({PREFILTER_N}) → B 멀티팩터 → 순위 저장")
-    print(f"모멘텀: (12M-1M) / 변동성 [리스크 조정]")
+    print(f"모멘텀: 6M / 변동성 [리스크 조정]")
     print("=" * 80)
 
     error_tracker = ErrorTracker(log_dir=Path("logs"), name="portfolio")
