@@ -35,6 +35,8 @@
 
 **수정 파일**: `strategy_b_multifactor.py`, `create_current_portfolio.py`
 
+**전체 재계산 (2026-03-10)**: 17개 거래일(20260209~20260309) 전체 ranking JSON을 현재 버전 파이프라인으로 재계산. market_cap 캐시 사전 수집 → 풀 파이프라인 순차 실행. `rescore_momentum.py`(경량 재채점 스크립트)도 작성했으나, 유니버스 차이 문제로 풀 파이프라인 사용.
+
 **복원 방법**: `calculate_momentum()`에서 LOOKBACK_6M → LOOKBACK_12M, ret_6m → (ret_12m - ret_1m) 으로 변경
 
 ---
