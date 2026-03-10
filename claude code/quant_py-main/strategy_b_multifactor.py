@@ -286,27 +286,38 @@ class MultiFactorStrategy:
         data['밸류_raw'] = data[value_zs].mean(axis=1) if value_zs else 0
         data['퀄리티_raw'] = data[quality_zs].mean(axis=1) if quality_zs else 0
 
-        # Growth: NaN은 keep → 부분 결측은 있는 것만, 둘 다 없으면 페널티
+        # Growth: NaN은 keep → 부분 결측은 있는 것만, 둘 다 없으면 재표준화 후 페널티
         if growth_zs:
             data['성장_raw'] = data[growth_zs].mean(axis=1)
             growth_missing = data['성장_raw'].isna().sum()
             if growth_missing > 0:
-                data['성장_raw'] = data['성장_raw'].fillna(-0.5)
-                print(f"Growth 둘 다 없는 종목: {growth_missing}개 → G=-0.5σ 페널티")
+                print(f"Growth 둘 다 없는 종목: {growth_missing}개 → 재표준화 후 -0.5σ 페널티")
         else:
             data['성장_raw'] = 0
 
         data['모멘텀_raw'] = data[momentum_zs].mean(axis=1) if momentum_zs else 0
 
-        # 6. 카테고리별 재표준화 (std=1) — 서브팩터 수 차이로 인한 분산 불균형 해소
+        # 6. 카테고리별 재표준화 (std=1) — 결측 제외하고 실제 데이터만으로 계산
         for raw_col, score_col in [('밸류_raw', '밸류_점수'), ('퀄리티_raw', '퀄리티_점수'),
                                     ('성장_raw', '성장_점수'), ('모멘텀_raw', '모멘텀_점수')]:
-            cat_mean = data[raw_col].mean()
-            cat_std = data[raw_col].std()
+            valid = data[raw_col].dropna()
+            cat_mean = valid.mean() if len(valid) > 0 else 0
+            cat_std = valid.std() if len(valid) > 0 else 0
             if cat_std > 0:
                 data[score_col] = (data[raw_col] - cat_mean) / cat_std
             else:
                 data[score_col] = 0.0
+            # 결측(Growth 둘 다 없는 종목)은 재표준화 후 -0.5σ 페널티
+            data[score_col] = data[score_col].fillna(-0.5)
+
+        # 6.5. ROE 하드게이트: ROE < 0% (적자 기업) → 무조건 제외
+        if 'ROE' in data.columns:
+            roe_neg_mask = data['ROE'] < 0
+            roe_neg_count = roe_neg_mask.sum()
+            if roe_neg_count > 0:
+                roe_neg_names = data.loc[roe_neg_mask, '종목명'].tolist() if '종목명' in data.columns else []
+                data = data[~roe_neg_mask].copy()
+                print(f"ROE 하드게이트: {roe_neg_count}개 제외 (ROE<0%) {roe_neg_names[:5]}")
 
         # 7. 과락 필터: 4개 카테고리 중 2개 이상 -0.5σ 미만 → 제외
         FAIL_THRESHOLD = -0.5
@@ -319,7 +330,17 @@ class MultiFactorStrategy:
             data = data[~fail_mask].copy()
             print(f"과락 필터: {fail_count}개 제외 (2개 이상 <-0.5σ) {failed_names[:5]}")
 
-        # 8. 최종 가중합 (V25 + Q25 + G30 + M20)
+        # 8. Piecewise ±3 스케일링 — 카테고리별 기여도를 비중에 비례하게 조정
+        for score_col in cat_cols:
+            pos_max = data[score_col].max()
+            neg_min = data[score_col].min()
+            if pos_max > 0:
+                data.loc[data[score_col] > 0, score_col] *= 3.0 / pos_max
+            if neg_min < 0:
+                data.loc[data[score_col] < 0, score_col] *= -3.0 / neg_min
+        print("Piecewise ±3 스케일링 적용 (카테고리별 기여도 균등화)")
+
+        # 9. 최종 가중합 (V25 + Q25 + G30 + M20)
         if momentum_zs:
             before_count = len(data)
             data = data[data['모멘텀_점수'].notna()].copy()
@@ -327,11 +348,11 @@ class MultiFactorStrategy:
             if excluded > 0:
                 print(f"모멘텀 데이터 없는 종목 제외: {excluded}개 → {len(data)}개 남음")
 
-            data['멀티팩터_점수'] = (data['밸류_점수'] * 0.25 +
+            data['멀티팩터_점수'] = (data['밸류_점수'] * 0.10 +
                                     data['퀄리티_점수'] * 0.25 +
-                                    data['성장_점수'] * 0.30 +
-                                    data['모멘텀_점수'] * 0.20)
-            print("멀티팩터 가중치: V25 + Q25 + G30 + M20 (WZ+Renorm)")
+                                    data['성장_점수'] * 0.35 +
+                                    data['모멘텀_점수'] * 0.30)
+            print("멀티팩터 가중치: V10 + Q25 + G35 + M30 (WZ+Renorm+PW±3)")
         else:
             data['멀티팩터_점수'] = (data['밸류_점수'] * 0.5 +
                                     data['퀄리티_점수'] * 0.5)
