@@ -251,6 +251,33 @@ def _weighted_score_100(ticker, rankings_t0, rankings_t1, rankings_t2):
     return max(0, min(100, round((ws + 3.0) / 6.0 * 100)))
 
 
+def _build_top5_streak():
+    """ranking JSON에서 Top 5 연속 유지 일수 계산. Returns: {ticker: int}"""
+    import glob
+    state_dir = Path(__file__).parent / 'state'
+    files = sorted(glob.glob(str(state_dir / 'ranking_*.json')), reverse=True)
+    if not files:
+        return {}
+
+    with open(files[0], 'r', encoding='utf-8') as f:
+        latest = json.load(f)
+    top5_tickers = [r['ticker'] for r in latest.get('rankings', []) if r.get('rank', 99) <= 5]
+
+    streak = {}
+    for ticker in top5_tickers:
+        count = 0
+        for fp in files:
+            with open(fp, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            ranks = {r['ticker']: r.get('rank', 99) for r in data.get('rankings', [])}
+            if ranks.get(ticker, 99) <= 5:
+                count += 1
+            else:
+                break
+        streak[ticker] = count
+    return streak
+
+
 def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
                           market_max_picks, stock_weight, rankings_t0,
                           rankings_t1, rankings_t2, cold_start,
@@ -350,6 +377,7 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
 
     t1_rank_map = {r['ticker']: r.get('composite_rank', r['rank']) for r in rankings_t1.get('rankings', [])} if rankings_t1 else {}
     t2_rank_map = {r['ticker']: r.get('composite_rank', r['rank']) for r in rankings_t2.get('rankings', [])} if rankings_t2 else {}
+    top5_streak = _build_top5_streak()
 
     for i, pick in enumerate(picks):
         ticker = pick['ticker']
@@ -366,7 +394,10 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         r1 = t1_rank_map.get(ticker, '-')
         r2 = t2_rank_map.get(ticker, '-')
         score_100 = _weighted_score_100(ticker, rankings_t0, rankings_t1, rankings_t2)
-        lines.append(f'순위 {r2}→{r1}→{r0}위 · {score_100}점')
+        streak_str = ''
+        if ticker in top5_streak:
+            streak_str = f' · Top5 {top5_streak[ticker]}일째'
+        lines.append(f'순위 {r2}→{r1}→{r0}위 · {score_100}점{streak_str}')
 
         # L2: AI 내러티브 (fallback: _get_buy_rationale)
         narrative = ''
