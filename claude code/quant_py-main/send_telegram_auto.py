@@ -247,7 +247,8 @@ def _weighted_score_100(ticker, rankings_t0, rankings_t1, rankings_t2):
     s1 = t1_map.get(ticker, t1_fallback)
     s2 = t2_map.get(ticker, t2_fallback)
     ws = s0 * 0.5 + s1 * 0.3 + s2 * 0.2
-    return max(0, min(100, round((ws + 3.0) / 6.0 * 100)))
+    # float 정밀도 유지 — 정렬 시 동점 방지, 표시 시만 반올림
+    return max(0.0, min(100.0, (ws + 3.0) / 6.0 * 100))
 
 
 def _build_top5_streak(top5_tickers):
@@ -398,7 +399,7 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         streak_str = ''
         if ticker in top5_streak:
             streak_str = f' · Top5 {top5_streak[ticker]}일째'
-        lines.append(f'순위 {r2}→{r1}→{r0}위 · {score_100}점{streak_str}')
+        lines.append(f'순위 {r2}→{r1}→{r0}위 · {int(round(score_100))}점{streak_str}')
 
         # L2: AI 내러티브 (fallback: _get_buy_rationale)
         narrative = ''
@@ -541,13 +542,14 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         r1 = s.get('_r1', '-')
         r2 = s.get('_r2', '-')
         score_100 = _weighted_score_100(s['ticker'], rankings_t0, rankings_t1, rankings_t2)
+        score_disp = int(round(score_100))
 
         if status == '✅':
-            lines.append(f'{status} {idx}. {name}({sector}) {r2}→{r1}→{r0}위 · {score_100}점')
+            lines.append(f'{status} {idx}. {name}({sector}) {r2}→{r1}→{r0}위 · {score_disp}점')
         elif status == '⏳':
-            lines.append(f'{status} {idx}. {name}({sector}) -→{r1}→{r0}위 · {score_100}점')
+            lines.append(f'{status} {idx}. {name}({sector}) -→{r1}→{r0}위 · {score_disp}점')
         else:
-            lines.append(f'{status} {idx}. {name}({sector}) -→-→{r0}위 · {score_100}점')
+            lines.append(f'{status} {idx}. {name}({sector}) -→-→{r0}위 · {score_disp}점')
 
     # ── 이탈 섹션 (사유별 묶기) ──
     if exited:
