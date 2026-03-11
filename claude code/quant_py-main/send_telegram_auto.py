@@ -225,30 +225,30 @@ def send_telegram_long(text, bot_token, chat_id):
 # v41 메시지 포맷터 — Signal / AI Risk / Watchlist
 # ============================================================
 def _weighted_score_100(ticker, rankings_t0, rankings_t1, rankings_t2):
-    """가중점수(T0×0.5+T1×0.3+T2×0.2) → 100점 환산
-    missing일 때 순위 50위 종목의 점수를 사용 (가중순위 페널티와 일관)
+    """composite_rank 기반 가중순위 → 100점 환산.
+    가중순위 = composite_rank_T0×0.5 + T1×0.3 + T2×0.2 (missing=50)
+    목록 순서와 동일 기준이므로 역전 불가.
     """
-    DEFAULT_MISSING_RANK = 50
+    MISSING_RANK = 50
 
-    def _build_maps(rankings):
+    def _rank_map(rankings):
         if not rankings:
-            return {}, 0
-        rlist = rankings.get('rankings', [])
-        ticker_map = {r['ticker']: r['score'] for r in rlist}
-        # composite_rank 기준 50위 종목의 점수 (없으면 0)
-        rank_map = {r.get('composite_rank', r['rank']): r['score'] for r in rlist}
-        fallback = rank_map.get(DEFAULT_MISSING_RANK, 0)
-        return ticker_map, fallback
+            return {}
+        return {r['ticker']: r.get('composite_rank', r['rank'])
+                for r in rankings.get('rankings', [])}
 
-    t0_map, _ = _build_maps(rankings_t0)
-    t1_map, t1_fallback = _build_maps(rankings_t1)
-    t2_map, t2_fallback = _build_maps(rankings_t2)
+    t0 = _rank_map(rankings_t0)
+    t1 = _rank_map(rankings_t1)
+    t2 = _rank_map(rankings_t2)
 
-    s0 = t0_map.get(ticker, 0)
-    s1 = t1_map.get(ticker, t1_fallback)
-    s2 = t2_map.get(ticker, t2_fallback)
-    ws = s0 * 0.5 + s1 * 0.3 + s2 * 0.2
-    return max(0, min(100, round((ws + 3.0) / 6.0 * 100)))
+    r0 = t0.get(ticker, MISSING_RANK)
+    r1 = t1.get(ticker, MISSING_RANK)
+    r2 = t2.get(ticker, MISSING_RANK)
+    weighted = r0 * 0.5 + r1 * 0.3 + r2 * 0.2
+
+    # 전체 종목 수 기준 스케일링 (1위=100점, max위=0점)
+    max_rank = max(len(t0), MISSING_RANK)
+    return max(0, min(100, round((1 - (weighted - 1) / max(max_rank - 1, 1)) * 100)))
 
 
 def _build_top5_streak(top5_tickers):
