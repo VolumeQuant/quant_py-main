@@ -224,6 +224,33 @@ def send_telegram_long(text, bot_token, chat_id):
 # ============================================================
 # v41 메시지 포맷터 — Signal / AI Risk / Watchlist
 # ============================================================
+def _weighted_score_100(ticker, rankings_t0, rankings_t1, rankings_t2):
+    """가중점수(T0×0.5+T1×0.3+T2×0.2) → 100점 환산
+    missing일 때 순위 50위 종목의 점수를 사용 (가중순위 페널티와 일관)
+    """
+    DEFAULT_MISSING_RANK = 50
+
+    def _build_maps(rankings):
+        if not rankings:
+            return {}, 0
+        rlist = rankings.get('rankings', [])
+        ticker_map = {r['ticker']: r['score'] for r in rlist}
+        # composite_rank 기준 50위 종목의 점수 (없으면 0)
+        rank_map = {r.get('composite_rank', r['rank']): r['score'] for r in rlist}
+        fallback = rank_map.get(DEFAULT_MISSING_RANK, 0)
+        return ticker_map, fallback
+
+    t0_map, _ = _build_maps(rankings_t0)
+    t1_map, t1_fallback = _build_maps(rankings_t1)
+    t2_map, t2_fallback = _build_maps(rankings_t2)
+
+    s0 = t0_map.get(ticker, 0)
+    s1 = t1_map.get(ticker, t1_fallback)
+    s2 = t2_map.get(ticker, t2_fallback)
+    ws = s0 * 0.5 + s1 * 0.3 + s2 * 0.2
+    return max(0, min(100, round((ws + 3.0) / 6.0 * 100)))
+
+
 def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
                           market_max_picks, stock_weight, rankings_t0,
                           rankings_t1, rankings_t2, cold_start,
@@ -338,7 +365,8 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         r0 = pick.get('rank_t0', pick.get('composite_rank', pick.get('rank', '?')))
         r1 = t1_rank_map.get(ticker, '-')
         r2 = t2_rank_map.get(ticker, '-')
-        lines.append(f'순위 {r2}→{r1}→{r0}위')
+        score_100 = _weighted_score_100(ticker, rankings_t0, rankings_t1, rankings_t2)
+        lines.append(f'순위 {r2}→{r1}→{r0}위 · {score_100}점')
 
         # L2: AI 내러티브 (fallback: _get_buy_rationale)
         narrative = ''
@@ -464,21 +492,26 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
     # 가중순위 기준 정렬 (✅/⏳/🆕 혼합)
     sorted_pipeline = sorted(pipeline, key=lambda x: x.get('weighted_rank', x['rank']))
 
+    _SECTOR_SHORT = {
+        '전기전자': '전자', '바이오/제약': '바이오', 'IT서비스': 'IT',
+        '섬유/의류': '의류', '소프트웨어': 'SW', '의료기기': '의료',
+    }
+
     for idx, s in enumerate(sorted_pipeline, 1):
         name = s['name']
-        sector = s.get('sector', '기타')
+        sector = _SECTOR_SHORT.get(s.get('sector', '기타'), s.get('sector', '기타'))
         status = s['status']
         r0 = s.get('composite_rank', s['rank'])  # T-0 순수 점수 순위
         r1 = s.get('_r1', '-')
         r2 = s.get('_r2', '-')
+        score_100 = _weighted_score_100(s['ticker'], rankings_t0, rankings_t1, rankings_t2)
 
-        # 1줄: 상태 가중순번. 이름(업종) 일별순위궤적
         if status == '✅':
-            lines.append(f'{status} {idx}. {name}({sector}) {r2}→{r1}→{r0}위')
+            lines.append(f'{status} {idx}. {name}({sector}) {r2}→{r1}→{r0}위 · {score_100}점')
         elif status == '⏳':
-            lines.append(f'{status} {idx}. {name}({sector}) -→{r1}→{r0}위')
+            lines.append(f'{status} {idx}. {name}({sector}) -→{r1}→{r0}위 · {score_100}점')
         else:
-            lines.append(f'{status} {idx}. {name}({sector}) -→-→{r0}위')
+            lines.append(f'{status} {idx}. {name}({sector}) -→-→{r0}위 · {score_100}점')
 
     # ── 이탈 섹션 (사유별 묶기) ──
     if exited:
@@ -828,35 +861,7 @@ def main():
         cold_start=cold_start, credit=credit,
     )
 
-    # ============================================================
-    # ETF 매칭 (Gemini Pro 2-step)
-    # ============================================================
-    msg_etf = None
-    if picks and not cold_start:
-        try:
-            from gemini_analysis import run_etf_matching
-            top5 = rankings_t0.get('rankings', [])[:5]
-            print("\n[ETF 매칭] Gemini Pro 2-step 시작...")
-            etf_text = run_etf_matching(top5, base_date=BASE_DATE)
-            if etf_text:
-                etf_lines = [
-                    '━━━━━━━━━━━━━━━',
-                    '📊 <b>맞춤형 ETF</b>',
-                    '━━━━━━━━━━━━━━━',
-                    'Top 5 종목을 담은 테마 ETF 조합이에요.',
-                    '',
-                    etf_text,
-                    '',
-                    f'{biz_day.month}/{biz_day.day} Top 5 기준 · AI 분석 참고용',
-                ]
-                msg_etf = '\n'.join(etf_lines)
-                print(f"[ETF 매칭] 메시지 생성 완료 ({len(msg_etf)}자)")
-        except Exception as e:
-            print(f"[ETF 매칭] 실패 (무시): {e}")
-
     messages = [msg_signal, msg_ai_risk, msg_watchlist]
-    if msg_etf:
-        messages.append(msg_etf)
 
     # ============================================================
     # 웹 대시보드용 데이터 캐시 저장
@@ -923,7 +928,7 @@ def main():
     IS_GITHUB_ACTIONS = os.environ.get('GITHUB_ACTIONS') == 'true'
 
     print("\n=== 메시지 미리보기 ===")
-    msg_labels = ['Signal', 'AI Risk', 'Watchlist', 'ETF']
+    msg_labels = ['Signal', 'AI Risk', 'Watchlist']
     for i, msg in enumerate(messages):
         label = msg_labels[i] if i < len(msg_labels) else f'#{i+1}'
         print(f"\n--- {label} ({len(msg)}자) ---")
