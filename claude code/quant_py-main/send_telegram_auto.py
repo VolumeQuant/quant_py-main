@@ -251,22 +251,23 @@ def _weighted_score_100(ticker, rankings_t0, rankings_t1, rankings_t2):
     return max(0, min(100, round((ws + 3.0) / 6.0 * 100)))
 
 
-def _build_top5_streak():
-    """ranking JSON에서 Top 5 연속 유지 일수 계산. Returns: {ticker: int}"""
+def _build_top5_streak(top5_tickers):
+    """Top 5 연속 유지 일수 계산.
+    top5_tickers: 현재 실제 Top 5 ticker 리스트 (picks 기준).
+    과거 날짜는 JSON rank <= 5 (가중순위 포지션)로 판단.
+    Returns: {ticker: int(연속 일수, 최소 1)}"""
     import glob
     state_dir = Path(__file__).parent / 'state'
     files = sorted(glob.glob(str(state_dir / 'ranking_*.json')), reverse=True)
-    if not files:
+    if not files or not top5_tickers:
         return {}
-
-    with open(files[0], 'r', encoding='utf-8') as f:
-        latest = json.load(f)
-    top5_tickers = [r['ticker'] for r in latest.get('rankings', []) if r.get('rank', 99) <= 5]
 
     streak = {}
     for ticker in top5_tickers:
-        count = 0
-        for fp in files:
+        # 오늘은 picks에 포함 = 1일째 확정
+        count = 1
+        # 과거 파일 (두 번째부터) 역순 탐색
+        for fp in files[1:]:
             with open(fp, 'r', encoding='utf-8') as f:
                 data = json.load(f)
             ranks = {r['ticker']: r.get('rank', 99) for r in data.get('rankings', [])}
@@ -377,7 +378,8 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
 
     t1_rank_map = {r['ticker']: r.get('composite_rank', r['rank']) for r in rankings_t1.get('rankings', [])} if rankings_t1 else {}
     t2_rank_map = {r['ticker']: r.get('composite_rank', r['rank']) for r in rankings_t2.get('rankings', [])} if rankings_t2 else {}
-    top5_streak = _build_top5_streak()
+    top5_tickers = [p['ticker'] for p in picks]
+    top5_streak = _build_top5_streak(top5_tickers)
 
     for i, pick in enumerate(picks):
         ticker = pick['ticker']
@@ -586,11 +588,22 @@ def main():
     if TEST_MODE:
         print("⚠️  TEST_MODE — 개인봇으로만 전송합니다.")
 
-    # --dates 20260227,20260226,20260225 형태로 거래일 직접 지정 (테스트용)
+    # --dates 20260310 20260309 20260306 또는 --dates=20260310,20260309,20260306
     manual_dates = None
-    for i, arg in enumerate(sys.argv[1:], 1):
-        if arg == '--dates' and i < len(sys.argv):
-            manual_dates = sys.argv[i + 1].split(',') if i + 1 <= len(sys.argv) else None
+    for i, arg in enumerate(sys.argv):
+        if arg == '--dates':
+            # 공백 구분: --dates 20260310 20260309 20260306
+            remaining = []
+            for a in sys.argv[i + 1:]:
+                if a.startswith('--'):
+                    break
+                remaining.append(a)
+            if remaining:
+                # 콤마 구분도 지원: --dates 20260310,20260309,20260306
+                if len(remaining) == 1 and ',' in remaining[0]:
+                    manual_dates = remaining[0].split(',')
+                else:
+                    manual_dates = remaining
             break
         elif arg.startswith('--dates='):
             manual_dates = arg.split('=', 1)[1].split(',')
