@@ -399,7 +399,7 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         streak_str = ''
         if ticker in top5_streak:
             streak_str = f' · Top5 {top5_streak[ticker]}일째'
-        lines.append(f'순위 {r2}→{r1}→{r0}위 · {int(round(score_100))}점{streak_str}')
+        lines.append(f'순위 {r2}→{r1}→{r0}위 · {score_100:.1f}점{streak_str}')
 
         # L2: AI 내러티브 (fallback: _get_buy_rationale)
         narrative = ''
@@ -542,7 +542,7 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         r1 = s.get('_r1', '-')
         r2 = s.get('_r2', '-')
         score_100 = _weighted_score_100(s['ticker'], rankings_t0, rankings_t1, rankings_t2)
-        score_disp = int(round(score_100))
+        score_disp = f'{score_100:.1f}'
 
         if status == '✅':
             lines.append(f'{status} {idx}. {name}({sector}) {r2}→{r1}→{r0}위 · {score_disp}점')
