@@ -270,7 +270,7 @@ def _build_top5_streak(top5_tickers):
         for fp in files[1:]:
             with open(fp, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-            ranks = {r['ticker']: r.get('rank', 99) for r in data.get('rankings', [])}
+            ranks = {r['ticker']: r.get('composite_rank', r.get('rank', 99)) for r in data.get('rankings', [])}
             if ranks.get(ticker, 99) <= 5:
                 count += 1
             else:
