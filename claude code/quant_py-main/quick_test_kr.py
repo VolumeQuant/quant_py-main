@@ -131,7 +131,7 @@ def main():
 
     # 4. picks 선정 (✅ 종목 가중순위 상위 5)
     verified = [s for s in pipeline if s['status'] == '✅']
-    verified.sort(key=lambda x: x['rank'])
+    verified.sort(key=lambda x: x.get('weighted_rank', x['rank']))
     picks = verified[:5]
 
     # rank_t0/t1/t2 추가
