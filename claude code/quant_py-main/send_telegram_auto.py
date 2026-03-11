@@ -225,30 +225,29 @@ def send_telegram_long(text, bot_token, chat_id):
 # v41 메시지 포맷터 — Signal / AI Risk / Watchlist
 # ============================================================
 def _weighted_score_100(ticker, rankings_t0, rankings_t1, rankings_t2):
-    """composite_rank 기반 가중순위 → 100점 환산.
-    가중순위 = composite_rank_T0×0.5 + T1×0.3 + T2×0.2 (missing=50)
-    목록 순서와 동일 기준이므로 역전 불가.
+    """원본 멀티팩터 점수 가중(T0×0.5+T1×0.3+T2×0.2) → 100점 환산.
+    원본 점수 기반이라 실제 격차가 반영됨.
     """
-    MISSING_RANK = 50
+    DEFAULT_MISSING_RANK = 50
 
-    def _rank_map(rankings):
+    def _build_maps(rankings):
         if not rankings:
-            return {}
-        return {r['ticker']: r.get('composite_rank', r['rank'])
-                for r in rankings.get('rankings', [])}
+            return {}, 0
+        rlist = rankings.get('rankings', [])
+        ticker_map = {r['ticker']: r['score'] for r in rlist}
+        rank_map = {r.get('composite_rank', r['rank']): r['score'] for r in rlist}
+        fallback = rank_map.get(DEFAULT_MISSING_RANK, 0)
+        return ticker_map, fallback
 
-    t0 = _rank_map(rankings_t0)
-    t1 = _rank_map(rankings_t1)
-    t2 = _rank_map(rankings_t2)
+    t0_map, _ = _build_maps(rankings_t0)
+    t1_map, t1_fallback = _build_maps(rankings_t1)
+    t2_map, t2_fallback = _build_maps(rankings_t2)
 
-    r0 = t0.get(ticker, MISSING_RANK)
-    r1 = t1.get(ticker, MISSING_RANK)
-    r2 = t2.get(ticker, MISSING_RANK)
-    weighted = r0 * 0.5 + r1 * 0.3 + r2 * 0.2
-
-    # 전체 종목 수 기준 스케일링 (1위=100점, max위=0점)
-    max_rank = max(len(t0), MISSING_RANK)
-    return max(0, min(100, round((1 - (weighted - 1) / max(max_rank - 1, 1)) * 100)))
+    s0 = t0_map.get(ticker, 0)
+    s1 = t1_map.get(ticker, t1_fallback)
+    s2 = t2_map.get(ticker, t2_fallback)
+    ws = s0 * 0.5 + s1 * 0.3 + s2 * 0.2
+    return max(0, min(100, round((ws + 3.0) / 6.0 * 100)))
 
 
 def _build_top5_streak(top5_tickers):
@@ -485,7 +484,8 @@ def create_ai_risk_message(credit, kospi_data, kosdaq_data, market_warnings,
 
 
 def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
-                             rankings_t2, cold_start=False, credit=None):
+                             rankings_t2, cold_start=False, credit=None,
+                             score_100_map=None):
     """Message 3: Watchlist — 데이터 (Top 30 모니터링)
 
     종목당 1줄: 상태+순위+이름(업종)+순위궤적
@@ -522,8 +522,11 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         s['_r1'] = t1_item.get('composite_rank', t1_item['rank']) if t1_item else '-'
         s['_r2'] = t2_item.get('composite_rank', t2_item['rank']) if t2_item else '-'
 
-    # 가중순위 기준 정렬 (✅/⏳/🆕 혼합)
-    sorted_pipeline = sorted(pipeline, key=lambda x: x.get('weighted_rank', x['rank']))
+    # 점수 기준 정렬 (격차 반영, 역전 방지)
+    if score_100_map:
+        sorted_pipeline = sorted(pipeline, key=lambda x: score_100_map.get(x['ticker'], 0), reverse=True)
+    else:
+        sorted_pipeline = sorted(pipeline, key=lambda x: x.get('weighted_rank', x['rank']))
 
     _SECTOR_SHORT = {
         '전기전자': '전자', '바이오/제약': '바이오', 'IT서비스': 'IT',
@@ -735,14 +738,22 @@ def main():
             print(f"    ↓ {e['name']} ({e['rank']}위)")
 
     # ============================================================
-    # ✅ 검증 종목에서 Top 추천 (가중순위 순)
+    # 100점 환산 점수 맵 (정렬 + 표시에 사용)
+    # ============================================================
+    score_100_pre = {}
+    for s in pipeline:
+        score_100_pre[s['ticker']] = _weighted_score_100(
+            s['ticker'], rankings_t0, rankings_t1, rankings_t2)
+
+    # ============================================================
+    # ✅ 검증 종목에서 Top 추천 (점수 순)
     # ============================================================
     print("\n[✅ 검증 종목 매수 추천]")
     all_candidates = []
     drop_info = []
     if not cold_start:
         verified_picks = [s for s in pipeline if s['status'] == '✅']
-        verified_picks.sort(key=lambda x: x.get('weighted_rank', x['rank']))
+        verified_picks.sort(key=lambda x: score_100_pre.get(x['ticker'], 0), reverse=True)
         print(f"  ✅ 검증 종목: {len(verified_picks)}개")
 
         t1_rank_map = {r['ticker']: r.get('composite_rank', r['rank']) for r in rankings_t1.get('rankings', [])} if rankings_t1 else {}
@@ -903,6 +914,7 @@ def main():
     msg_watchlist = create_watchlist_message(
         pipeline, exited, rankings_t0, rankings_t1, rankings_t2,
         cold_start=cold_start, credit=credit,
+        score_100_map=score_100_pre,
     )
 
     messages = [msg_signal, msg_ai_risk, msg_watchlist]
