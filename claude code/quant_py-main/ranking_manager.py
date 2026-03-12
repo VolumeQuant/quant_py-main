@@ -330,7 +330,7 @@ def get_stock_status(rankings_t0, rankings_t1=None, rankings_t2=None, top_n=30):
     if rankings_t1:
         for item in rankings_t1.get('rankings', []):
             all_t1[item['ticker']] = item
-            if item['rank'] <= top_n:
+            if item.get('composite_rank', item['rank']) <= top_n:
                 top_t1_set.add(item['ticker'])
 
     all_t2 = {}
@@ -338,7 +338,7 @@ def get_stock_status(rankings_t0, rankings_t1=None, rankings_t2=None, top_n=30):
     if rankings_t2:
         for item in rankings_t2.get('rankings', []):
             all_t2[item['ticker']] = item
-            if item['rank'] <= top_n:
+            if item.get('composite_rank', item['rank']) <= top_n:
                 top_t2_set.add(item['ticker'])
 
     # 모든 T-0 종목에 대해 가중순위 계산
