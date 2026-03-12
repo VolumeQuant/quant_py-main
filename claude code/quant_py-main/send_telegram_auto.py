@@ -33,6 +33,7 @@ from ranking_manager import (
     get_daily_changes,
     get_stock_status, cleanup_old_rankings, get_available_ranking_dates,
     compute_rank_driver, MIN_RANK_CHANGE,
+    weighted_score_100, ENTRY_SCORE_100, EXIT_SCORE_100,
 )
 from credit_monitor import (
     get_credit_status, format_credit_section, format_credit_compact,
@@ -46,8 +47,7 @@ KST = ZoneInfo('Asia/Seoul')
 STATE_DIR = Path(__file__).parent / 'state'
 CACHE_DIR = Path('data_cache')
 OUTPUT_DIR = Path('output')
-MAX_PICKS = 5          # 최대 종목 수
-WEIGHT_PER_STOCK = 20  # 종목당 기본 비중 % (5종목 × 20% = 100%)
+WEIGHT_PER_STOCK = 20  # 종목당 기본 비중 % (picks 없을 때 fallback)
 
 WEEKDAY_KR = ['월', '화', '수', '목', '금', '토', '일']
 
@@ -224,33 +224,6 @@ def send_telegram_long(text, bot_token, chat_id):
 # ============================================================
 # v41 메시지 포맷터 — Signal / AI Risk / Watchlist
 # ============================================================
-def _weighted_score_100(ticker, rankings_t0, rankings_t1, rankings_t2):
-    """원본 멀티팩터 점수 가중(T0×0.5+T1×0.3+T2×0.2) → 100점 환산.
-    원본 점수 기반이라 실제 격차가 반영됨.
-    """
-    DEFAULT_MISSING_RANK = 50
-
-    def _build_maps(rankings):
-        if not rankings:
-            return {}, 0
-        rlist = rankings.get('rankings', [])
-        ticker_map = {r['ticker']: r['score'] for r in rlist}
-        rank_map = {r.get('composite_rank', r['rank']): r['score'] for r in rlist}
-        fallback = rank_map.get(DEFAULT_MISSING_RANK, 0)
-        return ticker_map, fallback
-
-    t0_map, _ = _build_maps(rankings_t0)
-    t1_map, t1_fallback = _build_maps(rankings_t1)
-    t2_map, t2_fallback = _build_maps(rankings_t2)
-
-    s0 = t0_map.get(ticker, 0)
-    s1 = t1_map.get(ticker, t1_fallback)
-    s2 = t2_map.get(ticker, t2_fallback)
-    ws = s0 * 0.5 + s1 * 0.3 + s2 * 0.2
-    # float 정밀도 유지 — 정렬 시 동점 방지, 표시 시만 반올림
-    return max(0.0, min(100.0, (ws + 3.0) / 6.0 * 100))
-
-
 def _build_top5_streak(top5_tickers):
     """Top 5 연속 유지 일수 계산.
     top5_tickers: 현재 실제 Top 5 ticker 리스트 (picks 기준).
@@ -317,7 +290,7 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
     if not picks:
         lines.append('')
         lines.append('━━━━━━━━━━━━━━━')
-        lines.append('3일 연속 상위권 유지 종목이 없습니다.')
+        lines.append(f'3일 검증 종목 중 {ENTRY_SCORE_100}점 이상이 없습니다.')
         lines.append('')
         lines.append('━━━━━━━━━━━━━━━')
         lines.append('💡 분할매수 권장')
@@ -331,7 +304,7 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
     n = len(picks)
     lines.append('')
     lines.append('━━━━━━━━━━━━━━━')
-    lines.append(f'🛒 <b>종합 점수 상위 {n}</b>')
+    lines.append(f'🛒 <b>점수 {ENTRY_SCORE_100}+ 매수 후보 ({n}종목)</b>')
     lines.append('━━━━━━━━━━━━━━━')
     for i, pick in enumerate(picks):
         sector = pick.get('sector', '기타')
@@ -368,7 +341,7 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         lines.append('국내 전 종목 스크리닝')
     lines.append('→ 가치·퀄리티·성장·모멘텀 채점')
     lines.append('→ 상위 30(3일 평균)')
-    lines.append(f'→ 3일 검증({v_count}종목) → 최종 {n}종목')
+    lines.append(f'→ 3일 검증({v_count}종목) → {ENTRY_SCORE_100}점+ {n}종목')
 
     # ── 종목별 근거 (3줄) ──
     lines.append('')
@@ -395,7 +368,7 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         r0 = pick.get('rank_t0', pick.get('composite_rank', pick.get('rank', '?')))
         r1 = t1_rank_map.get(ticker, '-')
         r2 = t2_rank_map.get(ticker, '-')
-        score_100 = _weighted_score_100(ticker, rankings_t0, rankings_t1, rankings_t2)
+        score_100 = weighted_score_100(ticker, rankings_t0, rankings_t1, rankings_t2)
         streak_str = ''
         if ticker in top5_streak:
             streak_str = f' · Top5 {top5_streak[ticker]}일째'
@@ -534,6 +507,7 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         '섬유/의류': '의류', '소프트웨어': 'SW', '의료기기': '의료',
     }
 
+    exit_line_shown = False
     for idx, s in enumerate(sorted_pipeline, 1):
         name = s['name']
         sector = _SECTOR_SHORT.get(s.get('sector', '기타'), s.get('sector', '기타'))
@@ -541,8 +515,13 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         r0 = s.get('composite_rank', s['rank'])  # T-0 순수 점수 순위
         r1 = s.get('_r1', '-')
         r2 = s.get('_r2', '-')
-        score_100 = _weighted_score_100(s['ticker'], rankings_t0, rankings_t1, rankings_t2)
+        score_100 = weighted_score_100(s['ticker'], rankings_t0, rankings_t1, rankings_t2)
         score_disp = f'{score_100:.1f}'
+
+        # 퇴출선 구분선 (점수 내림차순 정렬 → 처음으로 EXIT_SCORE_100 미만인 종목 앞에 삽입)
+        if not exit_line_shown and score_100 < EXIT_SCORE_100:
+            lines.append(f'── 매도 검토선 ({EXIT_SCORE_100}점) ──')
+            exit_line_shown = True
 
         if status == '✅':
             lines.append(f'{status} {idx}. {name}({sector}) {r2}→{r1}→{r0}위 · {score_disp}점')
@@ -577,7 +556,7 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
     lines.append('')
     lines.append('━━━━━━━━━━━━━━━')
     lines.append('📐 Top 30 순위: 3일 가중순위 (2일전→1일전→오늘)')
-    lines.append('보유 종목이 상위 30 안에 있다면 유지해도 좋습니다.')
+    lines.append(f'보유 종목의 점수가 {EXIT_SCORE_100}점 이상이면 유지해도 좋습니다.')
 
     return '\n'.join(lines)
 
@@ -679,7 +658,7 @@ def main():
     credit = get_credit_status(ecos_api_key=ecos_key)
 
     pick_level = get_market_pick_level(credit)
-    market_max_picks = 5  # 항상 TOP 5 추천 — 시장 경고는 AI 리스크 필터에서 별도 안내
+    market_max_picks = 5  # stop 모드 체크용 (0이면 전종목 중단)
     stock_weight = WEIGHT_PER_STOCK
     final_action = credit.get('final_action', '')
     print(f"\n[매수 추천 설정] 행동: {final_action} · 레벨: {pick_level['label']} · 최대 {market_max_picks}종목 × {stock_weight}%")
@@ -744,7 +723,7 @@ def main():
     # ============================================================
     score_100_pre = {}
     for s in pipeline:
-        score_100_pre[s['ticker']] = _weighted_score_100(
+        score_100_pre[s['ticker']] = weighted_score_100(
             s['ticker'], rankings_t0, rankings_t1, rankings_t2)
 
     # ============================================================
@@ -833,9 +812,15 @@ def main():
     else:
         print("\nAI 리스크 필터 스킵 (추천 종목 없음)")
 
-    # 순위 그대로 Top N 추천 — 리스크 플래그는 AI 메시지에서 경고만 표시
-    picks = all_candidates[:market_max_picks]
-    print(f"\n  최종 picks: {len(picks)}개 (시장레벨: {pick_level['label']}, 최대{market_max_picks})")
+    # Score-based picks: score_100 ≥ ENTRY_SCORE_100 (v61)
+    if market_max_picks == 0:
+        picks = []
+    else:
+        picks = [c for c in all_candidates
+                 if score_100_pre.get(c['ticker'], 0) >= ENTRY_SCORE_100]
+    if picks:
+        stock_weight = round(100 / len(picks))
+    print(f"\n  최종 picks: {len(picks)}개 (진입기준: {ENTRY_SCORE_100}점+, 퇴출기준: {EXIT_SCORE_100}점)")
 
     # ============================================================
     # AI 종목별 내러티브 (Signal 💬 줄용)

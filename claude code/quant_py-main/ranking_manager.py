@@ -19,6 +19,10 @@ KST = ZoneInfo('Asia/Seoul')
 STATE_DIR = Path(__file__).parent / 'state'
 STATE_DIR.mkdir(exist_ok=True)
 
+# Score-based entry/exit thresholds (v61)
+ENTRY_SCORE_100 = 72  # 진입: score_100 ≥ 72
+EXIT_SCORE_100 = 68   # 퇴출: score_100 < 68
+
 
 def get_ranking_path(date_str: str) -> Path:
     """순위 파일 경로 반환"""
@@ -376,6 +380,32 @@ def get_stock_status(rankings_t0, rankings_t1=None, rankings_t2=None, top_n=30):
     # 가중순위 기준 Top N 선택
     scored.sort(key=lambda x: x['weighted_rank'])
     return scored[:top_n]
+
+
+def weighted_score_100(ticker, rankings_t0, rankings_t1=None, rankings_t2=None):
+    """원본 멀티팩터 점수 가중(T0×0.5+T1×0.3+T2×0.2) → 100점 환산.
+    원본 점수 기반이라 실제 격차가 반영됨.
+    """
+    DEFAULT_MISSING_RANK = 50
+
+    def _build_maps(rankings):
+        if not rankings:
+            return {}, 0
+        rlist = rankings.get('rankings', [])
+        ticker_map = {r['ticker']: r['score'] for r in rlist}
+        rank_map = {r.get('composite_rank', r['rank']): r['score'] for r in rlist}
+        fallback = rank_map.get(DEFAULT_MISSING_RANK, 0)
+        return ticker_map, fallback
+
+    t0_map, _ = _build_maps(rankings_t0)
+    t1_map, t1_fallback = _build_maps(rankings_t1)
+    t2_map, t2_fallback = _build_maps(rankings_t2)
+
+    s0 = t0_map.get(ticker, 0)
+    s1 = t1_map.get(ticker, t1_fallback)
+    s2 = t2_map.get(ticker, t2_fallback)
+    ws = s0 * 0.5 + s1 * 0.3 + s2 * 0.2
+    return max(0.0, min(100.0, (ws + 3.0) / 6.0 * 100))
 
 
 def cleanup_old_rankings(keep_days: int = 30):
