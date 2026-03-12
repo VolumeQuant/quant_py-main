@@ -14,7 +14,7 @@ KOSPI/KOSDAQ 대상 멀티팩터 퀀트 전략 — **Slow In, Fast Out**
 | **MA120 필터** | 현재가 < 120일 이동평균 종목 원천 차단 (유일한 하드 필터) |
 | **매수 후보** | ✅ 3일 검증 종목 중 score_100 ≥ 72 전종목 매수 후보 + 상관관계 정보 표시 (corr > 0.7 페어) |
 | **매도 검토** | 보유 종목 score_100 < 68 시 매도 검토 알림 + Watchlist 매도 검토선 표시 |
-| **유니버스** | 시가총액 1000억+, 거래대금 차등(대형50억↑/중소형20억↑), 금융/지주사 제외 |
+| **유니버스** | 시가총액 1000억+, 거래대금 차등(대형50억↑/중소형20억↑), 금융·지주사 제외 |
 | **시장 경고** | KOSPI/KOSDAQ 이평선 진단 (MA5/MA20/MA60, 데드크로스) |
 | **시장 위험 지표** | 🏦신용시장 + ⚡변동성 2카테고리 → HY×VIX 행동 가이드 (계절 라벨 미표시) |
 | **신용시장** | US HY Spread Verdad 4분면 + 한국 BBB- 스프레드 → 행동 등급(Action) 기반 가이드 |
@@ -547,7 +547,7 @@ TEST_MODE=1: 개인봇으로만 전송 (채널 보호)
 TELEGRAM_BOT_TOKEN = "your_bot_token"
 TELEGRAM_CHAT_ID = "your_chat_id"
 TELEGRAM_PRIVATE_ID = "your_private_id"
-MIN_MARKET_CAP = 3000
+MIN_MARKET_CAP = 1000
 MAX_CONCURRENT_REQUESTS = 10
 PYKRX_WORKERS = 10
 PREFILTER_N = 200

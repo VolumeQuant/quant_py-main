@@ -290,7 +290,7 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
     if not picks:
         lines.append('')
         lines.append('━━━━━━━━━━━━━━━')
-        lines.append(f'3일 검증 종목 중 {ENTRY_SCORE_100}점 이상이 없습니다.')
+        lines.append('3일 검증 종목 중 기준점수 이상이 없습니다.')
         lines.append('')
         lines.append('━━━━━━━━━━━━━━━')
         lines.append('💡 분할매수 권장')
@@ -304,7 +304,7 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
     n = len(picks)
     lines.append('')
     lines.append('━━━━━━━━━━━━━━━')
-    lines.append(f'🛒 <b>점수 {ENTRY_SCORE_100}+ 매수 후보 ({n}종목)</b>')
+    lines.append('🛒 <b>매수 후보 종목</b>')
     lines.append('━━━━━━━━━━━━━━━')
     for i, pick in enumerate(picks):
         sector = pick.get('sector', '기타')
@@ -335,24 +335,21 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
     v_count = sum(1 for s in pipeline if s['status'] == '✅')
     lines.append('')
     lines.append('📋 선정 과정')
-    if universe_count > 0 and prefilter_count:
-        lines.append(f'{universe_count:,}종목 중 스크리닝 상위 {prefilter_count}종목')
+    if universe_count > 0:
+        lines.append(f'시총 1000억 이상 · 거래대금 충족 {universe_count:,}종목')
     else:
-        lines.append('국내 전 종목 스크리닝')
-    lines.append('→ 가치·퀄리티·성장·모멘텀 채점')
-    lines.append('→ 상위 30(3일 평균)')
-    lines.append(f'→ 3일 검증({v_count}종목) → {ENTRY_SCORE_100}점+ {n}종목')
+        lines.append('국내 전 종목')
+    lines.append('→ 가치·성장·모멘텀 종합 채점 → 상위 30종목')
+    lines.append(f'→ 3일 연속 검증 → 기준점수 이상 {n}종목')
 
-    # ── 종목별 근거 (3줄) ──
+    # ── 종목별 근거 ──
     lines.append('')
     lines.append('━━━━━━━━━━━━━━━')
-    lines.append('📌 <b>종목별 근거</b>')
+    lines.append('📌 <b>종목 선정 근거</b>')
     lines.append('━━━━━━━━━━━━━━━')
 
     t1_rank_map = {r['ticker']: r.get('composite_rank', r['rank']) for r in rankings_t1.get('rankings', [])} if rankings_t1 else {}
     t2_rank_map = {r['ticker']: r.get('composite_rank', r['rank']) for r in rankings_t2.get('rankings', [])} if rankings_t2 else {}
-    top5_tickers = [p['ticker'] for p in picks]
-    top5_streak = _build_top5_streak(top5_tickers)
 
     for i, pick in enumerate(picks):
         ticker = pick['ticker']
@@ -364,15 +361,12 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         price_str = f'₩{price:,.0f}' if price else ''
         lines.append(f'<b>{i+1}. {name}({ticker}) {sector} · {price_str}</b>')
 
-        # L1: 순위 궤적 (각 날의 순수 점수 순위)
+        # L1: 순위 궤적 + 점수
         r0 = pick.get('rank_t0', pick.get('composite_rank', pick.get('rank', '?')))
         r1 = t1_rank_map.get(ticker, '-')
         r2 = t2_rank_map.get(ticker, '-')
         score_100 = weighted_score_100(ticker, rankings_t0, rankings_t1, rankings_t2)
-        streak_str = ''
-        if ticker in top5_streak:
-            streak_str = f' · Top5 {top5_streak[ticker]}일째'
-        lines.append(f'순위 {r2}→{r1}→{r0}위 · {score_100:.1f}점{streak_str}')
+        lines.append(f'순위 {r2}→{r1}→{r0}위 · {score_100:.1f}점')
 
         # L2: AI 내러티브 (fallback: _get_buy_rationale)
         narrative = ''
@@ -404,13 +398,11 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
     # ── 범례 + 면책 (Signal) ──
     lines.append('')
     lines.append('━━━━━━━━━━━━━━━')
-    lines.append('📐 순위: 3일 가중순위 (2일전→1일전→오늘)')
+    lines.append('순위: 3일 가중순위 (2일전→1일전→오늘)')
+    lines.append('기준점수 이상 종목만 매수 후보에 선정')
+    lines.append('Watchlist 매도 검토선 아래 종목은 매도 검토')
     lines.append('')
-    lines.append('💡 분할매수 권장')
-    lines.append('한 번에 전량 매수보다 2~3회 나눠서')
-    lines.append('조정 시 진입이 유리합니다.')
-    lines.append('')
-    lines.append('⚖️ 멀티팩터 순위는 종목 선별 기준이며,')
+    lines.append('종목 선별 기준이며,')
     lines.append('포트폴리오 비중은 투자자의 판단입니다.')
 
     return '\n'.join(lines)
@@ -465,9 +457,10 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
     종목당 1줄: 상태+순위+이름(업종)+순위궤적
     rank 순 정렬 (✅/⏳/🆕 인라인 마커)
     """
+    WATCHLIST_N = 20
     lines = [
-        '📋 <b>Top 30 종목 현황</b>',
-        '상위 30종목과 순위 변동 현황입니다.',
+        '📋 <b>Top 20 종목 현황</b>',
+        '상위 20종목과 순위 변동 현황입니다.',
         '✅ 3일 검증 ⏳ 2일 관찰 🆕 신규 진입',
     ]
 
@@ -475,16 +468,6 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         lines.append('━━━━━━━━━━━━━━━')
         lines.append('데이터 없음')
         return '\n'.join(lines)
-
-    # 섹터 분포
-    from collections import Counter
-    sec_counter = Counter(s.get('sector', '기타') for s in pipeline)
-    sec_parts = [f'{sec} {cnt}' for sec, cnt in sec_counter.most_common(4)]
-    others = sum(cnt for sec, cnt in sec_counter.most_common() if sec not in dict(sec_counter.most_common(4)))
-    if others > 0:
-        sec_parts.append(f'기타 {others}')
-    lines.append(' | '.join(sec_parts))
-    lines.append('━━━━━━━━━━━━━━━')
 
     # T-1, T-2 composite_rank 맵 (각 날의 순수 점수 순위)
     t1_full = {r['ticker']: r for r in rankings_t1.get('rankings', [])} if rankings_t1 else {}
@@ -502,13 +485,26 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
     else:
         sorted_pipeline = sorted(pipeline, key=lambda x: x.get('weighted_rank', x['rank']))
 
+    # 상위 WATCHLIST_N개만 표시
+    display_pipeline = sorted_pipeline[:WATCHLIST_N]
+
+    # 섹터 분포 (표시 대상만)
+    from collections import Counter
+    sec_counter = Counter(s.get('sector', '기타') for s in display_pipeline)
+    sec_parts = [f'{sec} {cnt}' for sec, cnt in sec_counter.most_common(4)]
+    others = sum(cnt for sec, cnt in sec_counter.most_common() if sec not in dict(sec_counter.most_common(4)))
+    if others > 0:
+        sec_parts.append(f'기타 {others}')
+    lines.append(' | '.join(sec_parts))
+    lines.append('━━━━━━━━━━━━━━━')
+
     _SECTOR_SHORT = {
         '전기전자': '전자', '바이오/제약': '바이오', 'IT서비스': 'IT',
         '섬유/의류': '의류', '소프트웨어': 'SW', '의료기기': '의료',
     }
 
     exit_line_shown = False
-    for idx, s in enumerate(sorted_pipeline, 1):
+    for idx, s in enumerate(display_pipeline, 1):
         name = s['name']
         sector = _SECTOR_SHORT.get(s.get('sector', '기타'), s.get('sector', '기타'))
         status = s['status']
@@ -520,7 +516,7 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
 
         # 퇴출선 구분선 (점수 내림차순 정렬 → 처음으로 EXIT_SCORE_100 미만인 종목 앞에 삽입)
         if not exit_line_shown and score_100 < EXIT_SCORE_100:
-            lines.append(f'── 매도 검토선 ({EXIT_SCORE_100}점) ──')
+            lines.append('── 매도 검토선 ──')
             exit_line_shown = True
 
         if status == '✅':
@@ -555,8 +551,8 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
     # ── 범례 (Watchlist — 면책은 Signal에만) ──
     lines.append('')
     lines.append('━━━━━━━━━━━━━━━')
-    lines.append('📐 Top 30 순위: 3일 가중순위 (2일전→1일전→오늘)')
-    lines.append(f'보유 종목의 점수가 {EXIT_SCORE_100}점 이상이면 유지해도 좋습니다.')
+    lines.append('순위: 3일 가중순위 (2일전→1일전→오늘)')
+    lines.append('매도 검토선 위 종목은 유지해도 좋습니다.')
 
     return '\n'.join(lines)
 
@@ -658,10 +654,10 @@ def main():
     credit = get_credit_status(ecos_api_key=ecos_key)
 
     pick_level = get_market_pick_level(credit)
-    market_max_picks = 5  # stop 모드 체크용 (0이면 전종목 중단)
+    market_max_picks = 5  # 0이면 전종목 중단 (stop 모드), 그 외 score_100 기반 가변
     stock_weight = WEIGHT_PER_STOCK
     final_action = credit.get('final_action', '')
-    print(f"\n[매수 추천 설정] 행동: {final_action} · 레벨: {pick_level['label']} · 최대 {market_max_picks}종목 × {stock_weight}%")
+    print(f"\n[매수 추천 설정] 행동: {final_action} · 레벨: {pick_level['label']} · 진입: {ENTRY_SCORE_100}점↑ · 퇴출: {EXIT_SCORE_100}점↓")
 
     # ============================================================
     # 순위 데이터 로드 (3일)
@@ -820,7 +816,7 @@ def main():
                  if score_100_pre.get(c['ticker'], 0) >= ENTRY_SCORE_100]
     if picks:
         stock_weight = round(100 / len(picks))
-    print(f"\n  최종 picks: {len(picks)}개 (진입기준: {ENTRY_SCORE_100}점+, 퇴출기준: {EXIT_SCORE_100}점)")
+    print(f"\n  최종 picks: {len(picks)}개 (진입기준: {ENTRY_SCORE_100}점↑, 퇴출기준: {EXIT_SCORE_100}점)")
 
     # ============================================================
     # AI 종목별 내러티브 (Signal 💬 줄용)
