@@ -330,17 +330,10 @@ class MultiFactorStrategy:
             data = data[~fail_mask].copy()
             print(f"과락 필터: {fail_count}개 제외 (2개 이상 <-0.5σ) {failed_names[:5]}")
 
-        # 8. Piecewise ±3 스케일링 — 카테고리별 기여도를 비중에 비례하게 조정
-        for score_col in cat_cols:
-            pos_max = data[score_col].max()
-            neg_min = data[score_col].min()
-            if pos_max > 0:
-                data.loc[data[score_col] > 0, score_col] *= 3.0 / pos_max
-            if neg_min < 0:
-                data.loc[data[score_col] < 0, score_col] *= -3.0 / neg_min
-        print("Piecewise ±3 스케일링 적용 (카테고리별 기여도 균등화)")
+        # 8. (제거됨) Piecewise ±3 — 재표준화(std=1)가 기여도 균등화를 이미 수행
+        # 카테고리 재표준화 후 비중(V10/Q25/G35/M30)이 기여도를 직접 조절
 
-        # 9. 최종 가중합 (V25 + Q25 + G30 + M20)
+        # 9. 최종 가중합
         if momentum_zs:
             before_count = len(data)
             data = data[data['모멘텀_점수'].notna()].copy()
@@ -352,7 +345,7 @@ class MultiFactorStrategy:
                                     data['퀄리티_점수'] * 0.25 +
                                     data['성장_점수'] * 0.35 +
                                     data['모멘텀_점수'] * 0.30)
-            print("멀티팩터 가중치: V10 + Q25 + G35 + M30 (WZ+Renorm+PW±3)")
+            print("멀티팩터 가중치: V10 + Q25 + G35 + M30 (WZ+Renorm)")
         else:
             data['멀티팩터_점수'] = (data['밸류_점수'] * 0.5 +
                                     data['퀄리티_점수'] * 0.5)
