@@ -640,35 +640,146 @@ def format_credit_section(credit: dict) -> str:
     return '\n'.join(lines)
 
 
-def format_credit_compact(credit: dict) -> list:
-    """AI Risk 메시지용 압축 포맷 → 리스트 반환
+def _indicator_icon(indicator: str, data: dict) -> str:
+    """개별 지표의 🟢🟡🔴 아이콘 판정"""
+    if indicator == 'hy':
+        q = data['quadrant']
+        q_days = data.get('q_days', 1)
+        if q in ('Q1', 'Q2'):
+            return '🟢'
+        elif q == 'Q3' and q_days < 60:
+            return '🟡'
+        else:  # Q3 60일+ or Q4
+            return '🔴'
+    elif indicator == 'vix':
+        pct = data['vix_pct']
+        if pct < 67:
+            return '🟢'
+        elif pct < 80:
+            return '🟡'
+        else:
+            return '🔴'
+    elif indicator == 'kr':
+        regime = data['regime']
+        if regime == 'normal':
+            return '🟢'
+        elif regime == 'caution':
+            return '🟡'
+        else:
+            return '🔴'
+    return '🟢'
 
-    기존 format_credit_section()은 웹 캐시용으로 유지.
-    이 함수는 텔레그램 AI Risk 메시지의 📊 시장 환경 섹션에 사용.
+
+def _pct_label(pct: float) -> str:
+    """퍼센타일 → '상위 N%, 매우 높음' 형태로 변환"""
+    if pct >= 90:
+        return f"상위 {100 - pct:.0f}%, 매우 높음"
+    elif pct >= 67:
+        return f"상위 {100 - pct:.0f}%, 높음"
+    elif pct <= 10:
+        return f"하위 {pct:.0f}%, 매우 낮음"
+    elif pct <= 33:
+        return f"하위 {pct:.0f}%, 낮음"
+    else:
+        return "보통"
+
+
+def _yellow_message(hy_icon, vix_icon, kr_icon):
+    """🟡 상태의 구체적 메시지 (톤: '~한 구간')"""
+    problems = []
+    if hy_icon and hy_icon != '🟢':
+        problems.append('신용')
+    if vix_icon and vix_icon != '🟢':
+        problems.append('변동성')
+    if kr_icon and kr_icon != '🟢':
+        problems.append('한국신용')
+
+    if problems == ['변동성']:
+        return '단기 변동성 확대 — 신규 진입에 신중한 구간'
+    elif problems == ['한국신용']:
+        return '한국 신용시장 주의 — 국내 포지션에 신중한 구간'
+    elif problems == ['신용']:
+        return '신용 지표 변화 감지 — 시장 변화에 주의가 필요한 구간'
+    else:
+        return '일부 지표 주의 — 신규 진입에 신중한 구간'
+
+
+def _overall_status(hy_icon, vix_icon, kr_icon):
+    """HY 우선 종합 판정
+
+    | 종합 | 조건 |
+    | 🟢 | 전부 🟢 |
+    | 🟡 | HY 🟢 + 나머지 중 비정상 있음 |
+    | 🟠 | HY 🔴 단독, 또는 🔴 2개 |
+    | 🔴 | HY 🔴 + 다른 🔴 1개 이상 |
     """
-    lines = []
+    icons = [i for i in [hy_icon, vix_icon, kr_icon] if i is not None]
+    hy_red = (hy_icon == '🔴')
+    other_reds = sum(1 for i in [vix_icon, kr_icon] if i == '🔴')
+    any_non_green = any(i != '🟢' for i in icons)
+
+    if not any_non_green:
+        return '🟢', '안정적인 구간'
+    elif hy_red and other_reds >= 1:
+        return '🔴', '신용·변동성 동반 악화 — 신규 매수 보류가 유리한 구간'
+    elif hy_red or other_reds >= 2:
+        return '🟠', '복수 지표 악화 — 보수적 비중 조절이 필요한 구간'
+    else:
+        return '🟡', _yellow_message(hy_icon, vix_icon, kr_icon)
+
+
+def format_credit_compact(credit: dict) -> list:
+    """AI Risk 메시지용 — 1줄 결론 + 개별 근거 (v64)
+
+    Format:
+    🟡 단기 변동성 확대 — 신규 진입에 신중한 구간
+
+      🔴 부도위험(HY): 3.17% Q3 과열 12일째
+      🟢 공포지수(VIX): 27.3 ↓ (1년 중 상위 6%, 매우 높음)
+      🟢 한국신용(BBB-): 6.4%p 정상
+    """
     hy = credit.get('hy')
     kr = credit.get('kr')
     vix = credit.get('vix')
 
-    if hy:
-        hy_val = hy['hy_spread']
-        icon = '🟢' if hy_val < 3.0 else ('🟡' if hy_val < 4.5 else '🔴')
-        ctx = '안정' if hy_val < 3.0 else ('주의' if hy_val < 4.5 else '경고')
-        lines.append(f'{icon} 회사채 금리차(미국) {hy_val:.2f}% — {ctx}')
+    # 데이터 전부 실패
+    if not hy and not vix and not kr:
+        return ['⚠️ 시장 지표 수집 실패 — 보수적으로 접근하세요']
 
-    if kr:
-        kr_icon = '🟢' if kr['regime_label'] == '정상' else ('🟡' if kr['regime_label'] == '경계' else '🔴')
-        kr_ctx = '안정' if kr['regime_label'] == '정상' else ('주의' if kr['regime_label'] == '경계' else '경고')
-        lines.append(f'{kr_icon} 회사채 금리차(한국) {kr["spread"]:.1f}%p — {kr_ctx}')
+    # 개별 아이콘 판정
+    hy_icon = _indicator_icon('hy', hy) if hy else None
+    vix_icon = _indicator_icon('vix', vix) if vix else None
+    kr_icon = _indicator_icon('kr', kr) if kr else None
+
+    # 종합 판정 (HY 우선)
+    overall_icon, overall_msg = _overall_status(hy_icon, vix_icon, kr_icon)
+
+    lines = [f'<b>{overall_icon} {overall_msg}</b>', '']
+
+    # 개별 근거 (아이콘 없이 텍스트만)
+    if hy:
+        q = hy['quadrant']
+        if q in ('Q1', 'Q2'):
+            hy_status = '안정' if q == 'Q2' else '회복 중'
+        elif q == 'Q3':
+            hy_status = '주의'
+        else:
+            hy_status = '위험'
+        lines.append(f'  부도위험(HY) {hy["hy_spread"]:.2f}% — {hy_status}')
 
     if vix:
         v = vix['vix_current']
-        pct = vix['vix_pct']
-        slope = '↑' if vix['vix_slope_dir'] == 'rising' else ('↓' if vix['vix_slope_dir'] == 'falling' else '')
-        icon = '🟢' if pct < 67 else ('🟡' if pct < 90 else '🔴')
-        ctx = '안정' if pct < 67 else ('주의' if pct < 90 else '경고')
-        lines.append(f'{icon} 변동성지수(VIX) {v:.1f}{slope} — {ctx}')
+        pct_text = _pct_label(vix['vix_pct'])
+        lines.append(f'  공포지수(VIX) {v:.1f} — {pct_text}')
+
+    if kr:
+        lines.append(f'  한국신용(BBB-) {kr["spread"]:.1f}%p — {kr["regime_label"]}')
+
+    # VKOSPI 괴리 플래그 (Phase 2: fetch_vkospi_data 구현 후 활성화)
+    # vkospi = credit.get('vkospi')
+    # if vkospi and vix and vkospi['divergent']:
+    #     lines.append(f'  ⚠️ VKOSPI {vkospi["value"]:.1f} {vkospi["slope"]} '
+    #                  f'— 한국 변동성 독자 확대')
 
     return lines
 
@@ -716,3 +827,7 @@ if __name__ == '__main__':
     print(format_credit_section(result))
     pick_level = get_market_pick_level(result)
     print(f"\n추천 레벨: {pick_level}")
+    print("\n" + "=" * 50)
+    print("[텔레그램 압축 포맷 v64]")
+    for line in format_credit_compact(result):
+        print(line)

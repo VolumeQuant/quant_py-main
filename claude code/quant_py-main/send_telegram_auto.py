@@ -427,10 +427,10 @@ def create_ai_risk_message(credit, kospi_data, kosdaq_data, market_warnings,
         f'{kospi_color} 코스피 {kospi_close:,.0f}({kospi_chg:+.2f}%)',
         f'{kosdaq_color} 코스닥 {kosdaq_close:,.0f}({kosdaq_chg:+.2f}%)',
         '',
-        '📉 신용·변동성',
+        '📉 <b>신용·변동성</b>',
     ]
 
-    # 신용시장 압축 표시
+    # 신용시장 종합 판정 + 개별 근거
     credit_lines = format_credit_compact(credit)
     for cl in credit_lines:
         lines.append(cl)
@@ -654,7 +654,7 @@ def main():
     credit = get_credit_status(ecos_api_key=ecos_key)
 
     pick_level = get_market_pick_level(credit)
-    market_max_picks = 5  # 0이면 전종목 중단 (stop 모드), 그 외 score_100 기반 가변
+    market_max_picks = pick_level['max_picks']  # _synthesize_action 기반 (0이면 전종목 중단)
     stock_weight = WEIGHT_PER_STOCK
     final_action = credit.get('final_action', '')
     print(f"\n[매수 추천 설정] 행동: {final_action} · 레벨: {pick_level['label']} · 진입: {ENTRY_SCORE_100}점↑ · 퇴출: {EXIT_SCORE_100}점↓")
