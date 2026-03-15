@@ -284,6 +284,7 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         lines.append('')
         lines.append('⚖️ 멀티팩터 순위는 종목 선별 기준이며,')
         lines.append('포트폴리오 비중은 투자자의 판단입니다.')
+        lines.append('투자 손실에 대한 책임은 투자자 본인에게 있습니다.')
         return '\n'.join(lines)
 
     # ── 결론 섹션 ──
@@ -299,6 +300,7 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         lines.append('')
         lines.append('⚖️ 멀티팩터 순위는 종목 선별 기준이며,')
         lines.append('포트폴리오 비중은 투자자의 판단입니다.')
+        lines.append('투자 손실에 대한 책임은 투자자 본인에게 있습니다.')
         return '\n'.join(lines)
 
     n = len(picks)
@@ -404,6 +406,7 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
     lines.append('')
     lines.append('종목 선별 기준이며,')
     lines.append('포트폴리오 비중은 투자자의 판단입니다.')
+    lines.append('투자 손실에 대한 책임은 투자자 본인에게 있습니다.')
 
     return '\n'.join(lines)
 
