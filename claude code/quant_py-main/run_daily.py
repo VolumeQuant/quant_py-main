@@ -112,6 +112,17 @@ def main():
         log("퀀트 데일리 파이프라인 시작", logfile)
         log("=" * 50, logfile)
 
+        # 0. 월요일이면 FnGuide 캐시 갱신 (컨센서스 최신화)
+        if datetime.now().weekday() == 0:  # 0 = Monday
+            log("월요일 — FnGuide 캐시 갱신 시작", logfile)
+            try:
+                ok_fn = run_script("refresh_fnguide_cache.py", timeout=1800, logfile=logfile)
+                log(f"FnGuide 갱신: {'성공' if ok_fn else '실패'}", logfile)
+            except subprocess.TimeoutExpired:
+                log("FnGuide 갱신 타임아웃 (30분) — 기존 캐시로 진행", logfile)
+            except Exception as e:
+                log(f"FnGuide 갱신 오류: {e} — 기존 캐시로 진행", logfile)
+
         # 1. 포트폴리오 생성
         try:
             ok = run_script("create_current_portfolio.py", timeout=300, logfile=logfile)
