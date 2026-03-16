@@ -710,7 +710,7 @@ def main():
     if cold_start:
         print("  콜드 스타트 → 일일 변동 생략")
     elif rankings_t1:
-        entered, exited = get_daily_changes(pipeline, rankings_t0, rankings_t1)
+        entered, exited = get_daily_changes(pipeline, rankings_t0, rankings_t1, threshold=WATCHLIST_N)
         print(f"  진입: {len(entered)}개, 이탈: {len(exited)}개")
         for e in entered:
             print(f"    ↑ {e['name']} ({e['rank']}위)")

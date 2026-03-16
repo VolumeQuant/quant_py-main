@@ -4,7 +4,7 @@
 기능:
   - 일일 순위 JSON 저장/로드 (state/ 디렉토리)
   - 3일 교집합 (3-Day Intersection) 계산
-  - 일일 변동 (Daily Changes) — Top 30 진입/이탈
+  - 일일 변동 (Daily Changes) — Top N 진입/이탈 (기본 20, Watchlist 동기화)
   - 종목 파이프라인 상태 (✅/⏳/🆕)
   - 콜드 스타트 처리
 """
@@ -248,19 +248,19 @@ def get_daily_changes(
     pipeline: List[dict],
     rankings_t0: dict,
     rankings_t1: dict,
-    threshold: int = 30,
+    threshold: int = 20,
 ) -> Tuple[List[dict], List[dict]]:
     """
-    일일 변동 — 가중순위 기반 Top 30 비교
+    일일 변동 — 가중순위 기반 Top N 비교
 
-    오늘의 가중순위 Top 30(pipeline)과 어제의 단일일 Top 30을 비교.
+    오늘의 가중순위 Top N(pipeline)과 어제의 단일일 Top N을 비교.
     pipeline은 get_stock_status()가 이미 가중순위로 계산한 결과.
 
     Args:
-        pipeline: 오늘의 가중순위 Top 30 (get_stock_status 결과)
+        pipeline: 오늘의 가중순위 Top N (get_stock_status 결과)
         rankings_t0: 오늘(T-0) 원본 순위 (exit_reason 계산용)
         rankings_t1: 어제(T-1) 순위
-        threshold: 기준 (기본 30위)
+        threshold: 기준 (기본 20위, Watchlist와 동일)
 
     Returns:
         (entered, exited) — 신규 진입 종목, 이탈 종목
@@ -273,17 +273,17 @@ def get_daily_changes(
     # T-0 전체 맵 (exit_reason 계산용)
     t0_all = {item['ticker']: item for item in rankings_t0.get('rankings', [])}
 
-    # 어제의 단일일 Top 30
+    # 어제의 단일일 Top N
     t1_map = {}
     for item in rankings_t1.get('rankings', []):
         if item['rank'] <= threshold:
             t1_map[item['ticker']] = item
     yesterday_tickers = set(t1_map)
 
-    # 진입: 오늘 가중 Top 30에 있는데 어제 Top 30에 없었던 종목
+    # 진입: 오늘 가중 Top N에 있는데 어제 Top N에 없었던 종목
     entered = [today_map[t] for t in (today_tickers - yesterday_tickers)]
 
-    # 이탈: 어제 Top 30에 있었는데 오늘 가중 Top 30에 없는 종목
+    # 이탈: 어제 Top N에 있었는데 오늘 가중 Top N에 없는 종목
     exited_tickers = yesterday_tickers - today_tickers
     meta = rankings_t0.get('metadata') or {}
     ma120_failed = set(meta.get('ma120_failed', []))
