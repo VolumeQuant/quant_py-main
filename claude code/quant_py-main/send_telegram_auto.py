@@ -342,7 +342,7 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         lines.append(f'시총 1000억 이상 · 거래대금 충족 {universe_count:,}종목')
     else:
         lines.append('국내 전 종목')
-    lines.append('→ 가치·성장·모멘텀 종합 채점 → 상위 30종목')
+    lines.append('→ 가치·성장·모멘텀 종합 채점 → 상위 20종목')
     lines.append(f'→ 3일 연속 검증 → 기준점수 이상 {n}종목')
 
     # ── 종목별 근거 ──
