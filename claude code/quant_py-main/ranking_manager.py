@@ -102,7 +102,7 @@ def compute_3day_intersection(
     rankings_t0: dict,
     rankings_t1: dict,
     rankings_t2: dict,
-    top_n: int = 30,
+    top_n: int = 20,
     max_picks: int = 5,
 ) -> List[dict]:
     """
@@ -117,7 +117,7 @@ def compute_3day_intersection(
         rankings_t0: T-0 순위 데이터
         rankings_t1: T-1 순위 데이터
         rankings_t2: T-2 순위 데이터
-        top_n: 교집합 기준 상위 N개 (기본 30)
+        top_n: 교집합 기준 상위 N개 (기본 20)
         max_picks: 최종 추천 최대 수 (기본 10)
 
     Returns:
@@ -266,7 +266,7 @@ def get_daily_changes(
         (entered, exited) — 신규 진입 종목, 이탈 종목
         이탈 종목에 'exit_reason' 필드 추가 ([V↓ Q↓ M↓])
     """
-    # 오늘의 가중순위 Top 30 ticker set
+    # 오늘의 가중순위 Top N ticker set
     today_tickers = {s['ticker'] for s in pipeline}
     today_map = {s['ticker']: s for s in pipeline}
 
@@ -313,7 +313,7 @@ def get_daily_changes(
     return entered, exited
 
 
-def get_stock_status(rankings_t0, rankings_t1=None, rankings_t2=None, top_n=30):
+def get_stock_status(rankings_t0, rankings_t1=None, rankings_t2=None, top_n=20):
     """
     3일 가중순위 기반 Top N 종목 + 연속 진입 상태 판별
 

@@ -4,7 +4,7 @@
 메시지 구조 (v41):
   📊 Signal — 결론 (뭘 살까)
   🤖 AI Risk — 맥락 (시장 환경 + 리스크)
-  📋 Watchlist — 데이터 (Top 30 모니터링)
+  📋 Watchlist — 데이터 (Top 20 모니터링)
 
 실행: python send_telegram_auto.py
 """
@@ -455,7 +455,7 @@ def create_ai_risk_message(credit, kospi_data, kosdaq_data, market_warnings,
 def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
                              rankings_t2, cold_start=False, credit=None,
                              score_100_map=None):
-    """Message 3: Watchlist — 데이터 (Top 30 모니터링)
+    """Message 3: Watchlist — 데이터 (Top 20 모니터링)
 
     종목당 1줄: 상태+순위+이름(업종)+순위궤적
     rank 순 정렬 (✅/⏳/🆕 인라인 마커)
