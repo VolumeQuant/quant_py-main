@@ -48,6 +48,7 @@ STATE_DIR = Path(__file__).parent / 'state'
 CACHE_DIR = Path('data_cache')
 OUTPUT_DIR = Path('output')
 WEIGHT_PER_STOCK = 20  # 종목당 기본 비중 % (picks 없을 때 fallback)
+WATCHLIST_N = 20       # Watchlist 표시 종목 수
 
 WEEKDAY_KR = ['월', '화', '수', '목', '금', '토', '일']
 
@@ -460,7 +461,6 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
     종목당 1줄: 상태+순위+이름(업종)+순위궤적
     rank 순 정렬 (✅/⏳/🆕 인라인 마커)
     """
-    WATCHLIST_N = 20
     lines = [
         '📋 <b>Top 20 종목 현황</b>',
         '상위 20종목과 순위 변동 현황입니다.',
