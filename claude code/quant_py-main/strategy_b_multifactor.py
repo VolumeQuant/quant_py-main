@@ -286,9 +286,16 @@ class MultiFactorStrategy:
         data['밸류_raw'] = data[value_zs].mean(axis=1) if value_zs else 0
         data['퀄리티_raw'] = data[quality_zs].mean(axis=1) if quality_zs else 0
 
-        # Growth: NaN은 keep → 부분 결측은 있는 것만, 둘 다 없으면 재표준화 후 페널티
+        # Growth: 부분 결측은 0(중립)으로 채워서 평균 → 단일 팩터 과대평가 방지
+        # 둘 다 없으면 NaN 유지 → 재표준화 후 -0.5σ 페널티
         if growth_zs:
-            data['성장_raw'] = data[growth_zs].mean(axis=1)
+            growth_df = data[growth_zs].copy()
+            partial = growth_df.notna().any(axis=1) & growth_df.isna().any(axis=1)
+            partial_count = partial.sum()
+            if partial_count > 0:
+                growth_df[partial] = growth_df[partial].fillna(0)
+                print(f"Growth 부분 결측: {partial_count}개 종목 → 없는 서브팩터 0(중립) 처리")
+            data['성장_raw'] = growth_df.mean(axis=1)
             growth_missing = data['성장_raw'].isna().sum()
             if growth_missing > 0:
                 print(f"Growth 둘 다 없는 종목: {growth_missing}개 → 재표준화 후 -0.5σ 페널티")

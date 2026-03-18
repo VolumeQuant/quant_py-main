@@ -10,6 +10,10 @@ import sys
 import io
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
+# KRX 인증 (2026-02-27~ 로그인 필수)
+import krx_auth
+krx_auth.login()
+
 import time
 import threading
 from pathlib import Path
@@ -19,12 +23,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 KST = ZoneInfo('Asia/Seoul')
 
-# 병렬 워커 수 (FnGuide 부하 방지를 위해 4로 제한)
-MAX_WORKERS = 4
+# 병렬 워커 수 (FnGuide 부하 방지를 위해 2로 제한)
+MAX_WORKERS = 2
 
 
 def _crawl_one(ticker, get_financial_statement):
-    """단일 종목 크롤링 (워커 스레드에서 실행)"""
+    """단일 종목 크롤링 (워커 스레드에서 실행, 강제 갱신)"""
     try:
         get_financial_statement(ticker, use_cache=False)
         return ticker, True, None
