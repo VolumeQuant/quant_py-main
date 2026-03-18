@@ -404,7 +404,7 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
     lines.append('━━━━━━━━━━━━━━━')
     lines.append('순위: 3일 가중순위 (2일전→1일전→오늘)')
     lines.append(f'3일 검증 종목 중 상위 {ENTRY_RANK}종목만 매수 후보')
-    lines.append(f'종합순위 {EXIT_RANK}위 밖 이탈 시 매도 검토')
+    lines.append(f'Top 20에서 {EXIT_RANK}위 밖 이탈 시 매도 검토')
     lines.append('')
     lines.append('종목 선별 기준이며,')
     lines.append('포트폴리오 비중은 투자자의 판단입니다.')
