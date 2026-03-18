@@ -1,3 +1,6 @@
+import sys, io
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+
 """
 퀀트 포트폴리오 생성 v6.0 — Slow In, Fast Out
 

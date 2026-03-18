@@ -19,13 +19,9 @@ KST = ZoneInfo('Asia/Seoul')
 STATE_DIR = Path(__file__).parent / 'state'
 STATE_DIR.mkdir(exist_ok=True)
 
-# Rank-based entry/exit thresholds (v63)
-ENTRY_RANK = 5    # 진입: ✅ 검증 종목 중 상위 5개
-EXIT_RANK = 15    # 퇴출: weighted_rank 상위 15위 밖
-
-# Score thresholds (표시용으로 유지, 진입/퇴출 판단에 미사용)
-ENTRY_SCORE_100 = 72
-EXIT_SCORE_100 = 68
+# Score-based entry/exit thresholds (v61, 72/68 복원)
+ENTRY_SCORE_100 = 72  # 진입: score_100 ≥ 72
+EXIT_SCORE_100 = 68   # 퇴출: score_100 < 68
 
 
 def get_ranking_path(date_str: str) -> Path:
@@ -197,12 +193,20 @@ def _compute_exit_reason(t0_item: dict, t1_item: dict) -> str:
         'momentum_s': '모멘텀',
     }
 
-    # 팩터 순위 변화 기반 (z-score는 유니버스 크기에 의존하므로 순위로 비교)
-    t0_rank = t0_item.get('composite_rank', t0_item.get('rank', 999))
-    t1_rank = t1_item.get('composite_rank', t1_item.get('rank', 999))
-    rank_drop = t0_rank - t1_rank
-    if rank_drop > 5:
-        return '순위밀림'
+    # 팩터 점수 변화량 계산 (T-0 - T-1)
+    deltas = {}
+    for key, label in FACTOR_MAP.items():
+        v0 = t0_item.get(key)
+        v1 = t1_item.get(key)
+        if v0 is not None and v1 is not None:
+            deltas[label] = v0 - v1
+
+    if deltas:
+        # 가장 크게 하락한 팩터
+        worst_factor = min(deltas, key=deltas.get)
+        worst_delta = deltas[worst_factor]
+        if worst_delta < -0.1:
+            return f'{worst_factor}↓'
 
     return '순위밀림'
 

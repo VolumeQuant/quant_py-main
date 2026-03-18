@@ -72,15 +72,10 @@ def login(user_id: str = None, password: str = None) -> bool:
             result = resp.json()
 
             error_code = result.get('_error_code', '')
-            if error_code == 'CD001':
+            if error_code in ('CD001', 'CD011'):
                 _patch_pykrx()
                 _logged_in = True
-                print("[KRX 인증] 로그인 성공")
-                return True
-            elif '중복' in result.get('_error_message', ''):
-                _patch_pykrx()
-                _logged_in = True
-                print("[KRX 인증] 중복 로그인 — 세션 유지로 진행")
+                print(f"[KRX] login OK ({error_code})")
                 return True
             else:
                 msg = result.get('_error_message', str(result)[:200])
