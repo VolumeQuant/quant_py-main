@@ -34,6 +34,7 @@ from ranking_manager import (
     get_stock_status, cleanup_old_rankings, get_available_ranking_dates,
     compute_rank_driver, MIN_RANK_CHANGE,
     weighted_score_100, ENTRY_SCORE_100, EXIT_SCORE_100,
+    ENTRY_RANK, EXIT_RANK,
 )
 from credit_monitor import (
     get_credit_status, format_credit_section, format_credit_compact,
@@ -292,7 +293,7 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
     if not picks:
         lines.append('')
         lines.append('━━━━━━━━━━━━━━━')
-        lines.append('3일 검증 종목 중 기준점수 이상이 없습니다.')
+        lines.append('3일 검증 종목이 없습니다.')
         lines.append('')
         lines.append('━━━━━━━━━━━━━━━')
         lines.append('💡 분할매수 권장')
@@ -343,7 +344,7 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
     else:
         lines.append('국내 전 종목')
     lines.append('→ 가치·성장·모멘텀 종합 채점 → 상위 20종목')
-    lines.append(f'→ 3일 연속 검증 → 기준점수 이상 {n}종목')
+    lines.append(f'→ 3일 연속 검증 → 상위 {n}종목')
 
     # ── 종목별 근거 ──
     lines.append('')
@@ -402,8 +403,8 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
     lines.append('')
     lines.append('━━━━━━━━━━━━━━━')
     lines.append('순위: 3일 가중순위 (2일전→1일전→오늘)')
-    lines.append('기준점수 이상 종목만 매수 후보에 선정')
-    lines.append('Watchlist 매도 검토선 아래 종목은 매도 검토')
+    lines.append(f'3일 검증 종목 중 상위 {ENTRY_RANK}종목만 매수 후보')
+    lines.append(f'Watchlist {EXIT_RANK}위 밖 종목은 매도 검토')
     lines.append('')
     lines.append('종목 선별 기준이며,')
     lines.append('포트폴리오 비중은 투자자의 판단입니다.')
@@ -517,8 +518,8 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         score_100 = weighted_score_100(s['ticker'], rankings_t0, rankings_t1, rankings_t2)
         score_disp = f'{score_100:.1f}'
 
-        # 퇴출선 구분선 (점수 내림차순 정렬 → 처음으로 EXIT_SCORE_100 미만인 종목 앞에 삽입)
-        if not exit_line_shown and score_100 < EXIT_SCORE_100:
+        # 퇴출선 구분선 (상위 EXIT_RANK개 이후)
+        if not exit_line_shown and idx > EXIT_RANK:
             lines.append('── 매도 검토선 ──')
             exit_line_shown = True
 
@@ -660,7 +661,7 @@ def main():
     market_max_picks = pick_level['max_picks']  # _synthesize_action 기반 (0이면 전종목 중단)
     stock_weight = WEIGHT_PER_STOCK
     final_action = credit.get('final_action', '')
-    print(f"\n[매수 추천 설정] 행동: {final_action} · 레벨: {pick_level['label']} · 진입: {ENTRY_SCORE_100}점↑ · 퇴출: {EXIT_SCORE_100}점↓")
+    print(f"\n[매수 추천 설정] 행동: {final_action} · 레벨: {pick_level['label']} · 진입: 상위{ENTRY_RANK}종목 · 퇴출: {EXIT_RANK}위 밖")
 
     # ============================================================
     # 순위 데이터 로드 (3일)
@@ -811,15 +812,15 @@ def main():
     else:
         print("\nAI 리스크 필터 스킵 (추천 종목 없음)")
 
-    # Score-based picks: score_100 ≥ ENTRY_SCORE_100 (v61)
+    # Rank-based picks: ✅ 검증 종목 중 상위 ENTRY_RANK개 (v63)
     if market_max_picks == 0:
         picks = []
     else:
-        picks = [c for c in all_candidates
-                 if score_100_pre.get(c['ticker'], 0) >= ENTRY_SCORE_100]
+        all_candidates.sort(key=lambda x: x.get('weighted_rank', x['rank']))
+        picks = all_candidates[:ENTRY_RANK]
     if picks:
         stock_weight = round(100 / len(picks))
-    print(f"\n  최종 picks: {len(picks)}개 (진입기준: {ENTRY_SCORE_100}점↑, 퇴출기준: {EXIT_SCORE_100}점)")
+    print(f"\n  최종 picks: {len(picks)}개 (진입: 상위{ENTRY_RANK}종목, 퇴출: {EXIT_RANK}위 밖)")
 
     # ============================================================
     # AI 종목별 내러티브 (Signal 💬 줄용)

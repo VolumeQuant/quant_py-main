@@ -19,9 +19,13 @@ KST = ZoneInfo('Asia/Seoul')
 STATE_DIR = Path(__file__).parent / 'state'
 STATE_DIR.mkdir(exist_ok=True)
 
-# Score-based entry/exit thresholds (v61)
-ENTRY_SCORE_100 = 72  # 진입: score_100 ≥ 72
-EXIT_SCORE_100 = 68   # 퇴출: score_100 < 68
+# Rank-based entry/exit thresholds (v63)
+ENTRY_RANK = 4    # 진입: ✅ 검증 종목 중 상위 4개
+EXIT_RANK = 15    # 퇴출: weighted_rank 상위 15위 밖
+
+# Score thresholds (표시용으로 유지, 진입/퇴출 판단에 미사용)
+ENTRY_SCORE_100 = 72
+EXIT_SCORE_100 = 68
 
 
 def get_ranking_path(date_str: str) -> Path:
@@ -384,7 +388,7 @@ def get_stock_status(rankings_t0, rankings_t1=None, rankings_t2=None, top_n=20):
 
 def weighted_score_100(ticker, rankings_t0, rankings_t1=None, rankings_t2=None):
     """원본 멀티팩터 점수 가중(T0×0.5+T1×0.3+T2×0.2) → 100점 환산.
-    원본 점수 기반이라 실제 격차가 반영됨.
+    원본 점수 기반이라 실제 격차가 반영됨. (표시용, 진입/퇴출은 순위 기반)
     """
     DEFAULT_MISSING_RANK = 50
 
