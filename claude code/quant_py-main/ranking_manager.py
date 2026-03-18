@@ -20,7 +20,7 @@ STATE_DIR = Path(__file__).parent / 'state'
 STATE_DIR.mkdir(exist_ok=True)
 
 # Rank-based entry/exit thresholds (v63)
-ENTRY_RANK = 4    # 진입: ✅ 검증 종목 중 상위 4개
+ENTRY_RANK = 5    # 진입: ✅ 검증 종목 중 상위 5개
 EXIT_RANK = 15    # 퇴출: weighted_rank 상위 15위 밖
 
 # Score thresholds (표시용으로 유지, 진입/퇴출 판단에 미사용)
