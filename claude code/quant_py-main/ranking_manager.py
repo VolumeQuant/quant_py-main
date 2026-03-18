@@ -197,20 +197,12 @@ def _compute_exit_reason(t0_item: dict, t1_item: dict) -> str:
         'momentum_s': '모멘텀',
     }
 
-    # 팩터 점수 변화량 계산 (T-0 - T-1)
-    deltas = {}
-    for key, label in FACTOR_MAP.items():
-        v0 = t0_item.get(key)
-        v1 = t1_item.get(key)
-        if v0 is not None and v1 is not None:
-            deltas[label] = v0 - v1
-
-    if deltas:
-        # 가장 크게 하락한 팩터
-        worst_factor = min(deltas, key=deltas.get)
-        worst_delta = deltas[worst_factor]
-        if worst_delta < -0.1:
-            return f'{worst_factor}↓'
+    # 팩터 순위 변화 기반 (z-score는 유니버스 크기에 의존하므로 순위로 비교)
+    t0_rank = t0_item.get('composite_rank', t0_item.get('rank', 999))
+    t1_rank = t1_item.get('composite_rank', t1_item.get('rank', 999))
+    rank_drop = t0_rank - t1_rank
+    if rank_drop > 5:
+        return '순위밀림'
 
     return '순위밀림'
 
