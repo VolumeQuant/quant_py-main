@@ -575,6 +575,13 @@ def main():
 
             if 0 < gap_days <= 10:
                 print(f"  증분 업데이트: 캐시 마지막={last_cached.strftime('%Y%m%d')}, 갭={gap_days}일")
+                cached_tickers = set(price_df.columns)
+                # 현재 유니버스에 있지만 캐시에 없는 신규 종목
+                universe_set = set(ohlcv_tickers)
+                new_universe = universe_set - cached_tickers
+                if new_universe:
+                    print(f"  신규 유니버스 종목: {len(new_universe)}개 → 개별 수집")
+
                 new_rows = []
                 for offset in range(1, gap_days + 1):
                     date_dt = last_cached + timedelta(days=offset)
@@ -583,6 +590,9 @@ def main():
                         day_ohlcv = pykrx_stock.get_market_ohlcv_by_ticker(date_str, market='ALL')
                         if not day_ohlcv.empty and '종가' in day_ohlcv.columns:
                             row = day_ohlcv['종가']
+                            # 기존 캐시 종목 + 현재 유니버스 종목만 유지
+                            keep_tickers = cached_tickers | universe_set
+                            row = row[row.index.isin(keep_tickers)]
                             row.name = pd.Timestamp(date_dt)
                             new_rows.append(row)
                     except Exception:
@@ -593,6 +603,17 @@ def main():
                     price_df = pd.concat([price_df, new_df])
                     price_df = price_df[~price_df.index.duplicated(keep='last')]
                     price_df = price_df.sort_index()
+                    # 신규 유니버스 종목의 과거 데이터 개별 수집
+                    if new_universe:
+                        for ticker in new_universe:
+                            try:
+                                tk_ohlcv = pykrx_stock.get_market_ohlcv_by_date(
+                                    price_start, BASE_DATE, ticker)
+                                if not tk_ohlcv.empty and '종가' in tk_ohlcv.columns:
+                                    price_df[ticker] = tk_ohlcv['종가'].reindex(price_df.index)
+                            except Exception:
+                                pass
+                        print(f"  신규 종목 과거 데이터 수집 완료: {len(new_universe)}개")
                     # 캐시 저장 (새 날짜 범위)
                     new_start = price_df.index[0].strftime('%Y%m%d')
                     new_end = price_df.index[-1].strftime('%Y%m%d')
