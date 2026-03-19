@@ -22,17 +22,27 @@ OHLCV 증분 업데이트에서 `get_market_ohlcv_by_ticker(date, market='ALL')`
 - 유니버스에 새로 들어온 종목은 과거 데이터를 개별 수집
 - 유니버스에서 빠진 종목은 캐시에 남아있어도 MA120 필터에서 자연 제외
 
+## 홈PC 현재 상태 (3/19 기준)
+
+- 3/18 저녁에 캐시 정리 + 재실행 → 정상 캐시(~880종목, 3/18까지) 생성
+- 3/19 06:17 자동 실행 시 캐시 히트(3/18 데이터 있음) → 증분 미발생 → **오염 없음**
+- ranking_20260318.json: scored=139, 삼성전자 4위 → **정상**
+
+## 언제 오염이 다시 발생하나
+
+다음 거래일(3/19) 데이터로 `create_current_portfolio.py` 실행 시:
+- 캐시에 3/19 없음 → 증분 업데이트 발생 → `market='ALL'` → 오염
+- **그 전에 git pull로 수정 코드(84ab431) 반영 필요**
+
 ## 홈PC에서 해야 할 것
 
-### 1. git pull (수정 코드 반영)
+### 1. git pull (수정 코드 반영) — 다음 자동 실행 전에 반드시
 ```bash
 git pull
 ```
 
-### 2. 오염된 OHLCV 캐시 삭제
+### 2. 오염 여부 확인
 ```bash
-# data_cache/ 에서 오염된 캐시 확인
-# 종목 수가 2000+ 인 파일이 오염된 것
 python -c "
 import pandas as pd
 from pathlib import Path
@@ -41,30 +51,14 @@ for f in sorted(Path('data_cache').glob('all_ohlcv_*.parquet')):
     flag = ' ← 오염!' if df.shape[1] > 1000 else ''
     print(f'{f.name}: {df.shape[1]}종목 × {df.shape[0]}거래일{flag}')
 "
-
-# 오염된 파일 삭제 (종목 수 1000+ 인 것)
-# 정상 캐시(~880종목)만 남겨야 함
 ```
+종목 수 1000+ 이면 오염. 현재는 정상(~880)일 것으로 예상.
 
-### 3. ranking JSON 확인
+### 3. 오염됐으면 삭제 후 재실행
 ```bash
-# 현재 ranking JSON이 정상인지 확인
-# scored가 ~140 범위여야 정상
-python -c "
-import json
-for d in ['20260316','20260317','20260318']:
-    with open(f'state/ranking_{d}.json') as f:
-        data = json.load(f)
-    print(f'{d}: scored={len(data[\"rankings\"])}')
-"
-```
-
-### 4. 재실행 테스트
-```bash
-# OHLCV 캐시 삭제 후 create_current_portfolio.py 실행
-# 전체 재수집 발생 → 유니버스 종목 기준으로 정상 캐시 생성
+# 오염 파일 삭제 (종목 수 1000+ 인 것만)
+# 정상 캐시(~880종목)만 남기고 create_current_portfolio.py 재실행
 # scored ~140 나오면 정상
-python create_current_portfolio.py
 ```
 
 ## 검증 기준
