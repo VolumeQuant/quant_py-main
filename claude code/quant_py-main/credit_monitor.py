@@ -181,11 +181,15 @@ def fetch_hy_quadrant():
         else:
             action = '평소대로 투자하세요.'
 
+        # HY 퍼센타일 (10년 rolling, VIX와 동일 방식)
+        hy_pct = float(df['hy_spread'].rolling(2520, min_periods=1260).rank(pct=True).iloc[-1] * 100)
+
         return {
             'hy_spread': hy_spread,
             'median_10y': median_10y,
             'hy_3m_ago': hy_3m_ago,
             'hy_prev': hy_prev,
+            'hy_percentile': hy_pct,
             'quadrant': quadrant,
             'quadrant_label': label,
             'quadrant_icon': icon,
@@ -640,103 +644,74 @@ def format_credit_section(credit: dict) -> str:
     return '\n'.join(lines)
 
 
-def _indicator_icon(indicator: str, data: dict) -> str:
-    """개별 지표의 🟢🟡🔴 아이콘 판정"""
-    if indicator == 'hy':
-        q = data['quadrant']
-        q_days = data.get('q_days', 1)
-        if q in ('Q1', 'Q2'):
-            return '🟢'
-        elif q == 'Q3' and q_days < 60:
-            return '🟡'
-        else:  # Q3 60일+ or Q4
-            return '🔴'
-    elif indicator == 'vix':
-        pct = data['vix_pct']
-        if pct < 67:
-            return '🟢'
-        elif pct < 80:
-            return '🟡'
-        else:
-            return '🔴'
-    elif indicator == 'kr':
-        regime = data['regime']
-        if regime == 'normal':
-            return '🟢'
-        elif regime == 'caution':
-            return '🟡'
-        else:
-            return '🔴'
-    return '🟢'
-
-
-def _pct_label(pct: float) -> str:
-    """퍼센타일 → '상위 N%, 매우 높음' 형태로 변환"""
-    if pct >= 90:
-        return f"상위 {100 - pct:.0f}%, 매우 높음"
-    elif pct >= 67:
-        return f"상위 {100 - pct:.0f}%, 높음"
-    elif pct <= 10:
-        return f"하위 {pct:.0f}%, 매우 낮음"
-    elif pct <= 33:
-        return f"하위 {pct:.0f}%, 낮음"
+def _get_combined_return(hy_quadrant, vix_percentile):
+    """HY 분면 × VIX 구간 조합 과거 S&P 연평균 수익률 (24년 분석 기반)"""
+    RETURN_MATRIX = {
+        'Q1': {'normal': 10.2, 'elevated': 29.6, 'high': 28.1, 'crisis': 28.1},
+        'Q2': {'normal': 9.3, 'elevated': 8.3, 'high': 8.5, 'crisis': 8.5},
+        'Q3': {'normal': 7.3, 'elevated': 4.8, 'high': 0.4, 'crisis': 2.7},
+        'Q4': {'normal': 9.6, 'elevated': 12.1, 'high': 8.0, 'crisis': 8.0},
+    }
+    if vix_percentile < 67:
+        vix_regime = 'normal'
+    elif vix_percentile < 80:
+        vix_regime = 'elevated'
+    elif vix_percentile < 90:
+        vix_regime = 'high'
     else:
-        return "보통"
+        vix_regime = 'crisis'
+
+    return RETURN_MATRIX.get(hy_quadrant, {}).get(vix_regime, 9.0)
 
 
-def _yellow_message(hy_icon, vix_icon, kr_icon):
-    """🟡 상태의 구체적 메시지 (톤: '~한 구간')"""
-    problems = []
-    if hy_icon and hy_icon != '🟢':
-        problems.append('신용')
-    if vix_icon and vix_icon != '🟢':
-        problems.append('변동성')
-    if kr_icon and kr_icon != '🟢':
-        problems.append('한국신용')
+def _overall_status(hy, vix):
+    """HY×VIX 조합 수익률 기반 종합 판정 (v65)
 
-    if problems == ['변동성']:
-        return '단기 변동성 확대 — 신규 진입에 신중한 구간'
-    elif problems == ['한국신용']:
-        return '한국 신용시장 주의 — 국내 포지션에 신중한 구간'
-    elif problems == ['신용']:
-        return '신용 지표 변화 감지 — 시장 변화에 주의가 필요한 구간'
-    else:
-        return '일부 지표 주의 — 신규 진입에 신중한 구간'
+    🟢 ≥8%: 과거 수익률이 좋았던 구간
+    🟡 <8%: 보통/낮았던 구간 (문구는 수익률에 따라)
+    🔴 <5% AND (VIX≥90p OR HY≥90p): 실제 위기 구간
 
-
-def _overall_status(hy_icon, vix_icon, kr_icon):
-    """HY 우선 종합 판정
-
-    | 종합 | 조건 |
-    | 🟢 | 전부 🟢 |
-    | 🟡 | HY 🟢 + 나머지 중 비정상 있음 |
-    | 🟠 | HY 🔴 단독, 또는 🔴 2개 |
-    | 🔴 | HY 🔴 + 다른 🔴 1개 이상 |
+    VIX 95p 이상 → 최소 🟡 (공포 극대화 시점에 🟢 방지)
     """
-    icons = [i for i in [hy_icon, vix_icon, kr_icon] if i is not None]
-    hy_red = (hy_icon == '🔴')
-    other_reds = sum(1 for i in [vix_icon, kr_icon] if i == '🔴')
-    any_non_green = any(i != '🟢' for i in icons)
+    hy_q = hy.get('quadrant', 'Q2') if hy else 'Q2'
+    vix_pct = vix.get('vix_pct', 50) if vix else 50
+    hy_pct = hy.get('hy_percentile', 50) if hy else 50
 
-    if not any_non_green:
-        return '🟢', '안정적인 구간'
-    elif hy_red and other_reds >= 1:
-        return '🔴', '신용·변동성 동반 악화 — 신규 매수 보류가 유리한 구간'
-    elif hy_red or other_reds >= 2:
-        return '🟠', '복수 지표 악화 — 보수적 비중 조절이 필요한 구간'
+    combined_return = _get_combined_return(hy_q, vix_pct)
+
+    # 🔴: 수익률 낮고 + 실제 지표도 극단
+    is_extreme = (vix_pct >= 90) or (hy_pct >= 90)
+    if combined_return < 5 and is_extreme:
+        icon = '🔴'
+    elif combined_return >= 8:
+        icon = '🟢'
     else:
-        return '🟡', _yellow_message(hy_icon, vix_icon, kr_icon)
+        icon = '🟡'
+
+    # VIX 극단 시 최소 🟡 (Q1+crisis=28%여도 🟢 방지)
+    if vix_pct >= 95 and icon == '🟢':
+        icon = '🟡'
+
+    # 문구는 실제 수익률에 맞게
+    if combined_return >= 8:
+        msg = '과거 수익률이 좋았던 구간이에요'
+    elif combined_return >= 3:
+        msg = '과거 수익률이 보통인 구간이에요'
+    else:
+        msg = '과거 수익률이 낮았던 구간이에요'
+
+    return icon, msg, combined_return
 
 
 def format_credit_compact(credit: dict) -> list:
-    """AI Risk 메시지용 — 1줄 결론 + 개별 근거 (v64)
+    """AI Risk 메시지용 — HY×VIX 조합 수익률 기반 (v65)
 
     Format:
-    🟡 단기 변동성 확대 — 신규 진입에 신중한 구간
-
-      🔴 부도위험(HY): 3.17% Q3 과열 12일째
-      🟢 공포지수(VIX): 27.3 ↓ (1년 중 상위 6%, 매우 높음)
-      🟢 한국신용(BBB-): 6.4%p 정상
+    🟡 과거 수익률이 낮았던 구간이에요
+      회사채 금리차(HY) 3.22% · 상위 78%
+      변동성지수(VIX) 22.4 · 상위 16%
+      이 구간 과거 S&P 연평균 +0.5%
+      한국 회사채(BBB-) 6.4%p · 정상
     """
     hy = credit.get('hy')
     kr = credit.get('kr')
@@ -744,42 +719,29 @@ def format_credit_compact(credit: dict) -> list:
 
     # 데이터 전부 실패
     if not hy and not vix and not kr:
-        return ['⚠️ 시장 지표 수집 실패 — 보수적으로 접근하세요']
+        return ['⚠️ 시장 지표 수집 실패']
 
-    # 개별 아이콘 판정
-    hy_icon = _indicator_icon('hy', hy) if hy else None
-    vix_icon = _indicator_icon('vix', vix) if vix else None
-    kr_icon = _indicator_icon('kr', kr) if kr else None
-
-    # 종합 판정 (HY 우선)
-    overall_icon, overall_msg = _overall_status(hy_icon, vix_icon, kr_icon)
+    # 종합 판정 (HY×VIX 조합 수익률 기반)
+    overall_icon, overall_msg, combined_ret = _overall_status(hy, vix)
 
     lines = [f'<b>{overall_icon} {overall_msg}</b>', '']
 
-    # 개별 근거 (아이콘 없이 텍스트만)
+    # 개별 근거 (수치 + 퍼센타일)
     if hy:
-        q = hy['quadrant']
-        if q in ('Q1', 'Q2'):
-            hy_status = '안정' if q == 'Q2' else '회복 중'
-        elif q == 'Q3':
-            hy_status = '주의'
-        else:
-            hy_status = '위험'
-        lines.append(f'  부도위험(HY) {hy["hy_spread"]:.2f}% — {hy_status}')
+        hy_pct = hy.get('hy_percentile', 50)
+        lines.append(f'  회사채 금리차(HY) {hy["hy_spread"]:.2f}% · 상위 {100 - hy_pct:.0f}%')
 
     if vix:
-        v = vix['vix_current']
-        pct_text = _pct_label(vix['vix_pct'])
-        lines.append(f'  공포지수(VIX) {v:.1f} — {pct_text}')
+        vix_cur = vix.get('vix_current', 0)
+        vix_pct = vix.get('vix_pct', 0)
+        lines.append(f'  변동성지수(VIX) {vix_cur:.1f} · 상위 {100 - vix_pct:.0f}%')
 
+    # 조합 과거 수익률
+    lines.append(f'  이 구간 과거 S&P 연평균 +{combined_ret:.1f}%')
+
+    # 한국 BBB- (참고용)
     if kr:
-        lines.append(f'  한국신용(BBB-) {kr["spread"]:.1f}%p — {kr["regime_label"]}')
-
-    # VKOSPI 괴리 플래그 (Phase 2: fetch_vkospi_data 구현 후 활성화)
-    # vkospi = credit.get('vkospi')
-    # if vkospi and vix and vkospi['divergent']:
-    #     lines.append(f'  ⚠️ VKOSPI {vkospi["value"]:.1f} {vkospi["slope"]} '
-    #                  f'— 한국 변동성 독자 확대')
+        lines.append(f'  한국 회사채(BBB-) {kr["spread"]:.1f}%p · {kr["regime_label"]}')
 
     return lines
 

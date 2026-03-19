@@ -431,7 +431,7 @@ def create_ai_risk_message(credit, kospi_data, kosdaq_data, market_warnings,
         f'{kospi_color} 코스피 {kospi_close:,.0f}({kospi_chg:+.2f}%)',
         f'{kosdaq_color} 코스닥 {kosdaq_close:,.0f}({kosdaq_chg:+.2f}%)',
         '',
-        '📉 <b>신용·변동성</b>',
+        '🏦 <b>신용·변동성</b>',
     ]
 
     # 신용시장 종합 판정 + 개별 근거
