@@ -199,43 +199,40 @@ def collect_price_data_parallel(
 
 
 def calculate_avg_trading_value_from_cache(days: int = 20) -> pd.DataFrame:
-    """OHLCV 캐시에서 20일 평균 거래대금 계산"""
-    ohlcv_files = sorted(Path(CACHE_DIR).glob('all_ohlcv_*.parquet'))
-    if not ohlcv_files:
-        print("  OHLCV 캐시 없음")
+    """market_cap 캐시에서 20일 평균 거래대금 계산 (BASE_DATE 기준)"""
+    mcap_files = sorted(Path(CACHE_DIR).glob('market_cap_ALL_*.parquet'))
+    if not mcap_files:
+        print("  market_cap 캐시 없음")
         return pd.DataFrame()
 
-    ohlcv_file = ohlcv_files[-1]
-    print(f"  OHLCV 캐시 사용: {ohlcv_file.name}")
+    # BASE_DATE 기준 최근 60일 이내의 일별 캐시만 사용 (분기별 백테스트 파일 제외)
+    cutoff = (datetime.strptime(BASE_DATE, '%Y%m%d') - timedelta(days=60)).strftime('%Y%m%d')
+    valid_files = [f for f in mcap_files if cutoff <= f.stem.split('_')[-1] <= BASE_DATE]
+    target_files = valid_files[-days:]
 
-    price_df = pd.read_parquet(ohlcv_file)
-    from pykrx import stock
-
-    if len(price_df) < days:
-        print(f"  데이터 부족: {len(price_df)}일")
+    if not target_files:
+        print("  거래대금 계산 가능한 캐시 없음")
         return pd.DataFrame()
 
-    dates = price_df.index[-days:].strftime('%Y%m%d').tolist()
-    print(f"  거래대금 조회: {dates[0]} ~ {dates[-1]} ({len(dates)}일)")
+    date_range = [f.stem.split('_')[-1] for f in target_files]
+    print(f"  거래대금 조회: {date_range[0]} ~ {date_range[-1]} ({len(date_range)}일)")
 
-    trading_values = {}
-    for date in dates:
+    dfs = []
+    for f in target_files:
         try:
-            df = stock.get_market_cap(date, market='ALL')
-            if not df.empty:
-                for ticker in df.index:
-                    if ticker not in trading_values:
-                        trading_values[ticker] = []
-                    trading_values[ticker].append(df.loc[ticker, '거래대금'])
+            df = pd.read_parquet(f, columns=['거래대금'])
+            dfs.append(df['거래대금'])
         except Exception:
             continue
 
-    avg_values = {}
-    for ticker, values in trading_values.items():
-        if values:
-            avg_values[ticker] = np.mean(values) / 100_000_000
+    if not dfs:
+        print("  거래대금 데이터 로드 실패")
+        return pd.DataFrame()
 
-    result = pd.DataFrame({'avg_trading_value': pd.Series(avg_values)})
+    combined = pd.concat(dfs, axis=1)
+    avg_values = combined.mean(axis=1) / 100_000_000
+
+    result = pd.DataFrame({'avg_trading_value': avg_values})
     result.index.name = 'ticker'
     print(f"  20일 평균 거래대금 계산 완료: {len(result)}개 종목")
     return result
