@@ -724,7 +724,7 @@ def format_credit_compact(credit: dict) -> list:
     # 종합 판정 (HY×VIX 조합 수익률 기반)
     overall_icon, overall_msg, combined_ret = _overall_status(hy, vix)
 
-    lines = [f'<b>{overall_icon} {overall_msg}</b>', '']
+    lines = [f'<b>{overall_icon} {overall_msg}</b>']
 
     # 개별 근거 (수치 + 퍼센타일)
     if hy:
@@ -738,10 +738,6 @@ def format_credit_compact(credit: dict) -> list:
 
     # 조합 과거 수익률
     lines.append(f'  이 구간 과거 S&P 연평균 +{combined_ret:.1f}%')
-
-    # 한국 BBB- (참고용)
-    if kr:
-        lines.append(f'  한국 회사채(BBB-) {kr["spread"]:.1f}%p · {kr["regime_label"]}')
 
     return lines
 
