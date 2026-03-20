@@ -150,8 +150,12 @@ def _get_buy_rationale(pick) -> str:
 # 시장 이평선 경고
 # ============================================================
 def _calc_market_warnings(kospi_df, kosdaq_df):
-    """KOSPI/KOSDAQ 이평선 돌파/이탈 이벤트만 반환 (매일 표시 X)"""
-    warnings = []
+    """KOSPI/KOSDAQ 이평선 돌파/이탈 이벤트만 반환 (매일 표시 X)
+
+    Returns:
+        dict: {'코스피': ['5일선 돌파', ...], '코스닥': ['5일선 이탈', ...]}
+    """
+    warnings = {'코스피': [], '코스닥': []}
 
     for name, df in [('코스피', kospi_df), ('코스닥', kosdaq_df)]:
         if df is None or len(df) < 6:
@@ -161,7 +165,6 @@ def _calc_market_warnings(kospi_df, kosdaq_df):
         today = close.iloc[-1]
         yesterday = close.iloc[-2]
 
-        events = []
         for period, label in [(5, '5일선'), (20, '20일선'), (60, '60일선')]:
             if len(close) < period + 1:
                 continue
@@ -173,15 +176,9 @@ def _calc_market_warnings(kospi_df, kosdaq_df):
             is_above = today >= ma_today
 
             if was_above and not is_above:
-                events.append(f"{label} 이탈")
+                warnings[name].append(f"{label} 이탈")
             elif not was_above and is_above:
-                events.append(f"{label} 돌파")
-
-        for evt in events:
-            if '이탈' in evt:
-                warnings.append(f"📉 {name} {evt}")
-            else:
-                warnings.append(f"📈 {name} {evt}")
+                warnings[name].append(f"{label} 돌파")
 
     return warnings
 
@@ -388,13 +385,13 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         for e in exited:
             reason = e.get('exit_reason', '순위밀림') or '순위밀림'
             reason_groups[reason].append(e['name'])
-        lines.append('')
         parts = []
         for reason, names in reason_groups.items():
             names_str = '·'.join(names[:4])
             if len(names) > 4:
                 names_str += f' 외 {len(names)-4}'
             parts.append(f'{names_str}({reason})')
+        lines.append('')
         lines.append('📉 순위 이탈: ' + parts[0])
         for p in parts[1:]:
             lines.append(p)
@@ -425,22 +422,35 @@ def create_ai_risk_message(credit, kospi_data, kosdaq_data, market_warnings,
         '상위 종목의 리스크 요소를 AI가 분석했습니다.',
         '',
         '📊 시장 지수',
-        f'{kospi_color} 코스피 {kospi_close:,.0f}({kospi_chg:+.2f}%)',
-        f'{kosdaq_color} 코스닥 {kosdaq_close:,.0f}({kosdaq_chg:+.2f}%)',
-        '',
-        '🏦 <b>신용·변동성</b>',
     ]
+
+    # 코스피/코스닥 + 이평선 이벤트 인라인
+    def _fmt_warn(events):
+        """['5일선 돌파', '20일선 돌파'] → '5일선, 20일선 돌파'"""
+        if not events:
+            return ''
+        from collections import defaultdict
+        by_action = defaultdict(list)
+        for e in events:
+            parts = e.split()  # '5일선', '돌파'
+            by_action[parts[1]].append(parts[0])
+        groups = [', '.join(labels) + ' ' + action for action, labels in by_action.items()]
+        return ' · ' + ', '.join(groups)
+
+    kospi_warn = market_warnings.get('코스피', []) if isinstance(market_warnings, dict) else []
+    kosdaq_warn = market_warnings.get('코스닥', []) if isinstance(market_warnings, dict) else []
+    kospi_suffix = _fmt_warn(kospi_warn)
+    kosdaq_suffix = _fmt_warn(kosdaq_warn)
+    lines.append(f'{kospi_color} 코스피 {kospi_close:,.0f}({kospi_chg:+.2f}%){kospi_suffix}')
+    lines.append(f'{kosdaq_color} 코스닥 {kosdaq_close:,.0f}({kosdaq_chg:+.2f}%){kosdaq_suffix}')
+
+    lines.append('')
+    lines.append('🏦 <b>신용·변동성</b>')
 
     # 신용시장 종합 판정 + 개별 근거
     credit_lines = format_credit_compact(credit)
     for cl in credit_lines:
         lines.append(cl)
-
-    # 이평선 경고 (있을 때만)
-    if market_warnings:
-        lines.append('')
-        for w in market_warnings:
-            lines.append(w)
 
     # AI 해석 (통째 삽입)
     if ai_msg:
@@ -640,9 +650,12 @@ def main():
     # 이평선 경고 계산
     market_warnings = _calc_market_warnings(kospi_idx, kosdaq_idx)
     print(f"\n[시장 이평선 경고]")
-    if market_warnings:
-        for w in market_warnings:
-            print(f"  {w}")
+    has_any = any(market_warnings.get(k) for k in market_warnings)
+    if has_any:
+        for name, events in market_warnings.items():
+            for evt in events:
+                icon = '📉' if '이탈' in evt else '📈'
+                print(f"  {icon} {name} {evt}")
     else:
         print("  경고 없음 — 시장 양호")
 
