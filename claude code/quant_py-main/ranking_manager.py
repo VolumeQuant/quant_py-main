@@ -21,7 +21,7 @@ STATE_DIR.mkdir(exist_ok=True)
 
 # Score-based entry/exit thresholds (v69, 4팩터 분포에 맞춰 재조정)
 ENTRY_SCORE_100 = 74  # 진입: score_100 ≥ 74 (평균 4.9개/일)
-EXIT_SCORE_100 = 68   # 매도검토: score_100 < 68 (평균 11위)
+EXIT_SCORE_100 = 70   # 매도검토: score_100 < 70 (평균 5위, v69 EDA 기반)
 
 
 def get_ranking_path(date_str: str) -> Path:

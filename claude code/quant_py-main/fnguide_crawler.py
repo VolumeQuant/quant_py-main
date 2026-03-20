@@ -9,6 +9,7 @@ TODO Task #9: 생존 편향 제거
 - 구현 우선순위: 중간 (백테스트 정확도 향상)
 """
 
+import os
 import pandas as pd
 import numpy as np
 import requests as rq
@@ -76,7 +77,6 @@ def get_financial_statement(ticker, use_cache=True, cache_max_age_days=7):
     cache_file = DATA_DIR / f'fs_fnguide_{ticker}.parquet'
 
     if use_cache and cache_file.exists():
-        import os
         from datetime import datetime, timedelta
         cache_age = datetime.now() - datetime.fromtimestamp(os.path.getmtime(cache_file))
         if cache_age <= timedelta(days=cache_max_age_days):
