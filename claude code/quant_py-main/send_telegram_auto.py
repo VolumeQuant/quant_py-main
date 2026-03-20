@@ -341,7 +341,7 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         lines.append(f'시총 1000억 이상 · 거래대금 충족 {universe_count:,}종목')
     else:
         lines.append('국내 전 종목')
-    lines.append('→ 밸류·퀄리티·모멘텀 섹터별 채점 → 상위 20종목')
+    lines.append('→ 밸류·퀄리티·성장·모멘텀 종합 채점 → 상위 20종목')
     lines.append(f'→ 3일 연속 검증 → 기준점수 이상 {n}종목')
 
     # ── 종목별 근거 ──
@@ -395,13 +395,14 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
             if len(names) > 4:
                 names_str += f' 외 {len(names)-4}'
             parts.append(f'{names_str}({reason})')
-        lines.append(f'📉 순위 이탈: {" ".join(parts)}')
+        lines.append('📉 순위 이탈: ' + parts[0])
+        for p in parts[1:]:
+            lines.append(p)
 
     # ── 범례 + 면책 (Signal) ──
     lines.append('')
     lines.append('━━━━━━━━━━━━━━━')
     lines.append('순위: 3일 가중순위 (2일전→1일전→오늘)')
-    lines.append('')
     lines.append('종목 선별 기준이며, 비중은 투자자의 판단입니다.')
     lines.append('투자 손실의 책임은 본인에게 있습니다.')
 
