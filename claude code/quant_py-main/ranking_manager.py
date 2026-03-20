@@ -19,9 +19,9 @@ KST = ZoneInfo('Asia/Seoul')
 STATE_DIR = Path(__file__).parent / 'state'
 STATE_DIR.mkdir(exist_ok=True)
 
-# Score-based entry/exit thresholds (v69, 4팩터 분포에 맞춰 재조정)
-ENTRY_SCORE_100 = 74  # 진입: score_100 ≥ 74 (평균 4.9개/일)
-EXIT_SCORE_100 = 70   # 매도검토: score_100 < 70 (평균 5위, v69 EDA 기반)
+# Score-based entry/exit thresholds (v69, 전문가 컨설팅 기반 72/68 확정)
+ENTRY_SCORE_100 = 72  # 진입: score_100 ≥ 72 (4~5종목, 섹터 분산 확보)
+EXIT_SCORE_100 = 68   # 매도검토: score_100 < 68 (4pt 버퍼, v61~v66 검증)
 
 
 def get_ranking_path(date_str: str) -> Path:
