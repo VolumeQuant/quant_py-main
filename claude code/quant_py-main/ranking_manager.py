@@ -184,12 +184,11 @@ def _compute_exit_reason(t0_item: dict, t1_item: dict) -> str:
     T-0(오늘)과 T-1(어제) 팩터 점수를 비교해서
     가장 크게 하락한 팩터를 사유로 반환.
 
-    Returns: '모멘텀↓', '가치↓', '품질↓', '성장↓', '순위밀림' 등
+    Returns: '모멘텀↓', '가치↓', '품질↓', '순위밀림' 등
     """
     FACTOR_MAP = {
         'value_s':    '가치',
         'quality_s':  '품질',
-        'growth_s':   '성장',
         'momentum_s': '모멘텀',
     }
 

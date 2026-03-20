@@ -116,11 +116,9 @@ def get_stock_technical(ticker, base_date):
 
 def _get_buy_rationale(pick) -> str:
     """한 줄 투자 근거 — 실제 팩터 점수 기반"""
-    # 팩터 점수: value_s, quality_s, growth_s, momentum_s
     factors = [
         ('V', pick.get('value_s')),
         ('Q', pick.get('quality_s')),
-        ('G', pick.get('growth_s')),
         ('M', pick.get('momentum_s')),
     ]
 
@@ -134,7 +132,7 @@ def _get_buy_rationale(pick) -> str:
         elif z <= -1.0:
             weak.append(label)
 
-    NAMES = {'V': '밸류', 'Q': '퀄리티', 'G': '성장', 'M': '모멘텀'}
+    NAMES = {'V': '밸류', 'Q': '퀄리티', 'M': '모멘텀'}
 
     if not strong and not weak:
         return '멀티팩터 균형'
@@ -292,7 +290,8 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
     if not picks:
         lines.append('')
         lines.append('━━━━━━━━━━━━━━━')
-        lines.append('3일 검증 종목 중 기준점수 이상이 없습니다.')
+        lines.append('오늘은 기준점수를 충족하는 종목이 없습니다.')
+        lines.append('시장이 안정되면 다시 안내드리겠습니다.')
         lines.append('')
         lines.append('━━━━━━━━━━━━━━━')
         lines.append('💡 분할매수 권장')
@@ -342,7 +341,7 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         lines.append(f'시총 1000억 이상 · 거래대금 충족 {universe_count:,}종목')
     else:
         lines.append('국내 전 종목')
-    lines.append('→ 가치·성장·모멘텀 종합 채점 → 상위 20종목')
+    lines.append('→ 밸류·퀄리티·모멘텀 섹터별 채점 → 상위 20종목')
     lines.append(f'→ 3일 연속 검증 → 기준점수 이상 {n}종목')
 
     # ── 종목별 근거 ──
@@ -396,18 +395,16 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
             if len(names) > 4:
                 names_str += f' 외 {len(names)-4}'
             parts.append(f'{names_str}({reason})')
-        lines.append(f'📉 순위 이탈: {" ".join(parts)}')
+        lines.append(f'📉 순위 이탈(매도 검토): {" ".join(parts)}')
 
     # ── 범례 + 면책 (Signal) ──
     lines.append('')
     lines.append('━━━━━━━━━━━━━━━')
     lines.append('순위: 3일 가중순위 (2일전→1일전→오늘)')
-    lines.append('기준점수 이상 종목만 매수 후보에 선정')
-    lines.append('Watchlist 매도 검토선 아래 종목은 매도 검토')
+    lines.append('매도 검토선 위 보유 유지 · 아래 또는 이탈 시 매도 검토')
     lines.append('')
-    lines.append('종목 선별 기준이며,')
-    lines.append('포트폴리오 비중은 투자자의 판단입니다.')
-    lines.append('투자 손실에 대한 책임은 투자자 본인에게 있습니다.')
+    lines.append('종목 선별 기준이며, 비중은 투자자의 판단입니다.')
+    lines.append('투자 손실의 책임은 본인에게 있습니다.')
 
     return '\n'.join(lines)
 
@@ -425,7 +422,7 @@ def create_ai_risk_message(credit, kospi_data, kosdaq_data, market_warnings,
         '━━━━━━━━━━━━━━━━━━━',
         '  🤖 AI 리스크 필터',
         '━━━━━━━━━━━━━━━━━━━',
-        '상위 종목의 리스크 요소를 AI가 분석했어요.',
+        '상위 종목의 리스크 요소를 AI가 분석했습니다.',
         '',
         '📊 시장 지수',
         f'{kospi_color} 코스피 {kospi_close:,.0f}({kospi_chg:+.2f}%)',
@@ -533,7 +530,7 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
     if exited:
         lines.append('')
         lines.append('━━━━━━━━━━━━━━━')
-        lines.append('📉 <b>순위 이탈</b>')
+        lines.append('📉 <b>순위 이탈 — 매도 검토</b>')
         from collections import defaultdict
         reason_groups = defaultdict(list)
         for e in exited:
@@ -544,6 +541,7 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
             if len(names) > 4:
                 names_str += f' 외 {len(names)-4}'
             lines.append(f'{names_str}({reason})')
+        lines.append('상위 15위 밖 이탈 종목은 매도를 검토하세요.')
 
     # ── cold start ──
     if cold_start:
@@ -551,11 +549,12 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         lines.append('━━━━━━━━━━━━━━━')
         lines.append('📊 데이터 축적 중 — 3일 완료 시 상위 종목이 표시됩니다.')
 
-    # ── 범례 (Watchlist — 면책은 Signal에만) ──
+    # ── 범례 ──
     lines.append('')
     lines.append('━━━━━━━━━━━━━━━')
     lines.append('순위: 3일 가중순위 (2일전→1일전→오늘)')
-    lines.append('매도 검토선 위 종목은 유지해도 좋습니다.')
+    lines.append('매도 검토선 위 종목은 보유 유지')
+    lines.append('매도 검토선 아래 또는 이탈 종목은 매도 검토')
 
     return '\n'.join(lines)
 

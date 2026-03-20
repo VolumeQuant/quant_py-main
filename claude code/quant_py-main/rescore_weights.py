@@ -21,8 +21,8 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='repla
 KST = ZoneInfo('Asia/Seoul')
 STATE_DIR = Path(__file__).parent / 'state'
 
-# v53 weights
-W_V, W_Q, W_G, W_M = 0.10, 0.25, 0.35, 0.30
+# v68 weights (3팩터: G 제거)
+W_V, W_Q, W_M = 0.30, 0.35, 0.35
 
 
 def piecewise_scale(rankings: list, score_key: str):
@@ -82,16 +82,15 @@ def rescore_date(date_str: str) -> bool:
     rankings = filtered2
 
     # 3. Piecewise ±3 스케일링
-    for key in ['value_s', 'quality_s', 'growth_s', 'momentum_s']:
+    for key in ['value_s', 'quality_s', 'momentum_s']:
         piecewise_scale(rankings, key)
 
     # 4. 새 가중치로 점수 재계산
     for r in rankings:
         v = r.get('value_s', 0)
         q = r.get('quality_s', 0)
-        g = r.get('growth_s', 0)
         m = r.get('momentum_s', 0)
-        r['score'] = round(v * W_V + q * W_Q + g * W_G + m * W_M, 4)
+        r['score'] = round(v * W_V + q * W_Q + m * W_M, 4)
 
     # 5. 재순위
     rankings.sort(key=lambda x: x['score'], reverse=True)
@@ -126,7 +125,7 @@ def main():
                 dates.append(d)
 
     print(f"v53 재채점 — {len(dates)}개 날짜")
-    print(f"ROE 하드게이트 + 과락(-0.5, 2개+) + PW±3 + V{int(W_V*100)}/Q{int(W_Q*100)}/G{int(W_G*100)}/M{int(W_M*100)}")
+    print(f"ROE 하드게이트 + 과락(-0.5, 2개+) + PW±3 + V{int(W_V*100)}/Q{int(W_Q*100)}/M{int(W_M*100)}")
     print("=" * 50)
 
     success = 0

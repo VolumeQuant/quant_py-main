@@ -11,8 +11,9 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
   → 일일 순위 JSON 저장 (3일 교집합용)
 
 팩터:
-  - Value 45% + Quality 15% + Growth 10% + Momentum 30%
-  - Growth: EPS개선도 (Forward PER) + 매출성장률 (YoY)
+  - Value 30% + Quality 30% + Momentum 40% (섹터중립)
+  - Value: PER + PBR + PCR + PSR
+  - Quality: ROE + GPA + CFO + EPS개선도
   - Momentum: 6M수익률 / 6M변동성 [리스크 조정]
 
 데이터 소스:
@@ -32,7 +33,7 @@ warnings.filterwarnings('ignore')
 
 # 내부 모듈
 from data_collector import DataCollector
-from fnguide_crawler import get_consensus_batch, extract_revenue_growth
+from fnguide_crawler import get_consensus_batch
 from error_handler import ErrorTracker, ErrorCategory
 from strategy_a_magic import MagicFormulaStrategy
 from strategy_b_multifactor import MultiFactorStrategy
@@ -334,9 +335,9 @@ def run_strategy_b_scoring(
     ticker_names: Dict[str, str],
     error_tracker: ErrorTracker,
     consensus_df: pd.DataFrame = None,
-    revenue_growth_df: pd.DataFrame = None
+    sector_map: Dict[str, str] = None
 ) -> pd.DataFrame:
-    """전략 B (멀티팩터) - 150개 전체 스코어링 (pykrx 실시간 PER/PBR/DIV + Forward PER)"""
+    """전략 B (멀티팩터) - 전체 스코어링 v68 (V30+Q30+M40, 섹터중립)"""
     print(f"\n[전략 B] 멀티팩터 전체 스코어링 ({len(prefiltered_df)}개)")
 
     if prefiltered_df.empty:
@@ -358,14 +359,6 @@ def run_strategy_b_scoring(
                     multifactor_df.drop(columns=['ticker'], inplace=True)
                 fwd_count = multifactor_df['forward_per'].notna().sum()
                 print(f"  Forward PER 병합: {fwd_count}/{len(multifactor_df)}개 종목")
-
-        # 매출성장률(YoY) 병합
-        if revenue_growth_df is not None and not revenue_growth_df.empty:
-            multifactor_df = multifactor_df.merge(
-                revenue_growth_df, on='종목코드', how='left'
-            )
-            rev_count = multifactor_df['매출성장률'].notna().sum()
-            print(f"  매출성장률 병합: {rev_count}/{len(multifactor_df)}개 종목")
 
         # pykrx 실시간 PER/PBR/DIV 병합
         if not fundamental_df.empty:
@@ -389,7 +382,7 @@ def run_strategy_b_scoring(
                 print(f"  pykrx 실시간 데이터 병합: {live_count}/{len(multifactor_df)}개 종목")
 
         strategy = MultiFactorStrategy()
-        selected, scored = strategy.run(multifactor_df, price_df=price_df, n_stocks=len(multifactor_df))
+        selected, scored = strategy.run(multifactor_df, price_df=price_df, n_stocks=len(multifactor_df), sector_map=sector_map)
 
         print(f"  스코어링 완료: {len(scored)}개 종목")
         return scored
@@ -440,10 +433,9 @@ def generate_report(
 [최종 포트폴리오 - 멀티팩터 상위 {N_STOCKS}개]
 - 선정 종목 수: {len(selected)}개
 - 순위: 멀티팩터 100% (마법공식은 사전필터만)
-- Value 팩터 45%: PER(실시간) + PBR(실시간) + PCR + PSR + DIV(실시간)
-- Quality 팩터 25%: ROE + GPA + CFO
-- Growth 팩터 10%: EPS개선도 (Forward PER) + 매출성장률 (YoY)
-- Momentum 팩터 20%: 6M수익률 / 6M변동성 [리스크 조정]
+- Value 팩터 30%: PER(실시간) + PBR(실시간) + PCR + PSR (섹터중립)
+- Quality 팩터 30%: ROE + GPA + CFO + EPS개선도 (섹터중립)
+- Momentum 팩터 40%: 6M수익률 / 6M변동성 [리스크 조정] (섹터중립)
 """
 
     if not selected.empty and '종목명' in selected.columns:
@@ -666,7 +658,6 @@ def main():
         prefiltered = run_strategy_a_prefilter(magic_df, universe_df, error_tracker)
 
     consensus_df = pd.DataFrame()
-    revenue_growth_df = pd.DataFrame()
     if not prefiltered.empty:
         print(f"\n[4.5단계] FnGuide 컨센서스 수집 (Forward PER) - {len(prefiltered)}개 종목")
         prefiltered_tickers = prefiltered['종목코드'].tolist()
@@ -721,16 +712,13 @@ def main():
                         consensus_df.loc[consensus_df['ticker'] == t, 'forward_per'] = fwd_val
                     print(f"  Forward PER fallback: {len(fwd_fallback)}개 종목 (직전 순위에서 보충)")
 
-        # 매출성장률(YoY) 추출 (fs_data에서 연간 매출액 2개년 비교)
-        revenue_growth_df = extract_revenue_growth(fs_data, base_date=BASE_DATE)
-
     # =========================================================================
     # 5단계: 전략 실행 (B 스코어링 → A+B 통합순위)
     # =========================================================================
     scored_b = run_strategy_b_scoring(
         prefiltered, fundamental_df, price_df, ticker_names, error_tracker,
         consensus_df=consensus_df,
-        revenue_growth_df=revenue_growth_df
+        sector_map=sector_map
     )
 
     # 가중순위 기반 Top 30 선정: T0(멀티팩터) × 0.5 + T1 × 0.3 + T2 × 0.2
@@ -810,7 +798,7 @@ def main():
                 if val is not None and pd.notna(val):
                     entry[key] = round(float(val), 2)
             # 팩터별 점수 (Death List 사유 분석용)
-            for col, key in [('밸류_점수', 'value_s'), ('퀄리티_점수', 'quality_s'), ('성장_점수', 'growth_s'), ('모멘텀_점수', 'momentum_s')]:
+            for col, key in [('밸류_점수', 'value_s'), ('퀄리티_점수', 'quality_s'), ('모멘텀_점수', 'momentum_s')]:
                 val = row.get(col)
                 if val is not None and pd.notna(val):
                     entry[key] = round(float(val), 4)

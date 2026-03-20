@@ -137,23 +137,21 @@ def rescore_date(base_date: str, price_df: pd.DataFrame):
         ticker = r['ticker']
         new_m = momentum_renorm.get(ticker)
 
-        # 기존 V, Q, G 유지
+        # 기존 V, Q 유지
         v = r.get('value_s', 0)
         q = r.get('quality_s', 0)
-        g = r.get('growth_s', 0)
 
         if new_m is None:
-            # 모멘텀 데이터 없으면 제외
             continue
 
-        # 과락 체크: 4개 중 2개 이상 < -0.5
-        scores = [v, q, g, new_m]
+        # 과락 체크: 3개 중 2개 이상 < -0.5
+        scores = [v, q, new_m]
         fail_count = sum(1 for s in scores if s < -0.5)
         if fail_count >= 2:
             continue
 
-        # 가중합 (V25 + Q25 + G30 + M20)
-        composite = v * 0.25 + q * 0.25 + g * 0.30 + new_m * 0.20
+        # 가중합 (V30 + Q35 + M35)
+        composite = v * 0.30 + q * 0.35 + new_m * 0.35
 
         r['momentum_s'] = round(new_m, 4)
         r['score'] = round(composite, 4)
