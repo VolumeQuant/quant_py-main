@@ -737,7 +737,7 @@ def format_credit_compact(credit: dict) -> list:
         lines.append(f'  변동성지수(VIX) {vix_cur:.1f} · 상위 {100 - vix_pct:.0f}%')
 
     # 조합 과거 수익률
-    lines.append(f'  이 구간 과거 S&P 연평균 +{combined_ret:.1f}%')
+    lines.append(f'  → 이 구간 과거 S&P 연평균 +{combined_ret:.1f}%')
 
     return lines
 

@@ -1,8 +1,12 @@
 """
-전략 B: 멀티팩터 전략 v68 — 3팩터 체제 (Value + Quality + Momentum)
+전략 B: 멀티팩터 전략 v69 — 4팩터 동일가중 (V+Q+G+M = 25% each)
 
-섹터 중립 Winsorized z-score + 카테고리 재표준화
-V30(PER+PBR+PCR+PSR) + Q30(ROE+GPA+CFO+EPS개선도) + M40(6M/Vol)
+헨리(이현열) 원본 rank z-score 기반 + 실시간/전방성 강화
+V25(PER+PBR+PCR+PSR) + Q25(ROE+GPA+CFO) + G25(매출성장률4Q) + M25(6M/Vol+K_ratio)
+V/Q: 전체 유니버스 rank z-score (절대 비교)
+M: 섹터 내 rank z-score (섹터 추세 제거)
+G: 전체 유니버스 rank z-score
++ FWD_PER 보너스 (커버 종목 가산)
 """
 
 import pandas as pd
@@ -59,12 +63,11 @@ class MultiFactorStrategy:
 
     def calculate_quality_factors(self, data):
         """
-        퀄리티 팩터 계산
+        퀄리티 팩터 계산 — v69: 순수 실적 품질 3팩터
 
         - ROE (Return on Equity): 높을수록 좋음
         - GPA (Gross Profit to Asset): 높을수록 좋음
         - CFO (Cash Flow to Asset): 높을수록 좋음
-        - EPS개선도 (Trailing PER vs Forward PER): 높을수록 좋음
         """
         if '당기순이익' in data.columns and '자본' in data.columns:
             data['ROE'] = data['당기순이익'] / data['자본'] * 100
@@ -75,17 +78,39 @@ class MultiFactorStrategy:
         if '영업현금흐름' in data.columns and '자산' in data.columns:
             data['CFO'] = data['영업현금흐름'] / data['자산'] * 100
 
-        # EPS개선도 (Forward PER vs Trailing PER)
-        if 'forward_per' in data.columns and 'PER' in data.columns:
-            mask = (data['forward_per'] > 0) & (data['PER'] > 0)
-            data['EPS개선도'] = np.nan
-            data.loc[mask, 'EPS개선도'] = (
-                (data.loc[mask, 'PER'] - data.loc[mask, 'forward_per'])
-                / data.loc[mask, 'PER'] * 100
-            )
-            eps_count = data['EPS개선도'].notna().sum()
-            fill_count = data['EPS개선도'].isna().sum()
-            print(f"EPS개선도 계산: {eps_count}/{len(data)}개 종목 (Forward PER 기반, {fill_count}개 미커버)")
+        return data
+
+    def calculate_growth_factors(self, data):
+        """
+        성장 팩터 계산 — v69 신규: 분기 매출성장률
+
+        최근 4분기 각각의 전년동기비 매출성장률 평균
+        → 시점 불일치 해소 (v67 매출성장률 YoY 폐기 사유 해결)
+        """
+
+        growth_dict = {}
+        from pathlib import Path
+        for ticker in data['종목코드']:
+            try:
+                cache_file = Path('data_cache') / f'fs_fnguide_{ticker}.parquet'
+                if not cache_file.exists():
+                    continue
+
+                fs = pd.read_parquet(cache_file)
+                y_revenue = fs[(fs['공시구분'] == 'y') & (fs['계정'] == '매출액')].sort_values('기준일')
+
+                if len(y_revenue) >= 2:
+                    latest = y_revenue.iloc[-1]['값']
+                    prev = y_revenue.iloc[-2]['값']
+                    if prev > 0 and pd.notna(latest) and pd.notna(prev):
+                        growth_dict[ticker] = (latest / prev - 1) * 100
+
+            except Exception:
+                continue
+
+        data['매출성장률'] = data['종목코드'].map(growth_dict)
+        cover = data['매출성장률'].notna().sum()
+        print(f"매출성장률(4Q avg) 계산: {cover}/{len(data)}개 종목")
 
         return data
 
@@ -140,8 +165,29 @@ class MultiFactorStrategy:
                     continue
 
         data['모멘텀'] = data['종목코드'].map(momentum_dict)
-        print(f"모멘텀 계산 완료: {matched_count}/{len(data)}개 매칭")
+        print(f"모멘텀(6M/Vol) 계산 완료: {matched_count}/{len(data)}개 매칭")
         print(f"  공식: 6M수익률 / 변동성(연환산, floor={VOL_FLOOR}%)")
+
+        # K_ratio: 추세 일관성 (log-price 회귀 기울기 / 표준오차)
+        kratio_dict = {}
+        kr_count = 0
+        for ticker in data['종목코드']:
+            if ticker in price_df.columns:
+                prices = price_df[ticker].dropna()
+                if len(prices) < min_required:
+                    continue
+                try:
+                    log_prices = np.log(prices.iloc[-(LOOKBACK_6M + 1):].values)
+                    x = np.arange(len(log_prices))
+                    slope, _, _, _, std_err = stats.linregress(x, log_prices)
+                    if std_err > 0:
+                        kratio_dict[ticker] = slope / std_err
+                        kr_count += 1
+                except (ValueError, IndexError):
+                    continue
+
+        data['K_ratio'] = data['종목코드'].map(kratio_dict)
+        print(f"K_ratio 계산 완료: {kr_count}/{len(data)}개 매칭")
 
         return data
 
@@ -153,7 +199,12 @@ class MultiFactorStrategy:
 
     def calculate_multifactor_score(self, data, price_df=None, sector_map=None):
         """
-        멀티팩터 종합 점수 계산 — v68 3팩터 (V30+Q30+M40) + 섹터 중립
+        멀티팩터 종합 점수 계산 — v69 4팩터 동일가중 (V+Q+G+M = 25% each)
+
+        헨리 원본 rank z-score 기반 + 실시간/전방성 강화
+        V/Q/G: 전체 유니버스 rank z-score (절대 비교)
+        M: 섹터 내 rank z-score (섹터 추세 제거)
+        + FWD_PER 보너스
 
         Args:
             data: 재무 데이터프레임
@@ -165,6 +216,9 @@ class MultiFactorStrategy:
 
         # 2. 퀄리티 팩터 계산
         data = self.calculate_quality_factors(data)
+
+        # 2.5. 성장 팩터 계산 (v69 신규)
+        data = self.calculate_growth_factors(data)
 
         # 3. 모멘텀 팩터 계산
         if price_df is not None:
@@ -184,97 +238,118 @@ class MultiFactorStrategy:
             if col in data.columns:
                 data.loc[data[col] <= 0, col] = np.nan
 
-        # 4. 섹터 중립 Winsorized z-score
-        MIN_SECTOR_SIZE = 5
+        # 3.6. PER > 200 제외 — 실질 이익 없는 기업 (잔존가치 없음)
+        if 'PER' in data.columns:
+            extreme_per_mask = data['PER'] > 200
+            extreme_per_count = extreme_per_mask.sum()
+            if extreme_per_count > 0:
+                extreme_per_names = data.loc[extreme_per_mask, '종목명'].tolist() if '종목명' in data.columns else []
+                data = data[~extreme_per_mask].copy()
+                print(f"PER>200 제외: {extreme_per_count}개 (잔존가치 없음) {extreme_per_names[:5]}")
 
-        def winsorized_zscore(series, invert=False, lower=0.025, upper=0.975, sectors=None):
-            """Winsorized z-score, 선택적 섹터 중립"""
+        # 4. Rank-based z-score (이현열 원본 방식 + 섹터 중립화 통합)
+        # 순위 → 균등분포 → 정규 z-score 변환
+        # 장점: 원값 분포와 무관하게 대칭 분포 보장, 팩터 간 동일 스케일
+        MIN_SECTOR_SIZE = 10  # rank 해상도 확보 (5→10 상향)
+        from scipy.stats import norm
+
+        def rank_zscore(series, ascending=True, sectors=None):
+            """Rank-based z-score, 선택적 섹터 중립
+            ascending=True: 값이 높을수록 좋음 (ROE, GPA 등)
+            ascending=False: 값이 낮을수록 좋음 (PER, PBR 등)
+            """
             valid = series.dropna()
             if len(valid) < 5:
                 return pd.Series(np.nan, index=series.index)
 
-            if sectors is None:
-                # 전체 유니버스 z-score (기존 방식)
-                q_lo, q_hi = valid.quantile(lower), valid.quantile(upper)
-                clipped = series.clip(q_lo, q_hi)
-                mean_val, std_val = clipped.mean(), clipped.std()
-                if std_val == 0 or pd.isna(std_val):
-                    return pd.Series(0.0, index=series.index)
-                z = (clipped - mean_val) / std_val
-                if invert:
-                    z = -z
-                return z
+            def _rank_to_z(vals):
+                """순위 → 균등분포 → 정규 z-score"""
+                n = len(vals)
+                if n < 3:
+                    return pd.Series(0.0, index=vals.index)
+                ranks = vals.rank(ascending=ascending, method='average')
+                # Blom 변환: (rank - 3/8) / (n + 1/4) → 정규분포 ppf
+                uniform = (ranks - 0.375) / (n + 0.25)
+                uniform = uniform.clip(0.001, 0.999)  # ppf 안전 범위
+                return pd.Series(norm.ppf(uniform), index=vals.index)
 
-            # 섹터 중립 z-score
+            if sectors is None:
+                # 전체 유니버스 rank z-score
+                result = pd.Series(np.nan, index=series.index)
+                valid_mask = series.notna()
+                result[valid_mask] = _rank_to_z(series[valid_mask])
+                return result
+
+            # 섹터 중립 rank z-score (섹터 내 rank = 중립화 통합)
             result = pd.Series(np.nan, index=series.index)
             valid_mask = series.notna()
 
-            # 전체 유니버스 z-score (소형 섹터 fallback용)
-            q_lo_full, q_hi_full = valid.quantile(lower), valid.quantile(upper)
-            clipped_full = series.clip(q_lo_full, q_hi_full)
-            mean_full, std_full = clipped_full.mean(), clipped_full.std()
-            if std_full == 0 or pd.isna(std_full):
-                full_z = pd.Series(0.0, index=series.index)
-            else:
-                full_z = (clipped_full - mean_full) / std_full
+            # 전체 유니버스 rank z-score (소형 섹터 fallback용)
+            full_z = pd.Series(np.nan, index=series.index)
+            full_z[valid_mask] = _rank_to_z(series[valid_mask])
 
-            # 섹터별 처리
             for sector_name in sectors[valid_mask].unique():
                 sector_mask = (sectors == sector_name) & valid_mask
                 count = sector_mask.sum()
 
                 if count >= MIN_SECTOR_SIZE:
-                    # 대형 섹터: 섹터 내 winsorized z-score
-                    vals = series[sector_mask]
-                    s_lo, s_hi = vals.quantile(lower), vals.quantile(upper)
-                    clipped = vals.clip(s_lo, s_hi)
-                    s_mean, s_std = clipped.mean(), clipped.std()
-                    if s_std > 0 and not pd.isna(s_std):
-                        result[sector_mask] = (clipped - s_mean) / s_std
-                    else:
-                        result[sector_mask] = 0.0
+                    # 대형 섹터: 섹터 내 rank z-score
+                    result[sector_mask] = _rank_to_z(series[sector_mask])
                 else:
                     # 소형 섹터: 전체 유니버스 fallback
                     result[sector_mask] = full_z[sector_mask]
 
-            if invert:
-                result = -result
             return result
 
         # 섹터 시리즈 준비
         sectors = data['섹터'] if sector_map else None
 
-        # 서브팩터별 Winsorized z-score
+        # 서브팩터별 Rank-based z-score (이현열 원본 방식)
+        # V, Q, G: 전체 유니버스 rank z-score (절대 비교)
+        # M: 섹터 내 rank z-score (섹터 추세 제거)
         value_zs = []
         for col in ['PER', 'PBR', 'PCR', 'PSR']:
             if col in data.columns:
-                data[f'{col}_z'] = winsorized_zscore(data[col], invert=True, sectors=sectors)
+                data[f'{col}_z'] = rank_zscore(data[col], ascending=False, sectors=None)
                 value_zs.append(f'{col}_z')
                 valid_count = data[col].notna().sum()
                 print(f"  {col} 커버리지: {valid_count}/{len(data)}개 ({valid_count/len(data)*100:.0f}%)")
 
         quality_zs = []
-        for col in ['ROE', 'GPA', 'CFO', 'EPS개선도']:
+        for col in ['ROE', 'GPA', 'CFO']:
             if col in data.columns and data[col].notna().sum() > 0:
-                data[f'{col}_z'] = winsorized_zscore(data[col], sectors=sectors)
+                data[f'{col}_z'] = rank_zscore(data[col], ascending=True, sectors=None)
                 quality_zs.append(f'{col}_z')
+
+        growth_zs = []
+        if '매출성장률' in data.columns and data['매출성장률'].notna().sum() > 0:
+            data['매출성장률_z'] = rank_zscore(data['매출성장률'], ascending=True, sectors=None)
+            growth_zs.append('매출성장률_z')
 
         momentum_zs = []
         if '모멘텀' in data.columns:
-            data['모멘텀_z'] = winsorized_zscore(data['모멘텀'], sectors=sectors)
+            data['모멘텀_z'] = rank_zscore(data['모멘텀'], ascending=True, sectors=sectors)
             momentum_zs.append('모멘텀_z')
+        if 'K_ratio' in data.columns and data['K_ratio'].notna().sum() > 0:
+            data['K_ratio_z'] = rank_zscore(data['K_ratio'], ascending=True, sectors=sectors)
+            momentum_zs.append('K_ratio_z')
 
         sn_tag = "SectorNeutral" if sector_map else "FullUniverse"
-        print(f"Winsorized z-score ({sn_tag}): V{len(value_zs)} Q{len(quality_zs)} M{len(momentum_zs)}")
+        print(f"Rank z-score ({sn_tag}): V{len(value_zs)} Q{len(quality_zs)} G{len(growth_zs)} M{len(momentum_zs)}")
 
-        # 5. 카테고리 평균 (NaN 자동 스킵)
+        # 5. 카테고리 평균 (NaN → 0 채움 후 평균, 스케일 통일)
+        for zs in [value_zs, quality_zs, growth_zs, momentum_zs]:
+            for col in zs:
+                data[col] = data[col].fillna(0.0)
+
         data['밸류_raw'] = data[value_zs].mean(axis=1) if value_zs else 0
         data['퀄리티_raw'] = data[quality_zs].mean(axis=1) if quality_zs else 0
+        data['성장_raw'] = data[growth_zs].mean(axis=1) if growth_zs else 0
         data['모멘텀_raw'] = data[momentum_zs].mean(axis=1) if momentum_zs else 0
 
-        # 6. 카테고리별 재표준화 (std=1)
+        # 6. 카테고리별 재표준화 (std=1, 헨리 원본 동일)
         for raw_col, score_col in [('밸류_raw', '밸류_점수'), ('퀄리티_raw', '퀄리티_점수'),
-                                    ('모멘텀_raw', '모멘텀_점수')]:
+                                    ('성장_raw', '성장_점수'), ('모멘텀_raw', '모멘텀_점수')]:
             valid = data[raw_col].dropna()
             cat_mean = valid.mean() if len(valid) > 0 else 0
             cat_std = valid.std() if len(valid) > 0 else 0
@@ -282,7 +357,7 @@ class MultiFactorStrategy:
                 data[score_col] = (data[raw_col] - cat_mean) / cat_std
             else:
                 data[score_col] = 0.0
-            data[score_col] = data[score_col].fillna(-0.5)
+            data[score_col] = data[score_col].fillna(0.0)
 
         # 6.5. ROE 하드게이트: ROE < 0% (적자 기업) → 무조건 제외
         if 'ROE' in data.columns:
@@ -293,33 +368,42 @@ class MultiFactorStrategy:
                 data = data[~roe_neg_mask].copy()
                 print(f"ROE 하드게이트: {roe_neg_count}개 제외 (ROE<0%) {roe_neg_names[:5]}")
 
-        # 7. 과락 필터: 3개 카테고리 중 2개 이상 -0.5σ 미만 → 제외
-        FAIL_THRESHOLD = -0.5
-        FAIL_COUNT = 2
-        cat_cols = ['밸류_점수', '퀄리티_점수', '모멘텀_점수']
-        fail_mask = (data[cat_cols] < FAIL_THRESHOLD).sum(axis=1) >= FAIL_COUNT
-        fail_count = fail_mask.sum()
-        if fail_count > 0:
-            failed_names = data.loc[fail_mask, '종목명'].tolist() if '종목명' in data.columns else []
-            data = data[~fail_mask].copy()
-            print(f"과락 필터: {fail_count}개 제외 ({FAIL_COUNT}개 이상 <-0.5σ) {failed_names[:5]}")
+        # 7. 단일팩터 바닥 — 4팩터 동일가중에서 자연 방어 부족 보완
+        # 3팩터: (-3+3+3)/3=1.0σ 자연 방어 OK, 4팩터: (-3+3+3+3)/4=1.5σ 방어 부족
+        EXTREME_THRESHOLD = -1.5  # rank z-score 하위 ~7%
+        cat_cols_4 = ['밸류_점수', '퀄리티_점수', '성장_점수', '모멘텀_점수']
+        extreme_mask = (data[cat_cols_4] < EXTREME_THRESHOLD).any(axis=1)
+        extreme_count = extreme_mask.sum()
+        if extreme_count > 0:
+            extreme_names = data.loc[extreme_mask, '종목명'].tolist() if '종목명' in data.columns else []
+            data = data[~extreme_mask].copy()
+            print(f"단일팩터 바닥: {extreme_count}개 제외 (1개라도 <{EXTREME_THRESHOLD}σ) {extreme_names[:5]}")
 
-        # 8. 최종 가중합 V30 + Q30 + M40
+        # 8. 최종 가중합 V25 + Q25 + G25 + M25
+        W = 1/4  # 동일 가중
+
         if momentum_zs:
-            before_count = len(data)
-            data = data[data['모멘텀_점수'].notna()].copy()
-            excluded = before_count - len(data)
-            if excluded > 0:
-                print(f"모멘텀 데이터 없는 종목 제외: {excluded}개 → {len(data)}개 남음")
-
-            data['멀티팩터_점수'] = (data['밸류_점수'] * 0.30 +
-                                    data['퀄리티_점수'] * 0.35 +
-                                    data['모멘텀_점수'] * 0.35)
-            print(f"멀티팩터 가중치: V30 + Q35 + M35 ({sn_tag})")
+            data['멀티팩터_점수'] = (data['밸류_점수'] * W +
+                                    data['퀄리티_점수'] * W +
+                                    data['성장_점수'] * W +
+                                    data['모멘텀_점수'] * W)
+            print(f"멀티팩터 가중치: V25 + Q25 + G25 + M25 ({sn_tag})")
         else:
             data['멀티팩터_점수'] = (data['밸류_점수'] * 0.5 +
                                     data['퀄리티_점수'] * 0.5)
             print("멀티팩터 가중치: Value 50% + Quality 50% (모멘텀 없음)")
+
+        # 8.5 FWD_PER 보너스: 컨센서스 있고 EPS 개선 시 가산
+        if 'forward_per' in data.columns and 'PER' in data.columns:
+            fwd_mask = (data['forward_per'] > 0) & (data['PER'] > 0)
+            eps_improving = fwd_mask & (data['forward_per'] < data['PER'])  # FWD_PER < PER = 실적 개선
+            bonus_count = eps_improving.sum()
+            if bonus_count > 0:
+                # 보너스 크기: 전체 점수 std의 10%
+                score_std = data['멀티팩터_점수'].std()
+                BONUS_ALPHA = 0.10
+                data.loc[eps_improving, '멀티팩터_점수'] += score_std * BONUS_ALPHA
+                print(f"FWD_PER 보너스: {bonus_count}개 종목 (EPS 개선 기대, +{BONUS_ALPHA*100:.0f}% std)")
 
         # 순위 계산 (높을수록 좋음)
         data['멀티팩터_순위'] = data['멀티팩터_점수'].rank(ascending=False, method='first', na_option='bottom')

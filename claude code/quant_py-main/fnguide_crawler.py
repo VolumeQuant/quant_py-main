@@ -85,12 +85,20 @@ def get_financial_statement(ticker, use_cache=True, cache_max_age_days=7):
         else:
             print(f"캐시 만료 ({cache_age.days}일 경과), 재수집: {ticker}")
 
+    # CACHE_ONLY 모드: 캐시 없으면 크롤링하지 않고 스킵
+    if os.environ.get('FNGUIDE_CACHE_ONLY') == '1' and not cache_file.exists():
+        print(f"종목 {ticker} 캐시 없음 — CACHE_ONLY 모드, 스킵")
+        return pd.DataFrame()
+
     try:
         # URL 생성
         url = f'http://comp.fnguide.com/SVO2/ASP/SVD_Finance.asp?pGB=1&gicode=A{ticker}'
 
-        # 데이터 받아오기 (HTML 테이블 파싱)
-        data = pd.read_html(url, displayed_only=False, encoding='utf-8')
+        # 데이터 받아오기 (HTML 테이블 파싱, 타임아웃 10초)
+        import requests as _rq
+        _resp = _rq.get(url, timeout=10)
+        _resp.raise_for_status()
+        data = pd.read_html(_resp.text, displayed_only=False, encoding='utf-8')
 
         # ========== 연간(Annual) 재무제표 처리 ==========
         # data[0]: 포괄손익계산서 (연간)
@@ -106,7 +114,7 @@ def get_financial_statement(ticker, use_cache=True, cache_max_age_days=7):
         data_fs_y = data_fs_y.rename(columns={data_fs_y.columns[0]: "계정"})
 
         # 결산년(fiscal year) 찾기
-        page_data = rq.get(url)
+        page_data = rq.get(url, timeout=10)
         page_data_html = BeautifulSoup(page_data.content, 'html.parser')
 
         fiscal_data = page_data_html.select('div.corp_group1 > h2')
@@ -180,8 +188,13 @@ def get_all_financial_statements(tickers, use_cache=True):
 
     with ThreadPoolExecutor(max_workers=4) as executor:
         futures = {executor.submit(_fetch_one, t): t for t in tickers}
-        for future in as_completed(futures):
-            ticker, fs, err = future.result()
+        for future in as_completed(futures, timeout=600):
+            try:
+                ticker, fs, err = future.result(timeout=15)
+            except Exception as e:
+                ticker = futures[future]
+                err = f"timeout: {e}"
+                fs = None
             done += 1
             if err:
                 error_list.append(ticker)
@@ -469,8 +482,11 @@ def get_consensus_data(ticker):
     try:
         url = f'http://comp.fnguide.com/SVO2/ASP/SVD_Main.asp?pGB=1&gicode=A{ticker}'
 
-        # HTML 테이블 파싱
-        tables = pd.read_html(url, displayed_only=False, encoding='utf-8')
+        # HTML 테이블 파싱 (timeout 적용)
+        import requests as _rq2
+        _resp2 = _rq2.get(url, timeout=10)
+        _resp2.raise_for_status()
+        tables = pd.read_html(_resp2.text, displayed_only=False, encoding='utf-8')
 
         # 컨센서스 테이블 찾기 (보통 인덱스 7~10 사이)
         for i, tbl in enumerate(tables):
@@ -551,9 +567,9 @@ def get_consensus_batch(tickers, delay=1.0):
 
     with ThreadPoolExecutor(max_workers=4) as executor:
         futures = {executor.submit(_fetch_one, t): t for t in tickers}
-        for future in as_completed(futures):
+        for future in as_completed(futures, timeout=600):
             ticker = futures[future]
-            results_map[ticker] = future.result()
+            results_map[ticker] = future.result(timeout=15)
             done += 1
             if done % 40 == 0:
                 print(f"   {done}/{len(tickers)} 완료...")

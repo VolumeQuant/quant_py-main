@@ -195,7 +195,7 @@ def send_telegram_long(text, bot_token, chat_id):
     url = f'https://api.telegram.org/bot{bot_token}/sendMessage'
 
     if len(text) <= MAX_LEN:
-        return [requests.post(url, data={'chat_id': chat_id, 'text': text, 'parse_mode': 'HTML'})]
+        return [requests.post(url, data={'chat_id': chat_id, 'text': text, 'parse_mode': 'HTML'}, timeout=30)]
 
     lines = text.split('\n')
     chunks = []
@@ -214,7 +214,7 @@ def send_telegram_long(text, bot_token, chat_id):
 
     results = []
     for chunk in chunks:
-        r = requests.post(url, data={'chat_id': chat_id, 'text': chunk, 'parse_mode': 'HTML'})
+        r = requests.post(url, data={'chat_id': chat_id, 'text': chunk, 'parse_mode': 'HTML'}, timeout=30)
         results.append(r)
         time.sleep(0.3)
     return results
@@ -395,13 +395,12 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
             if len(names) > 4:
                 names_str += f' 외 {len(names)-4}'
             parts.append(f'{names_str}({reason})')
-        lines.append(f'📉 순위 이탈(매도 검토): {" ".join(parts)}')
+        lines.append(f'📉 순위 이탈: {" ".join(parts)}')
 
     # ── 범례 + 면책 (Signal) ──
     lines.append('')
     lines.append('━━━━━━━━━━━━━━━')
     lines.append('순위: 3일 가중순위 (2일전→1일전→오늘)')
-    lines.append('매도 검토선 위 보유 유지 · 아래 또는 이탈 시 매도 검토')
     lines.append('')
     lines.append('종목 선별 기준이며, 비중은 투자자의 판단입니다.')
     lines.append('투자 손실의 책임은 본인에게 있습니다.')
@@ -530,7 +529,7 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
     if exited:
         lines.append('')
         lines.append('━━━━━━━━━━━━━━━')
-        lines.append('📉 <b>순위 이탈 — 매도 검토</b>')
+        lines.append('📉 <b>순위 이탈</b>')
         from collections import defaultdict
         reason_groups = defaultdict(list)
         for e in exited:
@@ -541,7 +540,6 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
             if len(names) > 4:
                 names_str += f' 외 {len(names)-4}'
             lines.append(f'{names_str}({reason})')
-        lines.append('상위 15위 밖 이탈 종목은 매도를 검토하세요.')
 
     # ── cold start ──
     if cold_start:
@@ -552,9 +550,7 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
     # ── 범례 ──
     lines.append('')
     lines.append('━━━━━━━━━━━━━━━')
-    lines.append('순위: 3일 가중순위 (2일전→1일전→오늘)')
-    lines.append('매도 검토선 위 종목은 보유 유지')
-    lines.append('매도 검토선 아래 또는 이탈 종목은 매도 검토')
+    lines.append('검토선 위 보유 · 아래 매도 검토')
 
     return '\n'.join(lines)
 

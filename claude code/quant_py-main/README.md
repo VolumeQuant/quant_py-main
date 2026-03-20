@@ -8,11 +8,15 @@ KOSPI/KOSDAQ 대상 멀티팩터 퀀트 전략 — **Slow In, Fast Out**
 
 | 항목 | 내용 |
 |------|------|
-| **전략 철학** | **Slow In, Fast Out** — 3일 검증 + 점수 기반 진입(72점↑)/퇴출(68점↓) |
-| **전략 A** | 마법공식 (Magic Formula) → **스킵** (SKIP_PREFILTER=True, 성장주 편향 제거) |
-| **전략 B** | 멀티팩터 - Value(30%) + Quality(35%) + Momentum(35%) → **최종 순위 100%**, 섹터 중립 Winsorized z-score + 카테고리 재표준화(std=1), ROE<0 하드게이트, 과락 필터(2개+ <-0.5σ 제외) |
-| **MA120 필터** | 현재가 < 120일 이동평균 종목 원천 차단 (유일한 하드 필터) |
-| **매수 후보** | ✅ 3일 검증 종목 중 score_100 ≥ 72 전종목 (가변 수) + 상관관계 정보 표시 (corr > 0.7 페어) |
+| **전략 철학** | **Slow In, Fast Out** — 3일 검증 + 점수 기반 진입(74점↑)/매도검토(68점↓) |
+| **전략 A** | 마법공식 (Magic Formula) → **스킵** (SKIP_PREFILTER=True) |
+| **전략 B** | 멀티팩터 4팩터 동일가중 — V25+Q25+G25+M25, Rank z-score (Blom 변환), V/Q/G 전체 유니버스 + M 섹터 내, FWD_PER 보너스 |
+| **V (Value)** | PER+PBR+PCR+PSR — 전체 rank z-score (절대 비교) |
+| **Q (Quality)** | ROE+GPA+CFO — 전체 rank z-score |
+| **G (Growth)** | 매출성장률 YoY — 전체 rank z-score |
+| **M (Momentum)** | 6M/Vol + K_ratio — 섹터 내 rank z-score |
+| **하드필터** | ROE<0 제외, MA120×0.95, PER>200 제외, 단일팩터 floor -1.5σ |
+| **매수 후보** | ✅ 3일 검증 종목 중 score_100 ≥ 74 전종목 (가변 수) + 상관관계 정보 표시 |
 | **매도 검토** | Watchlist에서 score_100 < 68 구간에 매도 검토선 표시 |
 | **유니버스** | 시가총액 1000억+, 거래대금 차등(대형50억↑/중소형20억↑), 금융·지주사 제외 |
 | **시장 경고** | KOSPI/KOSDAQ 이평선 진단 (MA5/MA20/MA60, 데드크로스) |

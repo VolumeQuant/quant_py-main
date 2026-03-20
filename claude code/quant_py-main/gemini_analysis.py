@@ -258,7 +258,7 @@ def run_ai_analysis(portfolio_message, stock_list, base_date=None, market_contex
         return None
 
     try:
-        client = genai.Client(api_key=api_key)
+        client = genai.Client(api_key=api_key, http_options={'timeout': 180_000})
         prompt = build_prompt(stock_list, base_date=base_date, market_context=market_context)
         grounding_tool = types.Tool(google_search=types.GoogleSearch())
 
@@ -468,7 +468,7 @@ def run_final_picks_analysis(stock_list, weight_per_stock=20, base_date=None, ma
         return None
 
     try:
-        client = genai.Client(api_key=api_key)
+        client = genai.Client(api_key=api_key, http_options={'timeout': 180_000})
         prompt = build_final_picks_prompt(stock_list, weight_per_stock, base_date, market_context)
 
         print("[Gemini] 최종 추천 설명 요청 중 (Google Search Grounding)...")
@@ -527,7 +527,7 @@ def run_etf_matching(rankings_top5, base_date=None):
     )
 
     try:
-        client = genai.Client(api_key=api_key)
+        client = genai.Client(api_key=api_key, http_options={'timeout': 180_000})
 
         # ── Step 1: Pro + Google Search — 종목별 ETF 검색 ──
         prompt_step1 = f"""당신은 한국 ETF 전문가입니다.

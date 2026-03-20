@@ -19,9 +19,9 @@ KST = ZoneInfo('Asia/Seoul')
 STATE_DIR = Path(__file__).parent / 'state'
 STATE_DIR.mkdir(exist_ok=True)
 
-# Score-based entry/exit thresholds (v61, 72/68 복원)
-ENTRY_SCORE_100 = 72  # 진입: score_100 ≥ 72
-EXIT_SCORE_100 = 68   # 퇴출: score_100 < 68
+# Score-based entry/exit thresholds (v69, 4팩터 분포에 맞춰 재조정)
+ENTRY_SCORE_100 = 74  # 진입: score_100 ≥ 74 (평균 4.9개/일)
+EXIT_SCORE_100 = 68   # 매도검토: score_100 < 68 (평균 11위)
 
 
 def get_ranking_path(date_str: str) -> Path:
@@ -404,7 +404,9 @@ def weighted_score_100(ticker, rankings_t0, rankings_t1=None, rankings_t2=None):
     s1 = t1_map.get(ticker, t1_fallback)
     s2 = t2_map.get(ticker, t2_fallback)
     ws = s0 * 0.5 + s1 * 0.3 + s2 * 0.2
-    return max(0.0, min(100.0, (ws + 3.0) / 6.0 * 100))
+    # v69: 4팩터 동일가중 score 분포에 맞춘 환산
+    # score 범위 0.6~1.5 → (ws+0.7)/2.4*100 → 약 54~92점
+    return max(0.0, min(100.0, (ws + 0.7) / 2.4 * 100))
 
 
 def cleanup_old_rankings(keep_days: int = 30):

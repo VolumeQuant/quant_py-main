@@ -248,7 +248,7 @@ def main():
                 val = row.get(col)
                 if val is not None and pd.notna(val):
                     entry[key] = round(float(val), 2)
-            for col, key in [('밸류_점수', 'value_s'), ('퀄리티_점수', 'quality_s'), ('모멘텀_점수', 'momentum_s')]:
+            for col, key in [('밸류_점수', 'value_s'), ('퀄리티_점수', 'quality_s'), ('성장_점수', 'growth_s'), ('모멘텀_점수', 'momentum_s')]:
                 val = row.get(col)
                 if val is not None and pd.notna(val):
                     entry[key] = round(float(val), 4)

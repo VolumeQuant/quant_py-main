@@ -102,10 +102,10 @@ def _patch_pykrx():
     """pykrx의 Post/Get을 공유 세션으로 교체"""
 
     def _post_read(self, **params):
-        return _session.post(self.url, headers=self.headers, data=params)
+        return _session.post(self.url, headers=self.headers, data=params, timeout=30)
 
     def _get_read(self, **params):
-        return _session.get(self.url, headers=self.headers, params=params)
+        return _session.get(self.url, headers=self.headers, params=params, timeout=30)
 
     webio.Post.read = _post_read
     webio.Get.read = _get_read
