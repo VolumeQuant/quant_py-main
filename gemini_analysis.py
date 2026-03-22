@@ -119,12 +119,13 @@ def build_prompt(stock_list, base_date=None, market_context=None, market_index=N
     if market_context:
         action = market_context.get('action', '')
         market_block = f"""
-[현재 시장 환경 — 시스템이 판단한 베타 위험]
+[현재 시장 환경 — 시스템 내부 참고용, 절대 사용자에게 노출하지 마]
 행동 권장: {action}
 
-→ 이 시장 환경을 종목 분석에 반영해줘.
+→ 이 시장 환경을 종목 분석의 톤에만 반영해줘.
   행동 권장에 '매도'나 '멈추'가 포함되면 더 엄격하게 봐줘.
   행동 권장에 '적극'이나 '평소대로'가 포함되면 긍정적으로 평가해줘.
+⛔ "행동 권장", "매수 유지", "시장 변화에 주의" 등 시스템 내부 용어를 시장 동향이나 어떤 섹션에서도 인용/노출하지 마. 이 텍스트는 네 분석 톤 조절용이지, 사용자에게 보여주는 내용이 아니야.
 """
 
     # 시장 지수 factual anchoring (hallucination 방지)
@@ -170,7 +171,7 @@ def build_prompt(stock_list, base_date=None, market_context=None, market_index=N
 - 둘째 문단: 업종·테마별 흐름
 - (선택) 셋째 문단: 향후 주의할 변수
 - {date_str} 시장의 핵심 이슈(원인, 테마, 업종별 흐름)를 구체적으로 써.
-- 지수 수치(코스피 몇 포인트 등)는 반복하지 마. 위에 시스템이 이미 표시했어.
+- ⛔ 지수 수치(코스피 몇 포인트, 코스닥 몇 포인트, 5780선 등)는 절대 쓰지 마. 위에 시스템이 이미 표시했어.
 - "이번 주" 전체 요약은 하지 마. {date_str} 당일 마감에만 집중.
 - [시제 규칙] 이 요약은 {date_str} 장 마감 이후에 작성하는 거야.
   마감 시점까지 이미 발표된 경제지표(FOMC, CPI, 고용 등)는 "결과"로 써.
