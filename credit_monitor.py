@@ -131,10 +131,10 @@ def fetch_hy_quadrant():
         daily_change_bp = (hy_spread - hy_prev) * 100
 
         if 4 <= hy_spread <= 5 and daily_change_bp <= -20:
-            signals.append(f'💎 HY {hy_spread:.2f}%, 전일 대비 {daily_change_bp:+.0f}bp 급락 — 반등 매수 기회에요!')
+            signals.append(f'💎 HY {hy_spread:.2f}%, 전일 대비 {daily_change_bp:+.0f}bp 급락 — 반등 매수 기회입니다!')
 
         if hy_prev >= 5 and hy_spread < 5:
-            signals.append(f'💎 HY {hy_spread:.2f}%로 5% 밑으로 내려왔어요 — 적극 매수 구간이에요!')
+            signals.append(f'💎 HY {hy_spread:.2f}%로 5% 밑으로 내려왔습니다 — 적극 매수 구간입니다!')
 
         peak_60d = df['hy_spread'].rolling(60).max().iloc[-1]
         from_peak_bp = (hy_spread - peak_60d) * 100
@@ -146,7 +146,7 @@ def fetch_hy_quadrant():
         hy_3m_ago_prev = df['hy_spread'].iloc[-64] if len(df) >= 64 else df['hy_spread'].iloc[0]
         prev_rising = hy_prev >= hy_3m_ago_prev
         if (prev_wide and prev_rising) and (is_wide and not is_rising):
-            signals.append('💎 겨울→봄 전환 — 가장 좋은 매수 타이밍이에요!')
+            signals.append('💎 겨울→봄 전환 — 가장 좋은 매수 타이밍입니다!')
 
         # 분면 지속 일수 (최대 252영업일)
         df['hy_3m'] = df['hy_spread'].shift(63)
@@ -166,18 +166,18 @@ def fetch_hy_quadrant():
         # 행동 권장 (q_days 기반, 30년 데이터 근거)
         if quadrant == 'Q4':
             if q_days <= 20:
-                action = '침체에 진입했어요. 신규 매수를 멈추고 보유 종목을 줄이세요.'
+                action = '침체에 진입했습니다. 신규 매수를 멈추고 보유 종목을 줄이세요.'
             elif q_days <= 60:
-                action = '침체가 지속 중이에요. 신규 매수를 멈추고 관망하세요.'
+                action = '침체가 지속 중입니다. 신규 매수를 멈추고 관망하세요.'
             else:
-                action = '바닥권에 접근하고 있어요. 분할 매수를 시작하세요.'
+                action = '바닥권에 접근하고 있습니다. 분할 매수를 시작하세요.'
         elif quadrant == 'Q3':
             if q_days >= 60:
                 action = '신규 매수를 줄여가세요.'
             else:
                 action = '신규 매수 시 신중하게 판단하세요.'
         elif quadrant == 'Q1':
-            action = '적극 매수하세요. 역사적으로 수익률이 가장 높은 구간이에요.'
+            action = '적극 매수하세요. 역사적으로 수익률이 가장 높은 구간입니다.'
         else:
             action = '평소대로 투자하세요.'
 
@@ -410,12 +410,12 @@ def _synthesize_action(hy, kr, vix):
     # 1단계: HY × VIX 기본 액션
     if q == 'Q1':
         if vix_ok:
-            text, picks = '적극 매수 구간이에요 (과거 연 +14.3%)', 5
+            text, picks = '적극 매수 구간입니다 (과거 연 +14.3%)', 5
         else:
-            text, picks = '변동성이 높지만, 분할 매수 유효 구간이에요', 5
+            text, picks = '변동성이 높지만, 분할 매수 유효 구간입니다', 5
     elif q == 'Q2':
         if vix_ok:
-            text, picks = '정상 매수 구간이에요 (과거 연 +9.4%)', 5
+            text, picks = '정상 매수 구간입니다 (과거 연 +9.4%)', 5
         else:
             text, picks = '매수 유지, 변동성에 유의하세요', 5
     elif q == 'Q3':
@@ -454,7 +454,7 @@ def _synthesize_action(hy, kr, vix):
         # picks=5→3, picks=3→1→0으로 맞추기
         if picks == 1:
             picks = 0
-        text = '국내 신용시장이 위험 수준이에요. ' + text
+        text = '국내 신용시장이 위험 수준입니다. ' + text
     elif kr_regime == '경계':
         text += ' (국내 신용시장 경계)'
 
@@ -572,20 +572,20 @@ def format_credit_section(credit: dict) -> str:
         med_val = hy['median_10y']
         q = hy['quadrant']
         if q == 'Q1':
-            interp = f"평균({med_val:.2f}%)보다 높지만 빠르게 내려오고 있어요."
+            interp = f"평균({med_val:.2f}%)보다 높지만 빠르게 내려오고 있습니다."
         elif q == 'Q2':
-            interp = f"평균({med_val:.2f}%)보다 낮아서 안정적이에요."
+            interp = f"평균({med_val:.2f}%)보다 낮아서 안정적입니다."
         elif q == 'Q3':
-            interp = f"평균({med_val:.2f}%) 이하지만 올라가는 중이에요."
+            interp = f"평균({med_val:.2f}%) 이하지만 올라가는 중입니다."
         else:
-            interp = f"평균({med_val:.2f}%)보다 높고 계속 올라가고 있어요."
+            interp = f"평균({med_val:.2f}%)보다 높고 계속 올라가고 있습니다."
         lines.append(f"▸ HY Spread(부도위험) {hy_val:.2f}%")
         lines.append(f"  {interp}")
     else:
         lines.append('▸ HY Spread — 수집 실패')
 
     if kr:
-        kr_interp = {'정상': '정상 범위에요.', '경계': '경계 수준이에요.', '위기': '위험 수준이에요.'}
+        kr_interp = {'정상': '정상 범위입니다.', '경계': '경계 수준입니다.', '위기': '위험 수준입니다.'}
         lines.append(f"▸ 한국 BBB-(회사채) {kr['spread']:.1f}%p")
         lines.append(f"  {kr_interp.get(kr['regime_label'], kr['regime_label'])}")
 
@@ -598,10 +598,10 @@ def format_credit_section(credit: dict) -> str:
         slope_arrow = '↑' if vix['vix_slope_dir'] == 'rising' else ('↓' if vix['vix_slope_dir'] == 'falling' else '')
         if vix['regime'] == 'normal':
             lines.append(f"▸ VIX {v:.1f} (1년 중 {pct:.0f}번째)")
-            lines.append(f"  안정적이에요.")
+            lines.append(f"  안정적입니다.")
         else:
             lines.append(f"▸ VIX {v:.1f}{slope_arrow} (1년 중 {pct:.0f}번째)")
-            lines.append(f"  {vix['regime_label']} 구간이에요.")
+            lines.append(f"  {vix['regime_label']} 구간입니다.")
 
     # ── 결론 ──
     signals = []
@@ -694,11 +694,11 @@ def _overall_status(hy, vix):
 
     # 문구는 실제 수익률에 맞게
     if combined_return >= 8:
-        msg = '과거 수익률이 좋았던 구간이에요'
+        msg = '과거 수익률이 좋았던 구간입니다'
     elif combined_return >= 3:
-        msg = '과거 수익률이 보통인 구간이에요'
+        msg = '과거 수익률이 보통인 구간입니다'
     else:
-        msg = '과거 수익률이 낮았던 구간이에요'
+        msg = '과거 수익률이 낮았던 구간입니다'
 
     return icon, msg, combined_return
 
@@ -707,7 +707,7 @@ def format_credit_compact(credit: dict) -> list:
     """AI Risk 메시지용 — HY×VIX 조합 수익률 기반 (v65)
 
     Format:
-    🟡 과거 수익률이 낮았던 구간이에요
+    🟡 과거 수익률이 낮았던 구간입니다
       회사채 금리차(HY) 3.22% · 상위 78%
       변동성지수(VIX) 22.4 · 상위 16%
       이 구간 과거 S&P 연평균 +0.5%
