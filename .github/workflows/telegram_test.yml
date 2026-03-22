@@ -16,7 +16,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: ./claude code/quant_py-main
+        working-directory: .
 
     steps:
       - name: Checkout repository
@@ -37,7 +37,7 @@ jobs:
       - name: Cache data_cache (OHLCV, fundamentals)
         uses: actions/cache@v4
         with:
-          path: claude code/quant_py-main/data_cache
+          path: data_cache
           key: data-cache-${{ github.run_id }}
           restore-keys: data-cache-
 

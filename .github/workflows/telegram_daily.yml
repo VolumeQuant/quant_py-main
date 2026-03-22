@@ -20,7 +20,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: ./claude code/quant_py-main
+        working-directory: .
 
     steps:
       - name: Checkout repository
@@ -41,7 +41,7 @@ jobs:
       - name: Cache data_cache (OHLCV, fundamentals)
         uses: actions/cache@v4
         with:
-          path: claude code/quant_py-main/data_cache
+          path: data_cache
           key: data-cache-${{ github.run_id }}
           restore-keys: data-cache-
 
@@ -101,7 +101,7 @@ jobs:
           cd "${{ github.workspace }}"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add "claude code/quant_py-main/state/"
+          git add "state/"
           git diff --cached --quiet || git commit -m "state: daily ranking $(date -u +%Y%m%d)"
           git stash --include-untracked
           git pull --rebase || true
