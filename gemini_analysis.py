@@ -232,6 +232,9 @@ def convert_markdown_to_html(text):
     result = re.sub(r'했답니다', '했습니다', result)
     result = re.sub(r'랍니다', '입니다', result)
     result = re.sub(r'답니다', '습니다', result)
+    # Step 8: 빈 ⚠️ 매수 주의 종목 섹션 제거 (위험 신호 0개인데 Gemini가 헤더를 남길 때)
+    # "없습니다", "해당", "없음" 등이 포함된 경우만 제거 (실제 경고 종목이 있으면 유지)
+    result = re.sub(r'\n*⚠️\s*매수 주의 종목\n[^\n]*(?:없습니다|해당|없음)[^\n]*\n*', '\n', result)
     # 연속 빈 줄 모두 제거
     result = re.sub(r'\n{3,}', '\n\n', result)
     return result
