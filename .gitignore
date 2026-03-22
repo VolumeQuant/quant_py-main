@@ -27,10 +27,7 @@ Thumbs.db
 # Config with secrets
 config.py
 
-# Data cache (fs_fnguide_* is kept for weekly refresh)
-data_cache/all_ohlcv_*.parquet
-data_cache/ohlcv_*.parquet
-data_cache/market_cap_*.parquet
+# Data cache
 data_cache/logs/
 data_cache/portfolio_history.json
 logs/
