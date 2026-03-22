@@ -130,7 +130,7 @@ def build_prompt(stock_list, base_date=None, market_context=None):
     prompt = f"""분석 기준일: {date_str}
 
 아래는 한국주식 퀀트 시스템의 매수 후보 {stock_count}종목과 각 종목의 정량적 위험 신호야.
-이 종목들은 밸류+퀄리티+모멘텀 멀티팩터로 선정된 거야.
+이 종목들은 밸류+퀄리티+성장+모멘텀 4팩터 멀티팩터로 선정된 거야.
 네 역할: 위험 신호를 해석해서 "매수 시 주의할 종목"을 투자자에게 알려주는 거야.
 {market_block}
 [종목별 데이터 & 위험 신호 — 시스템이 계산한 팩트]
@@ -325,7 +325,7 @@ def run_ai_analysis(portfolio_message, stock_list, base_date=None, market_contex
         return None
 
 
-def build_final_picks_prompt(stock_list, weight_per_stock=20, base_date=None, market_context=None):
+def build_final_picks_prompt(stock_list, weight_per_stock=None, base_date=None, market_context=None):
     """최종 추천 종목별 설명 프롬프트 (미국 프로젝트 방식)"""
     stock_lines = []
     for i, s in enumerate(stock_list):
@@ -341,7 +341,7 @@ def build_final_picks_prompt(stock_list, weight_per_stock=20, base_date=None, ma
         if s.get('roe'): parts.append(f"ROE {s['roe']:.1f}%")
         parts.append(f"RSI {s.get('rsi', 50):.0f}")
         parts.append(f"52주 {s.get('w52_pct', 0):+.0f}%")
-        line += f"\n   비중 {weight_per_stock}% · {', '.join(parts)}"
+        line += f"\n   {', '.join(parts)}"
         stock_lines.append(line)
 
     stocks_data = '\n\n'.join(stock_lines)
@@ -361,7 +361,10 @@ def build_final_picks_prompt(stock_list, weight_per_stock=20, base_date=None, ma
 → 종목 설명에 시장 환경을 자연스럽게 반영해줘. 위험 높으면 "방어적", 안정적이면 "공격적" 톤으로.
 """
 
-    return f"""아래 {len(stock_list)}종목 각각의 최근 실적/사업 성장 배경을 Google 검색해서 한 줄씩 써줘.
+    return f"""분석 기준일: {date_str}
+
+아래 {len(stock_list)}종목 각각의 최근 실적/사업 성장 배경을 Google 검색해서 한 줄씩 써줘.
+{date_str} 기준 최신 뉴스·실적 발표·사업 동향을 우선 반영해줘.
 
 [종목]
 {stocks_data}

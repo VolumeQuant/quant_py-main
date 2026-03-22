@@ -119,6 +119,7 @@ def _get_buy_rationale(pick) -> str:
     factors = [
         ('V', pick.get('value_s')),
         ('Q', pick.get('quality_s')),
+        ('G', pick.get('growth_s')),
         ('M', pick.get('momentum_s')),
     ]
 
@@ -132,7 +133,7 @@ def _get_buy_rationale(pick) -> str:
         elif z <= -1.0:
             weak.append(label)
 
-    NAMES = {'V': '밸류', 'Q': '퀄리티', 'M': '모멘텀'}
+    NAMES = {'V': '밸류', 'Q': '퀄리티', 'G': '성장', 'M': '모멘텀'}
 
     if not strong and not weak:
         return '멀티팩터 균형'
