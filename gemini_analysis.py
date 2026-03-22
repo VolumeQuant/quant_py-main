@@ -51,7 +51,7 @@ def compute_risk_flags(s):
     return flags
 
 
-def build_prompt(stock_list, base_date=None, market_context=None):
+def build_prompt(stock_list, base_date=None, market_context=None, market_index=None):
     """
     AI 브리핑 프롬프트 구성 — v3 위험 신호 스캐너
 
@@ -127,23 +127,36 @@ def build_prompt(stock_list, base_date=None, market_context=None):
   행동 권장에 '적극'이나 '평소대로'가 포함되면 긍정적으로 평가해줘.
 """
 
+    # 시장 지수 factual anchoring (hallucination 방지)
+    idx_block = ""
+    if market_index:
+        idx_parts = []
+        if market_index.get('kospi_close'):
+            idx_parts.append(f"코스피 {market_index['kospi_close']:,.0f}({market_index.get('kospi_chg', 0):+.2f}%)")
+        if market_index.get('kosdaq_close'):
+            idx_parts.append(f"코스닥 {market_index['kosdaq_close']:,.0f}({market_index.get('kosdaq_chg', 0):+.2f}%)")
+        if idx_parts:
+            idx_block = f"\n[당일 지수 마감 — 시스템이 계산한 팩트]\n{' / '.join(idx_parts)}\n→ 이 수치와 모순되는 내용을 쓰지 마.\n"
+
     prompt = f"""분석 기준일: {date_str}
 
 아래는 한국주식 퀀트 시스템의 매수 후보 {stock_count}종목과 각 종목의 정량적 위험 신호야.
 이 종목들은 밸류+퀄리티+성장+모멘텀 4팩터 멀티팩터로 선정된 거야.
 네 역할: 위험 신호를 해석해서 "매수 시 주의할 종목"을 투자자에게 알려주는 거야.
-{market_block}
+{market_block}{idx_block}
 [종목별 데이터 & 위험 신호 — 시스템이 계산한 팩트]
 {signals_data}
 
 [위험 신호 설명]
 🔺 RSI 과매수 = RSI 80 이상, 극단적 과열 구간 (조정 가능성)
 
-[출력 형식]
+[출력 형식 — 반드시 지켜]
 - 한국어, 친절하고 따뜻한 말투 (~예요/~해요 체)
 - 예시: "주가가 많이 빠졌어요", "조심하시는 게 좋겠어요", "아직은 괜찮아 보여요"
 - 딱딱한 보고서 말투 금지. 친구에게 설명하듯 자연스럽게.
-- "~답니다", "~랍니다", "~했답니다" 같은 어미 절대 사용 금지. "~예요", "~했어요"만 사용.
+- ⛔ "~답니다", "~랍니다", "~했답니다", "~습니다", "~었습니다" 절대 사용 금지.
+  반드시 "~예요", "~했어요", "~있어요", "~됐어요", "~보여요"만 사용.
+  예: "상승했습니다" → "올랐어요", "기록했답니다" → "기록했어요"
 - 인사말, 서두, 맺음말 금지. 아래 섹션부터 바로 시작.
 - 종목마다 문장 구조를 다르게 써. 같은 패턴 반복 금지.
 - 트럼프는 2025년 1월 재취임한 현직 미국 대통령이야.
@@ -157,8 +170,11 @@ def build_prompt(stock_list, base_date=None, market_context=None):
 - 둘째 문단: 업종·테마별 흐름
 - (선택) 셋째 문단: 향후 주의할 변수
 - {date_str} 시장의 핵심 이슈(원인, 테마, 업종별 흐름)를 구체적으로 써.
-- 지수 수치(코스피 몇 포인트 등)는 반복하지 마.
-- "이번 주" 전체 요약은 하지 마. {date_str} 마감에 집중.
+- 지수 수치(코스피 몇 포인트 등)는 반복하지 마. 위에 시스템이 이미 표시했어.
+- "이번 주" 전체 요약은 하지 마. {date_str} 당일 마감에만 집중.
+- [시제 규칙] 이 요약은 {date_str} 장 마감 이후에 작성하는 거야.
+  마감 시점까지 이미 발표된 경제지표(FOMC, CPI, 고용 등)는 "결과"로 써.
+  "향후 예정", "발표될 예정" 같은 미래형은 마감 이후 일정에만 써.
 
 ⚠️ 매수 주의 종목
 위 위험 신호를 종합해서 매수를 재고할 만한 종목을 골라줘.
@@ -210,6 +226,16 @@ def convert_markdown_to_html(text):
         result = before + after
     # Step 6: 구분선 앞뒤 빈 줄 정리
     result = re.sub(r'\n+─────────\n+', '\n─────────\n', result)
+    # Step 7: ~답니다/~습니다 후처리 (Gemini가 프롬프트 무시할 때 방어)
+    result = re.sub(r'했답니다', '했어요', result)
+    result = re.sub(r'랍니다', '예요', result)
+    result = re.sub(r'답니다', '예요', result)
+    result = re.sub(r'였습니다', '였어요', result)
+    result = re.sub(r'었습니다', '었어요', result)
+    result = re.sub(r'했습니다', '했어요', result)
+    result = re.sub(r'됐습니다', '됐어요', result)
+    result = re.sub(r'입니다', '이에요', result)
+    result = re.sub(r'습니다', '어요', result)
     # 연속 빈 줄 모두 제거
     result = re.sub(r'\n{3,}', '\n\n', result)
     return result
@@ -232,7 +258,7 @@ def extract_text(resp):
     return None
 
 
-def run_ai_analysis(portfolio_message, stock_list, base_date=None, market_context=None):
+def run_ai_analysis(portfolio_message, stock_list, base_date=None, market_context=None, market_index=None):
     """
     Gemini 2.5 Flash AI 브리핑 실행 — v3 정량 리스크 스캐너
 
@@ -259,7 +285,7 @@ def run_ai_analysis(portfolio_message, stock_list, base_date=None, market_contex
 
     try:
         client = genai.Client(api_key=api_key, http_options={'timeout': 180_000})
-        prompt = build_prompt(stock_list, base_date=base_date, market_context=market_context)
+        prompt = build_prompt(stock_list, base_date=base_date, market_context=market_context, market_index=market_index)
         grounding_tool = types.Tool(google_search=types.GoogleSearch())
 
         print("[Gemini] AI 브리핑 요청 중...")
@@ -363,27 +389,32 @@ def build_final_picks_prompt(stock_list, weight_per_stock=None, base_date=None, 
 
     return f"""분석 기준일: {date_str}
 
-아래 {len(stock_list)}종목 각각의 최근 실적/사업 성장 배경을 Google 검색해서 한 줄씩 써줘.
-{date_str} 기준 최신 뉴스·실적 발표·사업 동향을 우선 반영해줘.
-
+아래 {len(stock_list)}종목 각각의 실적/사업 성장 배경을 Google 검색해서 한 줄씩 써줘.
+{market_block}
 [종목]
 {stocks_data}
 
 [형식]
-- 한국어, ~예요/~했어요 체 ("~답니다/~랍니다/~했답니다" 절대 금지)
+- 한국어, ~예요/~했어요 체
+- ⛔ "~답니다", "~랍니다", "~했답니다", "~습니다", "~었습니다" 절대 사용 금지.
+  반드시 "~예요", "~했어요", "~있어요", "~됐어요", "~보여요"만 사용.
 - 종목별: **종목명(티커)**
-  비즈니스 매력 한 줄 (가장 의미있는 수치를 맥락과 함께)
+  비즈니스 매력 2~3문장, 120~180자 (가장 의미있는 수치를 맥락과 함께)
 - 종목 사이에 [SEP]
 - 맨 끝 별도 문구 없음
 
 [규칙]
-- 각 종목의 실적/사업 성장 배경(왜 주가가 오르는지, 어떤 사업이 잘 되는지)을 검색해서 써.
-  예: "AI 반도체 수요 확대로 HBM 매출 급증 중이에요"
+- 종목별 2단계로 써:
+  1단계: 왜 실적이 좋은지 / 어떤 사업이 성장 중인지 (핵심 비즈니스 드라이버)
+  2단계: {date_str} 전후 1~2주 이내 최신 뉴스가 검색되면 추가. 검색해도 최근 뉴스가 없으면 이 문장은 생략.
+- 반드시 Google 검색 결과에 있는 실제 사실만 써. 추측하거나 지어내지 마.
+- 예: "AI 반도체 수요 확대로 HBM 매출 급증 중이에요"
   예: "전력 수요 폭증에 원전 재가동 기대감까지 더해졌어요"
   예: "Fwd PER 5.5로 성장 대비 저평가. 배당수익률 3.2%도 매력적이에요."
 - 종목에 따라 가장 의미있는 지표를 골라서 맥락과 함께 설명해.
   반도체면 Fwd PER, 고배당주면 배당률, 성장주면 매출성장률.
 - 단순히 "PER 낮음", "ROE 높음"처럼 숫자만 반복하지 마. 그 숫자 뒤의 사업적 이유를 써.
+- "견고한 실적", "안정적 성장" 같은 뻔한 표현 금지. 구체적 사업/제품/고객사를 언급해.
 - 날씨 아이콘(☀️🌤️🌧️ 등) 넣지 마.
 - 주의/경고/유의 표현 금지. 긍정적 매력만.
 - "선정", "포함", "선택" 같은 시스템 용어 금지.
@@ -408,6 +439,16 @@ def _convert_picks_markdown(text):
     result = re.sub(r'#{1,3}\s*', '', result)
     result = re.sub(r'\n{3,}', '\n\n', result)
     result = re.sub(r'\n+──────────────────\n+', '\n──────────────────\n', result)
+    # ~답니다/~습니다 후처리
+    result = re.sub(r'했답니다', '했어요', result)
+    result = re.sub(r'랍니다', '예요', result)
+    result = re.sub(r'답니다', '예요', result)
+    result = re.sub(r'였습니다', '였어요', result)
+    result = re.sub(r'었습니다', '었어요', result)
+    result = re.sub(r'했습니다', '했어요', result)
+    result = re.sub(r'됐습니다', '됐어요', result)
+    result = re.sub(r'입니다', '이에요', result)
+    result = re.sub(r'습니다', '어요', result)
     return result.strip()
 
 

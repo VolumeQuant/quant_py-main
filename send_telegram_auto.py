@@ -334,7 +334,7 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
     scored_count = meta.get('scored_count', 0)
     v_count = sum(1 for s in pipeline if s['status'] == '✅')
     lines.append('')
-    lines.append('📋 선정 과정')
+    lines.append('📋 <b>선정 과정</b>')
     if universe_count > 0:
         lines.append(f'시총 1000억 이상 · 거래대금 충족 {universe_count:,}종목')
     else:
@@ -422,7 +422,7 @@ def create_ai_risk_message(credit, kospi_data, kosdaq_data, market_warnings,
         '━━━━━━━━━━━━━━━━━━━',
         '상위 종목의 리스크 요소를 AI가 분석했습니다.',
         '',
-        '📊 시장 지수',
+        '📊 <b>시장 지수</b>',
     ]
 
     # 코스피/코스닥 + 이평선 이벤트 인라인
@@ -453,10 +453,17 @@ def create_ai_risk_message(credit, kospi_data, kosdaq_data, market_warnings,
     for cl in credit_lines:
         lines.append(cl)
 
-    # AI 해석 (통째 삽입)
+    # AI 해석 (통째 삽입 + 헤더 볼드 후처리)
     if ai_msg:
+        processed = ai_msg
+        # 📰/⚠️ 헤더 볼드 처리
+        processed = processed.replace('📰 시장 동향', '📰 <b>시장 동향</b>')
+        processed = processed.replace('⚠️ 매수 주의 종목', '⚠️ <b>매수 주의 종목</b>')
+        # 헤더 직후 불필요한 빈줄 제거
+        processed = processed.replace('📰 <b>시장 동향</b>\n\n', '📰 <b>시장 동향</b>\n')
+        processed = processed.replace('⚠️ <b>매수 주의 종목</b>\n\n', '⚠️ <b>매수 주의 종목</b>\n')
         lines.append('')
-        lines.append(ai_msg)
+        lines.append(processed)
 
     return '\n'.join(lines)
 
@@ -810,7 +817,11 @@ def main():
                 if compute_risk_flags(stock_data):
                     risk_flagged_tickers.add(pick['ticker'])
             print(f"\n  AI 리스크 대상: {len(stock_list)}개 (위험 플래그: {len(risk_flagged_tickers)}개)")
-            ai_msg_raw = run_ai_analysis(None, stock_list, base_date=BASE_DATE, market_context=market_ctx)
+            mkt_idx = {
+                'kospi_close': kospi_close, 'kospi_chg': kospi_chg,
+                'kosdaq_close': kosdaq_close, 'kosdaq_chg': kosdaq_chg,
+            }
+            ai_msg_raw = run_ai_analysis(None, stock_list, base_date=BASE_DATE, market_context=market_ctx, market_index=mkt_idx)
             if ai_msg_raw:
                 print(f"\n=== AI 리스크 필터 ({len(ai_msg_raw)}자) ===")
                 print(ai_msg_raw[:500] + '...' if len(ai_msg_raw) > 500 else ai_msg_raw)
