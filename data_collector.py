@@ -73,7 +73,7 @@ class DataCollector:
         return df
 
     def get_market_cap(self, date, market='ALL'):
-        """특정 날짜의 시가총액 데이터 조회"""
+        """특정 날짜의 시가총액 데이터 조회 — 캐시 우선, 벌크 API, 직전 캐시 폴백"""
         cache_file = DATA_DIR / f'market_cap_{market}_{date}.parquet'
 
         if cache_file.exists():
@@ -82,17 +82,30 @@ class DataCollector:
 
         print(f"{date} 시가총액 데이터 수집 중...")
 
-        if market == 'ALL':
-            df_kospi = stock.get_market_cap(date, market='KOSPI')
-            df_kosdaq = stock.get_market_cap(date, market='KOSDAQ')
-            df = pd.concat([df_kospi, df_kosdaq])
-        else:
-            df = stock.get_market_cap(date, market=market)
+        try:
+            if market == 'ALL':
+                df_kospi = stock.get_market_cap(date, market='KOSPI')
+                df_kosdaq = stock.get_market_cap(date, market='KOSDAQ')
+                df = pd.concat([df_kospi, df_kosdaq])
+            else:
+                df = stock.get_market_cap(date, market=market)
 
-        df.to_parquet(cache_file)
-        time.sleep(0.1)
+            if not df.empty and '시가총액' in df.columns:
+                df.to_parquet(cache_file)
+                time.sleep(0.1)
+                return df
+        except Exception as e:
+            print(f"  벌크 API 실패: {e}")
 
-        return df
+        # 폴백: 직전 캐시 파일 사용
+        fallback_files = sorted(DATA_DIR.glob(f'market_cap_{market}_*.parquet'))
+        valid = [f for f in fallback_files if f.stem.split('_')[-1] <= date]
+        if valid:
+            latest = valid[-1]
+            print(f"  폴백: 직전 캐시 사용 ({latest.name})")
+            return pd.read_parquet(latest)
+
+        return pd.DataFrame()
 
     def get_ohlcv(self, ticker, start_date=None, end_date=None):
         """특정 종목의 OHLCV 데이터 조회"""
@@ -193,11 +206,7 @@ class DataCollector:
         return df
 
     def get_market_fundamental_batch(self, date, market='ALL'):
-        """전체 시장 펀더멘털 일괄 조회 (PER/PBR/EPS/BPS/DIV)
-
-        pykrx stock.get_market_fundamental()을 사용하여
-        한 번의 호출로 전체 시장 데이터를 반환합니다.
-        """
+        """전체 시장 펀더멘털 일괄 조회 — 캐시 우선, 벌크 API, 직전 캐시 폴백"""
         cache_file = DATA_DIR / f'fundamental_batch_{market}_{date}.parquet'
 
         if cache_file.exists():
@@ -214,13 +223,23 @@ class DataCollector:
             else:
                 df = stock.get_market_fundamental(date, market=market)
 
-            df.to_parquet(cache_file)
-            time.sleep(0.1)
-            print(f"펀더멘털 배치 수집 완료: {len(df)}개 종목")
-            return df
+            if not df.empty:
+                df.to_parquet(cache_file)
+                time.sleep(0.1)
+                print(f"펀더멘털 배치 수집 완료: {len(df)}개 종목")
+                return df
         except Exception as e:
-            print(f"펀더멘털 배치 수집 실패: {e}")
-            return pd.DataFrame()
+            print(f"  벌크 API 실패: {e}")
+
+        # 폴백: 직전 캐시 파일 사용
+        fallback_files = sorted(DATA_DIR.glob(f'fundamental_batch_{market}_*.parquet'))
+        valid = [f for f in fallback_files if f.stem.split('_')[-1] <= date]
+        if valid:
+            latest = valid[-1]
+            print(f"  폴백: 직전 캐시 사용 ({latest.name})")
+            return pd.read_parquet(latest)
+
+        return pd.DataFrame()
 
     def get_krx_sector(self, date):
         """KRX 업종분류 조회 — pykrx 업종지수 구성종목 방식"""

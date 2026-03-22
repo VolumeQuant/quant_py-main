@@ -61,8 +61,21 @@ def get_korea_now():
 
 
 def get_recent_trading_dates(n=3):
-    """최근 N개 거래일 찾기 (휴장일 자동 대응)"""
+    """최근 N개 거래일 찾기 — 캐시 우선, KRX API 폴백"""
     today = get_korea_now()
+    today_str = today.strftime('%Y%m%d')
+    # 1차: market_cap 캐시 파일에서 거래일 목록 구축
+    cache_dir = Path(__file__).parent / 'data_cache'
+    mc_dates = set()
+    for f in cache_dir.glob('market_cap_ALL_*.parquet'):
+        d = f.stem.split('_')[-1]
+        if len(d) == 8 and d.isdigit() and d <= today_str:
+            mc_dates.add(d)
+    if mc_dates:
+        sorted_dates = sorted(mc_dates, reverse=True)[:n]
+        if len(sorted_dates) >= n:
+            return sorted_dates
+    # 2차: KRX API 폴백
     dates = []
     for i in range(1, 30):
         date = (today - timedelta(days=i)).strftime('%Y%m%d')
@@ -636,16 +649,29 @@ def main():
     # 시장 지수 + 이평선 경고
     # ============================================================
     idx_start = (datetime.strptime(BASE_DATE, '%Y%m%d') - timedelta(days=120)).strftime('%Y%m%d')
-    kospi_idx = stock.get_index_ohlcv(idx_start, BASE_DATE, '1001')
-    kosdaq_idx = stock.get_index_ohlcv(idx_start, BASE_DATE, '2001')
+    try:
+        kospi_idx = stock.get_index_ohlcv(idx_start, BASE_DATE, '1001')
+        kosdaq_idx = stock.get_index_ohlcv(idx_start, BASE_DATE, '2001')
+    except Exception as e:
+        print(f"  지수 OHLCV 수집 실패 (KRX API 차단): {e}")
+        kospi_idx = pd.DataFrame()
+        kosdaq_idx = pd.DataFrame()
 
-    kospi_close = kospi_idx.iloc[-1, 3]
-    kospi_prev = kospi_idx.iloc[-2, 3] if len(kospi_idx) > 1 else kospi_close
-    kospi_chg = ((kospi_close / kospi_prev) - 1) * 100
+    if not kospi_idx.empty and len(kospi_idx) >= 2:
+        kospi_close = kospi_idx.iloc[-1, 3]
+        kospi_prev = kospi_idx.iloc[-2, 3]
+    else:
+        kospi_close = 0
+        kospi_prev = 0
+    kospi_chg = ((kospi_close / kospi_prev) - 1) * 100 if kospi_prev else 0
 
-    kosdaq_close = kosdaq_idx.iloc[-1, 3]
-    kosdaq_prev = kosdaq_idx.iloc[-2, 3] if len(kosdaq_idx) > 1 else kosdaq_close
-    kosdaq_chg = ((kosdaq_close / kosdaq_prev) - 1) * 100
+    if not kosdaq_idx.empty and len(kosdaq_idx) >= 2:
+        kosdaq_close = kosdaq_idx.iloc[-1, 3]
+        kosdaq_prev = kosdaq_idx.iloc[-2, 3]
+    else:
+        kosdaq_close = 0
+        kosdaq_prev = 0
+    kosdaq_chg = ((kosdaq_close / kosdaq_prev) - 1) * 100 if kosdaq_prev else 0
 
     def _idx_color(chg):
         if chg > 1: return "🟢"

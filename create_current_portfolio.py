@@ -79,26 +79,34 @@ def get_broad_sector(krx_sector: str) -> str:
     return KRX_SECTOR_MAP.get(krx_sector, krx_sector or '기타')
 
 def get_latest_trading_date() -> str:
-    """최근 거래일 찾기 (한국 시간 기준, 재시도 포함)"""
-    import time
+    """최근 거래일 찾기 — 개별종목 조회 우선, 캐시 폴백"""
     today = datetime.now(KST)
-    max_retries = 3
-    for attempt in range(1, max_retries + 1):
-        for i in range(1, 20):
-            date = (today - timedelta(days=i)).strftime('%Y%m%d')
-            try:
-                df = pykrx_stock.get_market_cap(date, market='KOSPI')
-                if not df.empty and df['시가총액'].sum() > 0:
-                    return date
-            except Exception as e:
-                if i == 1:
-                    print(f"  [거래일 탐색] {date} 실패: {type(e).__name__}: {e}")
-                continue
-        if attempt < max_retries:
-            wait = attempt * 5
-            print(f"[거래일 탐색] {attempt}/{max_retries} 실패 — {wait}초 후 재시도...")
-            time.sleep(wait)
-    raise RuntimeError("최근 20일간 거래일을 찾을 수 없습니다. pykrx 버전 또는 네트워크를 확인하세요.")
+    # 1차: 삼성전자 개별 OHLCV로 최신 거래일 확인 (벌크 API 불필요)
+    try:
+        end = today.strftime('%Y%m%d')
+        start = (today - timedelta(days=10)).strftime('%Y%m%d')
+        df = pykrx_stock.get_market_ohlcv(start, end, '005930')
+        if not df.empty:
+            latest = df.index[-1].strftime('%Y%m%d')
+            print(f"[거래일] 개별종목 조회: {latest}")
+            return latest
+    except Exception as e:
+        print(f"[거래일] 개별종목 조회 실패: {e}")
+    # 2차: market_cap 캐시 파일에서 최신 거래일 탐색
+    cache_dir = Path(__file__).parent / CACHE_DIR
+    mc_dates = []
+    for f in cache_dir.glob('market_cap_ALL_*.parquet'):
+        d = f.stem.split('_')[-1]
+        if len(d) == 8 and d.isdigit():
+            mc_dates.append(d)
+    if mc_dates:
+        today_str = today.strftime('%Y%m%d')
+        valid = [d for d in mc_dates if d <= today_str]
+        if valid:
+            latest = max(valid)
+            print(f"[거래일] 캐시에서 탐색: {latest}")
+            return latest
+    raise RuntimeError("최근 거래일을 찾을 수 없습니다. 캐시 파일과 네트워크를 확인하세요.")
 
 import sys
 if len(sys.argv) > 1 and len(sys.argv[1]) == 8 and sys.argv[1].isdigit():
@@ -112,6 +120,104 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 # 제외 키워드 (금융업/지주사)
 EXCLUDE_KEYWORDS = ['금융', '은행', '증권', '보험', '캐피탈', '카드', '저축',
                    '지주', '홀딩스', 'SPAC', '스팩', '리츠', 'REIT']
+
+
+def _check_data_mismatch(dart_df, fn_df):
+    """DART vs FnGuide 동일 연도 주요 계정 비교 — 심각한 불일치 감지
+
+    매출액/자산: 양수끼리 50%+ 차이
+    영업이익/당기순이익/영업현금흐름/자본: 부호 반전 (한쪽 양수, 한쪽 음수)
+    2개 이상 계정에서 불일치 발견 시 True
+    """
+    try:
+        mismatch_count = 0
+        check_accounts = ['매출액', '영업이익', '당기순이익', '자산', '자본', '영업활동으로인한현금흐름']
+
+        for acct in check_accounts:
+            d_rows = dart_df[(dart_df['공시구분'] == 'y') & (dart_df['계정'] == acct)].copy()
+            f_rows = fn_df[(fn_df['공시구분'] == 'y') & (fn_df['계정'] == acct)].copy()
+            if d_rows.empty or f_rows.empty:
+                continue
+            d_rows['year'] = d_rows['기준일'].dt.year
+            f_rows['year'] = f_rows['기준일'].dt.year
+            common_years = set(d_rows['year']) & set(f_rows['year'])
+
+            for yr in common_years:
+                dv = d_rows[d_rows['year'] == yr].iloc[0]['값']
+                fv = f_rows[f_rows['year'] == yr].iloc[0]['값']
+
+                if acct in ('매출액', '자산'):
+                    # 양수 계정: ratio 기반
+                    if fv > 0 and dv > 0:
+                        ratio = dv / fv
+                        if ratio < 0.5 or ratio > 2.0:
+                            mismatch_count += 1
+                            break
+                else:
+                    # 부호 반전 감지 (둘 다 0이 아닌 경우)
+                    if dv != 0 and fv != 0 and (dv > 0) != (fv > 0):
+                        mismatch_count += 1
+                        break
+                    # 크기 차이도 체크 (둘 다 양수/음수인데 5배+ 차이)
+                    if fv != 0 and dv != 0:
+                        ratio = dv / fv
+                        if ratio < 0.2 or ratio > 5.0:
+                            mismatch_count += 1
+                            break
+
+        return mismatch_count >= 1
+    except Exception:
+        return False
+
+
+def load_fs_data_dart_first(tickers):
+    """재무제표 로드: DART 우선 → FnGuide 폴백 (캐시만, 크롤링 없음)
+
+    DART vs FnGuide 주요 계정 불일치 종목(CFS/OFS 혼재, 지주회사 등)은 FnGuide로 교체.
+    """
+    fs_data = {}
+    dart_count = fn_count = revenue_fallback = 0
+    cache_path = Path(CACHE_DIR)
+
+    for ticker in tickers:
+        dart_file = cache_path / f'fs_dart_{ticker}.parquet'
+        fn_file = cache_path / f'fs_fnguide_{ticker}.parquet'
+
+        # DART 우선
+        if dart_file.exists():
+            try:
+                dart_df = pd.read_parquet(dart_file)
+                if not dart_df.empty:
+                    # 매출 불일치 검사: FnGuide도 있으면 비교
+                    if fn_file.exists():
+                        try:
+                            fn_df = pd.read_parquet(fn_file)
+                            if not fn_df.empty and _check_data_mismatch(dart_df, fn_df):
+                                fs_data[ticker] = fn_df
+                                fn_count += 1
+                                revenue_fallback += 1
+                                continue
+                        except Exception:
+                            pass
+                    fs_data[ticker] = dart_df
+                    dart_count += 1
+                    continue
+            except Exception:
+                pass
+
+        # FnGuide 폴백
+        if fn_file.exists():
+            try:
+                df = pd.read_parquet(fn_file)
+                if not df.empty:
+                    fs_data[ticker] = df
+                    fn_count += 1
+            except Exception:
+                pass
+
+    fallback_msg = f", 데이터불일치→FnGuide {revenue_fallback}" if revenue_fallback else ""
+    print(f"  재무제표 로드: {len(fs_data)}개 (DART {dart_count} + FnGuide {fn_count}{fallback_msg})")
+    return fs_data
 
 
 def apply_ma120_filter(price_df: pd.DataFrame, universe_tickers: list) -> list:
@@ -207,8 +313,18 @@ def calculate_avg_trading_value_from_cache(days: int = 20) -> pd.DataFrame:
         return pd.DataFrame()
 
     # BASE_DATE 기준 최근 60일 이내의 일별 캐시만 사용 (분기별 백테스트 파일 제외)
+    # 주말 파일(거래대금=0) 자동 제외 — 20일 평균 왜곡 방지
     cutoff = (datetime.strptime(BASE_DATE, '%Y%m%d') - timedelta(days=60)).strftime('%Y%m%d')
-    valid_files = [f for f in mcap_files if cutoff <= f.stem.split('_')[-1] <= BASE_DATE]
+    valid_files = []
+    for f in mcap_files:
+        date_str = f.stem.split('_')[-1]
+        if cutoff <= date_str <= BASE_DATE:
+            try:
+                dt = datetime.strptime(date_str, '%Y%m%d')
+                if dt.weekday() < 5:  # 월~금만
+                    valid_files.append(f)
+            except ValueError:
+                pass
     target_files = valid_files[-days:]
 
     if not target_files:
@@ -382,7 +498,7 @@ def run_strategy_b_scoring(
                 print(f"  pykrx 실시간 데이터 병합: {live_count}/{len(multifactor_df)}개 종목")
 
         strategy = MultiFactorStrategy()
-        selected, scored = strategy.run(multifactor_df, price_df=price_df, n_stocks=len(multifactor_df), sector_map=sector_map)
+        selected, scored = strategy.run(multifactor_df, price_df=price_df, n_stocks=len(multifactor_df), sector_map=sector_map, base_date=BASE_DATE)
 
         print(f"  스코어링 완료: {len(scored)}개 종목")
         return scored
@@ -501,16 +617,16 @@ def main():
     print(f"최종 유니버스: {len(universe_tickers)}개 종목")
 
     # =========================================================================
-    # 3단계: 재무제표 수집 (FnGuide 캐시)
+    # 3단계: 재무제표 수집 (DART 우선 → FnGuide 폴백)
     # =========================================================================
-    print("\n[3단계] 재무제표 수집 (FnGuide 캐시)")
+    print("\n[3단계] 재무제표 수집 (DART 우선 → FnGuide 폴백)")
     try:
-        from fnguide_crawler import get_all_financial_statements, extract_magic_formula_data
-        fs_data = get_all_financial_statements(universe_tickers, use_cache=True)
+        from fnguide_crawler import extract_magic_formula_data
+        fs_data = load_fs_data_dart_first(universe_tickers)
         magic_df = extract_magic_formula_data(fs_data, base_date=BASE_DATE, use_ttm=True)
-        print(f"  FnGuide 캐시에서 {len(magic_df)}개 종목 로드")
+        print(f"  재무제표에서 {len(magic_df)}개 종목 로드")
     except Exception as e:
-        error_tracker.log_error("FNGUIDE", ErrorCategory.UNKNOWN, "FnGuide 캐시 로드 실패", e)
+        error_tracker.log_error("FS_LOAD", ErrorCategory.UNKNOWN, "재무제표 로드 실패", e)
         magic_df = pd.DataFrame()
 
     # 자본잠식 종목 필터링
@@ -547,7 +663,20 @@ def main():
     need_refresh = True
 
     if ohlcv_cache_files:
-        ohlcv_cache_file = sorted(ohlcv_cache_files)[-1]
+        # BASE_DATE를 포함하면서 가장 긴 히스토리 파일 선택
+        # 파일명: all_ohlcv_{start}_{end}.parquet
+        best_file = None
+        best_span = 0
+        for f in ohlcv_cache_files:
+            parts = f.stem.split('_')
+            if len(parts) >= 4:
+                f_start, f_end = parts[2], parts[3]
+                if f_start <= BASE_DATE <= f_end:
+                    span = int(f_end) - int(f_start)
+                    if span > best_span:
+                        best_span = span
+                        best_file = f
+        ohlcv_cache_file = best_file or sorted(ohlcv_cache_files)[-1]
         print(f"  캐시 파일 확인: {ohlcv_cache_file.name}")
         price_df = pd.read_parquet(ohlcv_cache_file)
 
@@ -572,20 +701,35 @@ def main():
                     print(f"  신규 유니버스 종목: {len(new_universe)}개 → 개별 수집")
 
                 new_rows = []
+                keep_tickers = list(cached_tickers | universe_set)
                 for offset in range(1, gap_days + 1):
                     date_dt = last_cached + timedelta(days=offset)
                     date_str = date_dt.strftime('%Y%m%d')
+                    # 벌크 API 먼저 시도, 실패 시 개별 종목 수집
                     try:
                         day_ohlcv = pykrx_stock.get_market_ohlcv_by_ticker(date_str, market='ALL')
                         if not day_ohlcv.empty and '종가' in day_ohlcv.columns:
                             row = day_ohlcv['종가']
-                            # 기존 캐시 종목 + 현재 유니버스 종목만 유지
-                            keep_tickers = cached_tickers | universe_set
                             row = row[row.index.isin(keep_tickers)]
                             row.name = pd.Timestamp(date_dt)
                             new_rows.append(row)
+                            continue
                     except Exception:
-                        pass  # 휴장일 등
+                        pass
+                    # 개별 종목 폴백 (유니버스 종목만)
+                    import time as _time
+                    closes = {}
+                    for tk in ohlcv_tickers[:200]:  # 주요 종목만
+                        try:
+                            tk_df = pykrx_stock.get_market_ohlcv(date_str, date_str, tk)
+                            if not tk_df.empty and '종가' in tk_df.columns:
+                                closes[tk] = tk_df['종가'].iloc[0]
+                            _time.sleep(0.05)
+                        except Exception:
+                            pass
+                    if closes:
+                        row = pd.Series(closes, name=pd.Timestamp(date_dt))
+                        new_rows.append(row)
 
                 if new_rows:
                     new_df = pd.DataFrame(new_rows)

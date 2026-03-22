@@ -10,13 +10,14 @@
 """
 
 import json
+import os
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Optional, Tuple
 from zoneinfo import ZoneInfo
 
 KST = ZoneInfo('Asia/Seoul')
-STATE_DIR = Path(__file__).parent / 'state'
+STATE_DIR = Path(os.environ.get('RANKING_STATE_DIR', str(Path(__file__).parent / 'state')))
 STATE_DIR.mkdir(exist_ok=True)
 
 # Score-based entry/exit thresholds (v69, 전문가 컨설팅 기반 72/68 확정)

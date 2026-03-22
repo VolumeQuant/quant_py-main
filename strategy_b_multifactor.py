@@ -1,14 +1,15 @@
 """
-전략 B: 멀티팩터 전략 v69 — 4팩터 동일가중 (V+Q+G+M = 25% each)
+전략 B: 멀티팩터 전략 v71 — 4팩터 동일가중 (V+Q+G+M = 25% each)
 
 헨리(이현열) 원본 rank z-score 기반 + 실시간/전방성 강화
-V25(PER+PBR+PCR+PSR) + Q25(ROE+GPA+CFO) + G25(매출성장률4Q) + M25(6M/Vol+K_ratio)
+V25(PER+PBR+PCR+PSR) + Q25(ROE+GPA+CFO) + G25(TTM매출YoY+op_change_asset) + M25(6M/Vol+K_ratio)
 V/Q: 전체 유니버스 rank z-score (절대 비교)
 M: 섹터 내 rank z-score (섹터 추세 제거)
-G: 전체 유니버스 rank z-score
+G: 전체 유니버스 rank z-score (매출TTM 50% + op_change_asset 50%, 연간 폴백)
 + FWD_PER 보너스 (커버 종목 가산)
 """
 
+import os
 import pandas as pd
 import numpy as np
 from scipy import stats
@@ -80,37 +81,173 @@ class MultiFactorStrategy:
 
         return data
 
-    def calculate_growth_factors(self, data):
-        """
-        성장 팩터 계산 — v69 신규: 분기 매출성장률
+    def _calc_ttm_yoy(self, fs, account, base_dt=None, cutoff_date=None):
+        """단일 계정 TTM YoY 계산 (내부 헬퍼)"""
+        q_data = fs[(fs['공시구분'] == 'q') & (fs['계정'] == account)].copy()
+        if q_data.empty:
+            return None
 
-        최근 4분기 각각의 전년동기비 매출성장률 평균
-        → 시점 불일치 해소 (v67 매출성장률 YoY 폐기 사유 해결)
-        """
+        # point-in-time 필터
+        if base_dt and 'rcept_dt' in q_data.columns:
+            has_rcept = q_data['rcept_dt'].notna()
+            rcept_ok = q_data['rcept_dt'] <= base_dt
+            cutoff_ok = q_data['기준일'] <= cutoff_date if cutoff_date else True
+            q_data = q_data[(has_rcept & rcept_ok) | (~has_rcept & cutoff_ok)]
+        elif cutoff_date is not None:
+            q_data = q_data[q_data['기준일'] <= cutoff_date]
 
-        growth_dict = {}
+        q_data = q_data.sort_values('기준일')
+        q_dates = sorted(q_data['기준일'].unique(), reverse=True)
+
+        if len(q_dates) >= 8:
+            recent_4 = q_dates[:4]
+            prev_4 = q_dates[4:8]
+            ttm_recent = q_data[q_data['기준일'].isin(recent_4)]['값'].sum()
+            ttm_prev = q_data[q_data['기준일'].isin(prev_4)]['값'].sum()
+            if ttm_prev > 0 and pd.notna(ttm_recent) and pd.notna(ttm_prev):
+                return (ttm_recent / ttm_prev - 1) * 100
+        return None
+
+    def _calc_annual_yoy(self, fs, account, base_dt=None, cutoff_date=None):
+        """단일 계정 연간 YoY 계산 (내부 헬퍼, TTM 폴백용)"""
+        y_data = fs[(fs['공시구분'] == 'y') & (fs['계정'] == account)].copy()
+        if y_data.empty:
+            return None
+
+        if base_dt and 'rcept_dt' in y_data.columns:
+            has_rcept = y_data['rcept_dt'].notna()
+            rcept_ok = y_data['rcept_dt'] <= base_dt
+            cutoff_ok = y_data['기준일'] <= cutoff_date if cutoff_date else True
+            y_data = y_data[(has_rcept & rcept_ok) | (~has_rcept & cutoff_ok)]
+        elif cutoff_date is not None:
+            y_data = y_data[y_data['기준일'] <= cutoff_date]
+
+        y_data = y_data.sort_values('기준일')
+        if len(y_data) >= 2:
+            latest = y_data.iloc[-1]['값']
+            prev = y_data.iloc[-2]['값']
+            if prev > 0 and pd.notna(latest) and pd.notna(prev):
+                return (latest / prev - 1) * 100
+        return None
+
+    def _calc_op_change_asset(self, fs, base_dt=None, cutoff_date=None):
+        """op_change_asset = (영업이익TTM - 영업이익TTM_prev) / 총자산_prev
+
+        SUE 유사 지표: 분모가 총자산이라 음수/극단값 문제 없음.
+        """
+        q_data = fs[fs['공시구분'] == 'q'].copy()
+        if q_data.empty:
+            return None
+
+        # point-in-time 필터
+        if base_dt and 'rcept_dt' in q_data.columns:
+            has_rcept = q_data['rcept_dt'].notna()
+            rcept_ok = q_data['rcept_dt'] <= base_dt
+            cutoff_ok = q_data['기준일'] <= cutoff_date if cutoff_date else True
+            q_data = q_data[(has_rcept & rcept_ok) | (~has_rcept & cutoff_ok)]
+        elif cutoff_date is not None:
+            q_data = q_data[q_data['기준일'] <= cutoff_date]
+
+        op = q_data[q_data['계정'] == '영업이익'].sort_values('기준일')
+        dates = sorted(op['기준일'].unique(), reverse=True)
+        if len(dates) < 8:
+            return None
+
+        recent_4 = dates[:4]
+        prev_4 = dates[4:8]
+        op_recent = op[op['기준일'].isin(recent_4)]['값'].sum()
+        op_prev = op[op['기준일'].isin(prev_4)]['값'].sum()
+
+        # 전기 총자산 (직전 4분기 중 가장 최근)
+        assets = q_data[q_data['계정'] == '자산'].sort_values('기준일')
+        prev_assets = assets[assets['기준일'].isin(prev_4)]
+        if prev_assets.empty:
+            return None
+        prev_asset = prev_assets.iloc[-1]['값']
+
+        if prev_asset > 0 and pd.notna(op_recent) and pd.notna(op_prev):
+            return (op_recent - op_prev) / prev_asset * 100
+        return None
+
+    def calculate_growth_factors(self, data, base_date=None):
+        """
+        성장 팩터 계산 — 2서브팩터
+
+        G = 매출성장률(TTM YoY) 50% + op_change_asset 50%
+          매출성장률: (최근4Q매출합 / 직전4Q매출합) - 1
+          op_change_asset: (영업이익TTM - 영업이익TTM_prev) / 총자산_prev
+            → 분모가 총자산이라 적자→흑자 턴어라운드도 정상 계산 (SUE 유사)
+        """
         from pathlib import Path
+        from datetime import datetime, timedelta
+
+        base_dt = datetime.strptime(base_date, '%Y%m%d') if base_date else None
+        cutoff_date = base_dt - timedelta(days=90) if base_dt else None
+
+        rev_dict = {}
+        oca_dict = {}
+        stats = {'rev_ttm': 0, 'rev_annual': 0, 'oca': 0}
+
         for ticker in data['종목코드']:
             try:
-                cache_file = Path('data_cache') / f'fs_fnguide_{ticker}.parquet'
-                if not cache_file.exists():
+                dart_file = Path('data_cache') / f'fs_dart_{ticker}.parquet'
+                fn_file = Path('data_cache') / f'fs_fnguide_{ticker}.parquet'
+
+                candidates = []
+                if dart_file.exists() and fn_file.exists():
+                    try:
+                        from create_current_portfolio import _check_data_mismatch
+                        d_df = pd.read_parquet(dart_file)
+                        f_df = pd.read_parquet(fn_file)
+                        if _check_data_mismatch(d_df, f_df):
+                            candidates = [fn_file, dart_file]
+                        else:
+                            candidates = [dart_file, fn_file]
+                    except Exception:
+                        candidates = [dart_file, fn_file]
+                elif dart_file.exists():
+                    candidates = [dart_file]
+                elif fn_file.exists():
+                    candidates = [fn_file]
+                else:
                     continue
 
-                fs = pd.read_parquet(cache_file)
-                y_revenue = fs[(fs['공시구분'] == 'y') & (fs['계정'] == '매출액')].sort_values('기준일')
+                for cache_file in candidates:
+                    fs = pd.read_parquet(cache_file)
 
-                if len(y_revenue) >= 2:
-                    latest = y_revenue.iloc[-1]['값']
-                    prev = y_revenue.iloc[-2]['값']
-                    if prev > 0 and pd.notna(latest) and pd.notna(prev):
-                        growth_dict[ticker] = (latest / prev - 1) * 100
+                    # 매출 TTM YoY → 연간 폴백
+                    if ticker not in rev_dict:
+                        rev = self._calc_ttm_yoy(fs, '매출액', base_dt, cutoff_date)
+                        if rev is not None:
+                            rev_dict[ticker] = rev
+                            stats['rev_ttm'] += 1
+                        else:
+                            rev = self._calc_annual_yoy(fs, '매출액', base_dt, cutoff_date)
+                            if rev is not None:
+                                rev_dict[ticker] = rev
+                                stats['rev_annual'] += 1
+
+                    # op_change_asset
+                    if ticker not in oca_dict:
+                        oca = self._calc_op_change_asset(fs, base_dt, cutoff_date)
+                        if oca is not None:
+                            oca_dict[ticker] = oca
+                            stats['oca'] += 1
+
+                    # 둘 다 찾았으면 다음 후보 불필요
+                    if ticker in rev_dict and ticker in oca_dict:
+                        break
 
             except Exception:
                 continue
 
-        data['매출성장률'] = data['종목코드'].map(growth_dict)
-        cover = data['매출성장률'].notna().sum()
-        print(f"매출성장률(4Q avg) 계산: {cover}/{len(data)}개 종목")
+        data['매출성장률'] = data['종목코드'].map(rev_dict)
+        data['이익변화량'] = data['종목코드'].map(oca_dict)
+
+        rev_cover = data['매출성장률'].notna().sum()
+        oca_cover = data['이익변화량'].notna().sum()
+        print(f"매출성장률(TTM YoY): {rev_cover}/{len(data)}개 (TTM:{stats['rev_ttm']} 연간:{stats['rev_annual']})")
+        print(f"이익변화량(op_change_asset): {oca_cover}/{len(data)}개")
 
         return data
 
@@ -197,7 +334,7 @@ class MultiFactorStrategy:
         q_high = series.quantile(upper)
         return series.clip(q_low, q_high)
 
-    def calculate_multifactor_score(self, data, price_df=None, sector_map=None):
+    def calculate_multifactor_score(self, data, price_df=None, sector_map=None, base_date=None):
         """
         멀티팩터 종합 점수 계산 — v69 4팩터 동일가중 (V+Q+G+M = 25% each)
 
@@ -210,6 +347,7 @@ class MultiFactorStrategy:
             data: 재무 데이터프레임
             price_df: 가격 데이터프레임 (모멘텀 계산용)
             sector_map: 섹터 맵 (dict: ticker -> sector_name), None이면 전체 유니버스 z-score
+            base_date: 기준일 (YYYYMMDD), 성장팩터 point-in-time 필터용
         """
         # 1. 밸류 팩터 계산
         data = self.calculate_value_factors(data)
@@ -218,7 +356,7 @@ class MultiFactorStrategy:
         data = self.calculate_quality_factors(data)
 
         # 2.5. 성장 팩터 계산 (v69 신규)
-        data = self.calculate_growth_factors(data)
+        data = self.calculate_growth_factors(data, base_date=base_date)
 
         # 3. 모멘텀 팩터 계산
         if price_df is not None:
@@ -325,6 +463,9 @@ class MultiFactorStrategy:
         if '매출성장률' in data.columns and data['매출성장률'].notna().sum() > 0:
             data['매출성장률_z'] = rank_zscore(data['매출성장률'], ascending=True, sectors=None)
             growth_zs.append('매출성장률_z')
+        if '이익변화량' in data.columns and data['이익변화량'].notna().sum() > 0:
+            data['이익변화량_z'] = rank_zscore(data['이익변화량'], ascending=True, sectors=None)
+            growth_zs.append('이익변화량_z')
 
         momentum_zs = []
         if '모멘텀' in data.columns:
@@ -337,14 +478,29 @@ class MultiFactorStrategy:
         sn_tag = "SectorNeutral" if sector_map else "FullUniverse"
         print(f"Rank z-score ({sn_tag}): V{len(value_zs)} Q{len(quality_zs)} G{len(growth_zs)} M{len(momentum_zs)}")
 
-        # 5. 카테고리 평균 (NaN → 0 채움 후 평균, 스케일 통일)
+        # 5. 카테고리 평균 (NaN 처리 + 스케일 통일)
+        # Growth 특별 처리: 이익변화량 NaN → 매출 z-score로 대체 (데이터 부족 종목 공정성)
+        if '이익변화량_z' in growth_zs and '매출성장률_z' in growth_zs:
+            oca_nan = data['이익변화량_z'].isna()
+            data.loc[oca_nan, '이익변화량_z'] = data.loc[oca_nan, '매출성장률_z']
+
         for zs in [value_zs, quality_zs, growth_zs, momentum_zs]:
             for col in zs:
                 data[col] = data[col].fillna(0.0)
 
         data['밸류_raw'] = data[value_zs].mean(axis=1) if value_zs else 0
         data['퀄리티_raw'] = data[quality_zs].mean(axis=1) if quality_zs else 0
-        data['성장_raw'] = data[growth_zs].mean(axis=1) if growth_zs else 0
+
+        # Growth: 매출성장률 vs 이익변화량 가중 평균 (G_REVENUE_WEIGHT 환경변수로 조절)
+        # 기본값 0.5 = 50:50 동일가중, 0.7 = 매출70:이익30, 0.3 = 매출30:이익70
+        if len(growth_zs) == 2 and '매출성장률_z' in growth_zs and '이익변화량_z' in growth_zs:
+            g_rev_w = float(os.environ.get('G_REVENUE_WEIGHT', '0.5'))
+            g_oca_w = 1.0 - g_rev_w
+            data['성장_raw'] = data['매출성장률_z'] * g_rev_w + data['이익변화량_z'] * g_oca_w
+            print(f"Growth 가중: 매출 {g_rev_w*100:.0f}% + 이익변화량 {g_oca_w*100:.0f}%")
+        else:
+            data['성장_raw'] = data[growth_zs].mean(axis=1) if growth_zs else 0
+
         data['모멘텀_raw'] = data[momentum_zs].mean(axis=1) if momentum_zs else 0
 
         # 6. 카테고리별 재표준화 (std=1, 헨리 원본 동일)
@@ -394,7 +550,10 @@ class MultiFactorStrategy:
             print("멀티팩터 가중치: Value 50% + Quality 50% (모멘텀 없음)")
 
         # 8.5 FWD_PER 보너스: 컨센서스 있고 EPS 개선 시 가산
-        if 'forward_per' in data.columns and 'PER' in data.columns:
+        # DISABLE_FWD_BONUS=1 → 백테스트 시 과거 컨센서스 없으므로 비활성화
+        if os.environ.get('DISABLE_FWD_BONUS') == '1':
+            pass  # 보너스 스킵
+        elif 'forward_per' in data.columns and 'PER' in data.columns:
             fwd_mask = (data['forward_per'] > 0) & (data['PER'] > 0)
             eps_improving = fwd_mask & (data['forward_per'] < data['PER'])  # FWD_PER < PER = 실적 개선
             bonus_count = eps_improving.sum()
@@ -417,7 +576,7 @@ class MultiFactorStrategy:
         selected = data_sorted.head(n_stocks)
         return selected
 
-    def run(self, financial_data, price_df=None, n_stocks=20, sector_map=None):
+    def run(self, financial_data, price_df=None, n_stocks=20, sector_map=None, base_date=None):
         """
         멀티팩터 전략 실행
 
@@ -426,11 +585,13 @@ class MultiFactorStrategy:
             price_df: 가격 데이터프레임
             n_stocks: 선정할 종목 수
             sector_map: 섹터 맵 (dict: ticker -> sector_name)
+            base_date: 기준일 (YYYYMMDD), point-in-time 필터용
         """
         scored_data = self.calculate_multifactor_score(
             financial_data.copy(),
             price_df=price_df,
-            sector_map=sector_map
+            sector_map=sector_map,
+            base_date=base_date
         )
         selected_stocks = self.select_top_stocks(scored_data, n_stocks)
         return selected_stocks, scored_data

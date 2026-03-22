@@ -263,7 +263,13 @@ def extract_magic_formula_data(fs_dict, base_date=None, use_ttm=True):
             if quarterly_data.empty:
                 # 분기 데이터 없으면 연간 데이터로 폴백
                 annual_data = fs_df[fs_df['공시구분'] == 'y'].copy()
-                if cutoff_date_annual:
+                if base_date and 'rcept_dt' in annual_data.columns:
+                    # DART: rcept_dt로 정확한 point-in-time 필터링
+                    has_rcept = annual_data['rcept_dt'].notna()
+                    rcept_ok = annual_data['rcept_dt'] <= base_dt
+                    cutoff_ok = annual_data['기준일'] <= cutoff_date_annual if cutoff_date_annual else True
+                    annual_data = annual_data[(has_rcept & rcept_ok) | (~has_rcept & cutoff_ok)]
+                elif cutoff_date_annual:
                     annual_data = annual_data[annual_data['기준일'] <= cutoff_date_annual]
                 if annual_data.empty:
                     continue
@@ -276,8 +282,13 @@ def extract_magic_formula_data(fs_dict, base_date=None, use_ttm=True):
                 result_list.append(pivot_data)
                 continue
 
-            # 공시 시차 반영
-            if cutoff_date_quarterly:
+            # 공시 시차 반영 (rcept_dt 있으면 정확, 없으면 고정 지연)
+            if base_date and 'rcept_dt' in quarterly_data.columns:
+                has_rcept = quarterly_data['rcept_dt'].notna()
+                rcept_ok = quarterly_data['rcept_dt'] <= base_dt
+                cutoff_ok = quarterly_data['기준일'] <= cutoff_date_quarterly if cutoff_date_quarterly else True
+                quarterly_data = quarterly_data[(has_rcept & rcept_ok) | (~has_rcept & cutoff_ok)]
+            elif cutoff_date_quarterly:
                 quarterly_data = quarterly_data[quarterly_data['기준일'] <= cutoff_date_quarterly]
 
             if quarterly_data.empty:
@@ -431,7 +442,13 @@ def extract_revenue_growth(fs_dict, base_date=None):
     for ticker, fs_df in fs_dict.items():
         annual = fs_df[(fs_df['공시구분'] == 'y') & (fs_df['계정'] == '매출액')].copy()
 
-        if cutoff_date is not None:
+        # rcept_dt point-in-time 필터링 (DART 데이터)
+        if base_date and 'rcept_dt' in annual.columns:
+            has_rcept = annual['rcept_dt'].notna()
+            rcept_ok = annual['rcept_dt'] <= base_dt
+            cutoff_ok = annual['기준일'] <= cutoff_date if cutoff_date is not None else True
+            annual = annual[(has_rcept & rcept_ok) | (~has_rcept & cutoff_ok)]
+        elif cutoff_date is not None:
             annual = annual[annual['기준일'] <= cutoff_date]
 
         if len(annual) < 2:

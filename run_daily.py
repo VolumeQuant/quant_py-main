@@ -11,6 +11,9 @@ import os
 from datetime import datetime
 from pathlib import Path
 
+sys.stdout.reconfigure(encoding='utf-8')
+sys.stderr.reconfigure(encoding='utf-8')
+
 # ── 경로 설정 ──
 SCRIPT_DIR = Path(__file__).parent.resolve()
 PYTHON = sys.executable
@@ -112,16 +115,17 @@ def main():
         log("퀀트 데일리 파이프라인 시작", logfile)
         log("=" * 50, logfile)
 
-        # 0. 월요일이면 FnGuide 캐시 갱신 (컨센서스 최신화)
-        if datetime.now().weekday() == 0:  # 0 = Monday
-            log("월요일 — FnGuide 캐시 갱신 시작", logfile)
+        # 0. DART 증분 갱신 (공시 시즌: 3~4/5~6/8~9/11~12월)
+        #    비공시 시즌에는 스크립트 내부에서 즉시 종료
+        if datetime.now().weekday() == 0:  # 월요일에만
+            log("DART 캐시 증분 갱신", logfile)
             try:
-                ok_fn = run_script("refresh_fnguide_cache.py", timeout=1800, logfile=logfile)
-                log(f"FnGuide 갱신: {'성공' if ok_fn else '실패'}", logfile)
+                ok_dart = run_script("refresh_dart_cache.py", timeout=600, logfile=logfile)
+                log(f"DART 갱신: {'성공' if ok_dart else '실패'}", logfile)
             except subprocess.TimeoutExpired:
-                log("FnGuide 갱신 타임아웃 (30분) — 기존 캐시로 진행", logfile)
+                log("DART 갱신 타임아웃 (10분) — 기존 캐시로 진행", logfile)
             except Exception as e:
-                log(f"FnGuide 갱신 오류: {e} — 기존 캐시로 진행", logfile)
+                log(f"DART 갱신 오류: {e} — 기존 캐시로 진행", logfile)
 
         # 1. 포트폴리오 생성
         try:
