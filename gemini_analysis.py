@@ -151,12 +151,12 @@ def build_prompt(stock_list, base_date=None, market_context=None, market_index=N
 🔺 RSI 과매수 = RSI 80 이상, 극단적 과열 구간 (조정 가능성)
 
 [출력 형식 — 반드시 지켜]
-- 한국어, 친절하고 따뜻한 말투 (~예요/~해요 체)
-- 예시: "주가가 많이 빠졌어요", "조심하시는 게 좋겠어요", "아직은 괜찮아 보여요"
-- 딱딱한 보고서 말투 금지. 친구에게 설명하듯 자연스럽게.
-- ⛔ "~답니다", "~랍니다", "~했답니다", "~습니다", "~었습니다" 절대 사용 금지.
-  반드시 "~예요", "~했어요", "~있어요", "~됐어요", "~보여요"만 사용.
-  예: "상승했습니다" → "올랐어요", "기록했답니다" → "기록했어요"
+- 한국어, ~입니다 체. 번역투 금지. 자연스럽게.
+- ⛔ "~답니다", "~랍니다", "~했답니다" 절대 사용 금지.
+  반드시 "~입니다", "~했습니다", "~있습니다", "~됐습니다", "~보입니다"를 사용.
+  예: "올랐답니다" → "올랐습니다", "기록했답니다" → "기록했습니다"
+- ⛔ "~예요", "~해요", "~했어요", "~있어요" 체 사용 금지.
+- 예시: "주가가 크게 하락했습니다", "조심할 필요가 있습니다", "아직은 양호한 상태입니다"
 - 인사말, 서두, 맺음말 금지. 아래 섹션부터 바로 시작.
 - 종목마다 문장 구조를 다르게 써. 같은 패턴 반복 금지.
 - 트럼프는 2025년 1월 재취임한 현직 미국 대통령이야.
@@ -226,16 +226,10 @@ def convert_markdown_to_html(text):
         result = before + after
     # Step 6: 구분선 앞뒤 빈 줄 정리
     result = re.sub(r'\n+─────────\n+', '\n─────────\n', result)
-    # Step 7: ~답니다/~습니다 후처리 (Gemini가 프롬프트 무시할 때 방어)
-    result = re.sub(r'했답니다', '했어요', result)
-    result = re.sub(r'랍니다', '예요', result)
-    result = re.sub(r'답니다', '예요', result)
-    result = re.sub(r'였습니다', '였어요', result)
-    result = re.sub(r'었습니다', '었어요', result)
-    result = re.sub(r'했습니다', '했어요', result)
-    result = re.sub(r'됐습니다', '됐어요', result)
-    result = re.sub(r'입니다', '이에요', result)
-    result = re.sub(r'습니다', '어요', result)
+    # Step 7: ~답니다/~랍니다 후처리 (Gemini가 프롬프트 무시할 때 방어)
+    result = re.sub(r'했답니다', '했습니다', result)
+    result = re.sub(r'랍니다', '입니다', result)
+    result = re.sub(r'답니다', '습니다', result)
     # 연속 빈 줄 모두 제거
     result = re.sub(r'\n{3,}', '\n\n', result)
     return result
@@ -338,7 +332,7 @@ def run_ai_analysis(portfolio_message, stock_list, base_date=None, market_contex
             '    🤖 AI 리스크 필터',
             '━━━━━━━━━━━━━━━━━━━',
             '',
-            '후보 종목 중 주의할 점을 AI가 점검했어요.',
+            '후보 종목 중 주의할 점을 AI가 점검했습니다.',
             '',
             analysis_html + clean_section,
         ]
@@ -395,9 +389,9 @@ def build_final_picks_prompt(stock_list, weight_per_stock=None, base_date=None, 
 {stocks_data}
 
 [형식]
-- 한국어, ~예요/~했어요 체
-- ⛔ "~답니다", "~랍니다", "~했답니다", "~습니다", "~었습니다" 절대 사용 금지.
-  반드시 "~예요", "~했어요", "~있어요", "~됐어요", "~보여요"만 사용.
+- 한국어, ~입니다 체. 번역투 금지. 자연스럽게.
+- ⛔ "~답니다", "~랍니다", "~했답니다" 절대 사용 금지.
+- ⛔ "~예요", "~해요", "~했어요", "~있어요" 체 사용 금지.
 - 종목별: **종목명(티커)**
   비즈니스 매력 2~3문장, 120~180자 (가장 의미있는 수치를 맥락과 함께)
 - 종목 사이에 [SEP]
@@ -408,9 +402,9 @@ def build_final_picks_prompt(stock_list, weight_per_stock=None, base_date=None, 
   1단계: 왜 실적이 좋은지 / 어떤 사업이 성장 중인지 (핵심 비즈니스 드라이버)
   2단계: {date_str} 전후 1~2주 이내 최신 뉴스가 검색되면 추가. 검색해도 최근 뉴스가 없으면 이 문장은 생략.
 - 반드시 Google 검색 결과에 있는 실제 사실만 써. 추측하거나 지어내지 마.
-- 예: "AI 반도체 수요 확대로 HBM 매출 급증 중이에요"
-  예: "전력 수요 폭증에 원전 재가동 기대감까지 더해졌어요"
-  예: "Fwd PER 5.5로 성장 대비 저평가. 배당수익률 3.2%도 매력적이에요."
+- 예: "AI 반도체 수요 확대로 HBM 매출이 급증하고 있습니다"
+  예: "전력 수요 폭증에 원전 재가동 기대감까지 더해졌습니다"
+  예: "Fwd PER 5.5로 성장 대비 저평가입니다. 배당수익률 3.2%도 매력적입니다."
 - 종목에 따라 가장 의미있는 지표를 골라서 맥락과 함께 설명해.
   반도체면 Fwd PER, 고배당주면 배당률, 성장주면 매출성장률.
 - 단순히 "PER 낮음", "ROE 높음"처럼 숫자만 반복하지 마. 그 숫자 뒤의 사업적 이유를 써.
@@ -439,16 +433,10 @@ def _convert_picks_markdown(text):
     result = re.sub(r'#{1,3}\s*', '', result)
     result = re.sub(r'\n{3,}', '\n\n', result)
     result = re.sub(r'\n+──────────────────\n+', '\n──────────────────\n', result)
-    # ~답니다/~습니다 후처리
-    result = re.sub(r'했답니다', '했어요', result)
-    result = re.sub(r'랍니다', '예요', result)
-    result = re.sub(r'답니다', '예요', result)
-    result = re.sub(r'였습니다', '였어요', result)
-    result = re.sub(r'었습니다', '었어요', result)
-    result = re.sub(r'했습니다', '했어요', result)
-    result = re.sub(r'됐습니다', '됐어요', result)
-    result = re.sub(r'입니다', '이에요', result)
-    result = re.sub(r'습니다', '어요', result)
+    # ~답니다/~랍니다 후처리
+    result = re.sub(r'했답니다', '했습니다', result)
+    result = re.sub(r'랍니다', '입니다', result)
+    result = re.sub(r'답니다', '습니다', result)
     return result.strip()
 
 
