@@ -85,25 +85,30 @@ def preload_all_data(start_str, end_str):
                     pass
     print(f'    {len(data["fs"])}종목 로드')
 
-    # 4. 종목명 캐시 (sector 파일 + pykrx 1회)
+    # 4. 종목명 캐시 (JSON 캐시 우선 → pykrx 폴백)
     print('  종목명 빌드...')
     data['ticker_names'] = {}
-    # market_cap에서 종목 인덱스 가져오기, pykrx로 이름 1회 조회
-    try:
-        # 가장 최근 market_cap에서 종목 목록
-        latest_mcap_file = sorted(CACHE_DIR.glob('market_cap_ALL_*.parquet'))[-1]
-        latest_mcap = pd.read_parquet(latest_mcap_file)
-        from pykrx import stock as pykrx_stock
-        for ticker in latest_mcap.index[:3000]:  # 전체 종목
-            try:
-                name = pykrx_stock.get_market_ticker_name(ticker)
-                if name:
-                    data['ticker_names'][ticker] = name
-            except Exception:
-                pass
-        print(f'    {len(data["ticker_names"])}종목 이름 매핑')
-    except Exception as e:
-        print(f'    종목명 매핑 실패: {e}')
+    import json
+    names_cache = CACHE_DIR / 'ticker_names_cache.json'
+    if names_cache.exists():
+        with open(names_cache, 'r', encoding='utf-8') as f:
+            data['ticker_names'] = json.load(f)
+        print(f'    캐시에서 {len(data["ticker_names"])}종목 로드')
+    else:
+        try:
+            latest_mcap_file = sorted(CACHE_DIR.glob('market_cap_ALL_*.parquet'))[-1]
+            latest_mcap = pd.read_parquet(latest_mcap_file)
+            from pykrx import stock as pykrx_stock
+            for ticker in latest_mcap.index[:3000]:
+                try:
+                    name = pykrx_stock.get_market_ticker_name(ticker)
+                    if name:
+                        data['ticker_names'][ticker] = name
+                except Exception:
+                    pass
+            print(f'    pykrx에서 {len(data["ticker_names"])}종목 매핑')
+        except Exception as e:
+            print(f'    종목명 매핑 실패: {e}')
 
     elapsed = time.time() - t0
     print(f'  프리로드 완료: {elapsed:.1f}초')
@@ -229,6 +234,7 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
 
     # --- 6. OHLCV → MA120, 모멘텀 ---
     price_df = ohlcv[ohlcv.index <= base_ts].copy()
+    price_df = price_df.replace(0, np.nan)  # 거래정지 0원 → NaN
 
     # MA120 필터 (반환: (passed_list, failed_list))
     ma120_result = apply_ma120_filter(price_df, magic_df['종목코드'].tolist())
@@ -266,10 +272,11 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
 
     strategy = MultiFactorStrategy()
     os.environ['DISABLE_FWD_BONUS'] = '1'
+    mom_period = os.environ.get('MOM_PERIOD', '6m')
     selected, scored = strategy.run(
         multifactor_df, price_df=price_df,
         n_stocks=len(multifactor_df), sector_map=sector_map,
-        base_date=date_str
+        base_date=date_str, mom_period=mom_period
     )
 
     if scored.empty:
@@ -299,11 +306,13 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
             val = row.get(col)
             if val is not None and pd.notna(val):
                 item[key] = round(float(val), 4)
-        # 가격
+        # 가격 (없으면 매매 불가 → 제외)
         if ticker in price_df.columns and base_ts in price_df.index:
             p = price_df.loc[base_ts, ticker]
             if pd.notna(p) and p > 0:
                 item['price'] = int(p)
+        if 'price' not in item:
+            continue  # 상폐/거래정지 종목 제외
         rankings_list.append(item)
 
     # ranking JSON 직접 저장 (ranking_manager reload 대신)
@@ -343,6 +352,15 @@ def main():
 
     state_dir.mkdir(parents=True, exist_ok=True)
     resume = '--resume' in flags
+
+    # 캐시 디렉토리 오버라이드
+    global CACHE_DIR
+    for f in flags:
+        if f.startswith('--cache-dir='):
+            CACHE_DIR = Path(f.split('=', 1)[1])
+    for i, f in enumerate(sys.argv[1:]):
+        if f == '--cache-dir' and i + 2 < len(sys.argv):
+            CACHE_DIR = Path(sys.argv[i + 2])
 
     # 거래일 목록
     ohlcv_files = sorted(CACHE_DIR.glob('all_ohlcv_*.parquet'))

@@ -33,7 +33,7 @@ from ranking_manager import (
     get_daily_changes,
     get_stock_status, cleanup_old_rankings, get_available_ranking_dates,
     compute_rank_driver, MIN_RANK_CHANGE,
-    weighted_score_100, ENTRY_SCORE_100, EXIT_SCORE_100,
+    weighted_score_100, ENTRY_SCORE_100, EXIT_SCORE_100, ENTRY_RANK, EXIT_RANK, MAX_SLOTS,
 )
 from credit_monitor import (
     get_credit_status, format_credit_section, format_credit_compact,
@@ -54,6 +54,138 @@ WEEKDAY_KR = ['월', '화', '수', '목', '금', '토', '일']
 
 
 # ============================================================
+# 시스템 수익률 추적
+# ============================================================
+def calc_system_returns():
+    """프로덕션 ranking 히스토리로 시스템 누적 수익률 계산.
+
+    Returns:
+        dict: {system_pct, kospi_pct, start_date, days, holdings} or None
+    """
+    import glob as _glob
+    files = sorted(_glob.glob(str(STATE_DIR / 'ranking_*.json')))
+    if len(files) < 3:
+        return None
+
+    # 날짜순 ranking 로드
+    all_data = {}
+    for fp in files:
+        d = os.path.basename(fp).replace('ranking_', '').replace('.json', '')
+        with open(fp, 'r', encoding='utf-8') as fh:
+            all_data[d] = json.load(fh)
+    dates = sorted(all_data.keys())
+
+    # 종목별 가격 맵: {date: {ticker: price}}
+    price_map = {}
+    for d in dates:
+        pm = {}
+        for r in all_data[d].get('rankings', []):
+            if r.get('price') and r['price'] > 0:
+                pm[r['ticker']] = r['price']
+        price_map[d] = pm
+
+    # 포트폴리오 시뮬레이션 — 일간 수익률 기반 + 손절
+    portfolio = {}  # ticker → entry_price
+    equity = 1.0
+    start_date = None
+
+    for i in range(len(dates)):
+        d0 = dates[i]
+        d1 = dates[i - 1] if i >= 1 else None
+        d2 = dates[i - 2] if i >= 2 else None
+
+        # 일간 수익률: 어제 보유 → 오늘 가격 변화
+        if i >= 1 and portfolio:
+            prev_d = dates[i - 1]
+            prev_prices = price_map.get(prev_d, {})
+            cur_prices = price_map.get(d0, {})
+            daily_rets = []
+            for tk in portfolio:
+                pp = prev_prices.get(tk, 0)
+                cp = cur_prices.get(tk, 0)
+                if pp > 0 and cp > 0:
+                    daily_rets.append(cp / pp - 1)
+            if daily_rets:
+                avg_ret = sum(daily_rets) / len(daily_rets)
+                equity *= (1 + avg_ret)
+
+        if i < 2:
+            continue  # 3일 데이터 필요
+
+        # 손절 체크: 진입가 대비 -10%
+        cur_prices = price_map.get(d0, {})
+        for tk in list(portfolio.keys()):
+            cp = cur_prices.get(tk, 0)
+            ep = portfolio[tk]
+            if cp > 0 and ep > 0 and (cp / ep - 1) <= -0.10:
+                del portfolio[tk]
+
+        # pipeline 계산 (3일 교집합)
+        r0 = all_data[d0].get('rankings', [])
+        r1 = all_data[d1].get('rankings', [])
+        r2 = all_data[d2].get('rankings', [])
+
+        top20_t0 = {r['ticker']: r for r in r0 if r.get('composite_rank', r['rank']) <= 20}
+        top20_t1 = {r['ticker']: r for r in r1 if r.get('composite_rank', r['rank']) <= 20}
+        top20_t2 = {r['ticker']: r for r in r2 if r.get('composite_rank', r['rank']) <= 20}
+
+        common = set(top20_t0) & set(top20_t1) & set(top20_t2)
+
+        # weighted_rank 계산
+        verified = []
+        for tk in common:
+            cr0 = top20_t0[tk].get('composite_rank', top20_t0[tk]['rank'])
+            cr1 = top20_t1[tk].get('composite_rank', top20_t1[tk]['rank'])
+            cr2 = top20_t2[tk].get('composite_rank', top20_t2[tk]['rank'])
+            wr = cr0 * 0.5 + cr1 * 0.3 + cr2 * 0.2
+            verified.append({'ticker': tk, 'weighted_rank': wr,
+                             'price': top20_t0[tk].get('price', 0)})
+        verified.sort(key=lambda x: x['weighted_rank'])
+        wr_map = {v['ticker']: v['weighted_rank'] for v in verified}
+
+        # 이탈: weighted_rank > EXIT_RANK
+        for tk in list(portfolio.keys()):
+            if wr_map.get(tk, 999) > EXIT_RANK:
+                del portfolio[tk]
+
+        # 진입: weighted_rank ≤ ENTRY_RANK, ✅ verified
+        for v in verified:
+            if v['ticker'] in portfolio:
+                continue
+            if len(portfolio) >= MAX_SLOTS:
+                break
+            if v['weighted_rank'] <= ENTRY_RANK and v['price'] and v['price'] > 0:
+                portfolio[v['ticker']] = v['price']
+                if start_date is None:
+                    start_date = d0
+
+    if start_date is None:
+        return None
+
+    system_pct = (equity - 1) * 100
+
+    # KOSPI 수익률 (start_date ~ 최신)
+    kospi_pct = 0
+    try:
+        kospi_start = stock.get_index_ohlcv(start_date, dates[-1], '1001')
+        if not kospi_start.empty and len(kospi_start) >= 2:
+            k_first = kospi_start.iloc[0, 3]  # 종가
+            k_last = kospi_start.iloc[-1, 3]
+            if k_first > 0:
+                kospi_pct = (k_last / k_first - 1) * 100
+    except:
+        pass
+
+    return {
+        'system_pct': round(system_pct, 1),
+        'kospi_pct': round(kospi_pct, 1),
+        'start_date': start_date,
+        'days': len(dates) - 2,
+        'holdings': len(portfolio),
+    }
+
+
+# ============================================================
 # 유틸리티 함수
 # ============================================================
 def get_korea_now():
@@ -64,12 +196,12 @@ def get_recent_trading_dates(n=3):
     """최근 N개 거래일 찾기 — 캐시 우선, KRX API 폴백"""
     today = get_korea_now()
     today_str = today.strftime('%Y%m%d')
-    # 1차: market_cap 캐시 파일에서 거래일 목록 구축
+    # 1차: market_cap 캐시 파일에서 거래일 목록 구축 (당일 제외 — 전일 기준)
     cache_dir = Path(__file__).parent / 'data_cache'
     mc_dates = set()
     for f in cache_dir.glob('market_cap_ALL_*.parquet'):
         d = f.stem.split('_')[-1]
-        if len(d) == 8 and d.isdigit() and d <= today_str:
+        if len(d) == 8 and d.isdigit() and d < today_str:
             mc_dates.add(d)
     if mc_dates:
         sorted_dates = sorted(mc_dates, reverse=True)[:n]
@@ -265,7 +397,7 @@ def _build_top5_streak(top5_tickers):
 def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
                           market_max_picks, stock_weight, rankings_t0,
                           rankings_t1, rankings_t2, cold_start,
-                          final_action, pick_level):
+                          final_action, pick_level, system_returns=None):
     """Message 1: Signal — 결론 (뭘 살까)
 
     종목당 3줄: 이름·업종·가격 / 순위 / AI 내러티브
@@ -313,6 +445,13 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         lines.append('포트폴리오 비중은 투자자의 판단입니다.')
         lines.append('투자 손실에 대한 책임은 투자자 본인에게 있습니다.')
         return '\n'.join(lines)
+
+    # ── 시스템 수익률 (US 프로젝트 포맷) ──
+    if system_returns and system_returns.get('days', 0) >= 5:
+        sr = system_returns
+        lines.append('')
+        lines.append(f'📈 <b>시스템 누적 수익률 {sr["system_pct"]:+.1f}% ({sr["days"]}거래일)</b>')
+        lines.append(f'    같은 기간 KOSPI는 {sr["kospi_pct"]:+.1f}%')
 
     n = len(picks)
     lines.append('')
@@ -483,7 +622,7 @@ def create_ai_risk_message(credit, kospi_data, kosdaq_data, market_warnings,
 
 def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
                              rankings_t2, cold_start=False, credit=None,
-                             score_100_map=None):
+                             score_100_map=None, system_returns=None):
     """Message 3: Watchlist — 데이터 (Top 20 모니터링)
 
     종목당 1줄: 상태+순위+이름(업종)+순위궤적
@@ -492,7 +631,7 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
     lines = [
         '📋 <b>Top 20 종목 현황</b>',
         '상위 20종목과 순위 변동 현황입니다.',
-        '✅ 3일 검증 ⏳ 2일 관찰 🆕 신규 진입',
+        '✅ 3일 검증 ⏳ 2일 관찰 🆕 신규 진입 | 손절 -10%',
     ]
 
     if not pipeline:
@@ -510,11 +649,8 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         s['_r1'] = t1_item.get('composite_rank', t1_item['rank']) if t1_item else '-'
         s['_r2'] = t2_item.get('composite_rank', t2_item['rank']) if t2_item else '-'
 
-    # 점수 기준 정렬 (격차 반영, 역전 방지)
-    if score_100_map:
-        sorted_pipeline = sorted(pipeline, key=lambda x: score_100_map.get(x['ticker'], 0), reverse=True)
-    else:
-        sorted_pipeline = sorted(pipeline, key=lambda x: x.get('weighted_rank', x['rank']))
+    # v70: weighted_rank 순 정렬 (rank 기반 진입/이탈과 일관)
+    sorted_pipeline = sorted(pipeline, key=lambda x: x.get('weighted_rank', x['rank']))
 
     # 상위 WATCHLIST_N개만 표시
     display_pipeline = sorted_pipeline[:WATCHLIST_N]
@@ -545,9 +681,9 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         score_100 = weighted_score_100(s['ticker'], rankings_t0, rankings_t1, rankings_t2)
         score_disp = f'{score_100:.1f}'
 
-        # 퇴출선 구분선 (점수 내림차순 정렬 → 처음으로 EXIT_SCORE_100 미만인 종목 앞에 삽입)
-        if not exit_line_shown and score_100 < EXIT_SCORE_100:
-            lines.append('── 매도 검토선 ──')
+        # 매도 검토선 (표시 순서 기준 — 15번째 이후)
+        if not exit_line_shown and idx > EXIT_RANK:
+            lines.append(f'── 매도 검토선 ({EXIT_RANK}위) ──')
             exit_line_shown = True
 
         if status == '✅':
@@ -579,10 +715,12 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         lines.append('━━━━━━━━━━━━━━━')
         lines.append('📊 데이터 축적 중 — 3일 완료 시 상위 종목이 표시됩니다.')
 
-    # ── 범례 ──
+    # ── 매매 조건 + 범례 ──
     lines.append('')
     lines.append('━━━━━━━━━━━━━━━')
-    lines.append('검토선 위 보유 · 아래 매도 검토')
+    lines.append(f'매수: 상위 {ENTRY_RANK}종목 · 최대 {MAX_SLOTS}종목 보유')
+    lines.append(f'매도: {EXIT_RANK}위 밖 or -10% 손절')
+    lines.append('매도 검토선 위 보유 · 아래 매도 검토')
 
     return '\n'.join(lines)
 
@@ -768,6 +906,19 @@ def main():
         score_100_pre[s['ticker']] = weighted_score_100(
             s['ticker'], rankings_t0, rankings_t1, rankings_t2)
 
+    # ── 시스템 수익률 계산 ──
+    print("\n[시스템 수익률]")
+    system_returns = None
+    try:
+        system_returns = calc_system_returns()
+        if system_returns:
+            print(f"  시스템: {system_returns['system_pct']:+.1f}% vs KOSPI: {system_returns['kospi_pct']:+.1f}% "
+                  f"(초과: {system_returns['system_pct']-system_returns['kospi_pct']:+.1f}%p, {system_returns['start_date']}~)")
+        else:
+            print("  데이터 부족 (3일 미만)")
+    except Exception as e:
+        print(f"  계산 실패 (무시): {e}")
+
     # ============================================================
     # ✅ 검증 종목에서 Top 추천 (점수 순)
     # ============================================================
@@ -858,15 +1009,17 @@ def main():
     else:
         print("\nAI 리스크 필터 스킵 (추천 종목 없음)")
 
-    # Score-based picks: score_100 ≥ ENTRY_SCORE_100 (v61)
+    # v70: Rank-based picks: weighted_rank ≤ ENTRY_RANK + ✅ + 슬롯 제한
+    from ranking_manager import ENTRY_RANK, EXIT_RANK, MAX_SLOTS
     if market_max_picks == 0:
         picks = []
     else:
         picks = [c for c in all_candidates
-                 if score_100_pre.get(c['ticker'], 0) >= ENTRY_SCORE_100]
+                 if c.get('weighted_rank', 999) <= ENTRY_RANK]
+        picks = picks[:MAX_SLOTS]  # 슬롯 제한
     if picks:
         stock_weight = round(100 / len(picks))
-    print(f"\n  최종 picks: {len(picks)}개 (진입기준: {ENTRY_SCORE_100}점↑, 퇴출기준: {EXIT_SCORE_100}점)")
+    print(f"\n  최종 picks: {len(picks)}개 (진입: rank≤{ENTRY_RANK} · 이탈: rank>{EXIT_RANK} · 슬롯: {MAX_SLOTS} · 손절: -10%)")
 
     # ============================================================
     # AI 종목별 내러티브 (Signal 💬 줄용)
@@ -933,6 +1086,7 @@ def main():
         market_max_picks, stock_weight, rankings_t0,
         rankings_t1, rankings_t2, cold_start,
         final_action, pick_level,
+        system_returns=system_returns,
     )
 
     msg_ai_risk = create_ai_risk_message(
@@ -948,6 +1102,7 @@ def main():
         pipeline, exited, rankings_t0, rankings_t1, rankings_t2,
         cold_start=cold_start, credit=credit,
         score_100_map=score_100_pre,
+        system_returns=system_returns,
     )
 
     messages = [msg_signal, msg_ai_risk, msg_watchlist]
@@ -1079,7 +1234,7 @@ def main():
     # ============================================================
     # 정리
     # ============================================================
-    cleanup_old_rankings(keep_days=30)
+    # cleanup_old_rankings(keep_days=30)  # v70: 과거 랭킹 보존 (로그용)
 
     print(f'\n매수 추천: {len(picks)}개 ({"관망" if not picks else f"종목 {len(picks)*stock_weight}%"})')
     print(f'파이프라인: ✅ {v_count} · ⏳ {d_count} · 🆕 {n_count}')

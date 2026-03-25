@@ -251,21 +251,27 @@ class MultiFactorStrategy:
 
         return data
 
-    def calculate_momentum(self, data, price_df):
+    def calculate_momentum(self, data, price_df, mom_period='6m'):
         """
-        모멘텀 팩터 계산 — 리스크 조정 6M 모멘텀
+        모멘텀 팩터 계산 — 리스크 조정 모멘텀
 
-        Score = 6M수익률 / 6M변동성(연환산)
+        mom_period: '6m'(현행), '6m-1m', '12m-1m', '12m'
+        Score = 수익률 / 변동성(연환산)
         """
         LOOKBACK_6M = 6 * 21    # 126 거래일
+        LOOKBACK_12M = 12 * 21  # 252 거래일
+        LOOKBACK_1M = 21        # 21 거래일
         VOL_FLOOR = 15.0
+
+        if mom_period in ('12m', '12m-1m'):
+            min_required = LOOKBACK_12M + 1
+        else:
+            min_required = LOOKBACK_6M + 1
 
         if price_df is None or price_df.empty:
             print(f"경고: 가격 데이터가 없습니다.")
             data['모멘텀'] = np.nan
             return data
-
-        min_required = LOOKBACK_6M + 1
 
         if len(price_df) < min_required:
             print(f"경고: 가격 데이터가 부족합니다. (현재: {len(price_df)}일, 필요: {min_required}일)")
@@ -284,26 +290,44 @@ class MultiFactorStrategy:
 
                 try:
                     price_current = prices.iloc[-1]
-                    price_6m_ago = prices.iloc[-(LOOKBACK_6M + 1)]
 
-                    if price_6m_ago <= 0:
+                    if mom_period == '6m':
+                        price_start = prices.iloc[-(LOOKBACK_6M + 1)]
+                        if price_start <= 0: continue
+                        ret = (price_current / price_start - 1) * 100
+                        daily_returns = prices.iloc[-(LOOKBACK_6M + 1):].pct_change().dropna()
+                    elif mom_period == '6m-1m':
+                        price_start = prices.iloc[-(LOOKBACK_6M + 1)]
+                        price_1m = prices.iloc[-(LOOKBACK_1M + 1)]
+                        if price_start <= 0 or price_1m <= 0: continue
+                        ret = (price_1m / price_start - 1) * 100
+                        daily_returns = prices.iloc[-(LOOKBACK_6M + 1):-(LOOKBACK_1M)].pct_change().dropna()
+                    elif mom_period == '12m-1m':
+                        price_start = prices.iloc[-(LOOKBACK_12M + 1)]
+                        price_1m = prices.iloc[-(LOOKBACK_1M + 1)]
+                        if price_start <= 0 or price_1m <= 0: continue
+                        ret = (price_1m / price_start - 1) * 100
+                        daily_returns = prices.iloc[-(LOOKBACK_12M + 1):-(LOOKBACK_1M)].pct_change().dropna()
+                    elif mom_period == '12m':
+                        price_start = prices.iloc[-(LOOKBACK_12M + 1)]
+                        if price_start <= 0: continue
+                        ret = (price_current / price_start - 1) * 100
+                        daily_returns = prices.iloc[-(LOOKBACK_12M + 1):].pct_change().dropna()
+                    else:
                         continue
 
-                    ret_6m = (price_current / price_6m_ago - 1) * 100
-
-                    daily_returns = prices.iloc[-(LOOKBACK_6M + 1):].pct_change().dropna()
                     annual_vol = daily_returns.std() * np.sqrt(252) * 100
                     annual_vol = max(annual_vol, VOL_FLOOR)
 
-                    momentum = ret_6m / annual_vol
+                    momentum = ret / annual_vol
                     momentum_dict[ticker] = momentum
                     matched_count += 1
                 except (IndexError, KeyError):
                     continue
 
         data['모멘텀'] = data['종목코드'].map(momentum_dict)
-        print(f"모멘텀(6M/Vol) 계산 완료: {matched_count}/{len(data)}개 매칭")
-        print(f"  공식: 6M수익률 / 변동성(연환산, floor={VOL_FLOOR}%)")
+        print(f"모멘텀({mom_period}/Vol) 계산 완료: {matched_count}/{len(data)}개 매칭")
+        print(f"  공식: {mom_period}수익률 / 변동성(연환산, floor={VOL_FLOOR}%)")
 
         # K_ratio: 추세 일관성 (log-price 회귀 기울기 / 표준오차)
         kratio_dict = {}
@@ -334,7 +358,7 @@ class MultiFactorStrategy:
         q_high = series.quantile(upper)
         return series.clip(q_low, q_high)
 
-    def calculate_multifactor_score(self, data, price_df=None, sector_map=None, base_date=None):
+    def calculate_multifactor_score(self, data, price_df=None, sector_map=None, base_date=None, mom_period='6m'):
         """
         멀티팩터 종합 점수 계산 — v69 4팩터 동일가중 (V+Q+G+M = 25% each)
 
@@ -360,7 +384,7 @@ class MultiFactorStrategy:
 
         # 3. 모멘텀 팩터 계산
         if price_df is not None:
-            data = self.calculate_momentum(data, price_df)
+            data = self.calculate_momentum(data, price_df, mom_period=mom_period)
 
         # 3.3. 섹터 정보 매핑
         if sector_map:
@@ -494,7 +518,7 @@ class MultiFactorStrategy:
         # Growth: 매출성장률 vs 이익변화량 가중 평균 (G_REVENUE_WEIGHT 환경변수로 조절)
         # 기본값 0.5 = 50:50 동일가중, 0.7 = 매출70:이익30, 0.3 = 매출30:이익70
         if len(growth_zs) == 2 and '매출성장률_z' in growth_zs and '이익변화량_z' in growth_zs:
-            g_rev_w = float(os.environ.get('G_REVENUE_WEIGHT', '0.5'))
+            g_rev_w = float(os.environ.get('G_REVENUE_WEIGHT', '0.7'))
             g_oca_w = 1.0 - g_rev_w
             data['성장_raw'] = data['매출성장률_z'] * g_rev_w + data['이익변화량_z'] * g_oca_w
             print(f"Growth 가중: 매출 {g_rev_w*100:.0f}% + 이익변화량 {g_oca_w*100:.0f}%")
@@ -535,15 +559,15 @@ class MultiFactorStrategy:
             data = data[~extreme_mask].copy()
             print(f"단일팩터 바닥: {extreme_count}개 제외 (1개라도 <{EXTREME_THRESHOLD}σ) {extreme_names[:5]}")
 
-        # 8. 최종 가중합 V25 + Q25 + G25 + M25
-        W = 1/4  # 동일 가중
+        # 8. 최종 가중합 V20 + Q20 + G30 + M30 (v70)
+        V_W, Q_W, G_W, M_W = 0.20, 0.20, 0.30, 0.30
 
         if momentum_zs:
-            data['멀티팩터_점수'] = (data['밸류_점수'] * W +
-                                    data['퀄리티_점수'] * W +
-                                    data['성장_점수'] * W +
-                                    data['모멘텀_점수'] * W)
-            print(f"멀티팩터 가중치: V25 + Q25 + G25 + M25 ({sn_tag})")
+            data['멀티팩터_점수'] = (data['밸류_점수'] * V_W +
+                                    data['퀄리티_점수'] * Q_W +
+                                    data['성장_점수'] * G_W +
+                                    data['모멘텀_점수'] * M_W)
+            print(f"멀티팩터 가중치: V20 + Q20 + G30 + M30 ({sn_tag})")
         else:
             data['멀티팩터_점수'] = (data['밸류_점수'] * 0.5 +
                                     data['퀄리티_점수'] * 0.5)
@@ -576,7 +600,7 @@ class MultiFactorStrategy:
         selected = data_sorted.head(n_stocks)
         return selected
 
-    def run(self, financial_data, price_df=None, n_stocks=20, sector_map=None, base_date=None):
+    def run(self, financial_data, price_df=None, n_stocks=20, sector_map=None, base_date=None, mom_period='6m'):
         """
         멀티팩터 전략 실행
 
@@ -586,12 +610,14 @@ class MultiFactorStrategy:
             n_stocks: 선정할 종목 수
             sector_map: 섹터 맵 (dict: ticker -> sector_name)
             base_date: 기준일 (YYYYMMDD), point-in-time 필터용
+            mom_period: 모멘텀 기간 ('6m', '6m-1m', '12m-1m', '12m')
         """
         scored_data = self.calculate_multifactor_score(
             financial_data.copy(),
             price_df=price_df,
             sector_map=sector_map,
-            base_date=base_date
+            base_date=base_date,
+            mom_period=mom_period,
         )
         selected_stocks = self.select_top_stocks(scored_data, n_stocks)
         return selected_stocks, scored_data
