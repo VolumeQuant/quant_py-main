@@ -135,7 +135,25 @@ def calc_system_returns():
 
         common = set(top20_t0) & set(top20_t1) & set(top20_t2)
 
-        # weighted_rank 계산
+        # 전체 ranking에서 가중순위 계산 (퇴출용)
+        all_t0 = {r['ticker']: r for r in r0}
+        all_t1 = {r['ticker']: r for r in r1}
+        all_t2 = {r['ticker']: r for r in r2}
+
+        def _wr(tk):
+            if tk not in all_t0:
+                return 999
+            cr0 = all_t0[tk].get('composite_rank', all_t0[tk].get('rank', 999))
+            cr1 = all_t1[tk].get('composite_rank', all_t1[tk].get('rank', 999)) if tk in all_t1 else 999
+            cr2 = all_t2[tk].get('composite_rank', all_t2[tk].get('rank', 999)) if tk in all_t2 else 999
+            return cr0 * 0.5 + cr1 * 0.3 + cr2 * 0.2
+
+        # 이탈: 가중순위 > EXIT_RANK (전체 ranking 기준)
+        for tk in list(portfolio.keys()):
+            if _wr(tk) > EXIT_RANK:
+                del portfolio[tk]
+
+        # 진입용: 3일 교집합 + 가중순위 계산
         verified = []
         for tk in common:
             cr0 = top20_t0[tk].get('composite_rank', top20_t0[tk]['rank'])
@@ -145,12 +163,6 @@ def calc_system_returns():
             verified.append({'ticker': tk, 'weighted_rank': wr,
                              'price': top20_t0[tk].get('price', 0)})
         verified.sort(key=lambda x: x['weighted_rank'])
-        wr_map = {v['ticker']: v['weighted_rank'] for v in verified}
-
-        # 이탈: weighted_rank > EXIT_RANK
-        for tk in list(portfolio.keys()):
-            if wr_map.get(tk, 999) > EXIT_RANK:
-                del portfolio[tk]
 
         # 진입: weighted_rank ≤ ENTRY_RANK, ✅ verified (OHLCV 가격)
         for v in verified:
@@ -721,9 +733,9 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
     # ── 매매 조건 + 범례 ──
     lines.append('')
     lines.append('━━━━━━━━━━━━━━━')
-    lines.append(f'매수: 상위 {ENTRY_RANK}종목 · 최대 {MAX_SLOTS}종목 보유')
-    lines.append(f'매도: {EXIT_RANK}위 밖 or -10% 손절')
-    lines.append('매도 검토선 위 보유 · 아래 매도 검토')
+    lines.append(f'매수: 3일 가중순위 ≤ {ENTRY_RANK}.0')
+    lines.append(f'매도: 3일 가중순위 > {EXIT_RANK}.0 또는 -10% 손절')
+    lines.append(f'최대 {MAX_SLOTS}종목 보유')
 
     return '\n'.join(lines)
 
