@@ -468,7 +468,7 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         sector = pick.get('sector', '기타')
         lines.append(f'<b>{i+1}. {pick["name"]}({pick["ticker"]}) · {sector}</b>')
 
-    # ── Top 5 상관관계 경고 (corr > 0.7 → 동일 섹터 선택 가이드) ──
+    # ── Top 5 상관관계 경고 (corr > 0.65 → 동일 섹터 선택 가이드) ──
     meta = rankings_t0.get('metadata') or {}
     corr_pairs = meta.get('correlation_60d', {})
     if corr_pairs and len(picks) >= 2:
@@ -477,7 +477,7 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
             for j in range(i + 1, len(picks)):
                 key = '_'.join(sorted([picks[i]['ticker'], picks[j]['ticker']]))
                 c = corr_pairs.get(key)
-                if c is not None and c > 0.7:
+                if c is not None and c > 0.65:
                     corr_members.add(picks[i]['ticker'])
                     corr_members.add(picks[j]['ticker'])
         if corr_members:
