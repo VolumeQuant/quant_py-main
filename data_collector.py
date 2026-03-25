@@ -122,7 +122,7 @@ class DataCollector:
         try:
             df = stock.get_market_ohlcv(start_date, end_date, ticker)
             df.to_parquet(cache_file)
-            time.sleep(0.05)
+            time.sleep(1)
             return df
         except Exception as e:
             print(f"종목 {ticker} OHLCV 수집 실패: {e}")
@@ -170,7 +170,7 @@ class DataCollector:
             start_date_str = start_date.strftime('%Y%m%d')
 
             df = stock.get_market_fundamental(start_date_str, date, ticker)
-            time.sleep(0.05)
+            time.sleep(1)
 
             # 가장 최근 데이터 반환
             return df.iloc[-1] if not df.empty else None

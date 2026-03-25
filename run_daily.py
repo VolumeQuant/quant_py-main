@@ -115,17 +115,16 @@ def main():
         log("퀀트 데일리 파이프라인 시작", logfile)
         log("=" * 50, logfile)
 
-        # 0. DART 증분 갱신 (공시 시즌: 3~4/5~6/8~9/11~12월)
-        #    비공시 시즌에는 스크립트 내부에서 즉시 종료
-        if datetime.now().weekday() == 0:  # 월요일에만
-            log("DART 캐시 증분 갱신", logfile)
-            try:
-                ok_dart = run_script("refresh_dart_cache.py", timeout=600, logfile=logfile)
-                log(f"DART 갱신: {'성공' if ok_dart else '실패'}", logfile)
-            except subprocess.TimeoutExpired:
-                log("DART 갱신 타임아웃 (10분) — 기존 캐시로 진행", logfile)
-            except Exception as e:
-                log(f"DART 갱신 오류: {e} — 기존 캐시로 진행", logfile)
+        # 0. DART 증분 갱신 (매일, 비공시 시즌에는 스크립트 내부에서 즉시 종료)
+        # 종목명 캐시는 별도 스크립트(refresh_ticker_names.py)로 월 1회 야간 실행
+        log("DART 캐시 증분 갱신", logfile)
+        try:
+            ok_dart = run_script("refresh_dart_cache.py", timeout=600, logfile=logfile)
+            log(f"DART 갱신: {'성공' if ok_dart else '실패'}", logfile)
+        except subprocess.TimeoutExpired:
+            log("DART 갱신 타임아웃 (10분) — 기존 캐시로 진행", logfile)
+        except Exception as e:
+            log(f"DART 갱신 오류: {e} — 기존 캐시로 진행", logfile)
 
         # 1. 포트폴리오 생성
         try:
