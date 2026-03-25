@@ -699,7 +699,7 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         # 매도 검토선 (가중순위 값 기준 — WR > EXIT_RANK)
         w_rank = s.get('weighted_rank', 999)
         if not exit_line_shown and w_rank > EXIT_RANK:
-            lines.append(f'── 매도 검토선 (WR>{EXIT_RANK}.0) ──')
+            lines.append('── 매도 검토선 ──')
             exit_line_shown = True
 
         if status == '✅':
