@@ -137,8 +137,25 @@ def main():
                   f'API {dc._call_count}건 | {elapsed:.0f}초')
 
     elapsed = time.time() - t0
-    print(f'DART 증분 갱신 완료: {success}수집 {failed}실패 | '
-          f'API {dc._call_count}건 | {elapsed:.0f}초')
+    summary = (f'DART 증분 갱신 완료: {success}수집 {failed}실패 | '
+               f'API {dc._call_count}건 | {elapsed:.0f}초')
+    print(summary)
+
+    # 텔레그램 개인봇 알림
+    try:
+        import requests
+        from config import TELEGRAM_BOT_TOKEN, TELEGRAM_PRIVATE_ID
+        msg = (f'📦 DART 캐시 갱신\n'
+               f'{target_date.strftime("%Y-%m")} 분기\n'
+               f'성공 {success} · 실패 {failed} · API {dc._call_count}건\n'
+               f'소요 {elapsed:.0f}초')
+        requests.post(
+            f'https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage',
+            data={'chat_id': TELEGRAM_PRIVATE_ID, 'text': msg},
+            timeout=10
+        )
+    except Exception:
+        pass
 
 
 if __name__ == '__main__':

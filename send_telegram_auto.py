@@ -472,19 +472,16 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
     meta = rankings_t0.get('metadata') or {}
     corr_pairs = meta.get('correlation_60d', {})
     if corr_pairs and len(picks) >= 2:
-        corr_members = set()
+        corr_warnings = []
         for i in range(len(picks)):
             for j in range(i + 1, len(picks)):
                 key = '_'.join(sorted([picks[i]['ticker'], picks[j]['ticker']]))
                 c = corr_pairs.get(key)
                 if c is not None and c > 0.65:
-                    corr_members.add(picks[i]['ticker'])
-                    corr_members.add(picks[j]['ticker'])
-        if corr_members:
-            names = [p['name'] for p in picks if p['ticker'] in corr_members]
-            n_corr = len(names)
-            lines.append(f'⚠️ {"·".join(names)}')
-            lines.append('주가 상관관계 높음 — 이 중 1~2개 선택 권장')
+                    corr_warnings.append((picks[i]['name'], picks[j]['name'], c))
+        if corr_warnings:
+            for n1, n2, c in corr_warnings:
+                lines.append(f'⚠️ {n1}·{n2} 상관관계 {c:.0%} — 둘 중 택1 권장')
 
     # ── 선정 과정 (퍼널) ──
     universe_count = meta.get('total_universe', 0)
