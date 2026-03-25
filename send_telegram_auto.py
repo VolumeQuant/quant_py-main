@@ -696,9 +696,10 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         score_100 = weighted_score_100(s['ticker'], rankings_t0, rankings_t1, rankings_t2)
         score_disp = f'{score_100:.1f}'
 
-        # 매도 검토선 (표시 순서 기준 — 15번째 이후)
-        if not exit_line_shown and idx > EXIT_RANK:
-            lines.append(f'── 매도 검토선 ({EXIT_RANK}위) ──')
+        # 매도 검토선 (가중순위 값 기준 — WR > EXIT_RANK)
+        w_rank = s.get('weighted_rank', 999)
+        if not exit_line_shown and w_rank > EXIT_RANK:
+            lines.append(f'── 매도 검토선 (WR>{EXIT_RANK}.0) ──')
             exit_line_shown = True
 
         if status == '✅':
