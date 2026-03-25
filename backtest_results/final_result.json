@@ -1,0 +1,63 @@
+{
+  "selected": {
+    "v": 30,
+    "q": 30,
+    "g": 15,
+    "m": 25,
+    "g_rev": 0.7,
+    "strategy": "rank",
+    "entry": 5,
+    "exit": 10,
+    "slots": 10,
+    "pool": 15,
+    "cagr": 68.81,
+    "sharpe": 1.564,
+    "sortino": 2.415,
+    "calmar": 1.59,
+    "mdd": 43.28,
+    "total": 666.1,
+    "b_cagr": -2.26,
+    "alpha": 71.07,
+    "avg_holdings": 5.3
+  },
+  "shrunk_weights": {
+    "v": 28,
+    "q": 28,
+    "g": 20,
+    "m": 24
+  },
+  "test_original": {
+    "cagr": 144.36,
+    "sharpe": 2.288,
+    "sortino": 3.271,
+    "calmar": 6.51,
+    "mdd": 22.17,
+    "total": 183.59,
+    "b_cagr": 105.95,
+    "alpha": 38.41,
+    "avg_holdings": 5.9
+  },
+  "test_shrunk": {
+    "cagr": 173.55,
+    "sharpe": 2.493,
+    "sortino": 3.493,
+    "calmar": 7.825,
+    "mdd": 22.18,
+    "total": 223.5,
+    "b_cagr": 105.95,
+    "alpha": 67.6,
+    "avg_holdings": 6.0
+  },
+  "test_v69": {
+    "cagr": 132.57,
+    "sharpe": 2.005,
+    "sortino": 2.862,
+    "calmar": 4.716,
+    "mdd": 28.11,
+    "total": 167.7,
+    "b_cagr": 105.95,
+    "alpha": 26.62,
+    "avg_holdings": 4.4
+  },
+  "adjusted_sharpe": 1.426
+}

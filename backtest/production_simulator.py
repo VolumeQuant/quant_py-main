@@ -115,17 +115,23 @@ class ProductionSimulator:
 
         price_map = {s['ticker']: s['price'] for s in scored_t0 if s.get('price')}
 
+        # 전체 종목에 대해 weighted_rank 계산 (퇴출용 — 프로덕션 동일)
+        all_tickers = set(rm0.keys())
         result = []
-        for tk in top_t0:
+        for tk in all_tickers:
+            in_t0 = tk in top_t0
             in_t1 = tk in top_t1
             in_t2 = tk in top_t2
 
-            if in_t1 and in_t2:
+            # 진입 상태는 top_n 교집합 기준
+            if in_t0 and in_t1 and in_t2:
                 status = 'verified'  # ✅
-            elif in_t1:
+            elif in_t0 and in_t1:
                 status = 'pending'   # ⏳
-            else:
+            elif in_t0:
                 status = 'new'       # 🆕
+            else:
+                status = 'outside'   # top_n 밖 (퇴출 판정용)
 
             # weighted score (3일 가중)
             s0 = sm0.get(tk, 0)
@@ -142,9 +148,9 @@ class ProductionSimulator:
             score_100 = max(0.0, min(100.0, (ws + 0.7) / 2.4 * 100))
 
             # weighted rank
-            r0 = rm0.get(tk, 50)
-            r1 = rm1.get(tk, 50)
-            r2 = rm2.get(tk, 50)
+            r0 = rm0.get(tk, 999)
+            r1 = rm1.get(tk, 999)
+            r2 = rm2.get(tk, 999)
             if rm1 and rm2:
                 w_rank = r0 * 0.5 + r1 * 0.3 + r2 * 0.2
             elif rm1:
