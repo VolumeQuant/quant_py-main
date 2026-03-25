@@ -731,12 +731,12 @@ def format_credit_compact(credit: dict) -> list:
     # 개별 근거 (수치 + 퍼센타일)
     if hy:
         hy_pct = hy.get('hy_percentile', 50)
-        lines.append(f'  회사채 금리차(HY) {hy["hy_spread"]:.2f}% · 상위 {100 - hy_pct:.0f}%')
+        lines.append(f'  회사채 금리차(HY) {hy["hy_spread"]:.2f}%(상위 {100 - hy_pct:.0f}%)')
 
     if vix:
         vix_cur = vix.get('vix_current', 0)
         vix_pct = vix.get('vix_pct', 0)
-        lines.append(f'  변동성지수(VIX) {vix_cur:.1f} · 상위 {100 - vix_pct:.0f}%')
+        lines.append(f'  변동성지수(VIX) {vix_cur:.1f}(상위 {100 - vix_pct:.0f}%)')
 
     # 조합 과거 수익률
     lines.append(f'  → 이 구간 과거 코스피 연평균 +{combined_ret:.1f}%')
