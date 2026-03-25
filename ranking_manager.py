@@ -22,7 +22,7 @@ STATE_DIR.mkdir(exist_ok=True)
 
 # v70: Rank-based entry + rank-based exit
 ENTRY_RANK = 5         # 진입: weighted_rank ≤ 5 + ✅ 3일 검증
-EXIT_RANK = 10         # 이탈: weighted_rank > 10
+EXIT_RANK = 8          # 이탈: weighted_rank > 8
 MAX_SLOTS = 7          # 최대 보유 종목
 STOP_LOSS_PCT = -10    # 손절: -10% (사용자 수동, 메시지 표시용)
 
