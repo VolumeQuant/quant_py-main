@@ -481,7 +481,7 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
                     corr_warnings.append((picks[i]['name'], picks[j]['name'], c))
         if corr_warnings:
             for n1, n2, c in corr_warnings:
-                lines.append(f'⚠️ {n1}·{n2} 상관관계 {c:.0%} — 둘 중 택1 권장')
+                lines.append(f'⚠️ {n1}·{n2} 유사({c:.0%}) 택1 권장')
 
     # ── 선정 과정 (퍼널) ──
     universe_count = meta.get('total_universe', 0)
