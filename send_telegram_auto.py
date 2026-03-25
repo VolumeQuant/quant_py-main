@@ -103,8 +103,11 @@ def calc_system_returns():
             for tk in portfolio:
                 pp = prev_prices.get(tk, 0)
                 cp = cur_prices.get(tk, 0)
+                # 오늘 가격 없으면 어제 가격 유지 (수익률 0)
                 if pp > 0 and cp > 0:
                     daily_rets.append(cp / pp - 1)
+                elif pp > 0:
+                    daily_rets.append(0)
             if daily_rets:
                 avg_ret = sum(daily_rets) / len(daily_rets)
                 equity *= (1 + avg_ret)
