@@ -645,13 +645,14 @@ def format_credit_section(credit: dict) -> str:
 
 
 def _get_combined_return(hy_quadrant, vix_percentile):
-    """HY 분면 × VIX 구간 조합 과거 S&P 연평균 수익률
-    6,593거래일(2000~2026) SPY 20일 선행수익률 검증 기반 교정"""
+    """HY 분면 × VIX 구간 조합 과거 코스피 연평균 수익률
+    6,027거래일(2000~2026) 코스피 20일 선행수익률 기반.
+    30일 미만 셀은 같은 분면 평균으로 대체."""
     RETURN_MATRIX = {
-        'Q1': {'normal': 20.4, 'elevated': 23.7, 'high': 58.2, 'crisis': 39.6},
-        'Q2': {'normal': 9.8, 'elevated': 14.8, 'high': 13.7, 'crisis': 15.2},
-        'Q3': {'normal': 7.6, 'elevated': 5.3, 'high': 1.3, 'crisis': 15.3},
-        'Q4': {'normal': 7.8, 'elevated': -12.1, 'high': 18.6, 'crisis': 18.9},
+        'Q1': {'normal': 10.1, 'elevated': 20.9, 'high': 12.9, 'crisis': 12.9},
+        'Q2': {'normal': 11.9, 'elevated': 18.9, 'high': 9.5, 'crisis': -7.2},
+        'Q3': {'normal': 15.1, 'elevated': 13.7, 'high': 9.1, 'crisis': 7.5},
+        'Q4': {'normal': 0.6, 'elevated': 1.9, 'high': 18.8, 'crisis': 22.8},
     }
     if vix_percentile < 67:
         vix_regime = 'normal'
@@ -711,7 +712,7 @@ def format_credit_compact(credit: dict) -> list:
     🟡 과거 수익률이 낮았던 구간입니다
       회사채 금리차(HY) 3.22% · 상위 78%
       변동성지수(VIX) 22.4 · 상위 16%
-      이 구간 과거 S&P 연평균 +0.5%
+      이 구간 과거 코스피 연평균 +0.5%
       한국 회사채(BBB-) 6.4%p · 정상
     """
     hy = credit.get('hy')
@@ -738,7 +739,7 @@ def format_credit_compact(credit: dict) -> list:
         lines.append(f'  변동성지수(VIX) {vix_cur:.1f} · 상위 {100 - vix_pct:.0f}%')
 
     # 조합 과거 수익률
-    lines.append(f'  → 이 구간 과거 S&P 연평균 +{combined_ret:.1f}%')
+    lines.append(f'  → 이 구간 과거 코스피 연평균 +{combined_ret:.1f}%')
 
     return lines
 
