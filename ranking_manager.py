@@ -20,9 +20,15 @@ KST = ZoneInfo('Asia/Seoul')
 STATE_DIR = Path(os.environ.get('RANKING_STATE_DIR', str(Path(__file__).parent / 'state')))
 STATE_DIR.mkdir(exist_ok=True)
 
-# Score-based entry/exit thresholds (v69, 전문가 컨설팅 기반 72/68 확정)
-ENTRY_SCORE_100 = 72  # 진입: score_100 ≥ 72 (4~5종목, 섹터 분산 확보)
-EXIT_SCORE_100 = 68   # 매도검토: score_100 < 68 (4pt 버퍼, v61~v66 검증)
+# v70: Rank-based entry + rank-based exit
+ENTRY_RANK = 5         # 진입: weighted_rank ≤ 5 + ✅ 3일 검증
+EXIT_RANK = 15         # 이탈: weighted_rank > 15
+MAX_SLOTS = 7          # 최대 보유 종목
+STOP_LOSS_PCT = -10    # 손절: -10% (사용자 수동, 메시지 표시용)
+
+# (하위호환) score_100 기준 — 매도검토선 표시용
+ENTRY_SCORE_100 = 72
+EXIT_SCORE_100 = 68
 
 
 def get_ranking_path(date_str: str) -> Path:

@@ -393,15 +393,41 @@ def filter_universe_optimized(
     filtered = pd.concat([pass_large, pass_mid]).copy()
     print(f"거래대금 차등 필터 (대형≥{TRADING_LARGE}억, 중소형≥{TRADING_MID}억): {len(filtered)}개")
 
-    # 3. 종목명 수집
-    print("종목명 수집 중...")
+    # 3. 종목명 수집 (JSON 캐시 우선 → pykrx 폴백)
+    import json
+    names_cache_path = Path(CACHE_DIR) / 'ticker_names_cache.json'
+    if names_cache_path.exists():
+        with open(names_cache_path, 'r', encoding='utf-8') as f:
+            cached_names = json.load(f)
+        print(f"종목명 캐시 로드: {len(cached_names)}개")
+    else:
+        cached_names = {}
+
     ticker_names = {}
+    uncached = []
     for ticker in filtered.index.tolist():
-        try:
-            name = pykrx_stock.get_market_ticker_name(ticker)
-            ticker_names[ticker] = name
-        except Exception:
-            ticker_names[ticker] = ticker
+        if ticker in cached_names:
+            ticker_names[ticker] = cached_names[ticker]
+        else:
+            uncached.append(ticker)
+
+    # 캐시에 없는 종목만 pykrx 조회 (신규 상장 등)
+    if uncached:
+        print(f"  신규 종목 {len(uncached)}개 pykrx 조회...")
+        for ticker in uncached:
+            try:
+                name = pykrx_stock.get_market_ticker_name(ticker)
+                ticker_names[ticker] = name
+                cached_names[ticker] = name
+                time.sleep(1)
+            except Exception:
+                ticker_names[ticker] = ticker
+        # 캐시 업데이트
+        with open(names_cache_path, 'w', encoding='utf-8') as f:
+            json.dump(cached_names, f, ensure_ascii=False)
+        print(f"  종목명 캐시 업데이트: {len(cached_names)}개")
+    else:
+        print("종목명 전부 캐시 히트")
     filtered['종목명'] = filtered.index.map(ticker_names)
 
     # 4. 금융업/지주사 제외
@@ -691,7 +717,7 @@ def main():
             last_cached = price_df.index[-1]
             gap_days = (base_date_ts - last_cached).days
 
-            if 0 < gap_days <= 10:
+            if 0 < gap_days <= 30:
                 print(f"  증분 업데이트: 캐시 마지막={last_cached.strftime('%Y%m%d')}, 갭={gap_days}일")
                 cached_tickers = set(price_df.columns)
                 # 현재 유니버스에 있지만 캐시에 없는 신규 종목
@@ -716,20 +742,9 @@ def main():
                             continue
                     except Exception:
                         pass
-                    # 개별 종목 폴백 (유니버스 종목만)
-                    import time as _time
-                    closes = {}
-                    for tk in ohlcv_tickers[:200]:  # 주요 종목만
-                        try:
-                            tk_df = pykrx_stock.get_market_ohlcv(date_str, date_str, tk)
-                            if not tk_df.empty and '종가' in tk_df.columns:
-                                closes[tk] = tk_df['종가'].iloc[0]
-                            _time.sleep(0.05)
-                        except Exception:
-                            pass
-                    if closes:
-                        row = pd.Series(closes, name=pd.Timestamp(date_dt))
-                        new_rows.append(row)
+                    # 벌크 실패 시 개별 수집하지 않음 (차단 위험)
+                    # 휴장일이거나 API 일시 장애 → 다음 날짜로 진행
+                    print(f"    {date_str}: 벌크 실패 — 스킵 (휴장일 가능)")
 
                 if new_rows:
                     new_df = pd.DataFrame(new_rows)
@@ -738,21 +753,58 @@ def main():
                     price_df = price_df.sort_index()
                     # 신규 유니버스 종목의 과거 데이터 개별 수집
                     if new_universe:
+                        import time as _time
                         for ticker in new_universe:
                             try:
                                 tk_ohlcv = pykrx_stock.get_market_ohlcv_by_date(
                                     price_start, BASE_DATE, ticker)
                                 if not tk_ohlcv.empty and '종가' in tk_ohlcv.columns:
                                     price_df[ticker] = tk_ohlcv['종가'].reindex(price_df.index)
+                                _time.sleep(1)
                             except Exception:
                                 pass
                         print(f"  신규 종목 과거 데이터 수집 완료: {len(new_universe)}개")
-                    # 캐시 저장 (새 날짜 범위)
+                    # 캐시 저장 (새 날짜 범위) + 이전 파일 정리
                     new_start = price_df.index[0].strftime('%Y%m%d')
                     new_end = price_df.index[-1].strftime('%Y%m%d')
                     new_cache = Path(CACHE_DIR) / f'all_ohlcv_{new_start}_{new_end}.parquet'
                     price_df.to_parquet(new_cache)
+                    # 이전 캐시 파일 정리 (새 파일보다 짧은 범위만 삭제, 긴 파일 보존)
+                    new_span = int(new_end) - int(new_start)
+                    for old_f in Path(CACHE_DIR).glob('all_ohlcv_*.parquet'):
+                        if old_f == new_cache:
+                            continue
+                        parts = old_f.stem.split('_')
+                        if len(parts) >= 4:
+                            old_span = int(parts[3]) - int(parts[2])
+                            if old_span <= new_span:
+                                old_f.unlink()
+                                print(f"  이전 캐시 삭제: {old_f.name}")
+                            else:
+                                print(f"  장기 캐시 보존: {old_f.name}")
                     print(f"  증분 완료: +{len(new_rows)}거래일 → 총 {len(price_df)}거래일, {len(price_df.columns)}종목")
+                    # 다른 OHLCV 파일(백테스트용 등)도 증분 업데이트
+                    for other_f in Path(CACHE_DIR).glob('all_ohlcv_*.parquet'):
+                        if other_f == new_cache:
+                            continue
+                        try:
+                            other_df = pd.read_parquet(other_f)
+                            other_end = other_df.index[-1]
+                            if other_end < price_df.index[-1]:
+                                # 새 데이터 추가
+                                append_rows = price_df[price_df.index > other_end]
+                                if not append_rows.empty:
+                                    updated = pd.concat([other_df, append_rows])
+                                    updated = updated[~updated.index.duplicated(keep='last')].sort_index()
+                                    o_start = updated.index[0].strftime('%Y%m%d')
+                                    o_end = updated.index[-1].strftime('%Y%m%d')
+                                    updated_path = Path(CACHE_DIR) / f'all_ohlcv_{o_start}_{o_end}.parquet'
+                                    updated.to_parquet(updated_path)
+                                    if updated_path != other_f:
+                                        other_f.unlink()
+                                    print(f"  백테스트용 증분: {other_f.name} → {updated_path.name} (+{len(append_rows)}일)")
+                        except Exception as _e:
+                            print(f"  백테스트용 증분 실패: {other_f.name} ({_e})")
                 else:
                     print(f"  증분 업데이트: 새 거래일 없음 (휴장일)")
                 need_refresh = False
