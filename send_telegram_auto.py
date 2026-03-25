@@ -75,14 +75,22 @@ def calc_system_returns():
             all_data[d] = json.load(fh)
     dates = sorted(all_data.keys())
 
-    # 종목별 가격 맵: {date: {ticker: price}}
-    price_map = {}
-    for d in dates:
-        pm = {}
-        for r in all_data[d].get('rankings', []):
-            if r.get('price') and r['price'] > 0:
-                pm[r['ticker']] = r['price']
-        price_map[d] = pm
+    # 가격: OHLCV 기반 (모든 파일 합쳐서 최대 커버리지)
+    import glob as _glob2
+    _ohlcv_files = sorted(_glob2.glob(str(Path(__file__).parent / 'data_cache' / 'all_ohlcv_*.parquet')))
+    if _ohlcv_files:
+        _ohlcv_parts = [pd.read_parquet(f).replace(0, np.nan) for f in _ohlcv_files]
+        _ohlcv = pd.concat(_ohlcv_parts).groupby(level=0).first()  # 날짜 중복 시 첫 번째 유지
+    else:
+        _ohlcv = pd.DataFrame()
+
+    def _get_price(ticker, date_str):
+        ts = pd.Timestamp(date_str)
+        if not _ohlcv.empty and ts in _ohlcv.index and ticker in _ohlcv.columns:
+            v = _ohlcv.loc[ts, ticker]
+            if pd.notna(v) and v > 0:
+                return v
+        return 0
 
     # 포트폴리오 시뮬레이션 — 일간 수익률 기반 + 손절
     portfolio = {}  # ticker → entry_price
@@ -94,20 +102,14 @@ def calc_system_returns():
         d1 = dates[i - 1] if i >= 1 else None
         d2 = dates[i - 2] if i >= 2 else None
 
-        # 일간 수익률: 어제 보유 → 오늘 가격 변화
+        # 일간 수익률: 어제 보유 → 오늘 가격 변화 (OHLCV 기반)
         if i >= 1 and portfolio:
-            prev_d = dates[i - 1]
-            prev_prices = price_map.get(prev_d, {})
-            cur_prices = price_map.get(d0, {})
             daily_rets = []
             for tk in portfolio:
-                pp = prev_prices.get(tk, 0)
-                cp = cur_prices.get(tk, 0)
-                # 오늘 가격 없으면 어제 가격 유지 (수익률 0)
+                pp = _get_price(tk, dates[i - 1])
+                cp = _get_price(tk, d0)
                 if pp > 0 and cp > 0:
                     daily_rets.append(cp / pp - 1)
-                elif pp > 0:
-                    daily_rets.append(0)
             if daily_rets:
                 avg_ret = sum(daily_rets) / len(daily_rets)
                 equity *= (1 + avg_ret)
@@ -115,10 +117,9 @@ def calc_system_returns():
         if i < 2:
             continue  # 3일 데이터 필요
 
-        # 손절 체크: 진입가 대비 -10%
-        cur_prices = price_map.get(d0, {})
+        # 손절 체크: 진입가 대비 -10% (OHLCV 기반)
         for tk in list(portfolio.keys()):
-            cp = cur_prices.get(tk, 0)
+            cp = _get_price(tk, d0)
             ep = portfolio[tk]
             if cp > 0 and ep > 0 and (cp / ep - 1) <= -0.10:
                 del portfolio[tk]
@@ -151,16 +152,18 @@ def calc_system_returns():
             if wr_map.get(tk, 999) > EXIT_RANK:
                 del portfolio[tk]
 
-        # 진입: weighted_rank ≤ ENTRY_RANK, ✅ verified
+        # 진입: weighted_rank ≤ ENTRY_RANK, ✅ verified (OHLCV 가격)
         for v in verified:
             if v['ticker'] in portfolio:
                 continue
             if len(portfolio) >= MAX_SLOTS:
                 break
-            if v['weighted_rank'] <= ENTRY_RANK and v['price'] and v['price'] > 0:
-                portfolio[v['ticker']] = v['price']
-                if start_date is None:
-                    start_date = d0
+            if v['weighted_rank'] <= ENTRY_RANK:
+                entry_price = _get_price(v['ticker'], d0)
+                if entry_price > 0:
+                    portfolio[v['ticker']] = entry_price
+                    if start_date is None:
+                        start_date = d0
 
     if start_date is None:
         return None
