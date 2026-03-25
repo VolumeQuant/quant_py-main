@@ -783,6 +783,28 @@ def main():
                             else:
                                 print(f"  장기 캐시 보존: {old_f.name}")
                     print(f"  증분 완료: +{len(new_rows)}거래일 → 총 {len(price_df)}거래일, {len(price_df.columns)}종목")
+                    # 다른 OHLCV 파일(백테스트용 등)도 증분 업데이트
+                    for other_f in Path(CACHE_DIR).glob('all_ohlcv_*.parquet'):
+                        if other_f == new_cache:
+                            continue
+                        try:
+                            other_df = pd.read_parquet(other_f)
+                            other_end = other_df.index[-1]
+                            if other_end < price_df.index[-1]:
+                                # 새 데이터 추가
+                                append_rows = price_df[price_df.index > other_end]
+                                if not append_rows.empty:
+                                    updated = pd.concat([other_df, append_rows])
+                                    updated = updated[~updated.index.duplicated(keep='last')].sort_index()
+                                    o_start = updated.index[0].strftime('%Y%m%d')
+                                    o_end = updated.index[-1].strftime('%Y%m%d')
+                                    updated_path = Path(CACHE_DIR) / f'all_ohlcv_{o_start}_{o_end}.parquet'
+                                    updated.to_parquet(updated_path)
+                                    if updated_path != other_f:
+                                        other_f.unlink()
+                                    print(f"  백테스트용 증분: {other_f.name} → {updated_path.name} (+{len(append_rows)}일)")
+                        except Exception as _e:
+                            print(f"  백테스트용 증분 실패: {other_f.name} ({_e})")
                 else:
                     print(f"  증분 업데이트: 새 거래일 없음 (휴장일)")
                 need_refresh = False
