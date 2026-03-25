@@ -645,12 +645,13 @@ def format_credit_section(credit: dict) -> str:
 
 
 def _get_combined_return(hy_quadrant, vix_percentile):
-    """HY 분면 × VIX 구간 조합 과거 S&P 연평균 수익률 (24년 분석 기반)"""
+    """HY 분면 × VIX 구간 조합 과거 S&P 연평균 수익률
+    6,593거래일(2000~2026) SPY 20일 선행수익률 검증 기반 교정"""
     RETURN_MATRIX = {
-        'Q1': {'normal': 10.2, 'elevated': 29.6, 'high': 28.1, 'crisis': 28.1},
-        'Q2': {'normal': 9.3, 'elevated': 8.3, 'high': 8.5, 'crisis': 8.5},
-        'Q3': {'normal': 7.3, 'elevated': 4.8, 'high': 0.4, 'crisis': 2.7},
-        'Q4': {'normal': 9.6, 'elevated': 12.1, 'high': 8.0, 'crisis': 8.0},
+        'Q1': {'normal': 20.4, 'elevated': 23.7, 'high': 58.2, 'crisis': 39.6},
+        'Q2': {'normal': 9.8, 'elevated': 14.8, 'high': 13.7, 'crisis': 15.2},
+        'Q3': {'normal': 7.6, 'elevated': 5.3, 'high': 1.3, 'crisis': 15.3},
+        'Q4': {'normal': 7.8, 'elevated': -12.1, 'high': 18.6, 'crisis': 18.9},
     }
     if vix_percentile < 67:
         vix_regime = 'normal'
