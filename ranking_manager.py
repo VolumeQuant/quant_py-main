@@ -413,7 +413,7 @@ def weighted_score_100(ticker, rankings_t0, rankings_t1=None, rankings_t2=None):
     ws = s0 * 0.5 + s1 * 0.3 + s2 * 0.2
     # v69: 4팩터 동일가중 score 분포에 맞춘 환산
     # score 범위 0.6~1.5 → (ws+0.7)/2.4*100 → 약 54~92점
-    return max(0.0, min(100.0, (ws + 0.7) / 2.4 * 100))
+    return max(0.0, min(100.0, (ws + 1.5) / 4.0 * 100))
 
 
 def cleanup_old_rankings(keep_days: int = 30):
