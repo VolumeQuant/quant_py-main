@@ -521,8 +521,16 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         tk_name = {p['ticker']: p['name'] for p in picks}
         for group in groups:
             names = [tk_name[tk] for tk in group if tk in tk_name]
+            # 그룹 내 평균 상관관계
+            corrs = []
+            for ii in range(len(group)):
+                for jj in range(ii+1, len(group)):
+                    key = '_'.join(sorted([group[ii], group[jj]]))
+                    c = corr_pairs.get(key, 0)
+                    if c: corrs.append(c)
+            avg_corr = sum(corrs)/len(corrs) if corrs else 0
             pick = '택1' if len(names) == 2 else '택1~2'
-            lines.append(f'⚠️ {"·".join(names)} 유사')
+            lines.append(f'⚠️ {"·".join(names)} 유사도 {avg_corr:.0%}')
             lines.append(f'    {pick} 권장')
 
     # ── 선정 과정 (퍼널) ──
