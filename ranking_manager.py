@@ -20,9 +20,9 @@ KST = ZoneInfo('Asia/Seoul')
 STATE_DIR = Path(os.environ.get('RANKING_STATE_DIR', str(Path(__file__).parent / 'state')))
 STATE_DIR.mkdir(exist_ok=True)
 
-# v70: Rank-based entry + rank-based exit
+# v71: Rank-based entry + rank-based exit (국면 적응형)
 ENTRY_RANK = 5         # 진입: weighted_rank ≤ 5 + ✅ 3일 검증
-EXIT_RANK = 8          # 이탈: weighted_rank > 8
+EXIT_RANK = 12         # 이탈: weighted_rank > 12
 MAX_SLOTS = 7          # 최대 보유 종목
 STOP_LOSS_PCT = -10    # 손절: -10% (사용자 수동, 메시지 표시용)
 
