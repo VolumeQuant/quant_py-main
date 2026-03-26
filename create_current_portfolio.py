@@ -998,6 +998,11 @@ def main():
                 val = row.get(col)
                 if val is not None and pd.notna(val):
                     entry[key] = round(float(val), 4)
+            # Growth 서브팩터 z-score (G-ratio 재계산용)
+            for col, key in [('매출성장률_z', 'rev_z'), ('이익변화량_z', 'oca_z')]:
+                val = row.get(col)
+                if val is not None and pd.notna(val):
+                    entry[key] = round(float(val), 4)
             # 종가 (가격 변동 태그용)
             ticker = entry['ticker']
             if not price_df.empty and ticker in price_df.columns:
