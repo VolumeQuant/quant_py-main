@@ -129,7 +129,7 @@ def main():
 
         # 1. 포트폴리오 생성
         try:
-            ok = run_script("create_current_portfolio.py", timeout=300, logfile=logfile)
+            ok = run_script("create_current_portfolio.py", timeout=600, logfile=logfile)
         except subprocess.TimeoutExpired:
             log("포트폴리오 생성 타임아웃 (5분)", logfile)
             ok = False
