@@ -61,7 +61,7 @@ def compute_weighted_score_100(ticker: str, t0: Dict, t1: Optional[Dict], t2: Op
     """
     weighted_score_100 계산 — ranking_manager.py 의 로직과 동일
     ws = s0*0.5 + s1*0.3 + s2*0.2
-    score_100 = max(0, min(100, (ws + 3.0) / 6.0 * 100))
+    score_100 = max(0, min(100, (ws + 0.7) / 2.4 * 100))
     """
     DEFAULT_MISSING_RANK = 50
 
@@ -85,7 +85,7 @@ def compute_weighted_score_100(ticker: str, t0: Dict, t1: Optional[Dict], t2: Op
     else:
         ws = s0
 
-    return max(0.0, min(100.0, (ws + 3.0) / 6.0 * 100))
+    return max(0.0, min(100.0, (ws + 0.7) / 2.4 * 100))
 
 
 def compute_weighted_rank(ticker: str, t0: Dict, t1: Optional[Dict], t2: Optional[Dict]) -> float:

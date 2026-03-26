@@ -56,7 +56,7 @@ def weighted_score_100(ticker, r_t0, r_t1=None, r_t2=None):
     s1 = t1_map.get(ticker, t1_fb)
     s2 = t2_map.get(ticker, t2_fb)
     ws = s0 * 0.5 + s1 * 0.3 + s2 * 0.2
-    return max(0.0, min(100.0, (ws + 3.0) / 6.0 * 100))
+    return max(0.0, min(100.0, (ws + 0.7) / 2.4 * 100))
 
 
 def get_pipeline(rankings_t0, rankings_t1, rankings_t2, top_n):
