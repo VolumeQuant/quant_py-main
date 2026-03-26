@@ -487,16 +487,41 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
     meta = rankings_t0.get('metadata') or {}
     corr_pairs = meta.get('correlation_60d', {})
     if corr_pairs and len(picks) >= 2:
-        corr_warnings = []
+        # 상관관계 그래프 → 연결 성분(그룹) 자동 묶기
+        from collections import defaultdict
+        adj = defaultdict(set)
         for i in range(len(picks)):
             for j in range(i + 1, len(picks)):
                 key = '_'.join(sorted([picks[i]['ticker'], picks[j]['ticker']]))
                 c = corr_pairs.get(key)
                 if c is not None and c > 0.65:
-                    corr_warnings.append((picks[i]['name'], picks[j]['name'], c))
-        if corr_warnings:
-            for n1, n2, c in corr_warnings:
-                lines.append(f'⚠️ {n1}·{n2} 유사도 {c:.0%} 택1 권장')
+                    adj[picks[i]['ticker']].add(picks[j]['ticker'])
+                    adj[picks[j]['ticker']].add(picks[i]['ticker'])
+        # BFS로 연결 성분 추출
+        visited = set()
+        groups = []
+        for pick in picks:
+            tk = pick['ticker']
+            if tk not in adj or tk in visited:
+                continue
+            group = []
+            queue = [tk]
+            while queue:
+                cur = queue.pop(0)
+                if cur in visited:
+                    continue
+                visited.add(cur)
+                group.append(cur)
+                for nb in adj[cur]:
+                    if nb not in visited:
+                        queue.append(nb)
+            if len(group) >= 2:
+                groups.append(group)
+        # 그룹별 경고 (1줄씩)
+        tk_name = {p['ticker']: p['name'] for p in picks}
+        for group in groups:
+            names = [tk_name[tk] for tk in group if tk in tk_name]
+            lines.append(f'⚠️ {"·".join(names)} 유사도 높음 — 이 중 1~2개 선택')
 
     # ── 선정 과정 (퍼널) ──
     universe_count = meta.get('total_universe', 0)
