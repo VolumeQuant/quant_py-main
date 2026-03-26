@@ -105,8 +105,9 @@ def main():
     log_path = LOG_DIR / f"daily_{today}.log"
     lock_file = LOG_DIR / f"daily_{today}.lock"
 
-    # 중복 실행 방지
-    if lock_file.exists():
+    # 중복 실행 방지 (TEST_MODE에서는 스킵)
+    is_test = os.environ.get('TEST_MODE') == '1'
+    if lock_file.exists() and not is_test:
         print(f"[스킵] 오늘({today}) 이미 실행 완료됨 ({lock_file})")
         return
 
@@ -156,8 +157,9 @@ def main():
         except Exception as e:
             log(f"git push 오류: {e}", logfile)
 
-        # 완료 lock 생성
-        lock_file.write_text(datetime.now().isoformat(), encoding="utf-8")
+        # 완료 lock 생성 (TEST_MODE에서는 생성 안 함)
+        if not is_test:
+            lock_file.write_text(datetime.now().isoformat(), encoding="utf-8")
         log("파이프라인 완료", logfile)
 
 
