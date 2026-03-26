@@ -61,7 +61,7 @@ def get_target_period():
 
 
 def get_production_tickers():
-    """프로덕션 유니버스 티커 (시총 3000억+)"""
+    """프로덕션 유니버스 티커 (시총 1000억+ — 프로덕션 동일)"""
     mcap_files = sorted(CACHE_DIR.glob('market_cap_ALL_*.parquet'))
     if not mcap_files:
         print('market_cap 캐시 없음')
@@ -69,7 +69,7 @@ def get_production_tickers():
 
     df = pd.read_parquet(mcap_files[-1])
     df['시가총액_억'] = df['시가총액'] / 1e8
-    return df[df['시가총액_억'] >= 3000].index.tolist()
+    return df[df['시가총액_억'] >= 1000].index.tolist()
 
 
 def needs_refresh(ticker, target_date):
