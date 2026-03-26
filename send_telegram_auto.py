@@ -165,7 +165,7 @@ def calc_system_returns():
             wr = cr0 * 0.5 + cr1 * 0.3 + cr2 * 0.2
             verified.append({'ticker': tk, 'weighted_rank': wr,
                              'price': top20_t0[tk].get('price', 0)})
-        verified.sort(key=lambda x: (x['weighted_rank'], -x.get('price', 0)))
+        verified.sort(key=lambda x: x['weighted_rank'])
 
         # 진입: weighted_rank ≤ ENTRY_RANK, ✅ verified (OHLCV 가격)
         for v in verified:
@@ -668,7 +668,7 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         s['_r2'] = t2_item.get('composite_rank', t2_item['rank']) if t2_item else '-'
 
     # v70: weighted_rank 순 정렬 (rank 기반 진입/이탈과 일관)
-    sorted_pipeline = sorted(pipeline, key=lambda x: (x.get('weighted_rank', x['rank']), -score_100_pre.get(x['ticker'], 0)))
+    sorted_pipeline = sorted(pipeline, key=lambda x: (x.get('weighted_rank', x['rank']), -(score_100_map or {}).get(x['ticker'], 0)))
 
     # 상위 WATCHLIST_N개만 표시
     display_pipeline = sorted_pipeline[:WATCHLIST_N]

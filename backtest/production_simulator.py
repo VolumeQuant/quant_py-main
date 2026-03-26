@@ -167,7 +167,7 @@ class ProductionSimulator:
                 'raw_score': s0,
             })
 
-        result.sort(key=lambda x: x['weighted_rank'])
+        result.sort(key=lambda x: (x['weighted_rank'], -x.get('raw_score', 0)))
         return result
 
     def run(self, v_w, q_w, g_w, m_w, g_rev=0.5,

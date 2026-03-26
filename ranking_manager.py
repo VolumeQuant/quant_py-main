@@ -164,8 +164,8 @@ def compute_3day_intersection(
         item['rank_t2'] = rank_t2
         results.append(item)
 
-    # 가중 평균 순위로 정렬 (낮을수록 좋음)
-    results.sort(key=lambda x: x['weighted_rank'])
+    # 가중 평균 순위로 정렬 (낮을수록 좋음, 동점 시 score 높은 순)
+    results.sort(key=lambda x: (x['weighted_rank'], -x.get('score', x.get('weighted_score', 0))))
 
     # 최대 picks 제한
     return results[:max_picks]
@@ -313,7 +313,7 @@ def get_daily_changes(
             item['t0_rank'] = None
         exited.append(item)
 
-    entered.sort(key=lambda x: x.get('weighted_rank', x['rank']))
+    entered.sort(key=lambda x: (x.get('weighted_rank', x['rank']), -x.get('score', 0)))
     exited.sort(key=lambda x: x['rank'])
 
     return entered, exited
@@ -383,8 +383,8 @@ def get_stock_status(rankings_t0, rankings_t1=None, rankings_t2=None, top_n=20):
             entry['status'] = '🆕'
         scored.append(entry)
 
-    # 가중순위 기준 Top N 선택
-    scored.sort(key=lambda x: x['weighted_rank'])
+    # 가중순위 기준 Top N 선택 (동점 시 score 높은 순)
+    scored.sort(key=lambda x: (x['weighted_rank'], -x.get('score', 0)))
     return scored[:top_n]
 
 
