@@ -40,15 +40,20 @@ FILING_SEASON = {
 
 
 def get_target_period():
-    """현재 월 기준 수집 대상 기간 반환"""
+    """현재 월 기준 수집 대상 기간 반환 (매일 실행, 시즌 무관)"""
     now = datetime.now()
     month = now.month
     year = now.year
 
-    if month not in FILING_SEASON:
-        return None, None
+    if month in FILING_SEASON:
+        year_offset, mmdd = FILING_SEASON[month]
+    else:
+        # 비공시 시즌: 가장 최근 공시 분기를 타겟
+        # 1,2월→전년12/31, 7월→당해6/30, 10월→당해9/30
+        fallback = {1: (-1, '12-31'), 2: (-1, '12-31'),
+                    7: (0, '06-30'), 10: (0, '09-30')}
+        year_offset, mmdd = fallback.get(month, (-1, '12-31'))
 
-    year_offset, mmdd = FILING_SEASON[month]
     target_year = year + year_offset
     target_date = pd.Timestamp(f'{target_year}-{mmdd}')
 
