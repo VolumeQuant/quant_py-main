@@ -67,10 +67,13 @@ def calc_system_returns():
     if len(files) < 3:
         return None
 
-    # 날짜순 ranking 로드
+    # 날짜순 ranking 로드 (당일 제외 — 전일 기준)
+    today_str = get_korea_now().strftime('%Y%m%d')
     all_data = {}
     for fp in files:
         d = os.path.basename(fp).replace('ranking_', '').replace('.json', '')
+        if d >= today_str:
+            continue  # 당일 이후 제외
         with open(fp, 'r', encoding='utf-8') as fh:
             all_data[d] = json.load(fh)
     dates = sorted(all_data.keys())
