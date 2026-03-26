@@ -521,7 +521,12 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         tk_name = {p['ticker']: p['name'] for p in picks}
         for group in groups:
             names = [tk_name[tk] for tk in group if tk in tk_name]
-            lines.append(f'⚠️ {"·".join(names)} 유사 택1 권장')
+            if len(names) == 2:
+                lines.append(f'⚠️ {"·".join(names)} 유사')
+                lines.append('    택1 권장')
+            else:
+                lines.append(f'⚠️ {"·".join(names)} 유사')
+                lines.append('    이 중 1~2개 선택 권장')
 
     # ── 선정 과정 (퍼널) ──
     universe_count = meta.get('total_universe', 0)
