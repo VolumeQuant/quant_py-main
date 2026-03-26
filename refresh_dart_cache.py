@@ -60,14 +60,19 @@ def get_target_period():
     return target_year, target_date
 
 
-def get_production_tickers():
-    """프로덕션 유니버스 티커 (시총 1000억+ — 프로덕션 동일)"""
+def get_production_tickers(full=False):
+    """프로덕션 유니버스 티커
+    full=False: 시총 1000억+ (매일)
+    full=True: 전종목 (주 1회)
+    """
     mcap_files = sorted(CACHE_DIR.glob('market_cap_ALL_*.parquet'))
     if not mcap_files:
         print('market_cap 캐시 없음')
         return []
 
     df = pd.read_parquet(mcap_files[-1])
+    if full:
+        return df.index.tolist()
     df['시가총액_억'] = df['시가총액'] / 1e8
     return df[df['시가총액_억'] >= 1000].index.tolist()
 
@@ -102,7 +107,12 @@ def main():
     else:
         print(f'DART 증분 갱신: {target_date.strftime("%Y-%m")} 분기')
 
-    tickers = get_production_tickers()
+    # 금요일: 전종목, 그 외: 시총 1000억+
+    is_friday = datetime.now().weekday() == 4
+    full_mode = is_friday or '--full' in sys.argv
+    tickers = get_production_tickers(full=full_mode)
+    if full_mode:
+        print(f'전종목 모드 ({"금요일" if is_friday else "--full"})')
     if not tickers:
         print('유니버스 비어있음')
         return
