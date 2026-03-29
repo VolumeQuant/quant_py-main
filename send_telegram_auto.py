@@ -530,7 +530,8 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
                     if c: corrs.append(c)
             avg_corr = sum(corrs)/len(corrs) if corrs else 0
             pick = '택1' if len(names) == 2 else '택1~2'
-            lines.append(f'🔗 {"·".join(names)} 유사도 {avg_corr:.0%} ({pick})')
+            lines.append(f'🔗 {"·".join(names)} 유사도 {avg_corr:.0%}')
+            lines.append(f'→ {pick} 권장')
 
     # ── 선정 과정 (퍼널) ──
     universe_count = meta.get('total_universe', 0)
