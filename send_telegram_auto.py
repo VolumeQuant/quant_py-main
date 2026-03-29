@@ -540,12 +540,10 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
     v_count = sum(1 for s in pipeline if s['status'] == '✅')
     lines.append('')
     lines.append('📋 <b>선정 과정</b>')
-    if universe_count > 0:
-        lines.append(f'시총 1000억 이상 · 거래대금 충족 {universe_count:,}종목')
-    else:
-        lines.append('국내 전 종목')
-    lines.append('→ 밸류·퀄리티·성장·모멘텀 종합 채점 → 상위 20종목')
-    lines.append(f'→ 3일 연속 검증 → 기준점수 이상 {n}종목')
+    lines.append('국내 상장 전 종목 대상')
+    lines.append('→ 재무·성장·수익성·추세 종합 채점')
+    lines.append('→ 상위 20종목 매일 모니터링')
+    lines.append(f'→ 3일 연속 상위 유지 {n}종목 선정')
 
     # ── 종목별 근거 ──
     lines.append('')
