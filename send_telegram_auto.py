@@ -176,8 +176,8 @@ def calc_system_returns():
             entry_price = _get_price(v['ticker'], d0)
             if entry_price > 0:
                 portfolio[v['ticker']] = entry_price
-                    if start_date is None:
-                        start_date = d0
+                if start_date is None:
+                    start_date = d0
 
     if start_date is None:
         return None
