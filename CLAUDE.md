@@ -27,10 +27,13 @@
 
 > 경로: `C:\dev\claude code\eps-momentum-us`
 
-- EPS Revision Momentum, w_gap 기반, **균등비중**
-- 진입: Top 3 + min_seg ≥ 0% + 3일 검증 + 리스크 필터
-- 퇴출: rank > 15 OR min_seg < -2% OR -10% 손절, 슬롯 5
-- RETURN_MATRIX: S&P500 기반 (26년 6,593일)
+- EPS Revision Momentum, conviction z-score 기반, **균등비중**
+- conviction: adj_gap × (1 + max(up30/N, min(|eps_chg|/100, 1)))
+- 점수: 일별 z-score(30~100) → 3일 가중(T0×0.5+T1×0.3+T2×0.2), 빈 날=30점
+- 진입: 3일 가중 Top 3 + ✅(3일 검증) + min_seg ≥ 0%, 슬롯 5
+- 퇴출: part2_rank > 15 OR min_seg < -2% OR -10% 손절
+- composite_rank=당일 conviction 순위(추이 표시), part2_rank=3일 가중 순위(매매)
+- RETURN_MATRIX: S&P500 기반 (26년 6,593일), VIX는 yfinance 최신 보완
 - 비중 조절 안 함 (알파가 공포 구간에서 발생)
 - 상관관계: 🔗 유사도% + BFS 그룹핑 + 택1/택1~2 권장
 
@@ -72,7 +75,7 @@
 
 ## 스케줄러
 - 일일 파이프라인: 월~금 06:00 (DART 증분 포함)
-- 종목명 캐시: 매주 월요일 09:00
+- 종목명 캐시: 매주 일요일 10:00
 
 ## 주의사항
 - state/ ranking 재계산: composite_rank/score만 변경 가능 (rev_z/oca_z 활용)
