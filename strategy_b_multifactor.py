@@ -564,15 +564,15 @@ class MultiFactorStrategy:
             data = data[~extreme_mask].copy()
             print(f"단일팩터 바닥: {extreme_count}개 제외 (1개라도 <{EXTREME_THRESHOLD}σ) {extreme_names[:5]}")
 
-        # 8. 최종 가중합 V5 + Q20 + G45 + M30 (v71 국면 적응형)
-        V_W, Q_W, G_W, M_W = 0.05, 0.20, 0.45, 0.30
+        # 8. 최종 가중합 V15 + Q25 + G40 + M20 (v72 DART 기반 최적화)
+        V_W, Q_W, G_W, M_W = 0.15, 0.25, 0.40, 0.20
 
         if momentum_zs:
             data['멀티팩터_점수'] = (data['밸류_점수'] * V_W +
                                     data['퀄리티_점수'] * Q_W +
                                     data['성장_점수'] * G_W +
                                     data['모멘텀_점수'] * M_W)
-            print(f"멀티팩터 가중치: V5 + Q20 + G45 + M30 ({sn_tag})")
+            print(f"멀티팩터 가중치: V15 + Q25 + G40 + M20 ({sn_tag})")
         else:
             data['멀티팩터_점수'] = (data['밸류_점수'] * 0.5 +
                                     data['퀄리티_점수'] * 0.5)

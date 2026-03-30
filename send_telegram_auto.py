@@ -167,16 +167,15 @@ def calc_system_returns():
                              'price': top20_t0[tk].get('price', 0)})
         verified.sort(key=lambda x: x['weighted_rank'])
 
-        # 진입: weighted_rank ≤ ENTRY_RANK, ✅ verified (OHLCV 가격)
-        for v in verified:
+        # 진입: 상위 ENTRY_RANK개 (포지션 기반) + ✅ verified
+        for v in verified[:ENTRY_RANK]:
             if v['ticker'] in portfolio:
                 continue
             if len(portfolio) >= MAX_SLOTS:
                 break
-            if v['weighted_rank'] <= ENTRY_RANK:
-                entry_price = _get_price(v['ticker'], d0)
-                if entry_price > 0:
-                    portfolio[v['ticker']] = entry_price
+            entry_price = _get_price(v['ticker'], d0)
+            if entry_price > 0:
+                portfolio[v['ticker']] = entry_price
                     if start_date is None:
                         start_date = d0
 
@@ -770,7 +769,7 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
     # ── 매매 조건 + 범례 ──
     lines.append('')
     lines.append('━━━━━━━━━━━━━━━')
-    lines.append(f'매수: 3일 가중순위 ≤ {ENTRY_RANK}.0')
+    lines.append(f'매수: 3일 검증 상위 {ENTRY_RANK}종목')
     lines.append(f'매도: 3일 가중순위 > {EXIT_RANK}.0 또는 -10% 손절')
     lines.append(f'최대 {MAX_SLOTS}종목 보유')
 
@@ -1061,17 +1060,16 @@ def main():
     else:
         print("\nAI 리스크 필터 스킵 (추천 종목 없음)")
 
-    # v70: Rank-based picks: weighted_rank ≤ ENTRY_RANK + ✅ + 슬롯 제한
+    # v72: 포지션 기반 진입 (상위 ENTRY_RANK개) + 슬롯 제한
     from ranking_manager import ENTRY_RANK, EXIT_RANK, MAX_SLOTS
     if market_max_picks == 0:
         picks = []
     else:
-        picks = [c for c in all_candidates
-                 if c.get('weighted_rank', 999) <= ENTRY_RANK]
+        picks = sorted(all_candidates, key=lambda x: x.get('weighted_rank', 999))[:ENTRY_RANK]
         picks = picks[:MAX_SLOTS]  # 슬롯 제한
     if picks:
         stock_weight = round(100 / len(picks))
-    print(f"\n  최종 picks: {len(picks)}개 (진입: rank≤{ENTRY_RANK} · 이탈: rank>{EXIT_RANK} · 슬롯: {MAX_SLOTS} · 손절: -10%)")
+    print(f"\n  최종 picks: {len(picks)}개 (진입: top{ENTRY_RANK} · 이탈: wr>{EXIT_RANK} · 슬롯: {MAX_SLOTS} · 손절: -10%)")
 
     # ============================================================
     # AI 종목별 내러티브 (Signal 💬 줄용)
