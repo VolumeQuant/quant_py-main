@@ -226,11 +226,7 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
     if '자본' in magic_df.columns:
         magic_df = magic_df[magic_df['자본'] > 0].copy()
 
-    # --- 5. Fundamentals (PER/PBR) ---
-    fund_path = find_nearest_cache(preloaded['fundamentals'], date_str)
-    fund_df = pd.DataFrame()
-    if fund_path is not None:
-        fund_df = pd.read_parquet(fund_path)
+    # --- 5. Fundamentals — 제거됨 (PER/PBR은 DART 기반으로 strategy_b에서 계산) ---
 
     # --- 6. OHLCV → MA120, 모멘텀 ---
     price_df = ohlcv[ohlcv.index <= base_ts].copy()
@@ -257,18 +253,7 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
     multifactor_df = magic_df.copy()
     multifactor_df['종목명'] = multifactor_df['종목코드'].map(tnames)
 
-    # PER/PBR 병합
-    if not fund_df.empty:
-        live_cols = {}
-        if 'PER' in fund_df.columns:
-            live_cols['PER'] = 'PER_live'
-        if 'PBR' in fund_df.columns:
-            live_cols['PBR'] = 'PBR_live'
-        if live_cols:
-            fund_subset = fund_df[list(live_cols.keys())].rename(columns=live_cols)
-            multifactor_df = multifactor_df.merge(
-                fund_subset, left_on='종목코드', right_index=True, how='left'
-            )
+    # PER/PBR: DART 재무 + 시가총액으로 strategy_b에서 직접 계산
 
     strategy = MultiFactorStrategy()
     os.environ['DISABLE_FWD_BONUS'] = '1'
