@@ -23,42 +23,47 @@ class MultiFactorStrategy:
 
     def calculate_value_factors(self, data):
         """
-        밸류 팩터 계산
+        밸류 팩터 계산 — DART 재무 + pykrx 시가총액 기반
 
-        - PER, PBR, PCR, PSR: 낮을수록 좋음
-
-        pykrx 실시간 데이터(PER_live, PBR_live)가 있으면 우선 사용,
-        없으면 FnGuide 캐시에서 계산 (fallback).
+        - PER = 시가총액 / 당기순이익 (DART TTM)
+        - PBR = 시가총액 / 자본 (DART)
+        - PCR = 시가총액 / 영업현금흐름 (DART)
+        - PSR = 시가총액 / 매출액 (DART)
+        낮을수록 좋음. 분모 ≤ 0이면 NaN.
         """
-        # PER (Price to Earnings Ratio) — pykrx 실시간 우선
-        if 'PER_live' in data.columns:
-            data['PER'] = data['PER_live']
-            mask = (data['PER'] <= 0) | data['PER'].isna()
-            if mask.any() and '당기순이익' in data.columns:
-                data.loc[mask, 'PER'] = data.loc[mask, '시가총액'] / data.loc[mask, '당기순이익']
-        elif '당기순이익' in data.columns:
-            data['PER'] = data['시가총액'] / data['당기순이익']
-        elif 'EPS' in data.columns and '주가' in data.columns:
-            data['PER'] = data['주가'] / data['EPS']
+        import numpy as np
 
-        # PBR (Price to Book Ratio) — pykrx 실시간 우선
-        if 'PBR_live' in data.columns:
-            data['PBR'] = data['PBR_live']
-            mask = (data['PBR'] <= 0) | data['PBR'].isna()
-            if mask.any() and '자본' in data.columns:
-                data.loc[mask, 'PBR'] = data.loc[mask, '시가총액'] / data.loc[mask, '자본']
-        elif '자본' in data.columns:
-            data['PBR'] = data['시가총액'] / data['자본']
-        elif 'BPS' in data.columns and '주가' in data.columns:
-            data['PBR'] = data['주가'] / data['BPS']
+        # PER (Price to Earnings Ratio)
+        if '당기순이익' in data.columns and '시가총액' in data.columns:
+            data['PER'] = np.where(
+                data['당기순이익'] > 0,
+                data['시가총액'] / data['당기순이익'],
+                np.nan
+            )
 
-        # PCR (Price to Cashflow Ratio) — FnGuide 캐시
-        if '영업현금흐름' in data.columns:
-            data['PCR'] = data['시가총액'] / data['영업현금흐름']
+        # PBR (Price to Book Ratio)
+        if '자본' in data.columns and '시가총액' in data.columns:
+            data['PBR'] = np.where(
+                data['자본'] > 0,
+                data['시가총액'] / data['자본'],
+                np.nan
+            )
 
-        # PSR (Price to Sales Ratio) — FnGuide 캐시
-        if '매출액' in data.columns:
-            data['PSR'] = data['시가총액'] / data['매출액']
+        # PCR (Price to Cashflow Ratio)
+        if '영업현금흐름' in data.columns and '시가총액' in data.columns:
+            data['PCR'] = np.where(
+                data['영업현금흐름'] > 0,
+                data['시가총액'] / data['영업현금흐름'],
+                np.nan
+            )
+
+        # PSR (Price to Sales Ratio)
+        if '매출액' in data.columns and '시가총액' in data.columns:
+            data['PSR'] = np.where(
+                data['매출액'] > 0,
+                data['시가총액'] / data['매출액'],
+                np.nan
+            )
 
         return data
 
@@ -559,15 +564,15 @@ class MultiFactorStrategy:
             data = data[~extreme_mask].copy()
             print(f"단일팩터 바닥: {extreme_count}개 제외 (1개라도 <{EXTREME_THRESHOLD}σ) {extreme_names[:5]}")
 
-        # 8. 최종 가중합 V5 + Q20 + G45 + M30 (v71 국면 적응형)
-        V_W, Q_W, G_W, M_W = 0.05, 0.20, 0.45, 0.30
+        # 8. 최종 가중합 V15 + Q25 + G40 + M20 (v72 DART 기반 최적화)
+        V_W, Q_W, G_W, M_W = 0.15, 0.25, 0.40, 0.20
 
         if momentum_zs:
             data['멀티팩터_점수'] = (data['밸류_점수'] * V_W +
                                     data['퀄리티_점수'] * Q_W +
                                     data['성장_점수'] * G_W +
                                     data['모멘텀_점수'] * M_W)
-            print(f"멀티팩터 가중치: V5 + Q20 + G45 + M30 ({sn_tag})")
+            print(f"멀티팩터 가중치: V15 + Q25 + G40 + M20 ({sn_tag})")
         else:
             data['멀티팩터_점수'] = (data['밸류_점수'] * 0.5 +
                                     data['퀄리티_점수'] * 0.5)

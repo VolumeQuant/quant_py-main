@@ -502,26 +502,7 @@ def run_strategy_b_scoring(
                 fwd_count = multifactor_df['forward_per'].notna().sum()
                 print(f"  Forward PER 병합: {fwd_count}/{len(multifactor_df)}개 종목")
 
-        # pykrx 실시간 PER/PBR/DIV 병합
-        if not fundamental_df.empty:
-            live_cols = {}
-            if 'PER' in fundamental_df.columns:
-                live_cols['PER'] = 'PER_live'
-            if 'PBR' in fundamental_df.columns:
-                live_cols['PBR'] = 'PBR_live'
-            if 'DIV' in fundamental_df.columns:
-                live_cols['DIV'] = 'DIV_live'
-
-            if live_cols:
-                fund_subset = fundamental_df[list(live_cols.keys())].rename(columns=live_cols)
-                multifactor_df = multifactor_df.merge(
-                    fund_subset,
-                    left_on='종목코드',
-                    right_index=True,
-                    how='left'
-                )
-                live_count = multifactor_df['PER_live'].notna().sum() if 'PER_live' in multifactor_df.columns else 0
-                print(f"  pykrx 실시간 데이터 병합: {live_count}/{len(multifactor_df)}개 종목")
+        # PER/PBR: DART 재무 + pykrx 시가총액으로 직접 계산 (strategy_b에서 처리)
 
         strategy = MultiFactorStrategy()
         selected, scored = strategy.run(multifactor_df, price_df=price_df, n_stocks=len(multifactor_df), sector_map=sector_map, base_date=BASE_DATE)
@@ -662,15 +643,8 @@ def main():
         filtered_count = before_count - len(magic_df)
         print(f"자본잠식 종목 제외: {filtered_count}개 → {len(magic_df)}개 남음")
 
-    # =========================================================================
-    # 3.5단계: pykrx 실시간 펀더멘털 수집 (PER/PBR/DIV)
-    # =========================================================================
-    print("\n[3.5단계] pykrx 실시간 펀더멘털 수집 (PER/PBR/DIV)")
-    fundamental_df = collector.get_market_fundamental_batch(BASE_DATE)
-    if not fundamental_df.empty:
-        print(f"  pykrx 펀더멘털: {len(fundamental_df)}개 종목 (PER/PBR/EPS/BPS/DIV)")
-    else:
-        print("  pykrx 펀더멘털 수집 실패 - FnGuide 캐시로 fallback")
+    # 3.5단계: 제거됨 — PER/PBR은 DART 재무 + pykrx 시가총액으로 strategy_b에서 직접 계산
+    fundamental_df = pd.DataFrame()
 
     # =========================================================================
     # 4단계: OHLCV 수집 (캐시 + 증분 업데이트)
