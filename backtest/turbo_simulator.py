@@ -420,9 +420,10 @@ class TurboSimulator:
 
     def run_fast(self, v_w, q_w, g_w, m_w, g_rev,
                  entry_param, exit_param, max_slots, top_n=20, stop_loss=-0.10,
-                 corr_threshold=None):
+                 corr_threshold=None, trailing_stop=None):
         """Run simulation. Builds cache if needed, then runs hot loop.
         corr_threshold: None=필터 없음, 0.65=상관관계 >= 0.65인 종목 스킵
+        trailing_stop: None=미사용, -0.15=고점 대비 -15%이면 매도
         """
         self._ensure_cache(v_w, q_w, g_w, m_w, g_rev, top_n)
         return _run_inner(
@@ -430,12 +431,13 @@ class TurboSimulator:
             self._has_bench, self._date_row_indices, len(self.dates),
             entry_param, exit_param, max_slots, stop_loss,
             self._corr_all if corr_threshold is not None else None,
-            corr_threshold)
+            corr_threshold, trailing_stop)
 
 
 def _run_inner(flat_pipelines, price_arr, bench_arr, has_bench,
                date_rows, n_dates, entry_param, exit_param, max_slots,
-               stop_loss=-0.10, corr_maps=None, corr_threshold=None):
+               stop_loss=-0.10, corr_maps=None, corr_threshold=None,
+               trailing_stop=None):
     """Pure Python hot loop — zero numpy function calls, zero pandas.
 
     All data access is:
@@ -444,14 +446,18 @@ def _run_inner(flat_pipelines, price_arr, bench_arr, has_bench,
       - cand_cols[i]: plain Python list indexing
     No dict.get() in the critical path (replaced by flat array).
     Candidates are pre-sorted during cache build.
+
+    trailing_stop: None=미사용, -0.15=고점 대비 -15%이면 매도
     """
     portfolio = {}  # {col_index: entry_price}
+    peak_prices = {}  # {col_index: peak_price} — 트레일링 스톱용
     # Pre-allocate return arrays as plain Python lists
     daily_rets = [0.0] * n_dates
     bench_rets = [0.0] * n_dates
     holdings_count = [0] * n_dates
 
     use_stop_loss = stop_loss is not None
+    use_trailing = trailing_stop is not None
 
     for i in range(2, n_dates):
         pipe = flat_pipelines[i]
@@ -462,16 +468,34 @@ def _run_inner(flat_pipelines, price_arr, bench_arr, has_bench,
         wrank_arr, cand_cols, cand_prices, cand_wranks = pipe
         cur_row = date_rows[i]
 
+        # === UPDATE PEAK PRICES ===
+        if use_trailing and portfolio and cur_row >= 0:
+            for col in portfolio:
+                cur_p = price_arr[cur_row, col]
+                if cur_p == cur_p and cur_p > 0:  # NaN check
+                    if col in peak_prices:
+                        if cur_p > peak_prices[col]:
+                            peak_prices[col] = cur_p
+                    else:
+                        peak_prices[col] = cur_p
+
         # === EXIT ===
         if portfolio:
             to_remove = []
             for col, ep in portfolio.items():
                 should_exit = False
-                # 1. Stop loss
+                # 1. Stop loss (진입가 대비)
                 if use_stop_loss and cur_row >= 0:
                     cur_p = price_arr[cur_row, col]
                     if cur_p == cur_p and ep > 0:  # NaN check: x != x for NaN
                         if (cur_p / ep - 1.0) <= stop_loss:
+                            should_exit = True
+                # 1.5. Trailing stop (고점 대비)
+                if not should_exit and use_trailing and cur_row >= 0:
+                    cur_p = price_arr[cur_row, col]
+                    pk = peak_prices.get(col, ep)
+                    if cur_p == cur_p and pk > 0:
+                        if (cur_p / pk - 1.0) <= trailing_stop:
                             should_exit = True
                 # 2. Strategy exit: wrank_arr[col] > exit_param
                 #    Sentinel value (_SENTINEL_WRANK=9999) handles missing tickers
@@ -482,6 +506,8 @@ def _run_inner(flat_pipelines, price_arr, bench_arr, has_bench,
                     to_remove.append(col)
             for col in to_remove:
                 del portfolio[col]
+                if col in peak_prices:
+                    del peak_prices[col]
 
         # === ENTRY ===
         # cand_cols/cand_prices/cand_wranks are pre-sorted by score_100 desc
@@ -516,6 +542,7 @@ def _run_inner(flat_pipelines, price_arr, bench_arr, has_bench,
                             if is_correlated:
                                 continue
                         portfolio[c] = cand_prices[k]
+                        peak_prices[c] = cand_prices[k]
                         selected_cols.append(c)
                         slots_avail -= 1
 
@@ -542,7 +569,9 @@ def _run_inner(flat_pipelines, price_arr, bench_arr, has_bench,
                     if b_c == b_c and b_p == b_p and b_p > 0:
                         bench_rets[i] = b_c / b_p - 1.0
 
-    return _calc_metrics(daily_rets, bench_rets, holdings_count)
+    metrics = _calc_metrics(daily_rets, bench_rets, holdings_count)
+    metrics['_daily_rets'] = daily_rets
+    return metrics
 
 
 class TurboRunner:
@@ -566,10 +595,10 @@ class TurboRunner:
         self._corr_all = getattr(tsim, '_corr_all', None)
 
     def run(self, entry_param, exit_param, max_slots, stop_loss=-0.10,
-            corr_threshold=None):
+            corr_threshold=None, trailing_stop=None):
         return _run_inner(
             self._flat, self._price_arr, self._bench_arr,
             self._has_bench, self._date_rows, self._n_dates,
             entry_param, exit_param, max_slots, stop_loss,
             self._corr_all if corr_threshold is not None else None,
-            corr_threshold)
+            corr_threshold, trailing_stop)
