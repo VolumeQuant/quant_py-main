@@ -235,13 +235,15 @@ def extract_magic_formula_data(fs_dict, base_date=None, use_ttm=True):
     flow_accounts = [
         '당기순이익', '법인세비용', '세전계속사업이익',
         '매출액', '매출총이익', '영업이익',
-        '영업활동으로인한현금흐름', '감가상각비'
+        '영업활동으로인한현금흐름', '감가상각비',
+        '지배주주당기순이익',
     ]
 
     # 재무상태표 항목 (최근 분기 값 사용 - 스냅샷)
     stock_accounts = [
         '자산', '부채', '유동부채', '유동자산', '비유동자산',
-        '현금및현금성자산', '자본'
+        '현금및현금성자산', '자본',
+        '지배주주자본',
     ]
 
     # 기준일 설정 (공시 시차 반영)
@@ -329,11 +331,18 @@ def extract_magic_formula_data(fs_dict, base_date=None, use_ttm=True):
                 index='종목코드', columns='계정', values='값', aggfunc='first'
             )
 
-            # 재무상태표: 최근 분기 값
+            # 재무상태표: 최근 분기 값 (해당 날짜 없으면 가장 가까운 이전 값)
             stock_data = ttm_data[
                 (ttm_data['계정'].isin(stock_accounts)) &
                 (ttm_data['기준일'] == latest_date)
             ]
+            # 지배주주자본 등 Q4 미도출 항목: 직전 분기 폴백
+            missing_stock = set(stock_accounts) - set(stock_data['계정'].unique())
+            if missing_stock:
+                for ms_acct in missing_stock:
+                    fallback = ttm_data[ttm_data['계정'] == ms_acct].sort_values('기준일', ascending=False)
+                    if not fallback.empty:
+                        stock_data = pd.concat([stock_data, fallback.head(1)])
             stock_pivot = stock_data.pivot_table(
                 index='종목코드', columns='계정', values='값', aggfunc='first'
             )
@@ -394,6 +403,8 @@ def extract_magic_formula_data(fs_dict, base_date=None, use_ttm=True):
         '매출총이익': '매출총이익',
         '영업활동으로인한현금흐름': '영업현금흐름',
         '영업이익': '영업이익',
+        '지배주주당기순이익': '지배주주당기순이익',
+        '지배주주자본': '지배주주자본',
     }
 
     # 컬럼명 변경 (원본 계정명 → 간소화된 이름)

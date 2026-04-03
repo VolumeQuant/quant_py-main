@@ -51,18 +51,39 @@ ACCOUNT_ID_MAP = {
     'ifrs-full_NoncurrentAssets': '비유동자산',
     'ifrs-full_CashAndCashEquivalents': '현금및현금성자산',
     'ifrs-full_Equity': '자본',
+    # 2018~2019 DART API 구형 접두사 (ifrs-full_ 대신 ifrs_)
+    'ifrs_Revenue': '매출액',
+    'ifrs_GrossProfit': '매출총이익',
+    'ifrs_ProfitLossBeforeTax': '세전계속사업이익',
+    'ifrs_ProfitLoss': '당기순이익',
+    'ifrs_IncomeTaxExpenseContinuingOperations': '법인세비용',
+    'ifrs_CashFlowsFromUsedInOperatingActivities': '영업활동으로인한현금흐름',
+    'ifrs_Assets': '자산',
+    'ifrs_Liabilities': '부채',
+    'ifrs_CurrentAssets': '유동자산',
+    'ifrs_CurrentLiabilities': '유동부채',
+    'ifrs_NoncurrentAssets': '비유동자산',
+    'ifrs_CashAndCashEquivalents': '현금및현금성자산',
+    'ifrs_Equity': '자본',
+    # 지배주주 귀속 (PER/PBR/ROE 정확 계산용)
+    'ifrs-full_ProfitLossAttributableToOwnersOfParent': '지배주주당기순이익',
+    'ifrs-full_EquityAttributableToOwnersOfParent': '지배주주자본',
+    'ifrs_ProfitLossAttributableToOwnersOfParent': '지배주주당기순이익',
+    'ifrs_EquityAttributableToOwnersOfParent': '지배주주자본',
 }
 
 # 손익/현금흐름 항목 (Q4 도출 대상 — flow items)
 FLOW_ACCOUNTS = {
     '매출액', '매출총이익', '영업이익', '세전계속사업이익',
     '당기순이익', '법인세비용', '영업활동으로인한현금흐름',
+    '지배주주당기순이익',
 }
 
 # 재무상태표 항목 (스냅샷 — Q4 도출 불필요)
 STOCK_ACCOUNTS = {
     '자산', '부채', '유동자산', '유동부채',
     '비유동자산', '현금및현금성자산', '자본',
+    '지배주주자본',
 }
 
 # 보고서 코드
