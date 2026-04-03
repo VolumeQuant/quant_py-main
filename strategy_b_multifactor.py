@@ -23,31 +23,27 @@ class MultiFactorStrategy:
 
     def calculate_value_factors(self, data):
         """
-        밸류 팩터 계산 — DART 재무 + pykrx 시가총액 기반
+        밸류 팩터 계산
 
-        - PER = 시가총액 / 당기순이익 (DART TTM)
-        - PBR = 시가총액 / 자본 (DART)
+        - PER = pykrx fundamental (KRX 공식, 지배주주 기준)
+        - PBR = pykrx fundamental (KRX 공식, 지배주주 기준)
         - PCR = 시가총액 / 영업현금흐름 (DART)
         - PSR = 시가총액 / 매출액 (DART)
         낮을수록 좋음. 분모 ≤ 0이면 NaN.
         """
         import numpy as np
 
-        # PER (Price to Earnings Ratio)
-        if '당기순이익' in data.columns and '시가총액' in data.columns:
-            data['PER'] = np.where(
-                data['당기순이익'] > 0,
-                data['시가총액'] / data['당기순이익'],
-                np.nan
-            )
+        # PER — pykrx fundamental (KRX 공식, 지배주주 기준). 없으면 NaN.
+        if 'pykrx_PER' in data.columns:
+            data['PER'] = data['pykrx_PER'].where(data['pykrx_PER'] > 0, np.nan)
+        else:
+            data['PER'] = np.nan
 
-        # PBR (Price to Book Ratio)
-        if '자본' in data.columns and '시가총액' in data.columns:
-            data['PBR'] = np.where(
-                data['자본'] > 0,
-                data['시가총액'] / data['자본'],
-                np.nan
-            )
+        # PBR — pykrx fundamental. 없으면 NaN.
+        if 'pykrx_PBR' in data.columns:
+            data['PBR'] = data['pykrx_PBR'].where(data['pykrx_PBR'] > 0, np.nan)
+        else:
+            data['PBR'] = np.nan
 
         # PCR (Price to Cashflow Ratio)
         if '영업현금흐름' in data.columns and '시가총액' in data.columns:
@@ -75,8 +71,15 @@ class MultiFactorStrategy:
         - GPA (Gross Profit to Asset): 높을수록 좋음
         - CFO (Cash Flow to Asset): 높을수록 좋음
         """
-        if '당기순이익' in data.columns and '자본' in data.columns:
-            data['ROE'] = data['당기순이익'] / data['자본'] * 100
+        # ROE — pykrx EPS/BPS (지배주주 기준). 없으면 NaN.
+        if 'pykrx_EPS' in data.columns and 'pykrx_BPS' in data.columns:
+            data['ROE'] = np.where(
+                data['pykrx_BPS'] > 0,
+                data['pykrx_EPS'] / data['pykrx_BPS'] * 100,
+                np.nan
+            )
+        else:
+            data['ROE'] = np.nan
 
         if '매출총이익' in data.columns and '자산' in data.columns:
             data['GPA'] = data['매출총이익'] / data['자산'] * 100
@@ -544,9 +547,10 @@ class MultiFactorStrategy:
                 data[score_col] = 0.0
             data[score_col] = data[score_col].fillna(0.0)
 
-        # 6.5. ROE 하드게이트: ROE < 0% (적자 기업) → 무조건 제외
+        # 6.5. ROE 하드게이트: ROE <= 0% (적자 기업) → 무조건 제외
+        # pykrx는 적자 시 EPS=0 반환 → ROE=0이 되므로 <= 0으로 필터
         if 'ROE' in data.columns:
-            roe_neg_mask = data['ROE'] < 0
+            roe_neg_mask = data['ROE'] <= 0
             roe_neg_count = roe_neg_mask.sum()
             if roe_neg_count > 0:
                 roe_neg_names = data.loc[roe_neg_mask, '종목명'].tolist() if '종목명' in data.columns else []
@@ -564,7 +568,7 @@ class MultiFactorStrategy:
             data = data[~extreme_mask].copy()
             print(f"단일팩터 바닥: {extreme_count}개 제외 (1개라도 <{EXTREME_THRESHOLD}σ) {extreme_names[:5]}")
 
-        # 8. 최종 가중합 V15 + Q25 + G40 + M20 (v72 DART 기반 최적화)
+        # 8. 최종 가중합
         V_W, Q_W, G_W, M_W = 0.15, 0.25, 0.40, 0.20
 
         if momentum_zs:
@@ -572,7 +576,7 @@ class MultiFactorStrategy:
                                     data['퀄리티_점수'] * Q_W +
                                     data['성장_점수'] * G_W +
                                     data['모멘텀_점수'] * M_W)
-            print(f"멀티팩터 가중치: V15 + Q25 + G40 + M20 ({sn_tag})")
+            print(f"멀티팩터 가중치: V{int(V_W*100)} + Q{int(Q_W*100)} + G{int(G_W*100)} + M{int(M_W*100)} ({sn_tag})")
         else:
             data['멀티팩터_점수'] = (data['밸류_점수'] * 0.5 +
                                     data['퀄리티_점수'] * 0.5)

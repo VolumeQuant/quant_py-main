@@ -39,20 +39,41 @@
 
 ---
 
-# 🇰🇷 KR 전략 — quant_py-main (v72, 2026-03-30)
+# 🇰🇷 KR 전략 — quant_py-main (v73, 2026-04-03)
 
 > 경로: `C:\dev\claude code\quant_py-main`
 
-## 팩터 가중치 (v72 DART 기반)
-- **V15 + Q25 + G40 + M20** (g_rev=0.7: 매출70% + 영업이익30%)
-- PER/PBR: DART 재무 + pykrx 시가총액으로 직접 계산 (pykrx 의존 제거)
-- 2020~2026 DART 기반 그리드 서치 Sharpe 1위
+## 투 트랙 전략 (v73)
 
-## 진입/퇴출
-- 진입: ✅ 3일 검증 상위 5종목 (포지션 기반)
-- 퇴출: weighted_rank > 10.0 (값 기준)
+### Core (70%) — 안정형
+- **V20 + Q20 + G40 + M20**
+- G 내부: g_rev=0.2 (매출성장률 20% + **Revenue Acceleration 80%**)
+- 진입: rank ≤ 5, 퇴출: WR > 7, 슬롯 5
+- 상관관계 필터: 0.5 (60일, 기존 보유 + 같은 날 신규 체크)
+- Calmar=2.53, CAGR=54.8%, MDD=21.6%
+
+### Boost (30%) — 공격형
+- **V15 + Q5 + G65 + M15**
+- G 내부: g_rev=1.0 (매출성장률 100%)
+- 진입: rank ≤ 3, 퇴출: WR > 4, 슬롯 3
+- 상관관계 필터: 없음
+- Calmar=2.00, CAGR=95.0%, MDD=47.6%
+
+### 공통
+- PER/PBR/ROE: pykrx (KRX 공식)
+- 재무제표: DART (매출액, 영업이익, 자산 등)
 - 손절: -10% (쿨다운 없음)
 - 트레일링 스톱: 최고가 대비 -20% (수동)
+- FWD_BONUS: 비활성화
+- score_100: (ws + 0.7) / 2.4 × 100
+
+## 핵심 발견 (v73 Grid Search)
+- Revenue Acceleration(매출 가속도)이 가장 강력한 Growth 서브팩터
+- 영업이익 변화(oca)는 쓸모없음 (g_rev=1.0 항상 최적)
+- 매출총이익은 매출액보다 못함
+- MA120 필터 유지 필수 (제거 시 OOS 붕괴)
+- 거래대금 30억은 알파 감소 (20억 유지)
+- 상관관계 필터: G집중형에 효과 없음, 균형형에만 유효
 
 ## 유니버스 필터
 - 시총 ≥ 1000억, 거래대금: 대형 ≥ 50억, 중소형 ≥ 20억
@@ -63,14 +84,8 @@
 - VIX 비중 조절 안 함
 
 ## 메시지
-- Signal: 시스템 수익률 → 상관관계 경고 → 매수 후보 → 선정 과정 → 종목 근거
-- 상관관계: 🔗 그룹 자동 묶기 (connected component, 0.65 기준)
-  - 2종목: `🔗 A·B 유사도 67%` + `→ 택1 권장`
-  - 3종목+: `🔗 A·B·C 유사도 80%` + `→ 택1~2 권장`
-  - 유사도: 2종목=정확값, 3종목+=그룹 내 평균
-- 선정 과정: 고객 친화적 (전문 용어 없음)
-- Watchlist: 매도 검토선 WR > 10.0 값 기준
-- score_100: (ws + 1.5) / 4.0 × 100
+- Signal: Core/Boost 분리 표시
+- 상관관계: Core에서 🔗 그룹 자동 묶기 (0.5 기준, 자동 필터링)
 - 날짜: 항상 전일 기준 (d < today_str)
 
 ## 스케줄러
@@ -78,6 +93,12 @@
 - 종목명 캐시: 매주 일요일 10:00
 
 ## 주의사항
+- Core/Boost 각각 별도 ranking 파일 생성
 - state/ ranking 재계산: composite_rank/score만 변경 가능 (rev_z/oca_z 활용)
 - OHLCV: 프로덕션 실행 시 백테스트용도 동기화
-- production_simulator: 강제퇴출 버그 수정됨, WR 동점 시 score tiebreak
+
+## 백테스트 도구
+- TurboSimulator: 5ms/run (56x 가속), turbo_simulator.py
+- fast_generate_rankings_v2.py: 0.3초/일 (27x 가속), --rev-accel/--gross-profit/--no-ma120/--strict-filter
+- grid_search_final.py: 3워커 병렬, Calmar 기준, 안정성 필터, 연도별 분해
+- ProcessPoolExecutor 기반 Windows 호환 병렬
