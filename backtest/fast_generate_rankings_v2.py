@@ -1046,7 +1046,8 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
     mcap_df['시가총액_억'] = mcap_df['시가총액'] / 1e8
 
     # 시총 필터
-    filtered = mcap_df[mcap_df['시가총액_억'] >= 1000].copy()
+    min_mcap = preloaded.get('min_mcap', 1000)
+    filtered = mcap_df[mcap_df['시가총액_억'] >= min_mcap].copy()
 
     # --- 2. 거래대금 (사전계산된 20일 평균) ---
     avg_vol_key = find_nearest_cache(preloaded['avg_volume'], date_str, max_gap_days=5)
@@ -1243,6 +1244,11 @@ def main():
     use_strict_filter = '--strict-filter' in flags
     if use_strict_filter:
         print('[옵션] 거래대금 30억 + 키워드 화재/생명 추가')
+    min_mcap = 1000
+    for f in flags:
+        if f.startswith('--min-mcap='):
+            min_mcap = int(f.split('=')[1])
+            print(f'[옵션] 시총 하한: {min_mcap}억')
 
     global CACHE_DIR
     for f in flags:
@@ -1291,6 +1297,7 @@ def main():
                                  use_gross_profit=use_gross_profit)
     preloaded['no_ma120'] = no_ma120
     preloaded['strict_filter'] = use_strict_filter
+    preloaded['min_mcap'] = min_mcap
 
     # 생성
     success = 0
