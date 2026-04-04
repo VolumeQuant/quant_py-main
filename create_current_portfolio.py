@@ -502,7 +502,15 @@ def run_strategy_b_scoring(
                 fwd_count = multifactor_df['forward_per'].notna().sum()
                 print(f"  Forward PER 병합: {fwd_count}/{len(multifactor_df)}개 종목")
 
-        # PER/PBR: DART 재무 + pykrx 시가총액으로 직접 계산 (strategy_b에서 처리)
+        # pykrx PER/PBR/EPS/BPS 병합 (strategy_b에서 pykrx_PER 등으로 사용)
+        if not fundamental_df.empty:
+            for col, new_col in [('PER', 'pykrx_PER'), ('PBR', 'pykrx_PBR'),
+                                  ('EPS', 'pykrx_EPS'), ('BPS', 'pykrx_BPS')]:
+                if col in fundamental_df.columns:
+                    fund_map = fundamental_df[col].to_dict()
+                    multifactor_df[new_col] = multifactor_df['종목코드'].map(fund_map)
+            pykrx_count = multifactor_df['pykrx_PER'].notna().sum() if 'pykrx_PER' in multifactor_df.columns else 0
+            print(f"  pykrx PER/PBR 병합: {pykrx_count}/{len(multifactor_df)}개")
 
         strategy = MultiFactorStrategy()
         selected, scored = strategy.run(multifactor_df, price_df=price_df, n_stocks=len(multifactor_df), sector_map=sector_map, base_date=BASE_DATE)
@@ -643,8 +651,13 @@ def main():
         filtered_count = before_count - len(magic_df)
         print(f"자본잠식 종목 제외: {filtered_count}개 → {len(magic_df)}개 남음")
 
-    # 3.5단계: 제거됨 — PER/PBR은 DART 재무 + pykrx 시가총액으로 strategy_b에서 직접 계산
-    fundamental_df = pd.DataFrame()
+    # 3.5단계: pykrx 실시간 펀더멘탈 수집 (PER/PBR/EPS/BPS)
+    print("\n[3.5단계] pykrx 실시간 펀더멘탈 수집 (PER/PBR/EPS/BPS)")
+    fundamental_df = collector.get_market_fundamental_batch(BASE_DATE)
+    if not fundamental_df.empty:
+        print(f"  pykrx 펀더멘털: {len(fundamental_df)}개 종목")
+    else:
+        print("  pykrx 펀더멘털 수집 실패")
 
     # =========================================================================
     # 4단계: OHLCV 수집 (캐시 + 증분 업데이트)
