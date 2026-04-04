@@ -157,6 +157,10 @@ def _compute_ticker_growth_events(ticker, fs_df, rev_account='매출액'):
 
         q_dates = sorted(set(d for d, _ in q_vals.keys()))
 
+        # 계정별 날짜 리스트 (0 채우기 금지 — 실제 데이터 있는 분기만)
+        rev_dates = sorted(d for d in q_dates if (d, rev_account) in q_vals)
+        op_dates = sorted(d for d in q_dates if (d, '영업이익') in q_vals)
+
         # 연간 데이터 (폴백용)
         y_rev = {}  # 기준일 → 매출액
         y_rcept_map = {}
@@ -176,30 +180,38 @@ def _compute_ticker_growth_events(ticker, fs_df, rev_account='매출액'):
             else:
                 eff_date = qd + timedelta(days=90)
 
-            avail_dates = sorted(q_dates[:qi+1], reverse=True)
             rev_yoy = None
             oca = None
 
-            # TTM 매출 YoY (dict lookup)
-            if len(avail_dates) >= 8:
-                recent_4 = avail_dates[:4]
-                prev_4 = avail_dates[4:8]
-                r4 = sum(q_vals.get((d, rev_account), 0) for d in recent_4)
-                p4 = sum(q_vals.get((d, rev_account), 0) for d in prev_4)
-                if p4 > 0:
-                    rev_yoy = (r4 / p4 - 1) * 100
+            # TTM 매출 YoY — 매출액 존재하는 분기만 사용
+            rev_avail = sorted([d for d in rev_dates if d <= qd], reverse=True)
+            if len(rev_avail) >= 8:
+                recent_4 = rev_avail[:4]
+                prev_4 = rev_avail[4:8]
+                # 갭 체크: 18개월 이상 갭이면 TTM 무효
+                gap_days = (recent_4[-1] - prev_4[0]).days
+                if gap_days <= 550:
+                    r4 = sum(q_vals[(d, rev_account)] for d in recent_4)
+                    p4 = sum(q_vals[(d, rev_account)] for d in prev_4)
+                    if p4 > 0:
+                        rev_yoy = (r4 / p4 - 1) * 100
 
-                # op_change_asset
-                op_r = sum(q_vals.get((d, '영업이익'), 0) for d in recent_4)
-                op_p = sum(q_vals.get((d, '영업이익'), 0) for d in prev_4)
-                # 직전 4분기 중 가장 최근 자산
-                prev_asset = None
-                for d in sorted(prev_4):  # 오래된→최신 순
-                    a = q_vals.get((d, '자산'))
-                    if a is not None:
-                        prev_asset = a
-                if prev_asset and prev_asset > 0:
-                    oca = (op_r - op_p) / prev_asset * 100
+            # op_change_asset — 영업이익 존재하는 분기만 사용
+            op_avail = sorted([d for d in op_dates if d <= qd], reverse=True)
+            if len(op_avail) >= 8:
+                recent_4_op = op_avail[:4]
+                prev_4_op = op_avail[4:8]
+                gap_days_op = (recent_4_op[-1] - prev_4_op[0]).days
+                if gap_days_op <= 550:
+                    op_r = sum(q_vals[(d, '영업이익')] for d in recent_4_op)
+                    op_p = sum(q_vals[(d, '영업이익')] for d in prev_4_op)
+                    prev_asset = None
+                    for d in sorted(prev_4_op):
+                        a = q_vals.get((d, '자산'))
+                        if a is not None:
+                            prev_asset = a
+                    if prev_asset and prev_asset > 0:
+                        oca = (op_r - op_p) / prev_asset * 100
 
             # 연간 폴백 for rev_yoy
             if rev_yoy is None and y_rev:
@@ -546,6 +558,8 @@ def preload_all_data(start_str, end_str, trading_dates=None, use_rev_accel=False
         except Exception:
             pass
 
+    from create_current_portfolio import _merge_fs_supplement
+    supplement_total = 0
     all_tickers = set(dart_map) | set(fn_map)
     for ticker in all_tickers:
         if ticker in dart_map:
@@ -553,6 +567,21 @@ def preload_all_data(start_str, end_str, trading_dates=None, use_rev_accel=False
                 data['fs'][ticker] = fn_map[ticker]
                 fn_count += 1
                 mismatch_swap += 1
+            elif ticker in fn_map:
+                dart_q = len(dart_map[ticker][dart_map[ticker]['공시구분'] == 'q']['기준일'].unique())
+                fn_q = len(fn_map[ticker][fn_map[ticker]['공시구분'] == 'q']['기준일'].unique())
+                if dart_q < 8 and fn_q > dart_q:
+                    # DART 부족 → FnGuide 주 데이터 + DART 보충
+                    merged, n_sup = _merge_fs_supplement(fn_map[ticker], dart_map[ticker])
+                    data['fs'][ticker] = merged
+                    fn_count += 1
+                    supplement_total += n_sup
+                else:
+                    # DART 기반 + FnGuide 보충
+                    merged, n_sup = _merge_fs_supplement(dart_map[ticker], fn_map[ticker])
+                    data['fs'][ticker] = merged
+                    dart_count += 1
+                    supplement_total += n_sup
             else:
                 data['fs'][ticker] = dart_map[ticker]
                 dart_count += 1
@@ -561,7 +590,8 @@ def preload_all_data(start_str, end_str, trading_dates=None, use_rev_accel=False
             fn_count += 1
 
     swap_msg = f', 불일치→FnGuide {mismatch_swap}' if mismatch_swap else ''
-    print(f'    {len(data["fs"])}종목 (DART {dart_count} + FnGuide {fn_count}{swap_msg})')
+    sup_msg = f', FnGuide보충 {supplement_total}건' if supplement_total else ''
+    print(f'    {len(data["fs"])}종목 (DART {dart_count} + FnGuide {fn_count}{swap_msg}{sup_msg})')
 
     # 6. Growth 팩터 사전계산
     fs_for_growth = dict(data['fs'])
@@ -655,7 +685,10 @@ def precompute_avg_volume(market_cap_dict):
 # ============================================================================
 
 def vectorized_ma120_filter(price_df, universe_tickers, base_ts):
-    """MA120 필터 — 벡터화 (per-ticker 루프 제거)"""
+    """MA120 필터 — 벡터화 (per-ticker 루프 제거)
+
+    120일 미만 종목은 필터 면제 (중장기 추세 판단 불가).
+    """
     valid = [t for t in universe_tickers if t in price_df.columns]
     if not valid:
         return [], []
@@ -669,10 +702,13 @@ def vectorized_ma120_filter(price_df, universe_tickers, base_ts):
     current = prices_slice.iloc[-1]
     # MA120
     ma120 = prices_slice.mean()
-    # 필터: 현재가 >= MA120 (원본 코드는 current >= ma120, buffer 없음)
+    # 필터: 현재가 >= MA120
     mask = current >= ma120
-    # NaN 처리: 가격 없는 종목 제외
-    mask = mask.fillna(False)
+    # 120일 미만 종목 (NaN current 또는 NaN ma120) → 필터 면제 (통과)
+    # valid_count: 각 종목의 유효 데이터 수
+    valid_counts = prices_slice.notna().sum()
+    exempt = valid_counts < 120  # 120일 미만 → 면제
+    mask = mask.fillna(False) | exempt
 
     passed = mask[mask].index.tolist()
     failed = mask[~mask].index.tolist()
@@ -1001,8 +1037,8 @@ def calculate_multifactor_fast(multifactor_df, price_df, sector_map, base_date,
     # 최종 가중합 (환경변수로 동적 설정)
     V_W = float(os.environ.get('FACTOR_V_W', '0.20'))
     Q_W = float(os.environ.get('FACTOR_Q_W', '0.20'))
-    G_W = float(os.environ.get('FACTOR_G_W', '0.45'))
-    M_W = float(os.environ.get('FACTOR_M_W', '0.15'))
+    G_W = float(os.environ.get('FACTOR_G_W', '0.30'))
+    M_W = float(os.environ.get('FACTOR_M_W', '0.30'))
     if momentum_zs:
         data['멀티팩터_점수'] = (data['밸류_점수'] * V_W +
                                 data['퀄리티_점수'] * Q_W +

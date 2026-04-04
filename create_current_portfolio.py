@@ -170,53 +170,112 @@ def _check_data_mismatch(dart_df, fn_df):
         return False
 
 
-def load_fs_data_dart_first(tickers):
-    """재무제표 로드: DART 우선 → FnGuide 폴백 (캐시만, 크롤링 없음)
+def _merge_fs_supplement(primary_df, secondary_df):
+    """DART(primary)에 누락된 계정을 FnGuide(secondary)에서 보충.
 
-    DART vs FnGuide 주요 계정 불일치 종목(CFS/OFS 혼재, 지주회사 등)은 FnGuide로 교체.
+    두 소스의 데이터를 완전 결합. primary에 없는 분기/계정도 secondary에서 가져옴.
+    데이터 갭은 growth 계산 시 별도 검증 (TTM 갭 체크).
+    """
+    # primary의 기존 키 세트
+    primary_keys = set()
+    for _, row in primary_df.iterrows():
+        primary_keys.add((row['기준일'], row['공시구분'], row['계정']))
+
+    # primary의 (기준일, 공시구분) → rcept_dt 매핑
+    rcept_map = {}
+    if 'rcept_dt' in primary_df.columns:
+        for _, row in primary_df.iterrows():
+            key = (row['기준일'], row['공시구분'])
+            if key not in rcept_map and pd.notna(row.get('rcept_dt')):
+                rcept_map[key] = row['rcept_dt']
+
+    supplement_rows = []
+    for _, row in secondary_df.iterrows():
+        full_key = (row['기준일'], row['공시구분'], row['계정'])
+        if full_key not in primary_keys and pd.notna(row['값']):
+            period_key = (row['기준일'], row['공시구분'])
+            new_row = {
+                '계정': row['계정'],
+                '기준일': row['기준일'],
+                '값': row['값'],
+                '종목코드': row.get('종목코드', primary_df.iloc[0].get('종목코드', '')),
+                '공시구분': row['공시구분'],
+            }
+            if 'rcept_dt' in primary_df.columns:
+                # primary에 같은 분기 rcept_dt 있으면 복사, 없으면 secondary 것 사용
+                rcept = rcept_map.get(period_key)
+                if rcept is None and 'rcept_dt' in secondary_df.columns:
+                    rcept = row.get('rcept_dt')
+                new_row['rcept_dt'] = rcept
+            supplement_rows.append(new_row)
+
+    if supplement_rows:
+        merged = pd.concat([primary_df, pd.DataFrame(supplement_rows)], ignore_index=True)
+        return merged, len(supplement_rows)
+    return primary_df, 0
+
+
+def load_fs_data_dart_first(tickers):
+    """재무제표 로드: DART 우선 → FnGuide 폴백 + 누락 계정 보충
+
+    1. DART vs FnGuide 불일치 종목 → FnGuide로 교체
+    2. DART에 특정 분기 계정 누락 → FnGuide에서 보충 (매출액 등)
     """
     fs_data = {}
-    dart_count = fn_count = revenue_fallback = 0
+    dart_count = fn_count = mismatch_swap = supplement_count = 0
     cache_path = Path(CACHE_DIR)
 
     for ticker in tickers:
         dart_file = cache_path / f'fs_dart_{ticker}.parquet'
         fn_file = cache_path / f'fs_fnguide_{ticker}.parquet'
 
-        # DART 우선
+        dart_df = fn_df = None
         if dart_file.exists():
             try:
                 dart_df = pd.read_parquet(dart_file)
-                if not dart_df.empty:
-                    # 매출 불일치 검사: FnGuide도 있으면 비교
-                    if fn_file.exists():
-                        try:
-                            fn_df = pd.read_parquet(fn_file)
-                            if not fn_df.empty and _check_data_mismatch(dart_df, fn_df):
-                                fs_data[ticker] = fn_df
-                                fn_count += 1
-                                revenue_fallback += 1
-                                continue
-                        except Exception:
-                            pass
-                    fs_data[ticker] = dart_df
-                    dart_count += 1
-                    continue
+                if dart_df.empty:
+                    dart_df = None
             except Exception:
-                pass
-
-        # FnGuide 폴백
+                dart_df = None
         if fn_file.exists():
             try:
-                df = pd.read_parquet(fn_file)
-                if not df.empty:
-                    fs_data[ticker] = df
-                    fn_count += 1
+                fn_df = pd.read_parquet(fn_file)
+                if fn_df.empty:
+                    fn_df = None
             except Exception:
-                pass
+                fn_df = None
 
-    fallback_msg = f", 데이터불일치→FnGuide {revenue_fallback}" if revenue_fallback else ""
-    print(f"  재무제표 로드: {len(fs_data)}개 (DART {dart_count} + FnGuide {fn_count}{fallback_msg})")
+        if dart_df is not None and fn_df is not None:
+            if _check_data_mismatch(dart_df, fn_df):
+                fs_data[ticker] = fn_df
+                fn_count += 1
+                mismatch_swap += 1
+            else:
+                # DART 분기 수 vs FnGuide 분기 수 비교
+                dart_q_count = len(dart_df[dart_df['공시구분'] == 'q']['기준일'].unique())
+                fn_q_count = len(fn_df[fn_df['공시구분'] == 'q']['기준일'].unique())
+                if dart_q_count < 8 and fn_q_count > dart_q_count:
+                    # DART 부족 → FnGuide 주 데��터 + DART 보충 (rcept_dt 등)
+                    merged, n_sup = _merge_fs_supplement(fn_df, dart_df)
+                    fs_data[ticker] = merged
+                    fn_count += 1
+                    supplement_count += n_sup
+                else:
+                    # DART 기반 + FnGuide 보충
+                    merged, n_sup = _merge_fs_supplement(dart_df, fn_df)
+                    fs_data[ticker] = merged
+                    dart_count += 1
+                    supplement_count += n_sup
+        elif dart_df is not None:
+            fs_data[ticker] = dart_df
+            dart_count += 1
+        elif fn_df is not None:
+            fs_data[ticker] = fn_df
+            fn_count += 1
+
+    swap_msg = f", 불일치→FnGuide {mismatch_swap}" if mismatch_swap else ""
+    sup_msg = f", FnGuide보충 {supplement_count}건" if supplement_count else ""
+    print(f"  재무제표 로드: {len(fs_data)}개 (DART {dart_count} + FnGuide {fn_count}{swap_msg}{sup_msg})")
     return fs_data
 
 
@@ -248,12 +307,17 @@ def apply_ma120_filter(price_df: pd.DataFrame, universe_tickers: list) -> list:
             continue
 
         prices = price_df[ticker].dropna()
+        if len(prices) < 1:
+            continue
+
+        current_price = prices.iloc[-1]
+
         if len(prices) < 120:
+            # 120일 미만: 중장기 추세 판단 불가 → 필터 면제
+            passed.append(ticker)
             continue
 
         ma120 = prices.tail(120).mean()
-        current_price = prices.iloc[-1]
-
         if current_price >= ma120:
             passed.append(ticker)
         else:

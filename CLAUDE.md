@@ -39,41 +39,45 @@
 
 ---
 
-# 🇰🇷 KR 전략 — quant_py-main (v73, 2026-04-03)
+# 🇰🇷 KR 전략 — quant_py-main (v75, 2026-04-04)
 
 > 경로: `C:\dev\claude code\quant_py-main`
 
-## 투 트랙 전략 (v73)
+## 국면전환 전략 (v75)
 
-### Core (70%) — 안정형
-- **V20 + Q20 + G40 + M20**
-- G 내부: g_rev=0.2 (매출성장률 20% + **Revenue Acceleration 80%**)
-- 진입: rank ≤ 5, 퇴출: WR > 7, 슬롯 5
-- 상관관계 필터: 0.5 (60일, 기존 보유 + 같은 날 신규 체크)
-- Calmar=2.53, CAGR=54.8%, MDD=21.6%
+### 방어 모드 (v70 기반) — KOSPI<MA60 or KOSDAQ<MA60
+- **V20 + Q20 + G30 + M30**
+- G 내부: g_rev=0.7 (매출성장률 70% + 영업이익변화 30%)
+- 진입: rank ≤ 5, 퇴출: WR > 15, 슬롯 7
+- 단독: Calmar=1.42, CAGR=44.8%, MDD=31.6%
 
-### Boost (30%) — 공격형
+### 공격 모드 (Boost) — KOSPI>MA60 AND KOSDAQ>MA60 (3일 확인)
 - **V15 + Q5 + G65 + M15**
-- G 내부: g_rev=1.0 (매출성장률 100%)
+- G 내부: g_rev=0.95 (매출성장률 95% + 영업이익변화 5%)
 - 진입: rank ≤ 3, 퇴출: WR > 4, 슬롯 3
-- 상관관계 필터: 없음
-- Calmar=2.00, CAGR=95.0%, MDD=47.6%
+- 단독: Calmar=2.35+
+
+### 국면전환 합산 성과 (2021-06 ~ 2026-04, 1186일)
+- **CAGR=107.4%, MDD=31.1%, Calmar=3.46, Sharpe=1.79, Sortino=2.90**
+- 인접 안정성: 91% (Calmar≥2.0)
+- 국면 비율: Boost 38%, 방어 62%
 
 ### 공통
 - PER/PBR/ROE: pykrx (KRX 공식)
-- 재무제표: DART (매출액, 영업이익, 자산 등)
+- 재무제표: DART + FnGuide 보충 (누락 계정 자동 합침)
 - 손절: -10% (쿨다운 없음)
 - 트레일링 스톱: 최고가 대비 -20% (수동)
 - FWD_BONUS: 비활성화
 - score_100: (ws + 0.7) / 2.4 × 100
 
-## 핵심 발견 (v73 Grid Search)
-- Revenue Acceleration(매출 가속도)이 가장 강력한 Growth 서브팩터
-- 영업이익 변화(oca)는 쓸모없음 (g_rev=1.0 항상 최적)
-- 매출총이익은 매출액보다 못함
-- MA120 필터 유지 필수 (제거 시 OOS 붕괴)
-- 거래대금 30억은 알파 감소 (20억 유지)
-- 상관관계 필터: G집중형에 효과 없음, 균형형에만 유효
+## v75 데이터 파이프라인 개선 (2026-04-04)
+- DART+FnGuide 데이터 합치기: DART에 빠진 계정을 FnGuide에서 보충
+  - DART에 해당 분기 존재 → FnGuide에서 빠진 계정만 보충
+  - DART 분기 < 8개이고 FnGuide가 더 많으면 → FnGuide를 주 데이터로 사용
+  - DART에 없는 새 분기도 FnGuide에서 추가 (갭 체크로 보호)
+- TTM YoY 갭 체크: recent_4~prev_4 사이 18개월 이상 갭 → TTM 거부, 연간 fallback
+- MA120 필터: 120일 미만 종목은 필터 면제 (중장기 추세 판단 불가)
+- FG/CP 완전 일치: 5개 날짜 검증 결과 Score/Rank 상관계수 모두 1.0000
 
 ## 유니버스 필터
 - 시총 ≥ 1000억, 거래대금: 대형 ≥ 50억, 중소형 ≥ 20억
@@ -84,8 +88,7 @@
 - VIX 비중 조절 안 함
 
 ## 메시지
-- Signal: Core/Boost 분리 표시
-- 상관관계: Core에서 🔗 그룹 자동 묶기 (0.5 기준, 자동 필터링)
+- Signal: 국면 표시 (방어/공격)
 - 날짜: 항상 전일 기준 (d < today_str)
 
 ## 스케줄러
@@ -93,12 +96,11 @@
 - 종목명 캐시: 매주 일요일 10:00
 
 ## 주의사항
-- Core/Boost 각각 별도 ranking 파일 생성
-- state/ ranking 재계산: composite_rank/score만 변경 가능 (rev_z/oca_z 활용)
 - OHLCV: 프로덕션 실행 시 백테스트용도 동기화
+- Growth 계산: 계정별 날짜 사용 (0 채우기 금지)
 
 ## 백테스트 도구
 - TurboSimulator: 5ms/run (56x 가속), turbo_simulator.py
-- fast_generate_rankings_v2.py: 0.3초/일 (27x 가속), --rev-accel/--gross-profit/--no-ma120/--strict-filter
-- grid_search_final.py: 3워커 병렬, Calmar 기준, 안정성 필터, 연도별 분해
+- fast_generate_rankings_v2.py: DART+FnGuide 합침, per-account dates
+- grid_search_final.py: 3워커 병렬, Calmar 기준, 안정성 필터
 - ProcessPoolExecutor 기반 Windows 호환 병렬

@@ -116,18 +116,18 @@ def get_regime_params(mode):
     if mode == 'boost':
         return {
             'V_W': 0.15, 'Q_W': 0.05, 'G_W': 0.65, 'M_W': 0.15,
-            'G_REV': 1.0,
+            'G_REV': 0.95,
             'ENTRY_RANK': 3, 'EXIT_RANK': 4, 'MAX_SLOTS': 3,
             'USE_REV_ACCEL': False,
             'label': '공격 모드',
             'icon': '⚔️',
         }
-    else:  # cal3
+    else:  # v70 방어
         return {
-            'V_W': 0.20, 'Q_W': 0.20, 'G_W': 0.45, 'M_W': 0.15,
-            'G_REV': 0.1,
-            'ENTRY_RANK': 4, 'EXIT_RANK': 10, 'MAX_SLOTS': 5,
-            'USE_REV_ACCEL': True,
+            'V_W': 0.20, 'Q_W': 0.20, 'G_W': 0.30, 'M_W': 0.30,
+            'G_REV': 0.7,
+            'ENTRY_RANK': 5, 'EXIT_RANK': 15, 'MAX_SLOTS': 7,
+            'USE_REV_ACCEL': False,
             'label': '방어 모드',
             'icon': '🛡️',
         }

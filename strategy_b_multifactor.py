@@ -90,7 +90,11 @@ class MultiFactorStrategy:
         return data
 
     def _calc_ttm_yoy(self, fs, account, base_dt=None, cutoff_date=None):
-        """단일 계정 TTM YoY 계산 (내부 헬퍼)"""
+        """단일 계정 TTM YoY 계산 (내부 헬퍼)
+
+        해당 계정이 실제 존재하는 분기 날짜만 사용 (0 채우기 금지).
+        DART+FnGuide 합친 데이터 기반이므로 누락 최소화.
+        """
         q_data = fs[(fs['공시구분'] == 'q') & (fs['계정'] == account)].copy()
         if q_data.empty:
             return None
@@ -104,12 +108,18 @@ class MultiFactorStrategy:
         elif cutoff_date is not None:
             q_data = q_data[q_data['기준일'] <= cutoff_date]
 
+        # 중복 제거: 같은 기준일에 여러 값 → 첫 번째만
+        q_data = q_data.drop_duplicates(subset=['기준일'], keep='first')
         q_data = q_data.sort_values('기준일')
         q_dates = sorted(q_data['기준일'].unique(), reverse=True)
 
         if len(q_dates) >= 8:
             recent_4 = q_dates[:4]
             prev_4 = q_dates[4:8]
+            # 갭 체크: recent_4 끝과 prev_4 시작 사이 18개월 이상이면 TTM 무효
+            gap_days = (recent_4[-1] - prev_4[0]).days
+            if gap_days > 550:
+                return None  # 데이터 갭 → 연간 fallback 사용
             ttm_recent = q_data[q_data['기준일'].isin(recent_4)]['값'].sum()
             ttm_prev = q_data[q_data['기준일'].isin(prev_4)]['값'].sum()
             if ttm_prev > 0 and pd.notna(ttm_recent) and pd.notna(ttm_prev):
@@ -141,7 +151,7 @@ class MultiFactorStrategy:
     def _calc_op_change_asset(self, fs, base_dt=None, cutoff_date=None):
         """op_change_asset = (영업이익TTM - 영업이익TTM_prev) / 총자산_prev
 
-        SUE 유사 지표: 분모가 총자산이라 음수/극단값 문제 없음.
+        영업이익이 실제 존재하는 분기만 사용 (0 채우기 금지).
         """
         q_data = fs[fs['공시구분'] == 'q'].copy()
         if q_data.empty:
@@ -156,7 +166,8 @@ class MultiFactorStrategy:
         elif cutoff_date is not None:
             q_data = q_data[q_data['기준일'] <= cutoff_date]
 
-        op = q_data[q_data['계정'] == '영업이익'].sort_values('기준일')
+        # 영업이익 기준 날짜
+        op = q_data[q_data['계정'] == '영업이익'].drop_duplicates(subset=['기준일'], keep='first').sort_values('기준일')
         dates = sorted(op['기준일'].unique(), reverse=True)
         if len(dates) < 8:
             return None
@@ -250,13 +261,16 @@ class MultiFactorStrategy:
 
         return last_accel
 
-    def calculate_growth_factors(self, data, base_date=None):
+    def calculate_growth_factors(self, data, base_date=None, fs_data=None):
         """
         성장 팩터 계산 — 2서브팩터
 
         G = 매출성장률(TTM YoY) × g_rev + 이익변화량(or RevAccel) × (1-g_rev)
           매출성장률: (최근4Q매출합 / 직전4Q매출합) - 1
           이익변화량: op_change_asset (기본) 또는 Revenue Acceleration (USE_REV_ACCEL=1)
+
+        fs_data: {ticker: DataFrame} — 이미 DART+FnGuide 합친 데이터.
+                 None이면 파일에서 직접 로드 (호환용).
         """
         from pathlib import Path
         from datetime import datetime, timedelta
@@ -268,59 +282,39 @@ class MultiFactorStrategy:
         oca_dict = {}
         stats = {'rev_ttm': 0, 'rev_annual': 0, 'oca': 0}
 
+        # fs_data 없으면 load_fs_data_dart_first로 로드 (FG와 동일 데이터 소스 보장)
+        if fs_data is None:
+            from create_current_portfolio import load_fs_data_dart_first
+            fs_data = load_fs_data_dart_first(data['종목코드'].tolist())
+
         for ticker in data['종목코드']:
+            if ticker not in fs_data:
+                continue
             try:
-                dart_file = Path('data_cache') / f'fs_dart_{ticker}.parquet'
-                fn_file = Path('data_cache') / f'fs_fnguide_{ticker}.parquet'
+                fs = fs_data[ticker]
 
-                candidates = []
-                if dart_file.exists() and fn_file.exists():
-                    try:
-                        from create_current_portfolio import _check_data_mismatch
-                        d_df = pd.read_parquet(dart_file)
-                        f_df = pd.read_parquet(fn_file)
-                        if _check_data_mismatch(d_df, f_df):
-                            candidates = [fn_file, dart_file]
-                        else:
-                            candidates = [dart_file, fn_file]
-                    except Exception:
-                        candidates = [dart_file, fn_file]
-                elif dart_file.exists():
-                    candidates = [dart_file]
-                elif fn_file.exists():
-                    candidates = [fn_file]
-                else:
-                    continue
-
-                for cache_file in candidates:
-                    fs = pd.read_parquet(cache_file)
-
-                    # 매출 TTM YoY → 연간 폴백
-                    if ticker not in rev_dict:
-                        rev = self._calc_ttm_yoy(fs, '매출액', base_dt, cutoff_date)
+                # 매출 TTM YoY → 연간 폴백
+                if ticker not in rev_dict:
+                    rev = self._calc_ttm_yoy(fs, '매출액', base_dt, cutoff_date)
+                    if rev is not None:
+                        rev_dict[ticker] = rev
+                        stats['rev_ttm'] += 1
+                    else:
+                        rev = self._calc_annual_yoy(fs, '매출액', base_dt, cutoff_date)
                         if rev is not None:
                             rev_dict[ticker] = rev
-                            stats['rev_ttm'] += 1
-                        else:
-                            rev = self._calc_annual_yoy(fs, '매출액', base_dt, cutoff_date)
-                            if rev is not None:
-                                rev_dict[ticker] = rev
-                                stats['rev_annual'] += 1
+                            stats['rev_annual'] += 1
 
-                    # op_change_asset 또는 Revenue Acceleration
-                    if ticker not in oca_dict:
-                        use_rev_accel = os.environ.get('USE_REV_ACCEL') == '1'
-                        if use_rev_accel:
-                            oca = self._calc_revenue_acceleration(fs, base_dt, cutoff_date)
-                        else:
-                            oca = self._calc_op_change_asset(fs, base_dt, cutoff_date)
-                        if oca is not None:
-                            oca_dict[ticker] = oca
-                            stats['oca'] += 1
-
-                    # 둘 다 찾았으면 다음 후보 불필요
-                    if ticker in rev_dict and ticker in oca_dict:
-                        break
+                # op_change_asset 또는 Revenue Acceleration
+                if ticker not in oca_dict:
+                    use_rev_accel = os.environ.get('USE_REV_ACCEL') == '1'
+                    if use_rev_accel:
+                        oca = self._calc_revenue_acceleration(fs, base_dt, cutoff_date)
+                    else:
+                        oca = self._calc_op_change_asset(fs, base_dt, cutoff_date)
+                    if oca is not None:
+                        oca_dict[ticker] = oca
+                        stats['oca'] += 1
 
             except Exception:
                 continue
@@ -648,8 +642,8 @@ class MultiFactorStrategy:
         # 8. 최종 가중합 (환경변수로 동적 설정 가능)
         V_W = float(os.environ.get('FACTOR_V_W', '0.20'))
         Q_W = float(os.environ.get('FACTOR_Q_W', '0.20'))
-        G_W = float(os.environ.get('FACTOR_G_W', '0.45'))
-        M_W = float(os.environ.get('FACTOR_M_W', '0.15'))
+        G_W = float(os.environ.get('FACTOR_G_W', '0.30'))
+        M_W = float(os.environ.get('FACTOR_M_W', '0.30'))
 
         if momentum_zs:
             data['멀티팩터_점수'] = (data['밸류_점수'] * V_W +
@@ -689,7 +683,7 @@ class MultiFactorStrategy:
         selected = data_sorted.head(n_stocks)
         return selected
 
-    def run(self, financial_data, price_df=None, n_stocks=20, sector_map=None, base_date=None, mom_period='6m'):
+    def run(self, financial_data, price_df=None, n_stocks=20, sector_map=None, base_date=None, mom_period='6m', fs_data=None):
         """
         멀티팩터 전략 실행
 
@@ -700,6 +694,7 @@ class MultiFactorStrategy:
             sector_map: 섹터 맵 (dict: ticker -> sector_name)
             base_date: 기준일 (YYYYMMDD), point-in-time 필터용
             mom_period: 모멘텀 기간 ('6m', '6m-1m', '12m-1m', '12m')
+            fs_data: {ticker: DataFrame} — DART+FnGuide 합친 데이터 (growth용)
         """
         scored_data = self.calculate_multifactor_score(
             financial_data.copy(),
@@ -707,6 +702,7 @@ class MultiFactorStrategy:
             sector_map=sector_map,
             base_date=base_date,
             mom_period=mom_period,
+            fs_data=fs_data,
         )
         selected_stocks = self.select_top_stocks(scored_data, n_stocks)
         return selected_stocks, scored_data
