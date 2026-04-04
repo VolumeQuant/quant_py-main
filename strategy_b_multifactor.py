@@ -118,7 +118,7 @@ class MultiFactorStrategy:
             prev_4 = q_dates[4:8]
             # 갭 체크: recent_4 끝과 prev_4 시작 사이 18개월 이상이면 TTM 무효
             gap_days = (recent_4[-1] - prev_4[0]).days
-            if gap_days > 550:
+            if gap_days > 450:
                 return None  # 데이터 갭 → 연간 fallback 사용
             ttm_recent = q_data[q_data['기준일'].isin(recent_4)]['값'].sum()
             ttm_prev = q_data[q_data['기준일'].isin(prev_4)]['값'].sum()

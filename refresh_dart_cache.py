@@ -78,12 +78,20 @@ def get_production_tickers(full=False):
 
 
 def needs_refresh(ticker, target_date):
-    """해당 분기 데이터가 캐시에 있는지 확인"""
+    """캐시 최신성 확인: 최근 분기 데이터가 6개월 이상 오래됐으면 갱신 필요"""
     path = CACHE_DIR / f'fs_dart_{ticker}.parquet'
     if not path.exists():
         return True
     try:
         df = pd.read_parquet(path)
+        q = df[df['공시구분'] == 'q']
+        if q.empty:
+            return True
+        latest = q['기준일'].max()
+        # 최신 분기가 target_date보다 6개월 이상 오래됐으면 갱신
+        if (target_date - latest).days > 180:
+            return True
+        # target_date 자체가 없어도 갱신
         return df[df['기준일'] == target_date].empty
     except Exception:
         return True
@@ -132,7 +140,7 @@ def main():
 
     for i, ticker in enumerate(to_refresh):
         try:
-            df = dc.fetch_single(ticker, target_year, target_year)
+            df = dc.fetch_single(ticker, target_year - 1, target_year)
             if not df.empty:
                 dc.save_cache(ticker, df)
                 success += 1

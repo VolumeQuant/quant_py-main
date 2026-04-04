@@ -190,7 +190,7 @@ def _compute_ticker_growth_events(ticker, fs_df, rev_account='매출액'):
                 prev_4 = rev_avail[4:8]
                 # 갭 체크: 18개월 이상 갭이면 TTM 무효
                 gap_days = (recent_4[-1] - prev_4[0]).days
-                if gap_days <= 550:
+                if gap_days <= 450:
                     r4 = sum(q_vals[(d, rev_account)] for d in recent_4)
                     p4 = sum(q_vals[(d, rev_account)] for d in prev_4)
                     if p4 > 0:
@@ -704,11 +704,11 @@ def vectorized_ma120_filter(price_df, universe_tickers, base_ts):
     ma120 = prices_slice.mean()
     # 필터: 현재가 >= MA120
     mask = current >= ma120
-    # 120일 미만 종목 (NaN current 또는 NaN ma120) → 필터 면제 (통과)
-    # valid_count: 각 종목의 유효 데이터 수
+    # 120일 미만 종목: 20일 이상이면 면제, 20일 미만이면 탈락
     valid_counts = prices_slice.notna().sum()
-    exempt = valid_counts < 120  # 120일 미만 → 면제
-    mask = mask.fillna(False) | exempt
+    exempt = (valid_counts >= 20) & (valid_counts < 120)
+    too_short = valid_counts < 20  # 최소 20거래일 필요
+    mask = (mask.fillna(False) | exempt) & ~too_short
 
     passed = mask[mask].index.tolist()
     failed = mask[~mask].index.tolist()

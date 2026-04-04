@@ -307,13 +307,14 @@ def apply_ma120_filter(price_df: pd.DataFrame, universe_tickers: list) -> list:
             continue
 
         prices = price_df[ticker].dropna()
-        if len(prices) < 1:
+        if len(prices) < 20:
+            # 20일 미만: 최소 데이터 부족 → 탈락
             continue
 
         current_price = prices.iloc[-1]
 
         if len(prices) < 120:
-            # 120일 미만: 중장기 추세 판단 불가 → 필터 면제
+            # 20~119일: 중장기 추세 판단 불가 → 필터 면제
             passed.append(ticker)
             continue
 
