@@ -425,8 +425,13 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
     wd = WEEKDAY_KR[biz_day.weekday()]
     date_str = f"{biz_day.year}.{biz_day.month}.{biz_day.day}({wd})"
 
+    # 국면 모드 표시
+    regime_mode = os.environ.get('REGIME_MODE', 'cal3')
+    regime_label = '⚔️ 공격 모드' if regime_mode == 'boost' else '🛡️ 방어 모드'
+
     lines = [
         f'📡 AI 종목 브리핑 KR · {date_str}',
+        regime_label,
         '국내 전 종목을 매일 자동 분석한',
         '종합 점수 상위 종목입니다.',
     ]
@@ -482,55 +487,8 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         sector = pick.get('sector', '기타')
         lines.append(f'<b>{i+1}. {pick["name"]}({pick["ticker"]}) · {sector}</b>')
 
-    # ── Top 5 상관관계 경고 (corr > 0.65 → 동일 섹터 선택 가이드) ──
+    # v74: 상관관계 경고 제거 (전략에서 corr 필터 미사용)
     meta = rankings_t0.get('metadata') or {}
-    corr_pairs = meta.get('correlation_60d', {})
-    if corr_pairs and len(picks) >= 2:
-        # 상관관계 그래프 → 연결 성분(그룹) 자동 묶기
-        from collections import defaultdict
-        adj = defaultdict(set)
-        for i in range(len(picks)):
-            for j in range(i + 1, len(picks)):
-                key = '_'.join(sorted([picks[i]['ticker'], picks[j]['ticker']]))
-                c = corr_pairs.get(key)
-                if c is not None and c > 0.65:
-                    adj[picks[i]['ticker']].add(picks[j]['ticker'])
-                    adj[picks[j]['ticker']].add(picks[i]['ticker'])
-        # BFS로 연결 성분 추출
-        visited = set()
-        groups = []
-        for pick in picks:
-            tk = pick['ticker']
-            if tk not in adj or tk in visited:
-                continue
-            group = []
-            queue = [tk]
-            while queue:
-                cur = queue.pop(0)
-                if cur in visited:
-                    continue
-                visited.add(cur)
-                group.append(cur)
-                for nb in adj[cur]:
-                    if nb not in visited:
-                        queue.append(nb)
-            if len(group) >= 2:
-                groups.append(group)
-        # 그룹별 경고 (1줄씩)
-        tk_name = {p['ticker']: p['name'] for p in picks}
-        for group in groups:
-            names = [tk_name[tk] for tk in group if tk in tk_name]
-            # 그룹 내 평균 상관관계
-            corrs = []
-            for ii in range(len(group)):
-                for jj in range(ii+1, len(group)):
-                    key = '_'.join(sorted([group[ii], group[jj]]))
-                    c = corr_pairs.get(key, 0)
-                    if c: corrs.append(c)
-            avg_corr = sum(corrs)/len(corrs) if corrs else 0
-            pick = '택1' if len(names) == 2 else '택1~2'
-            lines.append(f'🔗 {"·".join(names)} 유사도 {avg_corr:.0%}')
-            lines.append(f'→ {pick} 권장')
 
     # ── 선정 과정 (퍼널) ──
     universe_count = meta.get('total_universe', 0)

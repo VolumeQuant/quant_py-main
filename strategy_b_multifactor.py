@@ -177,14 +177,61 @@ class MultiFactorStrategy:
             return (op_recent - op_prev) / prev_asset * 100
         return None
 
+    def _calc_revenue_acceleration(self, fs, base_dt=None, cutoff_date=None):
+        """Revenue Acceleration = 현재 TTM YoY - 이전 TTM YoY
+
+        매출 증가 속도의 변화를 측정. 양수 = 가속, 음수 = 감속.
+        12분기(3년) 데이터 필요 (현재 8분기 + 이전 비교용 4분기).
+        """
+        q_data = fs[(fs['공시구분'] == 'q') & (fs['계정'] == '매출액')].copy()
+        if q_data.empty:
+            return None
+
+        # point-in-time 필터
+        if base_dt and 'rcept_dt' in q_data.columns:
+            has_rcept = q_data['rcept_dt'].notna()
+            rcept_ok = q_data['rcept_dt'] <= base_dt
+            cutoff_ok = q_data['기준일'] <= cutoff_date if cutoff_date else True
+            q_data = q_data[(has_rcept & rcept_ok) | (~has_rcept & cutoff_ok)]
+        elif cutoff_date is not None:
+            q_data = q_data[q_data['기준일'] <= cutoff_date]
+
+        q_data = q_data.sort_values('기준일')
+        q_dates = sorted(q_data['기준일'].unique(), reverse=True)
+
+        # 12분기 필요: 현재 TTM(4) + 전년동기(4) + 이전 TTM(4)
+        if len(q_dates) < 12:
+            return None
+
+        # 현재 TTM YoY
+        recent_4 = q_dates[:4]
+        prev_4 = q_dates[4:8]
+        ttm_recent = q_data[q_data['기준일'].isin(recent_4)]['값'].sum()
+        ttm_prev = q_data[q_data['기준일'].isin(prev_4)]['값'].sum()
+
+        if ttm_prev <= 0 or pd.isna(ttm_recent) or pd.isna(ttm_prev):
+            return None
+        current_yoy = (ttm_recent / ttm_prev - 1) * 100
+
+        # 이전 TTM YoY (1분기 전)
+        prev_recent_4 = q_dates[1:5]
+        prev_prev_4 = q_dates[5:9]
+        ttm_prev_r = q_data[q_data['기준일'].isin(prev_recent_4)]['값'].sum()
+        ttm_prev_p = q_data[q_data['기준일'].isin(prev_prev_4)]['값'].sum()
+
+        if ttm_prev_p <= 0 or pd.isna(ttm_prev_r) or pd.isna(ttm_prev_p):
+            return None
+        prev_yoy = (ttm_prev_r / ttm_prev_p - 1) * 100
+
+        return current_yoy - prev_yoy
+
     def calculate_growth_factors(self, data, base_date=None):
         """
         성장 팩터 계산 — 2서브팩터
 
-        G = 매출성장률(TTM YoY) 50% + op_change_asset 50%
+        G = 매출성장률(TTM YoY) × g_rev + 이익변화량(or RevAccel) × (1-g_rev)
           매출성장률: (최근4Q매출합 / 직전4Q매출합) - 1
-          op_change_asset: (영업이익TTM - 영업이익TTM_prev) / 총자산_prev
-            → 분모가 총자산이라 적자→흑자 턴어라운드도 정상 계산 (SUE 유사)
+          이익변화량: op_change_asset (기본) 또는 Revenue Acceleration (USE_REV_ACCEL=1)
         """
         from pathlib import Path
         from datetime import datetime, timedelta
@@ -235,9 +282,13 @@ class MultiFactorStrategy:
                                 rev_dict[ticker] = rev
                                 stats['rev_annual'] += 1
 
-                    # op_change_asset
+                    # op_change_asset 또는 Revenue Acceleration
                     if ticker not in oca_dict:
-                        oca = self._calc_op_change_asset(fs, base_dt, cutoff_date)
+                        use_rev_accel = os.environ.get('USE_REV_ACCEL') == '1'
+                        if use_rev_accel:
+                            oca = self._calc_revenue_acceleration(fs, base_dt, cutoff_date)
+                        else:
+                            oca = self._calc_op_change_asset(fs, base_dt, cutoff_date)
                         if oca is not None:
                             oca_dict[ticker] = oca
                             stats['oca'] += 1
@@ -255,7 +306,8 @@ class MultiFactorStrategy:
         rev_cover = data['매출성장률'].notna().sum()
         oca_cover = data['이익변화량'].notna().sum()
         print(f"매출성장률(TTM YoY): {rev_cover}/{len(data)}개 (TTM:{stats['rev_ttm']} 연간:{stats['rev_annual']})")
-        print(f"이익변화량(op_change_asset): {oca_cover}/{len(data)}개")
+        oca_label = "매출가속도(RevAccel)" if os.environ.get('USE_REV_ACCEL') == '1' else "이익변화량(op_change_asset)"
+        print(f"{oca_label}: {oca_cover}/{len(data)}개")
 
         return data
 
@@ -568,8 +620,11 @@ class MultiFactorStrategy:
             data = data[~extreme_mask].copy()
             print(f"단일팩터 바닥: {extreme_count}개 제외 (1개라도 <{EXTREME_THRESHOLD}σ) {extreme_names[:5]}")
 
-        # 8. 최종 가중합
-        V_W, Q_W, G_W, M_W = 0.15, 0.25, 0.40, 0.20
+        # 8. 최종 가중합 (환경변수로 동적 설정 가능)
+        V_W = float(os.environ.get('FACTOR_V_W', '0.20'))
+        Q_W = float(os.environ.get('FACTOR_Q_W', '0.20'))
+        G_W = float(os.environ.get('FACTOR_G_W', '0.45'))
+        M_W = float(os.environ.get('FACTOR_M_W', '0.15'))
 
         if momentum_zs:
             data['멀티팩터_점수'] = (data['밸류_점수'] * V_W +

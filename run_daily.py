@@ -30,10 +30,13 @@ def log(msg: str, f=None):
         f.flush()
 
 
-def run_script(name: str, timeout: int, logfile):
+def run_script(name: str, timeout: int, logfile, extra_env=None):
     """subprocess로 Python 스크립트 실행"""
     script = SCRIPT_DIR / name
     log(f"실행: {name}", logfile)
+    env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+    if extra_env:
+        env.update(extra_env)
     result = subprocess.run(
         [PYTHON, str(script)],
         cwd=str(SCRIPT_DIR),
@@ -42,7 +45,7 @@ def run_script(name: str, timeout: int, logfile):
         timeout=timeout,
         encoding="utf-8",
         errors="replace",
-        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+        env=env,
     )
     if result.stdout:
         logfile.write(result.stdout)
@@ -127,11 +130,68 @@ def main():
         except Exception as e:
             log(f"DART 갱신 오류: {e} — 기존 캐시로 진행", logfile)
 
-        # 1. 포트폴리오 생성
+        # 0.5. 국면 판단
+        log("국면 판단 (KOSPI+KOSDAQ MA60)", logfile)
         try:
-            ok = run_script("create_current_portfolio.py", timeout=1200, logfile=logfile)
+            sys.path.insert(0, str(SCRIPT_DIR))
+            from regime_indicator import get_current_regime, get_regime_params
+            import krx_auth
+            krx_auth.login()
+            from pykrx import stock as pykrx_stock
+            import time as _time
+            import pandas as pd
+
+            # KOSPI
+            kospi_df = pykrx_stock.get_market_ohlcv(
+                (datetime.now() - __import__('datetime').timedelta(days=90)).strftime('%Y%m%d'),
+                today, '005930'
+            )
+            _time.sleep(1)
+            kospi_idx = pykrx_stock.get_index_ohlcv(
+                (datetime.now() - __import__('datetime').timedelta(days=90)).strftime('%Y%m%d'),
+                today, '1001'
+            )
+            kospi_close = kospi_idx.iloc[-1, 3] if not kospi_idx.empty else None
+            kospi_ma60 = kospi_idx.iloc[:, 3].rolling(60).mean().iloc[-1] if len(kospi_idx) >= 60 else None
+
+            _time.sleep(1)
+            kosdaq_idx = pykrx_stock.get_index_ohlcv(
+                (datetime.now() - __import__('datetime').timedelta(days=90)).strftime('%Y%m%d'),
+                today, '2001'
+            )
+            kosdaq_close = kosdaq_idx.iloc[-1, 3] if not kosdaq_idx.empty else None
+            kosdaq_ma60 = kosdaq_idx.iloc[:, 3].rolling(60).mean().iloc[-1] if len(kosdaq_idx) >= 60 else None
+
+            regime = get_current_regime(
+                kospi_close=kospi_close, kospi_ma60=kospi_ma60,
+                kosdaq_close=kosdaq_close, kosdaq_ma60=kosdaq_ma60,
+                date_str=today
+            )
+            params = get_regime_params(regime['mode'])
+            log(f"국면: {params['icon']} {params['label']} (신호={regime['signal']}, 연속={regime['streak']}일, 전환={regime['switched']})", logfile)
+        except Exception as e:
+            log(f"국면 판단 실패: {e} — 기본 방어 모드", logfile)
+            from regime_indicator import get_regime_params
+            regime = {'mode': 'cal3', 'switched': False, 'signal': 'cal3', 'streak': 0, 'prev_mode': 'cal3'}
+            params = get_regime_params('cal3')
+
+        # 1. 포트폴리오 생성 (국면 파라미터 환경변수 주입)
+        regime_env = {
+            'FACTOR_V_W': str(params['V_W']),
+            'FACTOR_Q_W': str(params['Q_W']),
+            'FACTOR_G_W': str(params['G_W']),
+            'FACTOR_M_W': str(params['M_W']),
+            'G_REVENUE_WEIGHT': str(params['G_REV']),
+            'USE_REV_ACCEL': '1' if params['USE_REV_ACCEL'] else '0',
+            'REGIME_MODE': regime['mode'],
+            'REGIME_ENTRY_RANK': str(params['ENTRY_RANK']),
+            'REGIME_EXIT_RANK': str(params['EXIT_RANK']),
+            'REGIME_MAX_SLOTS': str(params['MAX_SLOTS']),
+        }
+        try:
+            ok = run_script("create_current_portfolio.py", timeout=1200, logfile=logfile, extra_env=regime_env)
         except subprocess.TimeoutExpired:
-            log("포트폴리오 생성 타임아웃 (5분)", logfile)
+            log("포트폴리오 생성 타임아웃 (20분)", logfile)
             ok = False
         except Exception as e:
             log(f"포트폴리오 생성 오류: {e}", logfile)
@@ -144,7 +204,7 @@ def main():
 
         # 2. 텔레그램 전송
         try:
-            ok2 = run_script("send_telegram_auto.py", timeout=180, logfile=logfile)
+            ok2 = run_script("send_telegram_auto.py", timeout=180, logfile=logfile, extra_env=regime_env)
             log(f"텔레그램 전송: {'성공' if ok2 else '실패'}", logfile)
         except subprocess.TimeoutExpired:
             log("텔레그램 전송 타임아웃 (3분)", logfile)
