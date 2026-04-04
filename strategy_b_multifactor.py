@@ -178,52 +178,77 @@ class MultiFactorStrategy:
         return None
 
     def _calc_revenue_acceleration(self, fs, base_dt=None, cutoff_date=None):
-        """Revenue Acceleration = 현재 TTM YoY - 이전 TTM YoY
+        """Revenue Acceleration = 현재 TTM YoY - 직전 이벤트의 TTM YoY
 
-        매출 증가 속도의 변화를 측정. 양수 = 가속, 음수 = 감속.
-        12분기(3년) 데이터 필요 (현재 8분기 + 이전 비교용 4분기).
+        fast_generate_rankings_v2와 동일 로직:
+        - 분기별 이벤트를 공시접수일(rcept_dt) 기반으로 정렬
+        - 각 이벤트에서 TTM YoY 계산
+        - 직전 이벤트의 TTM YoY와의 차이 = Revenue Acceleration
         """
-        q_data = fs[(fs['공시구분'] == 'q') & (fs['계정'] == '매출액')].copy()
+        from datetime import timedelta
+
+        q_data = fs[fs['공시구분'] == 'q'].copy()
         if q_data.empty:
             return None
 
+        has_rcept = 'rcept_dt' in q_data.columns
+
         # point-in-time 필터
-        if base_dt and 'rcept_dt' in q_data.columns:
-            has_rcept = q_data['rcept_dt'].notna()
-            rcept_ok = q_data['rcept_dt'] <= base_dt
+        if base_dt and has_rcept:
+            rcept_ok = q_data['rcept_dt'].notna() & (q_data['rcept_dt'] <= base_dt)
             cutoff_ok = q_data['기준일'] <= cutoff_date if cutoff_date else True
-            q_data = q_data[(has_rcept & rcept_ok) | (~has_rcept & cutoff_ok)]
+            q_data = q_data[rcept_ok | (~q_data['rcept_dt'].notna() & cutoff_ok)]
         elif cutoff_date is not None:
             q_data = q_data[q_data['기준일'] <= cutoff_date]
 
-        q_data = q_data.sort_values('기준일')
-        q_dates = sorted(q_data['기준일'].unique(), reverse=True)
+        # 분기별 값 dict: {(기준일, 계정) → 값}
+        q_vals = {}
+        q_rcept_map = {}
+        for _, row in q_data.iterrows():
+            key = (row['기준일'], row['계정'])
+            if key not in q_vals and pd.notna(row['값']):
+                q_vals[key] = row['값']
+            if has_rcept and row['기준일'] not in q_rcept_map and pd.notna(row.get('rcept_dt')):
+                q_rcept_map[row['기준일']] = row['rcept_dt']
 
-        # 12분기 필요: 현재 TTM(4) + 전년동기(4) + 이전 TTM(4)
-        if len(q_dates) < 12:
-            return None
+        q_dates_all = sorted(set(d for d, _ in q_vals.keys()))
 
-        # 현재 TTM YoY
-        recent_4 = q_dates[:4]
-        prev_4 = q_dates[4:8]
-        ttm_recent = q_data[q_data['기준일'].isin(recent_4)]['값'].sum()
-        ttm_prev = q_data[q_data['기준일'].isin(prev_4)]['값'].sum()
+        # 각 분기별 TTM YoY 이벤트 체인 구축
+        prev_rev_yoy = None
+        last_accel = None
 
-        if ttm_prev <= 0 or pd.isna(ttm_recent) or pd.isna(ttm_prev):
-            return None
-        current_yoy = (ttm_recent / ttm_prev - 1) * 100
+        for qi, qd in enumerate(q_dates_all):
+            # effective date (공시접수일 or 기준일+90일)
+            if qd in q_rcept_map:
+                eff_date = q_rcept_map[qd]
+                if isinstance(eff_date, str):
+                    eff_date = pd.Timestamp(eff_date)
+            else:
+                eff_date = qd + timedelta(days=90)
 
-        # 이전 TTM YoY (1분기 전)
-        prev_recent_4 = q_dates[1:5]
-        prev_prev_4 = q_dates[5:9]
-        ttm_prev_r = q_data[q_data['기준일'].isin(prev_recent_4)]['값'].sum()
-        ttm_prev_p = q_data[q_data['기준일'].isin(prev_prev_4)]['값'].sum()
+            # base_dt 이후 이벤트는 무시
+            if base_dt and eff_date > base_dt:
+                continue
 
-        if ttm_prev_p <= 0 or pd.isna(ttm_prev_r) or pd.isna(ttm_prev_p):
-            return None
-        prev_yoy = (ttm_prev_r / ttm_prev_p - 1) * 100
+            avail = sorted(q_dates_all[:qi+1], reverse=True)
+            if len(avail) < 8:
+                continue
 
-        return current_yoy - prev_yoy
+            recent_4 = avail[:4]
+            prev_4 = avail[4:8]
+            r4 = sum(q_vals.get((d, '매출액'), 0) for d in recent_4)
+            p4 = sum(q_vals.get((d, '매출액'), 0) for d in prev_4)
+
+            if p4 <= 0:
+                continue
+            rev_yoy = (r4 / p4 - 1) * 100
+
+            # Revenue Acceleration
+            if prev_rev_yoy is not None:
+                last_accel = rev_yoy - prev_rev_yoy
+            prev_rev_yoy = rev_yoy
+
+        return last_accel
 
     def calculate_growth_factors(self, data, base_date=None):
         """
