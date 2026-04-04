@@ -998,8 +998,11 @@ def calculate_multifactor_fast(multifactor_df, price_df, sector_map, base_date,
     if extreme_mask.any():
         data = data[~extreme_mask].copy()
 
-    # 최종 가중합 V15 Q25 G40 M20
-    V_W, Q_W, G_W, M_W = 0.15, 0.25, 0.40, 0.20
+    # 최종 가중합 (환경변수로 동적 설정)
+    V_W = float(os.environ.get('FACTOR_V_W', '0.20'))
+    Q_W = float(os.environ.get('FACTOR_Q_W', '0.20'))
+    G_W = float(os.environ.get('FACTOR_G_W', '0.45'))
+    M_W = float(os.environ.get('FACTOR_M_W', '0.15'))
     if momentum_zs:
         data['멀티팩터_점수'] = (data['밸류_점수'] * V_W +
                                 data['퀄리티_점수'] * Q_W +
