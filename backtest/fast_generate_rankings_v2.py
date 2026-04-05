@@ -77,19 +77,17 @@ def precompute_growth_factors(fs_dict, trading_dates):
         if ticker.startswith('__'):
             continue
         events = _compute_ticker_growth_events(ticker, fs_df, rev_account=rev_account)
-        if events and use_rev_accel:
-            # oca 자리에 rev_accel(매출성장률 가속도) 넣기
+        # rev_accel 계산 (매출성장률 2차미분)
+        if events:
             prev_rev = None
-            new_events = []
-            for eff_date, rev_yoy, oca in events:
+            for i, (eff_date, vals) in enumerate(events):
+                rev_yoy = vals.get('rev_yoy')
                 if rev_yoy is not None and prev_rev is not None:
-                    rev_accel = rev_yoy - prev_rev
+                    vals['rev_accel'] = rev_yoy - prev_rev
                 else:
-                    rev_accel = None
+                    vals['rev_accel'] = None
                 if rev_yoy is not None:
                     prev_rev = rev_yoy
-                new_events.append((eff_date, rev_yoy, rev_accel))
-            events = new_events
         if events:
             ticker_growth_events[ticker] = events
 
@@ -122,9 +120,9 @@ def precompute_growth_factors(fs_dict, trading_dates):
         tickers_to_remove = []
         for ticker in list(next_events.keys()):
             while ticker in next_events:
-                eff_date, rev_yoy, oca = next_events[ticker]
+                eff_date, vals = next_events[ticker]
                 if eff_date <= date_ts:
-                    current_values[ticker] = {'rev_yoy': rev_yoy, 'oca': oca}
+                    current_values[ticker] = vals  # dict with 6 sub-factors
                     try:
                         next_events[ticker] = next(ticker_event_iters[ticker])
                     except StopIteration:
@@ -141,10 +139,15 @@ def precompute_growth_factors(fs_dict, trading_dates):
 
 
 def _compute_ticker_growth_events(ticker, fs_df, rev_account='매출액'):
-    """단일 종목의 growth 팩터 변경 이벤트 목록 — 최적화 버전
+    """단일 종목의 growth 6-서브팩터 변경 이벤트 — v75 확장
 
-    dict lookup으로 DataFrame 연산 최소화
-    rev_account: '매출액' (기본) 또는 '매출총이익' (gross profit)
+    Returns: list of (eff_date, dict) where dict has:
+      rev_yoy: 매출성장률 TTM YoY
+      oca: 영업이익변화량/자산
+      rev_accel: 매출성장률 가속도 (2차미분)
+      gp_yoy: 매출총이익 TTM YoY
+      op_margin_chg: 영업이익률 변화 (OPM_t - OPM_t-4)
+      cfo_yoy: 영업현금흐름 TTM YoY
     """
     from datetime import timedelta
 
@@ -173,6 +176,8 @@ def _compute_ticker_growth_events(ticker, fs_df, rev_account='매출액'):
         # 계정별 날짜 리스트 (0 채우기 금지 — 실제 데이터 있는 분기만)
         rev_dates = sorted(d for d in q_dates if (d, rev_account) in q_vals)
         op_dates = sorted(d for d in q_dates if (d, '영업이익') in q_vals)
+        gp_dates = sorted(d for d in q_dates if (d, '매출총이익') in q_vals)
+        cfo_dates = sorted(d for d in q_dates if (d, '영업활동으로인한현금흐름') in q_vals)
 
         # 연간 데이터 (폴백용)
         y_rev = {}  # 기준일 → 매출액
@@ -235,8 +240,47 @@ def _compute_ticker_growth_events(ticker, fs_df, rev_account='매출액'):
                     if prev > 0:
                         rev_yoy = (latest / prev - 1) * 100
 
-            if rev_yoy is not None or oca is not None:
-                events.append((eff_date, rev_yoy, oca))
+            # --- 추가 4개 서브팩터 ---
+            # gp_yoy: 매출총이익 TTM YoY
+            gp_yoy = None
+            gp_avail = sorted([d for d in gp_dates if d <= qd], reverse=True)
+            if len(gp_avail) >= 8:
+                r4 = sum(q_vals[(d, '매출총이익')] for d in gp_avail[:4])
+                p4 = sum(q_vals[(d, '매출총이익')] for d in gp_avail[4:8])
+                if p4 > 0:
+                    gp_yoy = (r4 / p4 - 1) * 100
+
+            # op_margin_chg: 영업이익률 변화
+            op_margin_chg = None
+            if len(op_avail) >= 4 and len(rev_avail) >= 4:
+                # 현재 OPM (TTM)
+                op_r = sum(q_vals[(d, '영업이익')] for d in op_avail[:4])
+                rev_r = sum(q_vals.get((d, rev_account), 0) for d in rev_avail[:4])
+                if rev_r > 0:
+                    opm_now = op_r / rev_r
+                    # 4분기 전 OPM
+                    if len(op_avail) >= 8 and len(rev_avail) >= 8:
+                        op_p = sum(q_vals[(d, '영업이익')] for d in op_avail[4:8])
+                        rev_p = sum(q_vals.get((d, rev_account), 0) for d in rev_avail[4:8])
+                        if rev_p > 0:
+                            opm_prev = op_p / rev_p
+                            op_margin_chg = (opm_now - opm_prev) * 100  # %p
+
+            # cfo_yoy: 영업현금흐름 TTM YoY
+            cfo_yoy = None
+            cfo_avail = sorted([d for d in cfo_dates if d <= qd], reverse=True)
+            if len(cfo_avail) >= 8:
+                r4 = sum(q_vals[(d, '영업활동으로인한현금흐름')] for d in cfo_avail[:4])
+                p4 = sum(q_vals[(d, '영업활동으로인한현금흐름')] for d in cfo_avail[4:8])
+                if p4 > 0:
+                    cfo_yoy = (r4 / p4 - 1) * 100
+
+            if any(v is not None for v in [rev_yoy, oca, gp_yoy, op_margin_chg, cfo_yoy]):
+                events.append((eff_date, {
+                    'rev_yoy': rev_yoy, 'oca': oca,
+                    'gp_yoy': gp_yoy, 'op_margin_chg': op_margin_chg,
+                    'cfo_yoy': cfo_yoy,
+                }))
 
     elif y_mask.any():
         y_vals = {}
@@ -261,7 +305,10 @@ def _compute_ticker_growth_events(ticker, fs_df, rev_account='매출액'):
                 prev = y_vals[y_dates[yi - 1]]
                 if prev > 0:
                     rev_yoy = (latest / prev - 1) * 100
-                    events.append((eff_date, rev_yoy, None))
+                    events.append((eff_date, {
+                        'rev_yoy': rev_yoy, 'oca': None,
+                        'gp_yoy': None, 'op_margin_chg': None, 'cfo_yoy': None,
+                    }))
 
     events.sort(key=lambda x: x[0])
     return events
@@ -1009,14 +1056,14 @@ def calculate_multifactor_fast(multifactor_df, price_df, sector_map, base_date,
     if '영업현금흐름' in data.columns and '자산' in data.columns:
         data['CFO'] = data['영업현금흐름'] / data['자산'] * 100
 
-    # --- Growth 팩터 (사전계산 lookup에서 조회!) ---
+    # --- Growth 6-서브팩터 (사전계산 lookup에서 조회) ---
     date_growth = growth_lookup.get(base_date, {})
-    data['매출성장률'] = data['종목코드'].map(
-        lambda t: date_growth.get(t, {}).get('rev_yoy') if t in date_growth else np.nan
-    )
-    data['이익변화량'] = data['종목코드'].map(
-        lambda t: date_growth.get(t, {}).get('oca') if t in date_growth else np.nan
-    )
+    _g_keys = ['rev_yoy', 'oca', 'rev_accel', 'gp_yoy', 'op_margin_chg', 'cfo_yoy']
+    _g_names = ['매출성장률', '이익변화량', '매출가속도', '매출총이익성장', '영업이익률변화', '현금흐름성장']
+    for gk, gn in zip(_g_keys, _g_names):
+        data[gn] = data['종목코드'].map(
+            lambda t, _k=gk: date_growth.get(t, {}).get(_k) if t in date_growth else np.nan
+        )
 
     # --- Momentum 팩터 (벡터화, 4종 동시 계산) ---
     tickers = data['종목코드'].tolist()
@@ -1065,12 +1112,21 @@ def calculate_multifactor_fast(multifactor_df, price_df, sector_map, base_date,
             quality_zs.append(f'{col}_z')
 
     growth_zs = []
-    if '매출성장률' in data.columns and data['매출성장률'].notna().sum() > 0:
-        data['매출성장률_z'] = rank_zscore_series(data['매출성장률'], ascending=True)
-        growth_zs.append('매출성장률_z')
-    if '이익변화량' in data.columns and data['이익변화량'].notna().sum() > 0:
-        data['이익변화량_z'] = rank_zscore_series(data['이익변화량'], ascending=True)
-        growth_zs.append('이익변화량_z')
+    # 6개 G 서브팩터 z-score
+    _g_sub_cols = [
+        ('매출성장률', '매출성장률_z'),
+        ('이익변화량', '이익변화량_z'),
+        ('매출가속도', '매출가속도_z'),
+        ('매출총이익성장', '매출총이익성장_z'),
+        ('영업이익률변화', '영업이익률변화_z'),
+        ('현금흐름성장', '현금흐름성장_z'),
+    ]
+    for raw_col, z_col in _g_sub_cols:
+        if raw_col in data.columns and data[raw_col].notna().sum() > 0:
+            data[z_col] = rank_zscore_series(data[raw_col], ascending=True)
+            growth_zs.append(z_col)
+        else:
+            data[z_col] = 0.0
 
     momentum_zs = []
     # 섹터 중립 z-score: data['섹터'] 직접 사용 (필터 후에도 index 정합)
@@ -1082,10 +1138,12 @@ def calculate_multifactor_fast(multifactor_df, price_df, sector_map, base_date,
         data['K_ratio_z'] = rank_zscore_sector(data['K_ratio'], cur_sectors, ascending=True) if cur_sectors is not None else rank_zscore_series(data['K_ratio'], ascending=True)
         momentum_zs.append('K_ratio_z')
 
-    # Growth NaN 대체
-    if '이익변화량_z' in growth_zs and '매출성장률_z' in growth_zs:
-        oca_nan = data['이익변화량_z'].isna()
-        data.loc[oca_nan, '이익변화량_z'] = data.loc[oca_nan, '매출성장률_z']
+    # Growth NaN 대체: 모든 서브팩터에서 NaN은 매출성장률_z로 대체
+    if '매출성장률_z' in growth_zs:
+        for z_col in ['이익변화량_z', '매출가속도_z', '매출총이익성장_z', '영업이익률변화_z', '현금흐름성장_z']:
+            if z_col in data.columns:
+                nan_mask = data[z_col].isna() | (data[z_col] == 0.0)
+                data.loc[nan_mask, z_col] = data.loc[nan_mask, '매출성장률_z']
 
     # NaN → 0
     for zs in [value_zs, quality_zs, growth_zs, momentum_zs]:
@@ -1343,7 +1401,10 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
             val = row.get(col)
             if val is not None and pd.notna(val):
                 item[key] = round(float(val), 4)
-        for col, key in [('매출성장률_z', 'rev_z'), ('이익변화량_z', 'oca_z')]:
+        # 6개 G 서브팩터 z-score
+        for col, key in [('매출성장률_z', 'rev_z'), ('이익변화량_z', 'oca_z'),
+                         ('매출가속도_z', 'rev_accel_z'), ('매출총이익성장_z', 'gp_growth_z'),
+                         ('영업이익률변화_z', 'op_margin_z'), ('현금흐름성장_z', 'cfo_growth_z')]:
             val = row.get(col)
             if val is not None and pd.notna(val):
                 item[key] = round(float(val), 4)

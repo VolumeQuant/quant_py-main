@@ -132,8 +132,9 @@ class TurboSimulator:
             quality_s = np.empty(n, dtype=np.float64)
             growth_s = np.empty(n, dtype=np.float64)
             momentum_s = np.empty(n, dtype=np.float64)
-            rev_z = np.empty(n, dtype=np.float64)
-            oca_z = np.empty(n, dtype=np.float64)
+            # 6개 G 서브팩터 z-score
+            g_subs = {k: np.empty(n, dtype=np.float64) for k in
+                      ['rev_z', 'oca_z', 'rev_accel_z', 'gp_growth_z', 'op_margin_z', 'cfo_growth_z']}
             r_prices = np.empty(n, dtype=np.float64)
             col_indices = np.empty(n, dtype=np.int32)
 
@@ -150,19 +151,18 @@ class TurboSimulator:
                 quality_s[j] = s.get('quality_s') or 0.0
                 growth_s[j] = s.get('growth_s') or 0.0
                 momentum_s[j] = s.get('momentum_s') or 0.0
-                rev_z[j] = s.get('rev_z') or 0.0
-                oca_z[j] = s.get('oca_z') or 0.0
+                for gk in g_subs:
+                    g_subs[gk][j] = s.get(gk) or 0.0
                 p = s.get('price')
                 r_prices[j] = float(p) if p is not None else 0.0
                 col_indices[j] = tk_to_col.get(tk, -1)
-                # 4종 모멘텀 (없으면 기본 momentum_s fallback)
                 mom_6m_s[j] = s.get('mom_6m_s') or momentum_s[j]
                 mom_6m1m_s[j] = s.get('mom_6m1m_s') or 0.0
                 mom_12m_s[j] = s.get('mom_12m_s') or 0.0
                 mom_12m1m_s[j] = s.get('mom_12m1m_s') or 0.0
 
             self._preextracted[date] = (tickers, value_s, quality_s, growth_s,
-                                        momentum_s, rev_z, oca_z, r_prices, col_indices,
+                                        momentum_s, g_subs, r_prices, col_indices,
                                         mom_6m_s, mom_6m1m_s, mom_12m_s, mom_12m1m_s)
 
         # ---- 60일 상관관계 1회 사전 계산 (가중치 무관) ----
@@ -174,22 +174,21 @@ class TurboSimulator:
         self._cached_base_key = None  # (v_w, q_w, g_w, g_rev) for partial reuse
         self._cached_partials = None  # V+Q+G partial sums per date
 
-    def _compute_partial(self, date, v_w, q_w, g_w, g_rev):
-        """V+Q+G 부분합 계산 (모멘텀 제외). mom_type 변경 시 재사용."""
+    def _compute_partial(self, date, v_w, q_w, g_w, g_rev, g_sub1='rev_z', g_sub2='oca_z'):
+        """V+Q+G 부분합 계산. G = g_rev*sub1 + (1-g_rev)*sub2, 재표준화."""
         pre = self._preextracted.get(date)
         if pre is None:
             return None
         (tickers, value_s, quality_s, growth_s, momentum_s,
-         rev_z, oca_z, r_prices, col_indices,
+         g_subs, r_prices, col_indices,
          mom_6m_s, mom_6m1m_s, mom_12m_s, mom_12m1m_s) = pre
         n = len(tickers)
-        if abs(g_rev - 0.5) < 0.01:
-            partial = v_w * value_s + q_w * quality_s + g_w * growth_s
-        else:
-            g_raw = g_rev * rev_z + (1 - g_rev) * oca_z
-            g_std = g_raw.std()
-            g_standardized = (g_raw - g_raw.mean()) / g_std if g_std > 0 else np.zeros(n)
-            partial = v_w * value_s + q_w * quality_s + g_w * g_standardized
+        sub1_arr = g_subs.get(g_sub1, g_subs.get('rev_z'))
+        sub2_arr = g_subs.get(g_sub2, g_subs.get('oca_z'))
+        g_raw = g_rev * sub1_arr + (1 - g_rev) * sub2_arr
+        g_std = g_raw.std()
+        g_standardized = (g_raw - g_raw.mean()) / g_std if g_std > 0 else np.zeros(n)
+        partial = v_w * value_s + q_w * quality_s + g_w * g_standardized
         return (tickers, partial, r_prices, col_indices, mom_6m_s, mom_6m1m_s, mom_12m_s, mom_12m1m_s)
 
     def _vectorized_reweight(self, date, v_w, q_w, g_w, m_w, g_rev, mom_type='6m'):
@@ -199,8 +198,10 @@ class TurboSimulator:
             return None
 
         (tickers, value_s, quality_s, growth_s, momentum_s,
-         rev_z, oca_z, r_prices, col_indices,
+         g_subs, r_prices, col_indices,
          mom_6m_s, mom_6m1m_s, mom_12m_s, mom_12m1m_s) = pre
+        rev_z = g_subs.get('rev_z', np.zeros(len(tickers)))
+        oca_z = g_subs.get('oca_z', np.zeros(len(tickers)))
 
         # 모멘텀 타입 선택
         if mom_type == '6m':
@@ -437,9 +438,10 @@ class TurboSimulator:
 
         return corr_all
 
-    def _ensure_cache(self, v_w, q_w, g_w, m_w, g_rev, top_n=20, mom_type='6m'):
-        """Build optimized cache — V+Q+G 부분합 재사용으로 mom_type 변경 시 고속."""
-        key = (v_w, q_w, g_w, m_w, g_rev, top_n, mom_type)
+    def _ensure_cache(self, v_w, q_w, g_w, m_w, g_rev, top_n=20, mom_type='6m',
+                      g_sub1='rev_z', g_sub2='oca_z'):
+        """Build optimized cache — V+Q+G 부분합 재사용, G 서브팩터 선택 가능."""
+        key = (v_w, q_w, g_w, m_w, g_rev, top_n, mom_type, g_sub1, g_sub2)
         if self._cached_key == key:
             return
         self._cached_key = key
@@ -448,12 +450,12 @@ class TurboSimulator:
         n_dates = len(dates)
         n_cols = self._n_cols
 
-        # Step 0: V+Q+G 부분합 캐싱 (mom_type 변경 시 재사용)
-        base_key = (v_w, q_w, g_w, g_rev)
+        # Step 0: V+Q+G 부분합 캐싱 (G 서브팩터 + 비율이 같으면 재사용)
+        base_key = (v_w, q_w, g_w, g_rev, g_sub1, g_sub2)
         if self._cached_base_key != base_key:
             self._cached_partials = [None] * n_dates
             for i in range(n_dates):
-                self._cached_partials[i] = self._compute_partial(dates[i], v_w, q_w, g_w, g_rev)
+                self._cached_partials[i] = self._compute_partial(dates[i], v_w, q_w, g_w, g_rev, g_sub1, g_sub2)
             self._cached_base_key = base_key
 
         # Step 1: 부분합 + 모멘텀으로 최종 스코어 (빠름)
@@ -487,14 +489,12 @@ class TurboSimulator:
     def run_fast(self, v_w, q_w, g_w, m_w, g_rev,
                  entry_param, exit_param, max_slots, top_n=20, stop_loss=-0.10,
                  corr_threshold=None, trailing_stop=None, mom_type='6m',
-                 take_profit=None):
+                 take_profit=None, g_sub1='rev_z', g_sub2='oca_z'):
         """Run simulation. Builds cache if needed, then runs hot loop.
-        corr_threshold: None=필터 없음, 0.65=상관관계 >= 0.65인 종목 스킵
-        trailing_stop: None=미사용, -0.15=고점 대비 -15%이면 매도
-        take_profit: None=미사용, 0.30=진입가 대비 +30%이면 매도
-        mom_type: '6m', '6m-1m', '12m', '12m-1m'
+        g_sub1/g_sub2: G 서브팩터 키 (rev_z, oca_z, rev_accel_z, gp_growth_z, op_margin_z, cfo_growth_z)
+        g_rev: sub1 비율 (0.0~1.0)
         """
-        self._ensure_cache(v_w, q_w, g_w, m_w, g_rev, top_n, mom_type)
+        self._ensure_cache(v_w, q_w, g_w, m_w, g_rev, top_n, mom_type, g_sub1, g_sub2)
         return _run_inner(
             self._cached_flat, self._price_arr, self._bench_arr,
             self._has_bench, self._date_row_indices, len(self.dates),
@@ -505,7 +505,9 @@ class TurboSimulator:
 
     def run_regime(self, defense_params, offense_params, regime_dict,
                    stop_loss=-0.10, corr_threshold=None, trailing_stop=None,
-                   take_profit=None):
+                   take_profit=None,
+                   g_sub1_d='rev_z', g_sub2_d='oca_z',
+                   g_sub1_o='rev_z', g_sub2_o='oca_z'):
         """국면전환 시뮬레이션 — 전환 시 포트폴리오 완전 청산 후 새 전략 재진입.
 
         Args:
@@ -517,11 +519,11 @@ class TurboSimulator:
 
         # 방어/공격 캐시 각각 빌드
         self._ensure_cache(dp['v'], dp['q'], dp['g'], dp['m'],
-                          dp['g_rev'], 20, dp.get('mom', '6m'))
+                          dp['g_rev'], 20, dp.get('mom', '6m'), g_sub1_d, g_sub2_d)
         defense_flat = list(self._cached_flat)
 
         self._ensure_cache(op['v'], op['q'], op['g'], op['m'],
-                          op['g_rev'], 20, op.get('mom', '6m'))
+                          op['g_rev'], 20, op.get('mom', '6m'), g_sub1_o, g_sub2_o)
         offense_flat = list(self._cached_flat)
 
         return _run_regime_inner(

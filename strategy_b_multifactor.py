@@ -187,6 +187,37 @@ class MultiFactorStrategy:
             return (op_recent - op_prev) / prev_asset * 100
         return None
 
+    def _calc_op_margin_change(self, fs, base_dt=None, cutoff_date=None):
+        """이익률변화 = OPM_TTM현재 - OPM_TTM전기 (%p)"""
+        q_data = fs[fs['공시구분'] == 'q'].copy()
+        if q_data.empty:
+            return None
+        if base_dt and 'rcept_dt' in q_data.columns:
+            has_rcept = q_data['rcept_dt'].notna()
+            rcept_ok = q_data['rcept_dt'] <= base_dt
+            cutoff_ok = q_data['기준일'] <= cutoff_date if cutoff_date else True
+            q_data = q_data[(has_rcept & rcept_ok) | (~has_rcept & cutoff_ok)]
+        elif cutoff_date is not None:
+            q_data = q_data[q_data['기준일'] <= cutoff_date]
+
+        op = q_data[q_data['계정'] == '영업이익'].drop_duplicates(subset=['기준일'], keep='first').sort_values('기준일')
+        rev = q_data[q_data['계정'] == '매출액'].drop_duplicates(subset=['기준일'], keep='first').sort_values('기준일')
+        op_dates = sorted(op['기준일'].unique(), reverse=True)
+        rev_dates = sorted(rev['기준일'].unique(), reverse=True)
+        if len(op_dates) < 8 or len(rev_dates) < 8:
+            return None
+
+        op_r4 = op[op['기준일'].isin(op_dates[:4])]['값'].sum()
+        rev_r4 = rev[rev['기준일'].isin(rev_dates[:4])]['값'].sum()
+        op_p4 = op[op['기준일'].isin(op_dates[4:8])]['값'].sum()
+        rev_p4 = rev[rev['기준일'].isin(rev_dates[4:8])]['값'].sum()
+
+        if rev_r4 > 0 and rev_p4 > 0:
+            opm_now = op_r4 / rev_r4
+            opm_prev = op_p4 / rev_p4
+            return (opm_now - opm_prev) * 100
+        return None
+
     def _calc_revenue_acceleration(self, fs, base_dt=None, cutoff_date=None):
         """Revenue Acceleration = 현재 TTM YoY - 직전 이벤트의 TTM YoY
 
@@ -318,14 +349,27 @@ class MultiFactorStrategy:
             except Exception:
                 continue
 
+        # 이익률변화 (OPM 변화, v75 G 서브팩터)
+        opm_dict = {}
+        for ticker in data['종목코드']:
+            if ticker not in fs_data:
+                continue
+            try:
+                fs = fs_data[ticker]
+                opm_chg = self._calc_op_margin_change(fs, base_dt, cutoff_date)
+                if opm_chg is not None:
+                    opm_dict[ticker] = opm_chg
+            except Exception:
+                continue
+
         data['매출성장률'] = data['종목코드'].map(rev_dict)
         data['이익변화량'] = data['종목코드'].map(oca_dict)
+        data['이익률변화'] = data['종목코드'].map(opm_dict)
 
         rev_cover = data['매출성장률'].notna().sum()
         oca_cover = data['이익변화량'].notna().sum()
-        print(f"매출성장률(TTM YoY): {rev_cover}/{len(data)}개 (TTM:{stats['rev_ttm']} 연간:{stats['rev_annual']})")
-        oca_label = "매출가속도(RevAccel)" if os.environ.get('USE_REV_ACCEL') == '1' else "이익변화량(op_change_asset)"
-        print(f"{oca_label}: {oca_cover}/{len(data)}개")
+        opm_cover = data['이익률변화'].notna().sum()
+        print(f"매출성장률: {rev_cover}/{len(data)}개 | 이익변화량: {oca_cover}/{len(data)}개 | 이익률변화: {opm_cover}/{len(data)}개")
 
         return data
 
@@ -567,6 +611,15 @@ class MultiFactorStrategy:
         if '이익변화량' in data.columns and data['이익변화량'].notna().sum() > 0:
             data['이익변화량_z'] = rank_zscore(data['이익변화량'], ascending=True, sectors=None)
             growth_zs.append('이익변화량_z')
+        # 이익률변화 (v75: G 서브팩터 후보)
+        if '영업이익' in data.columns and '매출액' in data.columns:
+            opm = data['영업이익'] / data['매출액'].replace(0, np.nan)
+            # 전기 OPM은 데이터 없으므로, 이익변화량 대비 매출 변화로 근사
+            # TTM 기반 OPM 변화는 FG에서 계산 → CP에서는 환경변수로 선택
+            pass
+        if '이익률변화' in data.columns and data['이익률변화'].notna().sum() > 0:
+            data['이익률변화_z'] = rank_zscore(data['이익률변화'], ascending=True, sectors=None)
+            growth_zs.append('이익률변화_z')
 
         momentum_zs = []
         if '모멘텀' in data.columns:
@@ -592,13 +645,23 @@ class MultiFactorStrategy:
         data['밸류_raw'] = data[value_zs].mean(axis=1) if value_zs else 0
         data['퀄리티_raw'] = data[quality_zs].mean(axis=1) if quality_zs else 0
 
-        # Growth: 매출성장률 vs 이익변화량 가중 평균 (G_REVENUE_WEIGHT 환경변수로 조절)
-        # 기본값 0.5 = 50:50 동일가중, 0.7 = 매출70:이익30, 0.3 = 매출30:이익70
-        if len(growth_zs) == 2 and '매출성장률_z' in growth_zs and '이익변화량_z' in growth_zs:
-            g_rev_w = float(os.environ.get('G_REVENUE_WEIGHT', '0.7'))
-            g_oca_w = 1.0 - g_rev_w
-            data['성장_raw'] = data['매출성장률_z'] * g_rev_w + data['이익변화량_z'] * g_oca_w
-            print(f"Growth 가중: 매출 {g_rev_w*100:.0f}% + 이익변화량 {g_oca_w*100:.0f}%")
+        # Growth: 서브팩터 2개 선택 + 비율 (환경변수)
+        # G_SUB1: 매출성장률_z, 이익변화량_z, 이익률변화_z 중 택1
+        # G_SUB2: 위 중 택1
+        # G_RATIO: sub1 비율 (0.0~1.0)
+        g_sub1_col = os.environ.get('G_SUB1', '매출성장률_z')
+        g_sub2_col = os.environ.get('G_SUB2', '이익변화량_z')
+        g_ratio = float(os.environ.get('G_RATIO', os.environ.get('G_REVENUE_WEIGHT', '0.6')))
+
+        if g_sub1_col in data.columns and g_sub2_col in data.columns:
+            sub1_nan = data[g_sub1_col].isna()
+            sub2_nan = data[g_sub2_col].isna()
+            data[g_sub1_col] = data[g_sub1_col].fillna(0.0)
+            data[g_sub2_col] = data[g_sub2_col].fillna(0.0)
+            data['성장_raw'] = data[g_sub1_col] * g_ratio + data[g_sub2_col] * (1 - g_ratio)
+            print(f"Growth: {g_sub1_col} {g_ratio:.0%} + {g_sub2_col} {1-g_ratio:.0%}")
+        elif len(growth_zs) >= 2:
+            data['성장_raw'] = data[growth_zs[:2]].mean(axis=1)
         else:
             data['성장_raw'] = data[growth_zs].mean(axis=1) if growth_zs else 0
 

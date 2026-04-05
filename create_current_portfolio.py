@@ -582,13 +582,17 @@ def run_strategy_b_scoring(
                     _mode = _json.load(_rf).get('mode', 'defense')
             _rp = get_regime_params(_mode)
             _mom_period = _rp.get('MOM_PERIOD', '6m')
-            _g_rev = _rp.get('G_REV', 0.7)
-            os.environ['G_REVENUE_WEIGHT'] = str(_g_rev)
+            _g_rev = _rp.get('G_REV', 0.6)
+            os.environ['G_RATIO'] = str(_g_rev)
+            os.environ['G_SUB1'] = _rp.get('G_SUB1', '매출성장률_z')
+            os.environ['G_SUB2'] = _rp.get('G_SUB2', '이익변화량_z')
             os.environ['FACTOR_V_W'] = str(_rp.get('V_W', 0.20))
             os.environ['FACTOR_Q_W'] = str(_rp.get('Q_W', 0.10))
             os.environ['FACTOR_G_W'] = str(_rp.get('G_W', 0.20))
             os.environ['FACTOR_M_W'] = str(_rp.get('M_W', 0.50))
-            print(f"  국면: {_mode} → V{_rp['V_W']:.0%}Q{_rp['Q_W']:.0%}G{_rp['G_W']:.0%}M{_rp['M_W']:.0%} mom={_mom_period} g_rev={_g_rev}")
+            _s1 = _rp.get('G_SUB1', '매출성장률_z')
+            _s2 = _rp.get('G_SUB2', '이익변화량_z')
+            print(f"  국면: {_mode} → V{_rp['V_W']:.0%}Q{_rp['Q_W']:.0%}G{_rp['G_W']:.0%}M{_rp['M_W']:.0%} mom={_mom_period} G=[{_s1} {_g_rev:.0%}+{_s2}]")
         except Exception:
             _mom_period = '6m'
 

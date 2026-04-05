@@ -272,9 +272,9 @@ def phase_2c(top_configs_df, n_top=500):
 # Phase 2d: FDR 보정 (Benjamini-Hochberg)
 # ============================================================================
 def phase_2d(full_results_df, wf_df, n_wf_top=100):
-    """Multiple testing 보정"""
+    """WF 검증 결과 필터 (FDR 삭제 — WF+안정성으로 대체)"""
     print(f'\n{"="*80}')
-    print(f'Phase 2d: FDR 보정 (Benjamini-Hochberg)')
+    print(f'Phase 2d: WF 필터 (FDR 삭제, WF+안정성만)')
     print(f'{"="*80}')
 
     # 전체 결과에서 p-value 계산 (Calmar 분포 기반)

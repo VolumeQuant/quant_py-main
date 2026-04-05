@@ -95,25 +95,12 @@ def get_current_regime(kospi_close=None, kospi_ma120=None,
         state['streak'] = 1
         state['streak_mode'] = signal
 
-    # 3일 확인 + 10거래일 cooldown (whipsaw 방지)
-    CONFIRM_DAYS = 3  # v75 확정: KP120_3d (3일 확인)
-    COOLDOWN_DAYS = 10  # 전환 후 최소 10거래일 재전환 금지
+    # 확인일수만으로 whipsaw 방지 (cooldown 삭제)
+    CONFIRM_DAYS = 3  # 국면전환 서치에서 최적화 예정
     switched = False
 
-    # cooldown 체크: 마지막 전환 이후 경과일
-    last_switch = state.get('last_switch_date')
-    cooldown_ok = True
-    if last_switch and date_str:
-        from datetime import datetime
-        try:
-            gap = (datetime.strptime(date_str, '%Y%m%d') - datetime.strptime(last_switch, '%Y%m%d')).days
-            cooldown_ok = gap >= COOLDOWN_DAYS * 1.5  # 10거래일 ≈ 15캘린더일
-        except (ValueError, TypeError):
-            cooldown_ok = True
-
-    if state['streak'] >= CONFIRM_DAYS and state['mode'] != signal and cooldown_ok:
+    if state['streak'] >= CONFIRM_DAYS and state['mode'] != signal:
         state['mode'] = signal
-        state['last_switch_date'] = date_str
         switched = True
 
     # 히스토리 추가
@@ -147,28 +134,32 @@ def get_regime_params(mode):
     """
     if mode == 'boost':
         return {
-            'V_W': 0.25, 'Q_W': 0.00, 'G_W': 0.50, 'M_W': 0.25,
-            'G_REV': 0.3,
+            'V_W': 0.10, 'Q_W': 0.00, 'G_W': 0.70, 'M_W': 0.20,
+            'G_REV': 0.6,
+            'G_SUB1': '이익변화량_z',     # 영업이익변화 60%
+            'G_SUB2': '이익률변화_z',     # 이익률변화 40%
             'MOM_PERIOD': '12m-1m',
-            'ENTRY_RANK': 3, 'EXIT_RANK': 4, 'MAX_SLOTS': 7,
-            'STOP_LOSS': -0.15,
-            'TRAILING_STOP': -0.20,
+            'ENTRY_RANK': 5, 'EXIT_RANK': 8, 'MAX_SLOTS': 3,
+            'STOP_LOSS': -0.10,
+            'TRAILING_STOP': -0.15,
             'CORR_THRESHOLD': None,
             'USE_REV_ACCEL': False,
-            'label': '공격 모드 (Growth+매출 중심, 안전망 -15%)',
+            'label': '공격 모��� (Growth 70%, 영업이익+이익률)',
             'icon': '⚔️',
         }
     else:  # v75 방어 (defense)
         return {
             'V_W': 0.20, 'Q_W': 0.10, 'G_W': 0.20, 'M_W': 0.50,
             'G_REV': 0.6,
+            'G_SUB1': '매출성장률_z',     # 매출성장 60%
+            'G_SUB2': '이익률변화_z',     # 이익률변화 40%
             'MOM_PERIOD': '6m-1m',
             'ENTRY_RANK': 5, 'EXIT_RANK': 8, 'MAX_SLOTS': 7,
             'STOP_LOSS': -0.10,
             'TRAILING_STOP': -0.15,
-            'CORR_THRESHOLD': 0.6,
+            'CORR_THRESHOLD': None,
             'USE_REV_ACCEL': False,
-            'label': '방어 모드 (Momentum+분산)',
+            'label': '방어 ��드 (Momentum 50%, 매출+이익률)',
             'icon': '🛡️',
         }
 
