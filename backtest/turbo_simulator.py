@@ -132,10 +132,17 @@ class TurboSimulator:
             quality_s = np.empty(n, dtype=np.float64)
             growth_s = np.empty(n, dtype=np.float64)
             momentum_s = np.empty(n, dtype=np.float64)
-            rev_z = np.empty(n, dtype=np.float64)
-            oca_z = np.empty(n, dtype=np.float64)
+            # 6개 G 서브팩터 z-score
+            g_subs = {k: np.empty(n, dtype=np.float64) for k in
+                      ['rev_z', 'oca_z', 'rev_accel_z', 'gp_growth_z', 'op_margin_z', 'cfo_growth_z']}
             r_prices = np.empty(n, dtype=np.float64)
             col_indices = np.empty(n, dtype=np.int32)
+
+            # 4종 모멘텀 배열
+            mom_6m_s = np.empty(n, dtype=np.float64)
+            mom_6m1m_s = np.empty(n, dtype=np.float64)
+            mom_12m_s = np.empty(n, dtype=np.float64)
+            mom_12m1m_s = np.empty(n, dtype=np.float64)
 
             for j, s in enumerate(rankings):
                 tk = s['ticker']
@@ -144,14 +151,19 @@ class TurboSimulator:
                 quality_s[j] = s.get('quality_s') or 0.0
                 growth_s[j] = s.get('growth_s') or 0.0
                 momentum_s[j] = s.get('momentum_s') or 0.0
-                rev_z[j] = s.get('rev_z') or 0.0
-                oca_z[j] = s.get('oca_z') or 0.0
+                for gk in g_subs:
+                    g_subs[gk][j] = s.get(gk) or 0.0
                 p = s.get('price')
                 r_prices[j] = float(p) if p is not None else 0.0
                 col_indices[j] = tk_to_col.get(tk, -1)
+                mom_6m_s[j] = s.get('mom_6m_s') or momentum_s[j]
+                mom_6m1m_s[j] = s.get('mom_6m1m_s') or 0.0
+                mom_12m_s[j] = s.get('mom_12m_s') or 0.0
+                mom_12m1m_s[j] = s.get('mom_12m1m_s') or 0.0
 
             self._preextracted[date] = (tickers, value_s, quality_s, growth_s,
-                                        momentum_s, rev_z, oca_z, r_prices, col_indices)
+                                        momentum_s, g_subs, r_prices, col_indices,
+                                        mom_6m_s, mom_6m1m_s, mom_12m_s, mom_12m1m_s)
 
         # ---- 60일 상관관계 1회 사전 계산 (가중치 무관) ----
         self._corr_all = self._precompute_all_correlations()
@@ -159,19 +171,54 @@ class TurboSimulator:
         # Cache
         self._cached_key = None
         self._cached_flat = None
+        self._cached_base_key = None  # (v_w, q_w, g_w, g_rev) for partial reuse
+        self._cached_partials = None  # V+Q+G partial sums per date
 
-    def _vectorized_reweight(self, date, v_w, q_w, g_w, m_w, g_rev):
+    def _compute_partial(self, date, v_w, q_w, g_w, g_rev, g_sub1='rev_z', g_sub2='oca_z'):
+        """V+Q+G 부분합 계산. G = g_rev*sub1 + (1-g_rev)*sub2, 재표준화."""
+        pre = self._preextracted.get(date)
+        if pre is None:
+            return None
+        (tickers, value_s, quality_s, growth_s, momentum_s,
+         g_subs, r_prices, col_indices,
+         mom_6m_s, mom_6m1m_s, mom_12m_s, mom_12m1m_s) = pre
+        n = len(tickers)
+        sub1_arr = g_subs.get(g_sub1, g_subs.get('rev_z'))
+        sub2_arr = g_subs.get(g_sub2, g_subs.get('oca_z'))
+        g_raw = g_rev * sub1_arr + (1 - g_rev) * sub2_arr
+        g_std = g_raw.std()
+        g_standardized = (g_raw - g_raw.mean()) / g_std if g_std > 0 else np.zeros(n)
+        partial = v_w * value_s + q_w * quality_s + g_w * g_standardized
+        return (tickers, partial, r_prices, col_indices, mom_6m_s, mom_6m1m_s, mom_12m_s, mom_12m1m_s)
+
+    def _vectorized_reweight(self, date, v_w, q_w, g_w, m_w, g_rev, mom_type='6m'):
         """Returns (tickers, new_scores, new_ranks, prices, col_indices) or None."""
         pre = self._preextracted.get(date)
         if pre is None:
             return None
 
-        tickers, value_s, quality_s, growth_s, momentum_s, rev_z, oca_z, r_prices, col_indices = pre
+        (tickers, value_s, quality_s, growth_s, momentum_s,
+         g_subs, r_prices, col_indices,
+         mom_6m_s, mom_6m1m_s, mom_12m_s, mom_12m1m_s) = pre
+        rev_z = g_subs.get('rev_z', np.zeros(len(tickers)))
+        oca_z = g_subs.get('oca_z', np.zeros(len(tickers)))
+
+        # 모멘텀 타입 선택
+        if mom_type == '6m':
+            use_momentum = mom_6m_s
+        elif mom_type == '6m-1m':
+            use_momentum = mom_6m1m_s
+        elif mom_type == '12m':
+            use_momentum = mom_12m_s
+        elif mom_type == '12m-1m':
+            use_momentum = mom_12m1m_s
+        else:
+            use_momentum = momentum_s
         n = len(tickers)
 
         use_original_g = abs(g_rev - 0.5) < 0.01
         if use_original_g:
-            new_scores = v_w * value_s + q_w * quality_s + g_w * growth_s + m_w * momentum_s
+            new_scores = v_w * value_s + q_w * quality_s + g_w * growth_s + m_w * use_momentum
         else:
             g_raw = g_rev * rev_z + (1 - g_rev) * oca_z
             g_std = g_raw.std()
@@ -179,7 +226,7 @@ class TurboSimulator:
                 g_standardized = (g_raw - g_raw.mean()) / g_std
             else:
                 g_standardized = np.zeros(n)
-            new_scores = v_w * value_s + q_w * quality_s + g_w * g_standardized + m_w * momentum_s
+            new_scores = v_w * value_s + q_w * quality_s + g_w * g_standardized + m_w * use_momentum
 
         sort_idx = np.argsort(-new_scores)
         new_ranks = np.empty(n, dtype=np.int32)
@@ -391,9 +438,10 @@ class TurboSimulator:
 
         return corr_all
 
-    def _ensure_cache(self, v_w, q_w, g_w, m_w, g_rev, top_n=20):
-        """Build optimized cache with flat wrank arrays and pre-sorted candidates."""
-        key = (v_w, q_w, g_w, m_w, g_rev, top_n)
+    def _ensure_cache(self, v_w, q_w, g_w, m_w, g_rev, top_n=20, mom_type='6m',
+                      g_sub1='rev_z', g_sub2='oca_z'):
+        """Build optimized cache — V+Q+G 부분합 재사용, G 서브팩터 선택 가능."""
+        key = (v_w, q_w, g_w, m_w, g_rev, top_n, mom_type, g_sub1, g_sub2)
         if self._cached_key == key:
             return
         self._cached_key = key
@@ -402,10 +450,30 @@ class TurboSimulator:
         n_dates = len(dates)
         n_cols = self._n_cols
 
-        # Step 1: Reweight all dates (numpy-vectorized per date)
+        # Step 0: V+Q+G 부분합 캐싱 (G 서브팩터 + 비율이 같으면 재사용)
+        base_key = (v_w, q_w, g_w, g_rev, g_sub1, g_sub2)
+        if self._cached_base_key != base_key:
+            self._cached_partials = [None] * n_dates
+            for i in range(n_dates):
+                self._cached_partials[i] = self._compute_partial(dates[i], v_w, q_w, g_w, g_rev, g_sub1, g_sub2)
+            self._cached_base_key = base_key
+
+        # Step 1: 부분합 + 모멘텀으로 최종 스코어 (빠름)
+        mom_map = {'6m': 4, '6m-1m': 5, '12m': 6, '12m-1m': 7}
+        mi = mom_map.get(mom_type, 4)
+
         reweighted = [None] * n_dates
         for i in range(n_dates):
-            reweighted[i] = self._vectorized_reweight(dates[i], v_w, q_w, g_w, m_w, g_rev)
+            p = self._cached_partials[i]
+            if p is None:
+                continue
+            tickers, partial, r_prices, col_indices = p[0], p[1], p[2], p[3]
+            use_momentum = p[mi]
+            new_scores = partial + m_w * use_momentum
+            sort_idx = np.argsort(-new_scores)
+            new_ranks = np.empty(len(tickers), dtype=np.int32)
+            new_ranks[sort_idx] = np.arange(1, len(tickers) + 1)
+            reweighted[i] = (tickers, new_scores, new_ranks, r_prices, col_indices)
 
         # Step 2: Build flat pipelines
         flat = [None] * n_dates
@@ -420,38 +488,223 @@ class TurboSimulator:
 
     def run_fast(self, v_w, q_w, g_w, m_w, g_rev,
                  entry_param, exit_param, max_slots, top_n=20, stop_loss=-0.10,
-                 corr_threshold=None):
+                 corr_threshold=None, trailing_stop=None, mom_type='6m',
+                 take_profit=None, g_sub1='rev_z', g_sub2='oca_z'):
         """Run simulation. Builds cache if needed, then runs hot loop.
-        corr_threshold: None=필터 없음, 0.65=상관관계 >= 0.65인 종목 스킵
+        g_sub1/g_sub2: G 서브팩터 키 (rev_z, oca_z, rev_accel_z, gp_growth_z, op_margin_z, cfo_growth_z)
+        g_rev: sub1 비율 (0.0~1.0)
         """
-        self._ensure_cache(v_w, q_w, g_w, m_w, g_rev, top_n)
+        self._ensure_cache(v_w, q_w, g_w, m_w, g_rev, top_n, mom_type, g_sub1, g_sub2)
         return _run_inner(
             self._cached_flat, self._price_arr, self._bench_arr,
             self._has_bench, self._date_row_indices, len(self.dates),
             entry_param, exit_param, max_slots, stop_loss,
             self._corr_all if corr_threshold is not None else None,
-            corr_threshold)
+            corr_threshold, trailing_stop, take_profit)
 
 
-def _run_inner(flat_pipelines, price_arr, bench_arr, has_bench,
-               date_rows, n_dates, entry_param, exit_param, max_slots,
-               stop_loss=-0.10, corr_maps=None, corr_threshold=None):
-    """Pure Python hot loop — zero numpy function calls, zero pandas.
+    def run_regime(self, defense_params, offense_params, regime_dict,
+                   stop_loss=-0.10, corr_threshold=None, trailing_stop=None,
+                   take_profit=None,
+                   g_sub1_d='rev_z', g_sub2_d='oca_z',
+                   g_sub1_o='rev_z', g_sub2_o='oca_z'):
+        """국면전환 시뮬레이션 — 전환 시 포트폴리오 완전 청산 후 새 전략 재진입.
 
-    All data access is:
-      - price_arr[row, col]: numpy 2D array element lookup (no function call)
-      - wrank_arr[col]: numpy 1D array element lookup (no function call)
-      - cand_cols[i]: plain Python list indexing
-    No dict.get() in the critical path (replaced by flat array).
-    Candidates are pre-sorted during cache build.
-    """
-    portfolio = {}  # {col_index: entry_price}
-    # Pre-allocate return arrays as plain Python lists
+        Args:
+            defense_params: dict with v,q,g,m,g_rev,entry,exit,slots,mom_type
+            offense_params: dict with v,q,g,m,g_rev,entry,exit,slots,mom_type
+            regime_dict: {date_str: True(공격)/False(방��)}
+        """
+        dp, op = defense_params, offense_params
+
+        # 방어/공격 캐시 각각 빌드
+        self._ensure_cache(dp['v'], dp['q'], dp['g'], dp['m'],
+                          dp['g_rev'], 20, dp.get('mom', '6m'), g_sub1_d, g_sub2_d)
+        defense_flat = list(self._cached_flat)
+
+        self._ensure_cache(op['v'], op['q'], op['g'], op['m'],
+                          op['g_rev'], 20, op.get('mom', '6m'), g_sub1_o, g_sub2_o)
+        offense_flat = list(self._cached_flat)
+
+        return _run_regime_inner(
+            defense_flat, offense_flat,
+            dp['entry'], dp['exit'], dp['slots'],
+            op['entry'], op['exit'], op['slots'],
+            regime_dict, self.dates,
+            self._price_arr, self._bench_arr, self._has_bench,
+            self._date_row_indices, len(self.dates),
+            stop_loss,
+            self._corr_all if corr_threshold is not None else None,
+            corr_threshold, trailing_stop)
+
+
+def _run_regime_inner(defense_flat, offense_flat,
+                      d_entry, d_exit, d_slots,
+                      o_entry, o_exit, o_slots,
+                      regime_dict, dates,
+                      price_arr, bench_arr, has_bench,
+                      date_rows, n_dates,
+                      stop_loss=-0.10, corr_maps=None,
+                      corr_threshold=None, trailing_stop=None):
+    """국면전환 시뮬레이션 핫루프 — 전환 시 포트폴리오 청산."""
+    portfolio = {}
+    peak_prices = {}
     daily_rets = [0.0] * n_dates
     bench_rets = [0.0] * n_dates
     holdings_count = [0] * n_dates
 
     use_stop_loss = stop_loss is not None
+    use_trailing = trailing_stop is not None
+    prev_regime = None
+
+    for i in range(2, n_dates):
+        d = dates[i]
+        cur_regime = regime_dict.get(d, False)  # False=방어, True=공격
+
+        # === 국면 전환 감지 → 포트폴리오 청산 ===
+        if prev_regime is not None and cur_regime != prev_regime:
+            # 전환일: 기존 전량 매도 (수익률은 전일까지 반영됨)
+            portfolio.clear()
+            peak_prices.clear()
+
+        prev_regime = cur_regime
+
+        # 현재 국면에 맞는 파이프라인/파라미터 선택
+        if cur_regime:  # 공격
+            pipe = offense_flat[i]
+            entry_param = o_entry
+            exit_param = o_exit
+            max_slots = o_slots
+        else:  # 방어
+            pipe = defense_flat[i]
+            entry_param = d_entry
+            exit_param = d_exit
+            max_slots = d_slots
+
+        if pipe is None:
+            holdings_count[i] = len(portfolio)
+            continue
+
+        wrank_arr, cand_cols, cand_prices, cand_wranks = pipe
+        cur_row = date_rows[i]
+
+        # === UPDATE PEAK PRICES ===
+        if use_trailing and portfolio and cur_row >= 0:
+            for col in portfolio:
+                cur_p = price_arr[cur_row, col]
+                if cur_p == cur_p and cur_p > 0:
+                    if col in peak_prices:
+                        if cur_p > peak_prices[col]:
+                            peak_prices[col] = cur_p
+                    else:
+                        peak_prices[col] = cur_p
+
+        # === EXIT ===
+        if portfolio:
+            to_remove = []
+            for col, ep in portfolio.items():
+                should_exit = False
+                if use_stop_loss and cur_row >= 0:
+                    cur_p = price_arr[cur_row, col]
+                    if cur_p == cur_p and ep > 0:
+                        if (cur_p / ep - 1.0) <= stop_loss:
+                            should_exit = True
+                if not should_exit and use_trailing and cur_row >= 0:
+                    cur_p = price_arr[cur_row, col]
+                    pk = peak_prices.get(col, ep)
+                    if cur_p == cur_p and pk > 0:
+                        if (cur_p / pk - 1.0) <= trailing_stop:
+                            should_exit = True
+                if not should_exit:
+                    if wrank_arr[col] > exit_param:
+                        should_exit = True
+                if should_exit:
+                    to_remove.append(col)
+            for col in to_remove:
+                del portfolio[col]
+                if col in peak_prices:
+                    del peak_prices[col]
+
+        # === ENTRY ===
+        slots_avail = max_slots - len(portfolio)
+        if slots_avail > 0:
+            use_corr = corr_maps is not None and corr_threshold is not None
+            day_corr = corr_maps[i] if use_corr else None
+            selected_cols = []
+
+            n_cand = len(cand_cols)
+            for k in range(n_cand):
+                if slots_avail <= 0:
+                    break
+                if cand_wranks[k] <= entry_param:
+                    c = cand_cols[k]
+                    if c not in portfolio:
+                        if day_corr:
+                            is_correlated = False
+                            for hc in portfolio:
+                                key = (min(c, hc), max(c, hc))
+                                if day_corr.get(key, 0.0) >= corr_threshold:
+                                    is_correlated = True
+                                    break
+                            if not is_correlated:
+                                for sc in selected_cols:
+                                    key = (min(c, sc), max(c, sc))
+                                    if day_corr.get(key, 0.0) >= corr_threshold:
+                                        is_correlated = True
+                                        break
+                            if is_correlated:
+                                continue
+                        portfolio[c] = cand_prices[k]
+                        peak_prices[c] = cand_prices[k]
+                        selected_cols.append(c)
+                        slots_avail -= 1
+
+        n_hold = len(portfolio)
+        holdings_count[i] = n_hold
+
+        # === DAILY RETURN ===
+        if i + 1 < n_dates and n_hold > 0:
+            next_row = date_rows[i + 1]
+            if next_row >= 0 and cur_row >= 0:
+                total_ret = 0.0
+                count = 0
+                for col in portfolio:
+                    c_p = price_arr[next_row, col]
+                    p_p = price_arr[cur_row, col]
+                    if c_p == c_p and p_p == p_p and p_p > 0:
+                        total_ret += c_p / p_p - 1.0
+                        count += 1
+                daily_rets[i] = total_ret / count if count > 0 else 0.0
+
+                if has_bench:
+                    b_c = bench_arr[next_row]
+                    b_p = bench_arr[cur_row]
+                    if b_c == b_c and b_p == b_p and b_p > 0:
+                        bench_rets[i] = b_c / b_p - 1.0
+
+    metrics = _calc_metrics(daily_rets, bench_rets, holdings_count)
+    metrics['_daily_rets'] = daily_rets
+    return metrics
+
+
+def _run_inner(flat_pipelines, price_arr, bench_arr, has_bench,
+               date_rows, n_dates, entry_param, exit_param, max_slots,
+               stop_loss=-0.10, corr_maps=None, corr_threshold=None,
+               trailing_stop=None, take_profit=None):
+    """Pure Python hot loop — zero numpy function calls, zero pandas.
+
+    trailing_stop: None=미사용, -0.15=고점 대비 -15%이면 매도
+    take_profit: None=미사용, 0.30=진입가 대비 +30%이면 매도
+    """
+    portfolio = {}  # {col_index: entry_price}
+    peak_prices = {}  # {col_index: peak_price} — 트레일링 스톱용
+    daily_rets = [0.0] * n_dates
+    bench_rets = [0.0] * n_dates
+    holdings_count = [0] * n_dates
+
+    use_stop_loss = stop_loss is not None
+    use_trailing = trailing_stop is not None
+    use_take_profit = take_profit is not None
 
     for i in range(2, n_dates):
         pipe = flat_pipelines[i]
@@ -462,19 +715,42 @@ def _run_inner(flat_pipelines, price_arr, bench_arr, has_bench,
         wrank_arr, cand_cols, cand_prices, cand_wranks = pipe
         cur_row = date_rows[i]
 
+        # === UPDATE PEAK PRICES ===
+        if use_trailing and portfolio and cur_row >= 0:
+            for col in portfolio:
+                cur_p = price_arr[cur_row, col]
+                if cur_p == cur_p and cur_p > 0:  # NaN check
+                    if col in peak_prices:
+                        if cur_p > peak_prices[col]:
+                            peak_prices[col] = cur_p
+                    else:
+                        peak_prices[col] = cur_p
+
         # === EXIT ===
         if portfolio:
             to_remove = []
             for col, ep in portfolio.items():
                 should_exit = False
-                # 1. Stop loss
+                # 1. Stop loss (진입가 대비)
                 if use_stop_loss and cur_row >= 0:
                     cur_p = price_arr[cur_row, col]
                     if cur_p == cur_p and ep > 0:  # NaN check: x != x for NaN
                         if (cur_p / ep - 1.0) <= stop_loss:
                             should_exit = True
+                # 1.5. Trailing stop (고점 대비)
+                if not should_exit and use_trailing and cur_row >= 0:
+                    cur_p = price_arr[cur_row, col]
+                    pk = peak_prices.get(col, ep)
+                    if cur_p == cur_p and pk > 0:
+                        if (cur_p / pk - 1.0) <= trailing_stop:
+                            should_exit = True
+                # 1.7. Take profit (진입가 대비)
+                if not should_exit and use_take_profit and cur_row >= 0:
+                    cur_p = price_arr[cur_row, col]
+                    if cur_p == cur_p and ep > 0:
+                        if (cur_p / ep - 1.0) >= take_profit:
+                            should_exit = True
                 # 2. Strategy exit: wrank_arr[col] > exit_param
-                #    Sentinel value (_SENTINEL_WRANK=9999) handles missing tickers
                 if not should_exit:
                     if wrank_arr[col] > exit_param:
                         should_exit = True
@@ -482,6 +758,8 @@ def _run_inner(flat_pipelines, price_arr, bench_arr, has_bench,
                     to_remove.append(col)
             for col in to_remove:
                 del portfolio[col]
+                if col in peak_prices:
+                    del peak_prices[col]
 
         # === ENTRY ===
         # cand_cols/cand_prices/cand_wranks are pre-sorted by score_100 desc
@@ -516,6 +794,7 @@ def _run_inner(flat_pipelines, price_arr, bench_arr, has_bench,
                             if is_correlated:
                                 continue
                         portfolio[c] = cand_prices[k]
+                        peak_prices[c] = cand_prices[k]
                         selected_cols.append(c)
                         slots_avail -= 1
 
@@ -542,7 +821,9 @@ def _run_inner(flat_pipelines, price_arr, bench_arr, has_bench,
                     if b_c == b_c and b_p == b_p and b_p > 0:
                         bench_rets[i] = b_c / b_p - 1.0
 
-    return _calc_metrics(daily_rets, bench_rets, holdings_count)
+    metrics = _calc_metrics(daily_rets, bench_rets, holdings_count)
+    metrics['_daily_rets'] = daily_rets
+    return metrics
 
 
 class TurboRunner:
@@ -566,10 +847,10 @@ class TurboRunner:
         self._corr_all = getattr(tsim, '_corr_all', None)
 
     def run(self, entry_param, exit_param, max_slots, stop_loss=-0.10,
-            corr_threshold=None):
+            corr_threshold=None, trailing_stop=None, take_profit=None):
         return _run_inner(
             self._flat, self._price_arr, self._bench_arr,
             self._has_bench, self._date_rows, self._n_dates,
             entry_param, exit_param, max_slots, stop_loss,
             self._corr_all if corr_threshold is not None else None,
-            corr_threshold)
+            corr_threshold, trailing_stop, take_profit)

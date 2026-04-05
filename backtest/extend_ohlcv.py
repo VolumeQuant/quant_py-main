@@ -28,6 +28,9 @@ def main():
         print('기존 OHLCV 파일 없음')
         return
 
+    full_files = [f for f in existing_files if '_full' in f.stem]
+    if full_files:
+        existing_files = full_files
     existing = pd.read_parquet(existing_files[-1])
     existing_start = existing.index[0].strftime('%Y%m%d')
     existing_end = existing.index[-1].strftime('%Y%m%d')

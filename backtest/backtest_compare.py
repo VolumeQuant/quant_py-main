@@ -131,6 +131,9 @@ def load_data(state_dir=None, state_dirs=None):
     ohlcv_files = list((PROJECT_ROOT / 'data_cache').glob('all_ohlcv_*.parquet'))
     if not ohlcv_files:
         raise FileNotFoundError('OHLCV 파일 없음')
+    full_files = [f for f in ohlcv_files if '_full' in f.stem]
+    if full_files:
+        ohlcv_files = full_files
     ohlcv_files.sort(key=lambda f: f.stem.split('_')[2])  # 시작일 기준 정렬
     ohlcv_df = pd.read_parquet(ohlcv_files[0])  # 가장 이른 시작일
     ohlcv_date_map = {dt.strftime('%Y%m%d'): dt for dt in ohlcv_df.index}

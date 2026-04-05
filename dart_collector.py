@@ -38,6 +38,8 @@ CACHE_DIR = PROJECT_ROOT / 'data_cache'
 # ── account_id → 시스템 계정명 매핑 (IFRS 표준코드) ──
 ACCOUNT_ID_MAP = {
     'ifrs-full_Revenue': '매출액',
+    'dart_RevenueFromSaleOfGoodsProduct': '매출액',
+    'dart_TotalSellingGeneralAdministrativeExpenses': '매출액',  # 일부 기업
     'ifrs-full_GrossProfit': '매출총이익',
     'dart_OperatingIncomeLoss': '영업이익',
     'ifrs-full_ProfitLossBeforeTax': '세전계속사업이익',
@@ -164,12 +166,19 @@ class DartCollector:
         if df is None or (hasattr(df, 'empty') and df.empty):
             return {}
 
-        # 외화 재무제표 필터 (CNY 등 제외)
+        # 외화 재무제표 처리: USD → KRW 환율 변환, 기타 통화 제외
+        fx_rate = 1.0
         if 'currency' in df.columns:
-            krw_mask = df['currency'].fillna('KRW') == 'KRW'
-            if not krw_mask.all():
-                non_krw = df[~krw_mask]['currency'].unique()
-                df = df[krw_mask]
+            currencies = df['currency'].dropna().unique()
+            if len(currencies) == 1 and currencies[0] == 'USD':
+                # USD 단일 통화 → 환율 변환
+                fx_rate = self._get_usd_krw_rate(df)
+            elif 'KRW' not in currencies:
+                # KRW도 USD도 아닌 통화만 → 스킵
+                return {}
+            else:
+                # KRW 행만 사용
+                df = df[df['currency'].fillna('KRW') == 'KRW']
                 if df.empty:
                     return {}
 
@@ -180,19 +189,55 @@ class DartCollector:
                 sys_name = ACCOUNT_ID_MAP[aid]
                 val = self._parse_amount(row.get('thstrm_amount'))
                 if val is not None and sys_name not in result:
+                    if fx_rate != 1.0:
+                        val = val * fx_rate  # USD→KRW 변환 (이미 억원 단위)
                     result[sys_name] = val
         return result
+
+    def _get_usd_krw_rate(self, df):
+        """공시일 기준 USD/KRW 환율 조회 (yfinance 캐시)"""
+        if not hasattr(self, '_fx_cache'):
+            try:
+                import yfinance as yf
+                fx = yf.download('USDKRW=X', start='2018-01-01', period='max', progress=False)
+                close = fx['Close'].iloc[:, 0] if isinstance(fx.columns, pd.MultiIndex) else fx['Close']
+                self._fx_cache = close
+            except Exception:
+                self._fx_cache = None
+
+        if self._fx_cache is None:
+            return 1450.0  # 최근 평균 fallback
+
+        # 공시접수일 추출
+        rcept_no = str(df.iloc[0].get('rcept_no', ''))
+        if len(rcept_no) >= 8:
+            try:
+                date = pd.Timestamp(rcept_no[:8])
+                # 가장 가까운 거래일의 환율
+                idx = self._fx_cache.index.searchsorted(date)
+                idx = min(idx, len(self._fx_cache) - 1)
+                return float(self._fx_cache.iloc[idx])
+            except Exception:
+                pass
+        return 1450.0  # fallback
 
     def _extract_cumulative(self, df):
         """Q3 보고서에서 thstrm_add_amount (누적값) 추출"""
         if df is None or (hasattr(df, 'empty') and df.empty):
             return {}
 
-        # 외화 재무제표 필터
+        # USD 환율 처리 (extract_accounts와 동일)
+        fx_rate = 1.0
         if 'currency' in df.columns:
-            df = df[df['currency'].fillna('KRW') == 'KRW']
-            if df.empty:
+            currencies = df['currency'].dropna().unique()
+            if len(currencies) == 1 and currencies[0] == 'USD':
+                fx_rate = self._get_usd_krw_rate(df)
+            elif 'KRW' not in currencies:
                 return {}
+            else:
+                df = df[df['currency'].fillna('KRW') == 'KRW']
+                if df.empty:
+                    return {}
 
         result = {}
         for _, row in df.iterrows():
@@ -201,6 +246,8 @@ class DartCollector:
                 sys_name = ACCOUNT_ID_MAP[aid]
                 val = self._parse_amount(row.get('thstrm_add_amount'))
                 if val is not None and sys_name not in result:
+                    if fx_rate != 1.0:
+                        val = val * fx_rate
                     result[sys_name] = val
         return result
 

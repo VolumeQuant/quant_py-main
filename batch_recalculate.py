@@ -24,6 +24,9 @@ def get_ranking_dates():
 def backup_ohlcv_cache():
     """기존 OHLCV 캐시 백업"""
     ohlcv_files = list(CACHE_DIR.glob('all_ohlcv_*.parquet'))
+    full_files = [f for f in ohlcv_files if '_full' in f.stem]
+    if full_files:
+        ohlcv_files = full_files
     if not ohlcv_files:
         print("OHLCV 캐시 없음 - 백업 스킵")
         return
@@ -38,6 +41,9 @@ def backup_ohlcv_cache():
 def clear_ohlcv_cache():
     """OHLCV 캐시 삭제 (빈 상태에서 증분 시작)"""
     ohlcv_files = list(CACHE_DIR.glob('all_ohlcv_*.parquet'))
+    full_files_del = [f for f in ohlcv_files if '_full' in f.stem]
+    if full_files_del:
+        ohlcv_files = full_files_del
     # 개별 종목 캐시도 삭제 (get_ohlcv가 만든 파일)
     individual_files = list(CACHE_DIR.glob('ohlcv_*_*.parquet'))
 
@@ -95,6 +101,9 @@ def run_pipeline_for_date(date_str, attempt=1):
 def clean_intermediate_ohlcv():
     """중간 OHLCV 캐시 파일 정리 (최신 것만 유지)"""
     files = sorted(CACHE_DIR.glob('all_ohlcv_*.parquet'))
+    full_files_clean = [f for f in files if '_full' in f.stem]
+    if full_files_clean:
+        files = full_files_clean
     if len(files) > 1:
         for f in files[:-1]:
             f.unlink()

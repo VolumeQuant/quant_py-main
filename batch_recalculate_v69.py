@@ -112,8 +112,12 @@ def main():
         print("  ERROR: OHLCV 캐시 없음! 먼저 create_current_portfolio.py를 한 번 실행하세요.")
         return False
 
-    # 가장 넓은 범위 캐시 사용
-    ohlcv_file = max(ohlcv_files, key=lambda f: f.stat().st_size)
+    # _full 파일 우선 선택, 없으면 가장 큰 파일
+    full_files = [f for f in ohlcv_files if '_full' in f.stem]
+    if full_files:
+        ohlcv_file = max(full_files, key=lambda f: f.stat().st_size)
+    else:
+        ohlcv_file = max(ohlcv_files, key=lambda f: f.stat().st_size)
     full_price_df = pd.read_parquet(ohlcv_file)
     print(f"  OHLCV: {ohlcv_file.name} ({len(full_price_df)}거래일, {len(full_price_df.columns)}종목)")
 

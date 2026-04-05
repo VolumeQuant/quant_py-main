@@ -33,10 +33,8 @@ warnings.filterwarnings('ignore')
 
 # 내부 모듈
 from data_collector import DataCollector
-from fnguide_crawler import get_consensus_batch
 from error_handler import ErrorTracker, ErrorCategory
 from strategy_a_magic import MagicFormulaStrategy
-from strategy_b_multifactor import MultiFactorStrategy
 from ranking_manager import save_ranking, load_ranking, get_available_ranking_dates
 
 # 설정
@@ -170,53 +168,112 @@ def _check_data_mismatch(dart_df, fn_df):
         return False
 
 
-def load_fs_data_dart_first(tickers):
-    """재무제표 로드: DART 우선 → FnGuide 폴백 (캐시만, 크롤링 없음)
+def _merge_fs_supplement(primary_df, secondary_df):
+    """DART(primary)에 누락된 계정을 FnGuide(secondary)에서 보충.
 
-    DART vs FnGuide 주요 계정 불일치 종목(CFS/OFS 혼재, 지주회사 등)은 FnGuide로 교체.
+    두 소스의 데이터를 완전 결합. primary에 없는 분기/계정도 secondary에서 가져옴.
+    데이터 갭은 growth 계산 시 별도 검증 (TTM 갭 체크).
+    """
+    # primary의 기존 키 세트
+    primary_keys = set()
+    for _, row in primary_df.iterrows():
+        primary_keys.add((row['기준일'], row['공시구분'], row['계정']))
+
+    # primary의 (기준일, 공시구분) → rcept_dt 매핑
+    rcept_map = {}
+    if 'rcept_dt' in primary_df.columns:
+        for _, row in primary_df.iterrows():
+            key = (row['기준일'], row['공시구분'])
+            if key not in rcept_map and pd.notna(row.get('rcept_dt')):
+                rcept_map[key] = row['rcept_dt']
+
+    supplement_rows = []
+    for _, row in secondary_df.iterrows():
+        full_key = (row['기준일'], row['공시구분'], row['계정'])
+        if full_key not in primary_keys and pd.notna(row['값']):
+            period_key = (row['기준일'], row['공시구분'])
+            new_row = {
+                '계정': row['계정'],
+                '기준일': row['기준일'],
+                '값': row['값'],
+                '종목코드': row.get('종목코드', primary_df.iloc[0].get('종목코드', '')),
+                '공시구분': row['공시구분'],
+            }
+            if 'rcept_dt' in primary_df.columns:
+                # primary에 같은 분기 rcept_dt 있으면 복사, 없으면 secondary 것 사용
+                rcept = rcept_map.get(period_key)
+                if rcept is None and 'rcept_dt' in secondary_df.columns:
+                    rcept = row.get('rcept_dt')
+                new_row['rcept_dt'] = rcept
+            supplement_rows.append(new_row)
+
+    if supplement_rows:
+        merged = pd.concat([primary_df, pd.DataFrame(supplement_rows)], ignore_index=True)
+        return merged, len(supplement_rows)
+    return primary_df, 0
+
+
+def load_fs_data_dart_first(tickers):
+    """재무제표 로드: DART 우선 → FnGuide 폴백 + 누락 계정 보충
+
+    1. DART vs FnGuide 불일치 종목 → FnGuide로 교체
+    2. DART에 특정 분기 계정 누락 → FnGuide에서 보충 (매출액 등)
     """
     fs_data = {}
-    dart_count = fn_count = revenue_fallback = 0
+    dart_count = fn_count = mismatch_swap = supplement_count = 0
     cache_path = Path(CACHE_DIR)
 
     for ticker in tickers:
         dart_file = cache_path / f'fs_dart_{ticker}.parquet'
         fn_file = cache_path / f'fs_fnguide_{ticker}.parquet'
 
-        # DART 우선
+        dart_df = fn_df = None
         if dart_file.exists():
             try:
                 dart_df = pd.read_parquet(dart_file)
-                if not dart_df.empty:
-                    # 매출 불일치 검사: FnGuide도 있으면 비교
-                    if fn_file.exists():
-                        try:
-                            fn_df = pd.read_parquet(fn_file)
-                            if not fn_df.empty and _check_data_mismatch(dart_df, fn_df):
-                                fs_data[ticker] = fn_df
-                                fn_count += 1
-                                revenue_fallback += 1
-                                continue
-                        except Exception:
-                            pass
-                    fs_data[ticker] = dart_df
-                    dart_count += 1
-                    continue
+                if dart_df.empty:
+                    dart_df = None
             except Exception:
-                pass
-
-        # FnGuide 폴백
+                dart_df = None
         if fn_file.exists():
             try:
-                df = pd.read_parquet(fn_file)
-                if not df.empty:
-                    fs_data[ticker] = df
-                    fn_count += 1
+                fn_df = pd.read_parquet(fn_file)
+                if fn_df.empty:
+                    fn_df = None
             except Exception:
-                pass
+                fn_df = None
 
-    fallback_msg = f", 데이터불일치→FnGuide {revenue_fallback}" if revenue_fallback else ""
-    print(f"  재무제표 로드: {len(fs_data)}개 (DART {dart_count} + FnGuide {fn_count}{fallback_msg})")
+        if dart_df is not None and fn_df is not None:
+            if _check_data_mismatch(dart_df, fn_df):
+                fs_data[ticker] = fn_df
+                fn_count += 1
+                mismatch_swap += 1
+            else:
+                # DART 분기 수 vs FnGuide 분기 수 비교
+                dart_q_count = len(dart_df[dart_df['공시구분'] == 'q']['기준일'].unique())
+                fn_q_count = len(fn_df[fn_df['공시구분'] == 'q']['기준일'].unique())
+                if dart_q_count < 8 and fn_q_count > dart_q_count:
+                    # DART 부족 → FnGuide 주 데��터 + DART 보충 (rcept_dt 등)
+                    merged, n_sup = _merge_fs_supplement(fn_df, dart_df)
+                    fs_data[ticker] = merged
+                    fn_count += 1
+                    supplement_count += n_sup
+                else:
+                    # DART 기반 + FnGuide 보충
+                    merged, n_sup = _merge_fs_supplement(dart_df, fn_df)
+                    fs_data[ticker] = merged
+                    dart_count += 1
+                    supplement_count += n_sup
+        elif dart_df is not None:
+            fs_data[ticker] = dart_df
+            dart_count += 1
+        elif fn_df is not None:
+            fs_data[ticker] = fn_df
+            fn_count += 1
+
+    swap_msg = f", 불일치→FnGuide {mismatch_swap}" if mismatch_swap else ""
+    sup_msg = f", FnGuide보충 {supplement_count}건" if supplement_count else ""
+    print(f"  재무제표 로드: {len(fs_data)}개 (DART {dart_count} + FnGuide {fn_count}{swap_msg}{sup_msg})")
     return fs_data
 
 
@@ -248,12 +305,12 @@ def apply_ma120_filter(price_df: pd.DataFrame, universe_tickers: list) -> list:
             continue
 
         prices = price_df[ticker].dropna()
-        if len(prices) < 120:
+        if len(prices) < 126:
+            # 126일(6M) 미만: 제외 (모멘텀 계산 불가, IPO 노이즈)
             continue
 
-        ma120 = prices.tail(120).mean()
         current_price = prices.iloc[-1]
-
+        ma120 = prices.tail(120).mean()
         if current_price >= ma120:
             passed.append(ticker)
         else:
@@ -261,23 +318,6 @@ def apply_ma120_filter(price_df: pd.DataFrame, universe_tickers: list) -> list:
 
     print(f"  MA120 필터: {len(passed)}개 통과 / {len(failed_tickers)}개 제외 (현재가 < MA120)")
     return passed, failed_tickers
-
-
-def collect_consensus_data(
-    tickers: List[str],
-    error_tracker: ErrorTracker
-) -> pd.DataFrame:
-    """FnGuide 컨센서스 데이터 수집"""
-    print("\n[FnGuide] 컨센서스 데이터 수집")
-    print(f"  대상 종목: {len(tickers)}개")
-
-    try:
-        consensus_df = get_consensus_batch(tickers=tickers, delay=0.3)
-        print(f"  수집 완료: {len(consensus_df)}개 종목")
-        return consensus_df
-    except Exception as e:
-        error_tracker.log_error("CONSENSUS", ErrorCategory.NETWORK, "컨센서스 수집 실패", e)
-        return pd.DataFrame()
 
 
 def collect_price_data_parallel(
@@ -474,44 +514,53 @@ def run_strategy_b_scoring(
     prefiltered_df: pd.DataFrame,
     fundamental_df: pd.DataFrame,
     price_df: pd.DataFrame,
-    ticker_names: Dict[str, str],
-    error_tracker: ErrorTracker,
-    consensus_df: pd.DataFrame = None,
-    sector_map: Dict[str, str] = None
+    ticker_names,
+    error_tracker,
+    sector_map = None
 ) -> pd.DataFrame:
-    """전략 B (멀티팩터) - 전체 스코어링 v68 (V30+Q30+M40, 섹터중립)"""
-    print(f"\n[전략 B] 멀티팩터 전체 스코어링 ({len(prefiltered_df)}개)")
+    """전략 B — FG subprocess 호출 (BT와 100% 동일 결과 검증됨)"""
+    print("[전략 B] FG subprocess 스코어링")
 
     if prefiltered_df.empty:
-        print("  사전 필터 데이터 없음 - 스킵")
         return pd.DataFrame()
 
     try:
-        multifactor_df = prefiltered_df.copy()
-        multifactor_df['종목명'] = multifactor_df['종목코드'].map(ticker_names)
+        import subprocess, tempfile, json as _json2
 
-        # Forward PER 병합 (FnGuide 컨센서스)
-        if consensus_df is not None and not consensus_df.empty:
-            fwd_cols = consensus_df[['ticker', 'forward_per']].dropna(subset=['forward_per'])
-            if not fwd_cols.empty:
-                multifactor_df = multifactor_df.merge(
-                    fwd_cols, left_on='종목코드', right_on='ticker', how='left'
-                )
-                if 'ticker' in multifactor_df.columns:
-                    multifactor_df.drop(columns=['ticker'], inplace=True)
-                fwd_count = multifactor_df['forward_per'].notna().sum()
-                print(f"  Forward PER 병합: {fwd_count}/{len(multifactor_df)}개 종목")
+        _tmpdir = tempfile.mkdtemp()
+        _fg_script = str(Path(__file__).parent / 'backtest' / 'fast_generate_rankings_v2.py')
+        _fg_cmd = [sys.executable, '-u', _fg_script, BASE_DATE, BASE_DATE, f'--state-dir={_tmpdir}']
 
-        # PER/PBR: DART 재무 + pykrx 시가총액으로 직접 계산 (strategy_b에서 처리)
+        print(f"  FG subprocess: {BASE_DATE}", flush=True)
+        _result = subprocess.run(_fg_cmd, capture_output=True, timeout=600,
+                                 cwd=str(Path(__file__).parent))
 
-        strategy = MultiFactorStrategy()
-        selected, scored = strategy.run(multifactor_df, price_df=price_df, n_stocks=len(multifactor_df), sector_map=sector_map, base_date=BASE_DATE)
-
-        print(f"  스코어링 완료: {len(scored)}개 종목")
-        return scored
+        _fg_file = Path(_tmpdir) / f'ranking_{BASE_DATE}.json'
+        if _fg_file.exists():
+            with open(_fg_file, 'r', encoding='utf-8') as _f:
+                _fg_data = _json2.load(_f)
+            _rankings = _fg_data.get('rankings', [])
+            if _rankings:
+                scored = pd.DataFrame(_rankings)
+                scored['종목코드'] = scored['ticker']
+                scored['종목명'] = scored['name']
+                scored['멀티팩터_점수'] = scored['score']
+                scored['멀티팩터_순위'] = scored['rank']
+                # 팩터 점수 매핑 (downstream 호환)
+                for fg_key, cp_key in [('value_s','밸류_점수'),('quality_s','퀄리티_점수'),
+                                        ('growth_s','성장_점수'),('momentum_s','모멘텀_점수')]:
+                    if fg_key in scored.columns:
+                        scored[cp_key] = scored[fg_key]
+                print(f"  FG 완료: {len(scored)}개 종목")
+                return scored
+        
+        print(f"  FG 실패: {_result.stderr[-300:] if _result.stderr else 'unknown'}")
+        return pd.DataFrame()
 
     except Exception as e:
-        error_tracker.log_error("STRATEGY_B", ErrorCategory.UNKNOWN, "멀티팩터 스코어링 실패", e)
+        import traceback
+        traceback.print_exc()
+        error_tracker.log_error("STRATEGY_B", ErrorCategory.UNKNOWN, "FG 스코어링 실패", e)
         return pd.DataFrame()
 
 
@@ -643,8 +692,13 @@ def main():
         filtered_count = before_count - len(magic_df)
         print(f"자본잠식 종목 제외: {filtered_count}개 → {len(magic_df)}개 남음")
 
-    # 3.5단계: 제거됨 — PER/PBR은 DART 재무 + pykrx 시가총액으로 strategy_b에서 직접 계산
-    fundamental_df = pd.DataFrame()
+    # 3.5단계: pykrx 실시간 펀더멘탈 수집 (PER/PBR/EPS/BPS)
+    print("\n[3.5단계] pykrx 실시간 펀더멘탈 수집 (PER/PBR/EPS/BPS)")
+    fundamental_df = collector.get_market_fundamental_batch(BASE_DATE)
+    if not fundamental_df.empty:
+        print(f"  pykrx 펀더멘털: {len(fundamental_df)}개 종목")
+    else:
+        print("  pykrx 펀더멘털 수집 실패")
 
     # =========================================================================
     # 4단계: OHLCV 수집 (캐시 + 증분 업데이트)
@@ -659,6 +713,10 @@ def main():
     price_start = start_date_dt.strftime('%Y%m%d')
 
     ohlcv_cache_files = list(Path(CACHE_DIR).glob("all_ohlcv_*.parquet"))
+    # _full 파일 우선 (전종목)
+    full_ohlcv = [f for f in ohlcv_cache_files if '_full' in f.stem]
+    if full_ohlcv:
+        ohlcv_cache_files = full_ohlcv
     price_df = pd.DataFrame()
     need_refresh = True
 
@@ -827,67 +885,11 @@ def main():
     else:
         prefiltered = run_strategy_a_prefilter(magic_df, universe_df, error_tracker)
 
-    consensus_df = pd.DataFrame()
-    if not prefiltered.empty:
-        print(f"\n[4.5단계] FnGuide 컨센서스 수집 (Forward PER) - {len(prefiltered)}개 종목")
-        prefiltered_tickers = prefiltered['종목코드'].tolist()
-
-        # 과거 재계산 모드: 기존 ranking JSON에서 Forward PER 로드
-        use_json_consensus = os.environ.get('CONSENSUS_FROM_JSON') == '1'
-        if use_json_consensus:
-            print(f"  [재계산 모드] 기존 ranking JSON에서 Forward PER 로드 (BASE_DATE={BASE_DATE})")
-            fwd_map = {}
-            # 해당 날짜 → 직전 날짜 순으로 탐색 (해당 날짜 우선)
-            all_dates = sorted(get_available_ranking_dates())
-            target_dates = [d for d in all_dates if d <= BASE_DATE]
-            for prev_date in reversed(target_dates):
-                prev_data = load_ranking(prev_date)
-                if prev_data:
-                    for r in prev_data.get('rankings', []):
-                        t = r.get('ticker', '')
-                        if t and r.get('fwd_per') is not None and t not in fwd_map:
-                            fwd_map[t] = r['fwd_per']
-            rows = []
-            for t in prefiltered_tickers:
-                rows.append({
-                    'ticker': t,
-                    'forward_per': fwd_map.get(t),
-                    'has_consensus': t in fwd_map,
-                })
-            consensus_df = pd.DataFrame(rows)
-            has_fwd = consensus_df['forward_per'].notna().sum()
-            print(f"  Forward PER 확보: {has_fwd}/{len(consensus_df)}개 ({has_fwd/len(consensus_df)*100:.0f}%)")
-        else:
-            consensus_df = collect_consensus_data(prefiltered_tickers, error_tracker)
-
-        if not consensus_df.empty:
-            if not use_json_consensus:
-                has_fwd = consensus_df['forward_per'].notna().sum()
-                print(f"  Forward PER 확보: {has_fwd}/{len(consensus_df)}개 ({has_fwd/len(consensus_df)*100:.0f}%)")
-
-            # Forward PER fallback: 크롤링 실패 시 직전 ranking에서 보충
-            missing_fwd = consensus_df[consensus_df['forward_per'].isna()]['ticker'].tolist()
-            if missing_fwd:
-                prev_dates = get_available_ranking_dates()
-                fwd_fallback = {}
-                for prev_date in prev_dates[:3]:
-                    prev_data = load_ranking(prev_date)
-                    if prev_data:
-                        for r in prev_data.get('rankings', []):
-                            t = r.get('ticker', '')
-                            if t in missing_fwd and t not in fwd_fallback and r.get('fwd_per') is not None:
-                                fwd_fallback[t] = r['fwd_per']
-                if fwd_fallback:
-                    for t, fwd_val in fwd_fallback.items():
-                        consensus_df.loc[consensus_df['ticker'] == t, 'forward_per'] = fwd_val
-                    print(f"  Forward PER fallback: {len(fwd_fallback)}개 종목 (직전 순위에서 보충)")
-
     # =========================================================================
-    # 5단계: 전략 실행 (B 스코어링 → A+B 통합순위)
+    # 5단계: 전략 실행 (B 스코어링 — FG subprocess)
     # =========================================================================
     scored_b = run_strategy_b_scoring(
         prefiltered, fundamental_df, price_df, ticker_names, error_tracker,
-        consensus_df=consensus_df,
         sector_map=sector_map
     )
 

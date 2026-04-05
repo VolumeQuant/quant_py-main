@@ -47,7 +47,11 @@ SECTOR_INDICES = {
 
 def get_trading_days(start_year=2020, end_year=2024):
     """all_ohlcv에서 실제 거래일 목록 추출"""
-    ohlcv_file = sorted(CACHE_DIR.glob('all_ohlcv_*.parquet'),
+    _ohlcv_candidates = sorted(CACHE_DIR.glob('all_ohlcv_*.parquet'))
+    _full_ohlcv = [f for f in _ohlcv_candidates if '_full' in f.stem]
+    if _full_ohlcv:
+        _ohlcv_candidates = _full_ohlcv
+    ohlcv_file = sorted(_ohlcv_candidates,
                         key=lambda f: f.stem.split('_')[2])[0]
     print(f'거래일 소스: {ohlcv_file.name}')
     df = pd.read_parquet(ohlcv_file)

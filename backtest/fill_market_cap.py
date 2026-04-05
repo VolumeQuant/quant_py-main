@@ -49,6 +49,9 @@ def main():
 
     # 1. OHLCV 로드
     ohlcv_files = sorted(DATA_DIR.glob('all_ohlcv_*.parquet'))
+    full_files = [f for f in ohlcv_files if '_full' in f.stem]
+    if full_files:
+        ohlcv_files = full_files
     ohlcv_files.sort(key=lambda f: f.stem.split('_')[2])  # 시작일 기준
     ohlcv = pd.read_parquet(ohlcv_files[0])
     print(f'OHLCV: {ohlcv.shape[0]}일 × {ohlcv.shape[1]}종목')

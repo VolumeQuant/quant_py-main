@@ -20,10 +20,10 @@ KST = ZoneInfo('Asia/Seoul')
 STATE_DIR = Path(os.environ.get('RANKING_STATE_DIR', str(Path(__file__).parent / 'state')))
 STATE_DIR.mkdir(exist_ok=True)
 
-# v72: DART 기반 + 순위 진입 + 팩터 재조정
-ENTRY_RANK = 5         # 진입: 상위 5개 (포지션 기반) + ✅ 3일 검증
-EXIT_RANK = 10         # 이탈: weighted_rank > 10
-MAX_SLOTS = 7          # 최대 보유 종목
+# v74: 국면전환 (Cal3 방어 / Boost 공격)
+ENTRY_RANK = int(os.environ.get('REGIME_ENTRY_RANK', '4'))
+EXIT_RANK = int(os.environ.get('REGIME_EXIT_RANK', '10'))
+MAX_SLOTS = int(os.environ.get('REGIME_MAX_SLOTS', '5'))
 STOP_LOSS_PCT = -10    # 손절: -10% (사용자 수동, 메시지 표시용)
 
 # (하위호환) score_100 기준 — 매도검토선 표시용

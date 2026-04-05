@@ -110,7 +110,7 @@ def _init_worker(train_years, prefix):
 
     all_rankings, dates = load_rankings(train_years, prefix)
     prices = pd.read_parquet(
-        sorted(CACHE_DIR.glob('all_ohlcv_*.parquet'), key=lambda f: f.stem.split('_')[2])[0]
+        sorted([f for f in CACHE_DIR.glob('all_ohlcv_*.parquet') if '_full' in f.stem] or list(CACHE_DIR.glob('all_ohlcv_*.parquet')), key=lambda f: f.stem.split('_')[2])[0]
     ).replace(0, np.nan)
 
     _worker_sim = TurboSimulator(all_rankings, dates, prices)
@@ -163,7 +163,7 @@ def evaluate_on_period(years, best_configs, prefix='bt'):
         return []
 
     prices = pd.read_parquet(
-        sorted(CACHE_DIR.glob('all_ohlcv_*.parquet'), key=lambda f: f.stem.split('_')[2])[0]
+        sorted([f for f in CACHE_DIR.glob('all_ohlcv_*.parquet') if '_full' in f.stem] or list(CACHE_DIR.glob('all_ohlcv_*.parquet')), key=lambda f: f.stem.split('_')[2])[0]
     ).replace(0, np.nan)
 
     tsim = TurboSimulator(all_rankings, dates, prices)
@@ -196,7 +196,7 @@ def main():
 
     train_rankings, train_dates = load_rankings(train_years, args.prefix)
     prices = pd.read_parquet(
-        sorted(CACHE_DIR.glob('all_ohlcv_*.parquet'), key=lambda f: f.stem.split('_')[2])[0]
+        sorted([f for f in CACHE_DIR.glob('all_ohlcv_*.parquet') if '_full' in f.stem] or list(CACHE_DIR.glob('all_ohlcv_*.parquet')), key=lambda f: f.stem.split('_')[2])[0]
     ).replace(0, np.nan)
     bench = pd.read_parquet(CACHE_DIR / 'index_benchmarks.parquet') \
         if (CACHE_DIR / 'index_benchmarks.parquet').exists() else pd.DataFrame()

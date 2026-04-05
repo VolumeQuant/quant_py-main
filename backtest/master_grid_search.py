@@ -43,7 +43,11 @@ def load_rankings(years):
 
 def load_prices():
     """all_ohlcv 가격 데이터 로드"""
-    f = sorted(CACHE_DIR.glob('all_ohlcv_*.parquet'),
+    _ohlcv_files = sorted(CACHE_DIR.glob('all_ohlcv_*.parquet'))
+    _full_files = [f for f in _ohlcv_files if '_full' in f.stem]
+    if _full_files:
+        _ohlcv_files = _full_files
+    f = sorted(_ohlcv_files,
                key=lambda x: x.stem.split('_')[2])[0]
     df = pd.read_parquet(f)
     df = df.replace(0, np.nan)

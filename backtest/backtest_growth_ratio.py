@@ -62,6 +62,9 @@ def get_target_dates(start_str, end_str):
     if not ohlcv_files:
         print('OHLCV 파일 없음')
         return []
+    full_files = [f for f in ohlcv_files if '_full' in f.stem]
+    if full_files:
+        ohlcv_files = full_files
     ohlcv_df = pd.read_parquet(ohlcv_files[-1])
     all_dates = ohlcv_df.index
 
