@@ -11,8 +11,12 @@ from turbo_simulator import TurboSimulator, TurboRunner, _calc_metrics
 PROJECT = Path('C:/dev/claude-code/quant_py-main')
 CACHE_DIR = PROJECT / 'data_cache'
 
+_ohlcv_files = sorted(CACHE_DIR.glob('all_ohlcv_*.parquet'))
+_full_files = [f for f in _ohlcv_files if '_full' in f.stem]
+if _full_files:
+    _ohlcv_files = _full_files
 prices = pd.read_parquet(
-    sorted(CACHE_DIR.glob('all_ohlcv_*.parquet'), key=lambda f: f.stem.split('_')[2])[0]
+    sorted(_ohlcv_files, key=lambda f: f.stem.split('_')[2])[0]
 ).replace(0, np.nan)
 
 bt2b_r = {}

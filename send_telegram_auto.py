@@ -34,6 +34,7 @@ from ranking_manager import (
     get_stock_status, cleanup_old_rankings, get_available_ranking_dates,
     compute_rank_driver, MIN_RANK_CHANGE,
     weighted_score_100, ENTRY_SCORE_100, EXIT_SCORE_100, ENTRY_RANK, EXIT_RANK, MAX_SLOTS,
+    STATE_DIR as RM_STATE_DIR,
 )
 from credit_monitor import (
     get_credit_status, format_credit_section, format_credit_compact,
@@ -50,40 +51,136 @@ OUTPUT_DIR = Path('output')
 WEIGHT_PER_STOCK = 20  # 종목당 기본 비중 % (picks 없을 때 fallback)
 WATCHLIST_N = 20       # Watchlist 표시 종목 수
 
-WEEKDAY_KR = ['월', '화', '수', '목', '금', '토', '일']
+WEEKDAY_KR = ['월', '화', '수', '목', '금', '��', '일']
+
+
+# ============================================================
+# 국면(Regime) 상태 로드 + 국면별 랭킹 파일 로드
+# ============================================================
+def load_regime_state():
+    """regime_state.json에서 현재 국면 정보 로드.
+
+    Returns:
+        dict: {mode, breadth, streak, rule, ...} or default defense
+    """
+    regime_path = STATE_DIR / 'regime_state.json'
+    if regime_path.exists():
+        try:
+            with open(regime_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {'mode': 'defense', 'breadth': None, 'streak': 0, 'rule': ''}
+
+
+def load_ranking_for_regime(date_str: str, regime_mode: str):
+    """국면에 맞는 랭킹 파일 로드.
+
+    boost 모드: ranking_boost_{date}.json 우선, 없으면 ranking_{date}.json fallback
+    defense 모드: ranking_{date}.json
+    """
+    if regime_mode == 'boost':
+        boost_path = STATE_DIR / f'ranking_boost_{date_str}.json'
+        if boost_path.exists():
+            with open(boost_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                print(f"  로드: ranking_boost_{date_str}.json")
+                return data
+        # fallback to defense ranking
+        print(f"  ranking_boost_{date_str}.json 없음 → ranking_{date_str}.json fallback")
+    return load_ranking(date_str)
+
+
+def get_available_regime_dates(regime_mode: str):
+    """국면에 맞는 랭킹 파일의 날짜 목록 (최신순).
+
+    boost 모드: ranking_boost_*.json 파일에서 날짜 추출
+    defense 모드: ranking_*.json (boost/core 제외)
+    """
+    if regime_mode == 'boost':
+        pattern = 'ranking_boost_*.json'
+        prefix = 'ranking_boost_'
+    else:
+        pattern = 'ranking_*.json'
+        prefix = 'ranking_'
+
+    files = sorted(STATE_DIR.glob(pattern), reverse=True)
+    dates = []
+    for f in files:
+        date_str = f.stem.replace(prefix, '')
+        # defense 모드에서 boost_/core_ 날짜 제외
+        if len(date_str) == 8 and date_str.isdigit():
+            dates.append(date_str)
+    return dates
+
+
+def expand_single_date_to_3days(target_date: str, regime_mode: str):
+    """단일 날짜가 주어졌을 때, 해당 날짜 이하 최근 3거래일 자동 확장.
+
+    target_date 포함, 그 이전의 랭킹 파일이 있는 날짜 2개를 추가.
+    """
+    available = get_available_regime_dates(regime_mode)
+    # target_date 이하만 필터
+    candidates = [d for d in available if d <= target_date]
+    return candidates[:3]
 
 
 # ============================================================
 # 시스템 수익률 추적
 # ============================================================
-def calc_system_returns():
-    """프로덕션 ranking 히스토리로 시스템 누적 수익률 계산.
+def calc_system_returns(regime_info=None):
+    """프로덕션 ranking 히스토리로 시스템 누적 수익률 계산 (국면 파라미터 반영).
 
     Returns:
         dict: {system_pct, kospi_pct, start_date, days, holdings} or None
     """
     import glob as _glob
-    files = sorted(_glob.glob(str(STATE_DIR / 'ranking_*.json')))
+    from regime_indicator import get_regime_params
+
+    # 국면별 ranking 파일 + regime_state에서 국면 이력 추적
+    regime_state_path = STATE_DIR / 'regime_state.json'
+    regime_mode = 'defense'
+    if regime_state_path.exists():
+        with open(regime_state_path, 'r', encoding='utf-8') as f:
+            rs = json.load(f)
+            regime_mode = rs.get('mode', 'defense')
+
+    # 현재 국면 파라미터
+    rp = get_regime_params(regime_mode)
+    _entry_rank = rp['ENTRY_RANK']
+    _exit_rank = rp['EXIT_RANK']
+    _max_slots = rp['MAX_SLOTS']
+    _stop_loss = rp.get('STOP_LOSS', -0.10)
+
+    # 국면에 맞는 ranking 로드
+    if regime_mode == 'boost':
+        files = sorted(_glob.glob(str(STATE_DIR / 'ranking_boost_*.json')))
+    else:
+        files = sorted(_glob.glob(str(STATE_DIR / 'ranking_*.json')))
+        files = [f for f in files if 'boost' not in f and 'core' not in f and 'backup' not in f]
     if len(files) < 3:
         return None
 
-    # 날짜순 ranking 로드 (당일 제외 — 전일 기준)
     today_str = get_korea_now().strftime('%Y%m%d')
     all_data = {}
     for fp in files:
-        d = os.path.basename(fp).replace('ranking_', '').replace('.json', '')
+        basename = os.path.basename(fp)
+        d = basename.replace('ranking_boost_', '').replace('ranking_', '').replace('.json', '')
         if d >= today_str:
-            continue  # 당일 이후 제외
+            continue
         with open(fp, 'r', encoding='utf-8') as fh:
             all_data[d] = json.load(fh)
     dates = sorted(all_data.keys())
 
-    # 가격: OHLCV 기반 (모든 파일 합쳐서 최대 커버리지)
+    # 가격: OHLCV 기반 — _full 파일 우선 (전종목)
     import glob as _glob2
     _ohlcv_files = sorted(_glob2.glob(str(Path(__file__).parent / 'data_cache' / 'all_ohlcv_*.parquet')))
+    _full_files = [f for f in _ohlcv_files if '_full' in f]
+    if _full_files:
+        _ohlcv_files = _full_files
     if _ohlcv_files:
         _ohlcv_parts = [pd.read_parquet(f).replace(0, np.nan) for f in _ohlcv_files]
-        _ohlcv = pd.concat(_ohlcv_parts).groupby(level=0).first()  # 날짜 중복 시 첫 번째 유지
+        _ohlcv = pd.concat(_ohlcv_parts).groupby(level=0).first()
     else:
         _ohlcv = pd.DataFrame()
 
@@ -120,11 +217,11 @@ def calc_system_returns():
         if i < 2:
             continue  # 3일 데이터 필요
 
-        # 손절 체크: 진입가 대비 -10% (OHLCV 기반)
+        # 손절 체크 (국면별 stop_loss)
         for tk in list(portfolio.keys()):
             cp = _get_price(tk, d0)
             ep = portfolio[tk]
-            if cp > 0 and ep > 0 and (cp / ep - 1) <= -0.10:
+            if cp > 0 and ep > 0 and (cp / ep - 1) <= _stop_loss:
                 del portfolio[tk]
 
         # pipeline 계산 (3일 교집합)
@@ -151,9 +248,9 @@ def calc_system_returns():
             cr2 = all_t2[tk].get('composite_rank', all_t2[tk].get('rank', 999)) if tk in all_t2 else 999
             return cr0 * 0.5 + cr1 * 0.3 + cr2 * 0.2
 
-        # 이탈: 가중순위 > EXIT_RANK (전체 ranking 기준)
+        # 이탈: 가중순위 > exit_rank (국면별)
         for tk in list(portfolio.keys()):
-            if _wr(tk) > EXIT_RANK:
+            if _wr(tk) > _exit_rank:
                 del portfolio[tk]
 
         # 진입용: 3일 교집합 + 가중순위 계산
@@ -167,11 +264,11 @@ def calc_system_returns():
                              'price': top20_t0[tk].get('price', 0)})
         verified.sort(key=lambda x: x['weighted_rank'])
 
-        # 진입: 상위 ENTRY_RANK개 (포지션 기반) + ✅ verified
-        for v in verified[:ENTRY_RANK]:
+        # 진입: 상위 entry_rank개 (국면별)
+        for v in verified[:_entry_rank]:
             if v['ticker'] in portfolio:
                 continue
-            if len(portfolio) >= MAX_SLOTS:
+            if len(portfolio) >= _max_slots:
                 break
             entry_price = _get_price(v['ticker'], d0)
             if entry_price > 0:
@@ -417,7 +514,8 @@ def _build_top5_streak(top5_tickers):
 def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
                           market_max_picks, stock_weight, rankings_t0,
                           rankings_t1, rankings_t2, cold_start,
-                          final_action, pick_level, system_returns=None):
+                          final_action, pick_level, system_returns=None,
+                          regime_info=None):
     """Message 1: Signal — 결론 (뭘 살까)
 
     종목당 3줄: 이름·업종·가격 / 순위 / AI 내러티브
@@ -425,9 +523,24 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
     wd = WEEKDAY_KR[biz_day.weekday()]
     date_str = f"{biz_day.year}.{biz_day.month}.{biz_day.day}({wd})"
 
-    # 국면 모드 표시
-    regime_mode = os.environ.get('REGIME_MODE', 'cal3')
-    regime_label = '⚔️ 공격 모드' if regime_mode == 'boost' else '🛡️ 방어 모드'
+    # 국면 모드 표시 — regime_state.json 기반 우선
+    if regime_info:
+        r_mode = regime_info.get('mode', 'defense')
+        r_breadth = regime_info.get('breadth')
+        if r_mode == 'boost':
+            regime_icon = '⚔️'
+            regime_text = '공격 모드 (Growth 중심)'
+        else:
+            regime_icon = '🛡️'
+            regime_text = '방어 모드 (Momentum 중심)'
+        breadth_str = f' · 브레스 {r_breadth:.1%}' if r_breadth is not None else ''
+        regime_label = f'{regime_icon} <b>{regime_text}</b>{breadth_str}'
+    else:
+        regime_mode = os.environ.get('REGIME_MODE', 'defense')
+        if regime_mode == 'boost':
+            regime_label = '⚔️ <b>공격 모드</b>'
+        else:
+            regime_label = '🛡️ <b>방어 모드</b>'
 
     lines = [
         f'📡 AI 종목 브리핑 KR · {date_str}',
@@ -630,7 +743,8 @@ def create_ai_risk_message(credit, kospi_data, kosdaq_data, market_warnings,
 
 def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
                              rankings_t2, cold_start=False, credit=None,
-                             score_100_map=None, system_returns=None):
+                             score_100_map=None, system_returns=None,
+                             rp_current=None):
     """Message 3: Watchlist — 데이터 (Top 20 모니터링)
 
     종목당 1줄: 상태+순위+이름(업종)+순위궤적
@@ -639,7 +753,7 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
     lines = [
         '📋 <b>Top 20 종목 현황</b>',
         '상위 20종목과 순위 변동 현황입니다.',
-        '✅ 3일 검증 ⏳ 2일 관찰 🆕 신규 진입 | 손절 -10%',
+        (f'✅ 3일 검증 ⏳ 2일 관찰 🆕 신규 진입 | 손절 {int(rp_current["STOP_LOSS"]*100)}%' if rp_current and rp_current.get("STOP_LOSS") else '✅ 3일 검증 ⏳ 2일 관찰 🆕 신규 진입') if rp_current else '✅ 3일 검증 ⏳ 2일 관찰 🆕 신규 진입 | 손절 -10%',
     ]
 
     if not pipeline:
@@ -689,9 +803,10 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         score_100 = weighted_score_100(s['ticker'], rankings_t0, rankings_t1, rankings_t2)
         score_disp = f'{score_100:.1f}'
 
-        # 매도 검토선 (가중순위 값 기준 — WR > EXIT_RANK)
+        # 매도 검토선 (국면별 exit_rank)
+        _cur_exit = rp_current.get('EXIT_RANK', EXIT_RANK) if rp_current else EXIT_RANK
         w_rank = s.get('weighted_rank', 999)
-        if not exit_line_shown and w_rank > EXIT_RANK:
+        if not exit_line_shown and w_rank > _cur_exit:
             lines.append('── 매도 검토선 ──')
             exit_line_shown = True
 
@@ -727,9 +842,26 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
     # ── 매매 조건 + 범례 ──
     lines.append('')
     lines.append('━━━━━━━━━━━━━━━')
-    lines.append(f'매수: 3일 검증 상위 {ENTRY_RANK}종목')
-    lines.append(f'매도: 3일 가중순위 > {EXIT_RANK}.0 또는 -10% 손절')
-    lines.append(f'최대 {MAX_SLOTS}종목 보유')
+    if rp_current:
+        _e = rp_current['ENTRY_RANK']
+        _x = rp_current['EXIT_RANK']
+        _s = rp_current['MAX_SLOTS']
+        _sl = rp_current.get('STOP_LOSS')
+        _tr = rp_current.get('TRAILING_STOP')
+        _corr = rp_current.get('CORR_THRESHOLD')
+        sl_s = f'{int(_sl*100)}% 손절' if _sl else ''
+        tr_s = f'트레일링 {int(_tr*100)}%' if _tr else ''
+        corr_s = f' · 상관{_corr}' if _corr else ''
+        exit_parts = [f'WR > {_x}']
+        if sl_s: exit_parts.append(sl_s)
+        if tr_s: exit_parts.append(tr_s)
+        lines.append(f'매수: 3일 검증 상위 {_e}종목{corr_s}')
+        lines.append(f'매도: {" 또는 ".join(exit_parts)}')
+        lines.append(f'최대 {_s}종목 보유')
+    else:
+        lines.append(f'매수: 3일 검증 상위 {ENTRY_RANK}종목')
+        lines.append(f'매도: 3일 가중순위 > {EXIT_RANK}.0 또는 -10% 손절')
+        lines.append(f'최대 {MAX_SLOTS}종목 보유')
 
     return '\n'.join(lines)
 
@@ -767,13 +899,31 @@ def main():
             break
 
     # ============================================================
+    # 국면(Regime) 상태 로드
+    # ============================================================
+    regime_info = load_regime_state()
+    regime_mode = regime_info.get('mode', 'defense')
+    # 환경변수가 있으면 우선 (run_daily.py에서 주입)
+    if os.environ.get('REGIME_MODE'):
+        regime_mode = os.environ['REGIME_MODE']
+        regime_info['mode'] = regime_mode
+    print(f"\n[국면 상태] 모드: {regime_mode}, 브레스: {regime_info.get('breadth')}, "
+          f"규칙: {regime_info.get('rule', '')}")
+
+    # ============================================================
     # 날짜 계산 (최근 3거래일)
     # ============================================================
     TODAY = get_korea_now().strftime('%Y%m%d')
 
     if manual_dates:
-        trading_dates = [d.strip() for d in manual_dates if d.strip()]
-        print(f"--dates 지정: {trading_dates}")
+        raw_dates = [d.strip() for d in manual_dates if d.strip()]
+        # 단일 날짜 → 국면별 랭킹 파일 기반으로 3거래일 자동 확장
+        if len(raw_dates) == 1:
+            trading_dates = expand_single_date_to_3days(raw_dates[0], regime_mode)
+            print(f"--dates {raw_dates[0]} → 3거래일 자동 확장: {trading_dates}")
+        else:
+            trading_dates = raw_dates
+            print(f"--dates 지정: {trading_dates}")
     else:
         trading_dates = get_recent_trading_dates(3)
 
@@ -853,14 +1003,12 @@ def main():
     print(f"\n[매수 추천 설정] 행동: {final_action} · 레벨: {pick_level['label']} · 진입: {ENTRY_SCORE_100}점↑ · 퇴출: {EXIT_SCORE_100}점↓")
 
     # ============================================================
-    # 순위 데이터 로드 (3일)
+    # 순위 데이터 로드 (3일) — 국면별 랭킹 파일 사용
     # ============================================================
-    print("\n[순위 데이터 로드]")
-    ranking_data = load_recent_rankings(trading_dates)
-
-    rankings_t0 = ranking_data.get(trading_dates[0])
-    rankings_t1 = ranking_data.get(trading_dates[1]) if len(trading_dates) >= 2 else None
-    rankings_t2 = ranking_data.get(trading_dates[2]) if len(trading_dates) >= 3 else None
+    print(f"\n[순위 데이터 로드] 국면: {regime_mode}")
+    rankings_t0 = load_ranking_for_regime(trading_dates[0], regime_mode)
+    rankings_t1 = load_ranking_for_regime(trading_dates[1], regime_mode) if len(trading_dates) >= 2 else None
+    rankings_t2 = load_ranking_for_regime(trading_dates[2], regime_mode) if len(trading_dates) >= 3 else None
 
     if rankings_t0 is None:
         print(f"T-0 ({trading_dates[0]}) 순위 없음! create_current_portfolio.py를 먼저 실행하세요.")
@@ -919,7 +1067,7 @@ def main():
     print("\n[시스템 수익률]")
     system_returns = None
     try:
-        system_returns = calc_system_returns()
+        system_returns = calc_system_returns(regime_info=None)
         if system_returns:
             print(f"  시스템: {system_returns['system_pct']:+.1f}% vs KOSPI: {system_returns['kospi_pct']:+.1f}% "
                   f"(초과: {system_returns['system_pct']-system_returns['kospi_pct']:+.1f}%p, {system_returns['start_date']}~)")
@@ -1018,16 +1166,32 @@ def main():
     else:
         print("\nAI 리스크 필터 스킵 (추천 종목 없음)")
 
-    # v72: 포지션 기반 진입 (상위 ENTRY_RANK개) + 슬롯 제한
-    from ranking_manager import ENTRY_RANK, EXIT_RANK, MAX_SLOTS
+    # v75: 국면별 진입/이탈/슬롯
+    from ranking_manager import ENTRY_RANK as _DEFAULT_ENTRY, EXIT_RANK as _DEFAULT_EXIT, MAX_SLOTS as _DEFAULT_SLOTS
+    try:
+        from regime_indicator import get_regime_params as _grp2
+        _rs_path2 = STATE_DIR / 'regime_state.json'
+        _mode2 = 'defense'
+        if _rs_path2.exists():
+            with open(_rs_path2, 'r', encoding='utf-8') as _f2:
+                _mode2 = json.load(_f2).get('mode', 'defense')
+        _rp2 = _grp2(_mode2)
+        _ENTRY = _rp2['ENTRY_RANK']
+        _EXIT = _rp2['EXIT_RANK']
+        _SLOTS = _rp2['MAX_SLOTS']
+        _SL = _rp2.get('STOP_LOSS', -0.10)
+    except Exception:
+        _ENTRY, _EXIT, _SLOTS, _SL = _DEFAULT_ENTRY, _DEFAULT_EXIT, _DEFAULT_SLOTS, -0.10
+
     if market_max_picks == 0:
         picks = []
     else:
-        picks = sorted(all_candidates, key=lambda x: x.get('weighted_rank', 999))[:ENTRY_RANK]
-        picks = picks[:MAX_SLOTS]  # 슬롯 제한
+        picks = sorted(all_candidates, key=lambda x: x.get('weighted_rank', 999))[:_ENTRY]
+        picks = picks[:_SLOTS]
     if picks:
         stock_weight = round(100 / len(picks))
-    print(f"\n  최종 picks: {len(picks)}개 (진입: top{ENTRY_RANK} · 이탈: wr>{EXIT_RANK} · 슬롯: {MAX_SLOTS} · 손절: -10%)")
+    _sl_s = f'{int(_SL*100)}%' if _SL else 'X'
+    print(f"\n  최종 picks: {len(picks)}개 (진입: top{_ENTRY} · 이탈: wr>{_EXIT} · 슬롯: {_SLOTS} · 손절: {_sl_s})")
 
     # ============================================================
     # AI 종목별 내러티브 (Signal 💬 줄용)
@@ -1095,6 +1259,7 @@ def main():
         rankings_t1, rankings_t2, cold_start,
         final_action, pick_level,
         system_returns=system_returns,
+        regime_info=regime_info,
     )
 
     msg_ai_risk = create_ai_risk_message(
@@ -1106,11 +1271,24 @@ def main():
         biz_day, picks, final_action,
     )
 
+    # 현재 국면 파라미터
+    try:
+        from regime_indicator import get_regime_params as _grp
+        _regime_state_path = STATE_DIR / 'regime_state.json'
+        _cur_mode = 'defense'
+        if _regime_state_path.exists():
+            with open(_regime_state_path, 'r', encoding='utf-8') as _f:
+                _cur_mode = json.load(_f).get('mode', 'defense')
+        _rp = _grp(_cur_mode)
+    except Exception:
+        _rp = None
+
     msg_watchlist = create_watchlist_message(
         pipeline, exited, rankings_t0, rankings_t1, rankings_t2,
         cold_start=cold_start, credit=credit,
         score_100_map=score_100_pre,
         system_returns=system_returns,
+        rp_current=_rp,
     )
 
     messages = [msg_signal, msg_ai_risk, msg_watchlist]

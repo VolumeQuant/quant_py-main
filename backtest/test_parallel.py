@@ -34,7 +34,11 @@ def heavy_worker(args):
                 data = json.load(fh)
                 all_rankings[date] = data.get('rankings', data) if isinstance(data, dict) else data
     dates = sorted(all_rankings.keys())
-    prices = pd.read_parquet(sorted(glob.glob(str(PROJECT / 'data_cache/all_ohlcv_*.parquet')),
+    _ohlcv_files = sorted(glob.glob(str(PROJECT / 'data_cache/all_ohlcv_*.parquet')))
+    _full_files = [f for f in _ohlcv_files if '_full' in f]
+    if _full_files:
+        _ohlcv_files = _full_files
+    prices = pd.read_parquet(sorted(_ohlcv_files,
                                      key=lambda f: f.split('_')[2])[0])
     prices = prices.replace(0, np.nan)
 

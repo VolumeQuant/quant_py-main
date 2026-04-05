@@ -38,6 +38,9 @@ def load_ohlcv_cache():
     files = sorted(CACHE_DIR.glob('all_ohlcv_*.parquet'))
     if not files:
         raise FileNotFoundError("OHLCV cache not found")
+    full_files = [f for f in files if '_full' in f.stem]
+    if full_files:
+        files = full_files
     f = max(files, key=lambda x: x.stat().st_size)
     df = pd.read_parquet(f)
     print(f"OHLCV: {f.name} ({len(df)}일, {len(df.columns)}종목)")

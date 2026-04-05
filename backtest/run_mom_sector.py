@@ -17,7 +17,11 @@ CACHE = r'C:\dev\data_cache'
 KR_CACHE = r'C:\dev\backtest\kr_cache.pkl'
 MIN_SECTOR = 10
 
-prices = pd.read_parquet(sorted(glob.glob(os.path.join(CACHE, 'all_ohlcv_*.parquet')))[-1]).replace(0, np.nan)
+_ohlcv_files = sorted(glob.glob(os.path.join(CACHE, 'all_ohlcv_*.parquet')))
+_full_files = [f for f in _ohlcv_files if '_full' in f]
+if _full_files:
+    _ohlcv_files = _full_files
+prices = pd.read_parquet(_ohlcv_files[-1]).replace(0, np.nan)
 bench = pd.read_parquet(os.path.join(CACHE, 'index_benchmarks.parquet'))
 
 all_rankings = {}

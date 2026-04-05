@@ -13,7 +13,11 @@ CACHE = r'C:\dev\data_cache'
 t0 = time.time()
 
 # 데이터 로드
-ohlcv_file = sorted(glob.glob(os.path.join(CACHE, 'all_ohlcv_*.parquet')))[-1]
+_ohlcv_files = sorted(glob.glob(os.path.join(CACHE, 'all_ohlcv_*.parquet')))
+_full_files = [f for f in _ohlcv_files if '_full' in f]
+if _full_files:
+    _ohlcv_files = _full_files
+ohlcv_file = _ohlcv_files[-1]
 prices = pd.read_parquet(ohlcv_file).replace(0, np.nan)
 bench = pd.read_parquet(os.path.join(CACHE, 'index_benchmarks.parquet'))
 

@@ -24,7 +24,11 @@ for year in ['2020', '2021', '2022', '2023', '2024', '2025']:
         with open(f, 'r', encoding='utf-8') as fh:
             all_rankings[date] = json.load(fh).get('rankings', [])
 dates = sorted(all_rankings.keys())
-prices = pd.read_parquet(sorted(glob.glob(os.path.join(CACHE, 'all_ohlcv_*.parquet')),
+_ohlcv_files = sorted(glob.glob(os.path.join(CACHE, 'all_ohlcv_*.parquet')))
+_full_files = [f for f in _ohlcv_files if '_full' in f]
+if _full_files:
+    _ohlcv_files = _full_files
+prices = pd.read_parquet(sorted(_ohlcv_files,
                                  key=lambda f: f.split('_')[2])[0])
 prices = prices.replace(0, np.nan)
 bench = pd.read_parquet(os.path.join(CACHE, 'index_benchmarks.parquet'))

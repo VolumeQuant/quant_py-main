@@ -34,6 +34,19 @@ from scipy.stats import norm
 
 CACHE_DIR = PROJECT_ROOT / 'data_cache'
 
+# CP 의존성 제거: BT용 인라인 정의 (create_current_portfolio.py 임포트 시 KRX 인증 발생)
+KRX_SECTOR_MAP = {
+    '바이오/제약': '바이오/제약', '제약': '바이오/제약', '의료정밀': '의료기기',
+    '운수장비': '자동차', '운수창고': '물류', '전기가스': '에너지/유틸',
+    '금융': '금융', '증권': '금융', '보험': '금융',
+    '출판/매체': '미디어', '기타제조': '기타',
+}
+def get_broad_sector(krx_sector: str) -> str:
+    return KRX_SECTOR_MAP.get(krx_sector, krx_sector or '기타')
+
+EXCLUDE_KEYWORDS = ['금융', '은행', '증권', '보험', '캐피탈', '카드', '저축',
+                   '지주', '홀딩스', 'SPAC', '스팩', '리츠', 'REIT']
+
 
 # ============================================================================
 # 1. 사전계산: Growth 팩터 (핵심 최적화)
@@ -494,8 +507,11 @@ def preload_all_data(start_str, end_str, trading_dates=None, use_rev_accel=False
     t0 = time.time()
     data = {}
 
-    # 1. OHLCV
+    # 1. OHLCV — _full 파일 우선 (전종목 3,237+)
     ohlcv_files = sorted(CACHE_DIR.glob('all_ohlcv_*.parquet'))
+    full_files = [f for f in ohlcv_files if '_full' in f.stem]
+    if full_files:
+        ohlcv_files = full_files
     ohlcv_files.sort(key=lambda f: f.stem.split('_')[2])
     ohlcv_file = ohlcv_files[0]
     print(f'  OHLCV: {ohlcv_file.name}')
@@ -533,7 +549,46 @@ def preload_all_data(start_str, end_str, trading_dates=None, use_rev_accel=False
     print(f'  sectors: {len(data["sectors"])}일')
 
     # 5. 재무제표 (DART + FnGuide mismatch 체크)
-    from create_current_portfolio import _check_data_mismatch
+    # _check_data_mismatch를 직접 import하면 KRX 인증이 발생 → lazy import
+    import importlib.util as _iu
+    _spec = _iu.spec_from_file_location('cp', PROJECT_ROOT / 'create_current_portfolio.py',
+                                         submodule_search_locations=[])
+    # 함수만 필요하므로 모듈 실행 없이 코드에서 직접 정의
+    def _check_data_mismatch_local(dart_df, fn_df):
+        try:
+            mismatch_count = 0
+            check_accounts = ['매출액', '영업이익', '당기순이익', '자산', '자본', '영업활동으로인한현금흐름']
+            for acct in check_accounts:
+                d_rows = dart_df[(dart_df['공시구분'] == 'y') & (dart_df['계정'] == acct)].copy()
+                f_rows = fn_df[(fn_df['공시구분'] == 'y') & (fn_df['계정'] == acct)].copy()
+                if d_rows.empty or f_rows.empty:
+                    continue
+                d_rows['year'] = d_rows['기준일'].dt.year
+                f_rows['year'] = f_rows['기준일'].dt.year
+                common_years = set(d_rows['year']) & set(f_rows['year'])
+                for yr in common_years:
+                    dv = d_rows[d_rows['year'] == yr].iloc[0]['값']
+                    fv = f_rows[f_rows['year'] == yr].iloc[0]['값']
+                    if acct in ('매출액', '자산'):
+                        if fv > 0 and dv > 0:
+                            ratio = dv / fv
+                            if ratio < 0.5 or ratio > 2.0:
+                                mismatch_count += 1
+                                break
+                    else:
+                        if dv != 0 and fv != 0 and (dv > 0) != (fv > 0):
+                            mismatch_count += 1
+                            break
+                        if fv != 0 and dv != 0:
+                            ratio = dv / fv
+                            if ratio < 0.2 or ratio > 5.0:
+                                mismatch_count += 1
+                                break
+            return mismatch_count >= 1
+        except Exception:
+            return False
+
+    _check_data_mismatch = _check_data_mismatch_local
     print('  재무제표 로드 중...')
     data['fs'] = {}
     dart_count = fn_count = mismatch_swap = 0
@@ -558,7 +613,38 @@ def preload_all_data(start_str, end_str, trading_dates=None, use_rev_accel=False
         except Exception:
             pass
 
-    from create_current_portfolio import _merge_fs_supplement
+    def _merge_fs_supplement_local(primary_df, secondary_df):
+        primary_keys = set()
+        for _, row in primary_df.iterrows():
+            primary_keys.add((row['기준일'], row['공시구분'], row['계정']))
+        rcept_map = {}
+        if 'rcept_dt' in primary_df.columns:
+            for _, row in primary_df.iterrows():
+                key = (row['기준일'], row['공시구분'])
+                if key not in rcept_map and pd.notna(row.get('rcept_dt')):
+                    rcept_map[key] = row['rcept_dt']
+        supplement_rows = []
+        for _, row in secondary_df.iterrows():
+            full_key = (row['기준일'], row['공시구분'], row['계정'])
+            if full_key not in primary_keys and pd.notna(row['값']):
+                period_key = (row['기준일'], row['공시구분'])
+                new_row = {
+                    '계정': row['계정'], '기준일': row['기준일'], '값': row['값'],
+                    '종목코드': row.get('종목코드', primary_df.iloc[0].get('종목코드', '')),
+                    '공시구분': row['공시구분'],
+                }
+                if 'rcept_dt' in primary_df.columns:
+                    rcept = rcept_map.get(period_key)
+                    if rcept is None and 'rcept_dt' in secondary_df.columns:
+                        rcept = row.get('rcept_dt')
+                    new_row['rcept_dt'] = rcept
+                supplement_rows.append(new_row)
+        if supplement_rows:
+            merged = pd.concat([primary_df, pd.DataFrame(supplement_rows)], ignore_index=True)
+            return merged, len(supplement_rows)
+        return primary_df, 0
+
+    _merge_fs_supplement = _merge_fs_supplement_local
     supplement_total = 0
     all_tickers = set(dart_map) | set(fn_map)
     for ticker in all_tickers:
@@ -687,13 +773,17 @@ def precompute_avg_volume(market_cap_dict):
 def vectorized_ma120_filter(price_df, universe_tickers, base_ts):
     """MA120 필터 — 벡터화 (per-ticker 루프 제거)
 
-    120일 미만 종목은 필터 면제 (중장기 추세 판단 불가).
+    126일(6M) 미만 종목은 제외 (모멘텀 계산 불가, IPO 노이즈).
     """
     valid = [t for t in universe_tickers if t in price_df.columns]
     if not valid:
         return [], []
 
     # 마지막 120일 가격
+    # 126일 미만 종목 제외: 전체 히스토리에서 유효 거래일 체크
+    full_valid = price_df[valid].notna().sum()
+    too_short = full_valid < 126
+
     prices_slice = price_df[valid].iloc[-120:]
     if len(prices_slice) < 120:
         return valid, []
@@ -702,13 +792,9 @@ def vectorized_ma120_filter(price_df, universe_tickers, base_ts):
     current = prices_slice.iloc[-1]
     # MA120
     ma120 = prices_slice.mean()
-    # 필터: 현재가 >= MA120
+    # 필터: 현재가 >= MA120 AND 126일 이상
     mask = current >= ma120
-    # 120일 미만 종목: 20일 이상이면 면제, 20일 미만이면 탈락
-    valid_counts = prices_slice.notna().sum()
-    exempt = (valid_counts >= 20) & (valid_counts < 120)
-    too_short = valid_counts < 20  # 최소 20거래일 필요
-    mask = (mask.fillna(False) | exempt) & ~too_short
+    mask = mask.fillna(False) & ~too_short
 
     passed = mask[mask].index.tolist()
     failed = mask[~mask].index.tolist()
@@ -932,11 +1018,21 @@ def calculate_multifactor_fast(multifactor_df, price_df, sector_map, base_date,
         lambda t: date_growth.get(t, {}).get('oca') if t in date_growth else np.nan
     )
 
-    # --- Momentum 팩터 (벡터화) ---
+    # --- Momentum 팩터 (벡터화, 4종 동시 계산) ---
     tickers = data['종목코드'].tolist()
     mom_dict, kratio_dict = vectorized_momentum(price_df, tickers, mom_period)
     data['모멘텀'] = data['종목코드'].map(mom_dict)
     data['K_ratio'] = data['종목코드'].map(kratio_dict)
+
+    # 추가 모멘텀 (BT용: 그리드서치에서 모멘텀 타입 비교)
+    _all_mom_periods = ['6m', '6m-1m', '12m', '12m-1m']
+    _extra_mom = {}
+    for mp in _all_mom_periods:
+        if mp != mom_period:
+            md, _ = vectorized_momentum(price_df, tickers, mp)
+            _extra_mom[mp] = md
+        else:
+            _extra_mom[mp] = mom_dict
 
     # --- 섹터 매핑 ---
     sectors = None
@@ -1009,6 +1105,31 @@ def calculate_multifactor_fast(multifactor_df, price_df, sector_map, base_date,
 
     data['모멘텀_raw'] = data[momentum_zs].mean(axis=1) if momentum_zs else 0
 
+    # 추가 모멘텀 z-score (BT 저장용)
+    for mp, md in _extra_mom.items():
+        col_raw = f'mom_{mp.replace("-","")}_raw'
+        data[col_raw] = data['종목코드'].map(md)
+        if data[col_raw].notna().sum() > 0:
+            data[f'mom_{mp.replace("-","")}_z'] = rank_zscore_sector(
+                data[col_raw], cur_sectors, ascending=True
+            ) if cur_sectors is not None else rank_zscore_series(data[col_raw], ascending=True)
+        else:
+            data[f'mom_{mp.replace("-","")}_z'] = 0.0
+        # K_ratio 포함 평균
+        if 'K_ratio_z' in data.columns:
+            data[f'mom_{mp.replace("-","")}_score'] = (
+                data[f'mom_{mp.replace("-","")}_z'].fillna(0) + data['K_ratio_z'].fillna(0)
+            ) / 2.0
+        else:
+            data[f'mom_{mp.replace("-","")}_score'] = data[f'mom_{mp.replace("-","")}_z'].fillna(0)
+        # 재표준화
+        valid = data[f'mom_{mp.replace("-","")}_score'].dropna()
+        m, s = valid.mean(), valid.std()
+        if s > 0:
+            data[f'mom_{mp.replace("-","")}_s'] = (data[f'mom_{mp.replace("-","")}_score'] - m) / s
+        else:
+            data[f'mom_{mp.replace("-","")}_s'] = 0.0
+
     # 재표준화
     for raw_col, score_col in [('밸류_raw', '밸류_점수'), ('퀄리티_raw', '퀄리티_점수'),
                                 ('성장_raw', '성장_점수'), ('모멘텀_raw', '모멘텀_점수')]:
@@ -1056,9 +1177,12 @@ def calculate_multifactor_fast(multifactor_df, price_df, sector_map, base_date,
 # 5. 메인 날짜별 처리 (최적화)
 # ============================================================================
 
-def find_nearest_cache(cache_dict, target_date, max_gap_days=120):
-    """target_date 이하에서 가장 가까운 캐시 찾기 (반환: 키 or None)"""
-    candidates = sorted([d for d in cache_dict.keys() if d <= target_date], reverse=True)
+def find_nearest_cache(cache_dict, target_date, max_gap_days=120, strict=False):
+    """target_date 이하(strict=True면 미만)에서 가장 가까운 캐시 찾기"""
+    if strict:
+        candidates = sorted([d for d in cache_dict.keys() if d < target_date], reverse=True)
+    else:
+        candidates = sorted([d for d in cache_dict.keys() if d <= target_date], reverse=True)
     if not candidates:
         return None
     best = candidates[0]
@@ -1070,14 +1194,14 @@ def find_nearest_cache(cache_dict, target_date, max_gap_days=120):
 
 def generate_ranking_for_date(date_str, preloaded, state_dir):
     """단일 날짜 ranking 생성 — v2 최적화"""
-    from create_current_portfolio import get_broad_sector, EXCLUDE_KEYWORDS
+    # get_broad_sector, EXCLUDE_KEYWORDS: 모듈 상단에 인라인 정의 (CP 임포트 제거)
 
     ohlcv = preloaded['ohlcv']
     base_ts = pd.Timestamp(date_str)
     tnames = preloaded['ticker_names']
 
-    # --- 1. Market Cap (메모리에서 조회) ---
-    mcap_key = find_nearest_cache(preloaded['market_cap'], date_str, max_gap_days=5)
+    # --- 1. Market Cap (당일 종가 기준 — 시간외 종가매매로 당일 매매 가능) ---
+    mcap_key = find_nearest_cache(preloaded['market_cap'], date_str, max_gap_days=10)
     if mcap_key is None:
         return False, 'no market_cap'
     mcap_df = preloaded['market_cap'][mcap_key]
@@ -1089,7 +1213,7 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
     filtered = mcap_df[mcap_df['시가총액_억'] >= min_mcap].copy()
 
     # --- 2. 거래대금 (사전계산된 20일 평균) ---
-    avg_vol_key = find_nearest_cache(preloaded['avg_volume'], date_str, max_gap_days=5)
+    avg_vol_key = find_nearest_cache(preloaded['avg_volume'], date_str, max_gap_days=10)
     has_real_volume = False
 
     if avg_vol_key is not None:
@@ -1098,7 +1222,12 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
         filtered['avg_tv'] = filtered['avg_tv'].fillna(filtered['거래대금'] / 1e8 if '거래대금' in filtered.columns else 0)
         has_real_volume = (filtered['avg_tv'] > 0).sum() > len(filtered) * 0.1
     else:
-        filtered['avg_tv'] = filtered['거래대금'] / 1e8 if '거래대금' in filtered.columns else 0
+        # avg_volume 없을 때: market_cap의 당일 거래대금 사용 (단일일이라도 필터 가능)
+        if '거래대금' in filtered.columns:
+            filtered['avg_tv'] = filtered['거래대금'] / 1e8
+            has_real_volume = (filtered['avg_tv'] > 0).sum() > len(filtered) * 0.1
+        else:
+            filtered['avg_tv'] = 0
 
     if has_real_volume:
         large = filtered[filtered['시가총액_억'] >= 10000]
@@ -1173,7 +1302,7 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
         sector_map = preloaded['_sector_cache'][sector_key]
 
     # --- 7. pykrx fundamental 병합 ---
-    fund_key = find_nearest_cache(preloaded['fundamentals_pykrx'], date_str, max_gap_days=5)
+    fund_key = find_nearest_cache(preloaded['fundamentals_pykrx'], date_str, max_gap_days=10)
     multifactor_df = magic_df.copy()
     if fund_key is not None:
         fund_df = preloaded['fundamentals_pykrx'][fund_key]
@@ -1186,7 +1315,6 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
     multifactor_df['종목명'] = multifactor_df['종목코드'].map(tnames)
 
     # --- 8. 멀티팩터 계산 (인라인, disk I/O 없음) ---
-    os.environ['DISABLE_FWD_BONUS'] = '1'
     mom_period = os.environ.get('MOM_PERIOD', '6m')
 
     scored = calculate_multifactor_fast(
@@ -1219,6 +1347,12 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
             val = row.get(col)
             if val is not None and pd.notna(val):
                 item[key] = round(float(val), 4)
+        # 4종 모멘텀 점수
+        for mp in ['6m', '6m1m', '12m', '12m1m']:
+            col = f'mom_{mp}_s'
+            val = row.get(col)
+            if val is not None and pd.notna(val):
+                item[f'mom_{mp}_s'] = round(float(val), 4)
         if ticker in price_df.columns and base_ts in price_df.index:
             p = price_df.loc[base_ts, ticker]
             if pd.notna(p) and p > 0:
@@ -1297,8 +1431,11 @@ def main():
         if f == '--cache-dir' and i + 2 < len(sys.argv):
             CACHE_DIR = Path(sys.argv[i + 2])
 
-    # 거래일 목록
+    # 거래일 목록 — _full 우선
     ohlcv_files = sorted(CACHE_DIR.glob('all_ohlcv_*.parquet'))
+    full_files = [f for f in ohlcv_files if '_full' in f.stem]
+    if full_files:
+        ohlcv_files = full_files
     ohlcv_files.sort(key=lambda f: f.stem.split('_')[2])
     ohlcv_df = pd.read_parquet(ohlcv_files[0])
     all_dates = ohlcv_df.index

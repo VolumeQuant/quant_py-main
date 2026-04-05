@@ -307,17 +307,11 @@ def apply_ma120_filter(price_df: pd.DataFrame, universe_tickers: list) -> list:
             continue
 
         prices = price_df[ticker].dropna()
-        if len(prices) < 20:
-            # 20일 미만: 최소 데이터 부족 → 탈락
+        if len(prices) < 126:
+            # 126일(6M) 미만: 제외 (모멘텀 계산 불가, IPO 노이즈)
             continue
 
         current_price = prices.iloc[-1]
-
-        if len(prices) < 120:
-            # 20~119일: 중장기 추세 판단 불가 → 필터 면제
-            passed.append(ticker)
-            continue
-
         ma120 = prices.tail(120).mean()
         if current_price >= ma120:
             passed.append(ticker)
@@ -577,8 +571,29 @@ def run_strategy_b_scoring(
             pykrx_count = multifactor_df['pykrx_PER'].notna().sum() if 'pykrx_PER' in multifactor_df.columns else 0
             print(f"  pykrx PER/PBR 병합: {pykrx_count}/{len(multifactor_df)}개")
 
+        # regime 파라미터에서 mom_period, g_rev 가져오기
+        try:
+            from regime_indicator import get_regime_params
+            import json as _json
+            _regime_file = Path(__file__).parent / 'state' / 'regime_state.json'
+            _mode = 'defense'
+            if _regime_file.exists():
+                with open(_regime_file, 'r') as _rf:
+                    _mode = _json.load(_rf).get('mode', 'defense')
+            _rp = get_regime_params(_mode)
+            _mom_period = _rp.get('MOM_PERIOD', '6m')
+            _g_rev = _rp.get('G_REV', 0.7)
+            os.environ['G_REVENUE_WEIGHT'] = str(_g_rev)
+            os.environ['FACTOR_V_W'] = str(_rp.get('V_W', 0.20))
+            os.environ['FACTOR_Q_W'] = str(_rp.get('Q_W', 0.10))
+            os.environ['FACTOR_G_W'] = str(_rp.get('G_W', 0.20))
+            os.environ['FACTOR_M_W'] = str(_rp.get('M_W', 0.50))
+            print(f"  국면: {_mode} → V{_rp['V_W']:.0%}Q{_rp['Q_W']:.0%}G{_rp['G_W']:.0%}M{_rp['M_W']:.0%} mom={_mom_period} g_rev={_g_rev}")
+        except Exception:
+            _mom_period = '6m'
+
         strategy = MultiFactorStrategy()
-        selected, scored = strategy.run(multifactor_df, price_df=price_df, n_stocks=len(multifactor_df), sector_map=sector_map, base_date=BASE_DATE)
+        selected, scored = strategy.run(multifactor_df, price_df=price_df, n_stocks=len(multifactor_df), sector_map=sector_map, base_date=BASE_DATE, mom_period=_mom_period)
 
         print(f"  스코어링 완료: {len(scored)}개 종목")
         return scored
@@ -737,6 +752,10 @@ def main():
     price_start = start_date_dt.strftime('%Y%m%d')
 
     ohlcv_cache_files = list(Path(CACHE_DIR).glob("all_ohlcv_*.parquet"))
+    # _full 파일 우선 (전종목)
+    full_ohlcv = [f for f in ohlcv_cache_files if '_full' in f.stem]
+    if full_ohlcv:
+        ohlcv_cache_files = full_ohlcv
     price_df = pd.DataFrame()
     need_refresh = True
 

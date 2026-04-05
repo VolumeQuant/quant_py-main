@@ -39,45 +39,59 @@
 
 ---
 
-# 🇰🇷 KR 전략 — quant_py-main (v75, 2026-04-04)
+# 🇰🇷 KR 전략 — quant_py-main (v75, 2026-04-05)
 
 > 경로: `C:\dev\claude code\quant_py-main`
 
-## 국면전환 전략 (v75)
+## 국면전환 전략 (v75) — Breadth40 기반
 
-### 방어 모드 (v70 기반) — KOSPI<MA60 or KOSDAQ<MA60
-- **V20 + Q20 + G30 + M30**
+### 국면 규칙
+- **Breadth40**: 전종목 40%+ MA120 위 = 공격, 미만 = 방어
+- **1일 확인** (즉시 전환)
+- 전환 시 기존 포트폴리오 청산 → 새 전략 재진입
+
+### 방어 모드 — Breadth < 40% (Momentum 중심)
+- **V15 + Q25 + G10 + M50**
+- G 내부: g_rev=1.0 (매출성장률 100%)
+- 모멘텀: 6M/Vol
+- 진입: rank ≤ 5, 퇴출: WR > 12, 슬롯 5
+- 손절: -10%, 트레일링: -20%
+
+### 공격 모드 (Boost) — Breadth ≥ 40% (Growth 중심)
+- **V30 + Q0 + G55 + M15**
 - G 내부: g_rev=0.7 (매출성장률 70% + 영업이익변화 30%)
-- 진입: rank ≤ 5, 퇴출: WR > 15, 슬롯 7
-- 단독: Calmar=1.42, CAGR=44.8%, MDD=31.6%
+- 모멘텀: 12M
+- 진입: rank ≤ 5, 퇴출: WR > 12, 슬롯 3
+- 손절: -12%, 트레일링: -20%
 
-### 공격 모드 (Boost) — KOSPI>MA60 AND KOSDAQ>MA60 (3일 확인)
-- **V15 + Q5 + G65 + M15**
-- G 내부: g_rev=0.95 (매출성장률 95% + 영업이익변화 5%)
-- 진입: rank ≤ 3, 퇴출: WR > 4, 슬롯 3
-- 단독: Calmar=2.35+
+### 국면전환 성과 (2021-01 ~ 2026-04, 1287일)
+- **Calmar=5.78, CAGR=146%, MDD=25%**
+- Sharpe=2.21, Sortino=3.51
+- 국면 비율: Boost 54%, 방어 46%
+- WF 검증: WF1=3.43, WF2=16.01, WF3=15.62
 
-### 국면전환 합산 성과 (2021-06 ~ 2026-04, 1186일)
-- **CAGR=107.4%, MDD=31.1%, Calmar=3.46, Sharpe=1.79, Sortino=2.90**
-- 인접 안정성: 91% (Calmar≥2.0)
-- 국면 비율: Boost 38%, 방어 62%
+### 그리드서치 방법론
+- Phase 2a: 11,132개 가중치 × g_rev × 4종 모멘텀 스크리닝
+- Phase 2b: Top 200 × 1,080 규칙 = 216,000 조합
+- Phase 2c: Walk-Forward 3기간 교차 검증
+- Phase 2d: Benjamini-Hochberg FDR q<0.05 (217/216,000 유의)
+- Phase 2e: 인접 안정성 (가중치 ±5, entry/exit/slots ±1~2)
+- Phase 3: 국면전환 run_regime (전환 시 청산+재진입 정확 시뮬)
+- 전략 선정: Borda Count + Pareto Frontier (자의적 가중치 없음)
 
 ### 공통
 - PER/PBR/ROE: pykrx (KRX 공식)
 - 재무제표: DART + FnGuide 보충 (누락 계정 자동 합침)
-- 손절: -10% (쿨다운 없음)
-- 트레일링 스톱: 최고가 대비 -20% (수동)
-- FWD_BONUS: 비활성화
-- score_100: (ws + 0.7) / 2.4 × 100
+- FWD_BONUS: 삭제
+- MA120 필터: 126일(6M) 미만 제외 (모멘텀 계산 불가, IPO 노이즈)
 
-## v75 데이터 파이프라인 개선 (2026-04-04)
+## v75 데이터 파이프라인 개선 (2026-04-05)
 - DART+FnGuide 데이터 합치기: DART에 빠진 계정을 FnGuide에서 보충
-  - DART에 해당 분기 존재 → FnGuide에서 빠진 계정만 보충
-  - DART 분기 < 8개이고 FnGuide가 더 많으면 → FnGuide를 주 데이터로 사용
-  - DART에 없는 새 분기도 FnGuide에서 추가 (갭 체크로 보호)
-- TTM YoY 갭 체크: recent_4~prev_4 사이 18개월 이상 갭 → TTM 거부, 연간 fallback
-- MA120 필터: 120일 미만 종목은 필터 면제 (중장기 추세 판단 불가)
-- FG/CP 완전 일치: 5개 날짜 검증 결과 Score/Rank 상관계수 모두 1.0000
+- TTM YoY 갭 체크: 450일 이상 갭 → TTM 거부, 연간 fallback
+- MA120 필터: 126일 미만 제외 (IPO 시즈닝)
+- DART USD 환율 변환 (두산밥캣 등)
+- 4종 모멘텀 BT (6m, 6m-1m, 12m, 12m-1m)
+- FG/CP 완전 일치: 20종목 Growth 100% 일치 + z-score 함수 동일
 
 ## 유니버스 필터
 - 시총 ≥ 1000억, 거래대금: 대형 ≥ 50억, 중소형 ≥ 20억

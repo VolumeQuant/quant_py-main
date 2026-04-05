@@ -130,50 +130,170 @@ def main():
         except Exception as e:
             log(f"DART 갱신 오류: {e} — 기존 캐시로 진행", logfile)
 
-        # 0.5. 국면 판단
-        log("국면 판단 (KOSPI+KOSDAQ MA60)", logfile)
+        # 0.3. OHLCV 신규 종목 증분 수집
+        #   시총 1000억+ 인데 OHLCV에 없는 종목 → 개별 수집 (252거래일)
+        log("OHLCV 신규 종목 증분 수집 시작", logfile)
+        try:
+            import pandas as pd
+            import numpy as np
+            import time as _time
+
+            data_cache = SCRIPT_DIR / "data_cache"
+
+            # 1) 가장 긴 OHLCV 파일 선택 — _full 우선
+            ohlcv_files = list(data_cache.glob("all_ohlcv_*.parquet"))
+            full_ohlcv = [f for f in ohlcv_files if '_full' in f.stem]
+            if full_ohlcv:
+                ohlcv_files = full_ohlcv
+            if ohlcv_files:
+                best_ohlcv = None
+                best_span = 0
+                for f in ohlcv_files:
+                    parts = f.stem.split('_')
+                    if len(parts) >= 4:
+                        span = int(parts[3]) - int(parts[2])
+                        if span > best_span:
+                            best_span = span
+                            best_ohlcv = f
+                if best_ohlcv is None:
+                    best_ohlcv = sorted(ohlcv_files)[-1]
+
+                ohlcv_df = pd.read_parquet(best_ohlcv)
+                existing_tickers = set(ohlcv_df.columns)
+                log(f"  OHLCV 파일: {best_ohlcv.name} ({len(existing_tickers)}종목)", logfile)
+
+                # 2) 최신 market_cap에서 시총 1000억+ 종목
+                mc_files = sorted(data_cache.glob("market_cap_ALL_*.parquet"))
+                if mc_files:
+                    mc_df = pd.read_parquet(mc_files[-1])
+                    if '시가총액' in mc_df.columns:
+                        large_cap = mc_df[mc_df['시가총액'] >= 100_000_000_000]  # 1000억
+                        large_tickers = set(large_cap.index.astype(str))
+                        log(f"  시총 1000억+: {len(large_tickers)}종목", logfile)
+
+                        # 3) 누락 종목 찾기
+                        missing = large_tickers - existing_tickers
+                        if missing:
+                            log(f"  신규 종목 발견: {len(missing)}개 → 개별 OHLCV 수집", logfile)
+
+                            # pykrx 임포트 + 인증
+                            from pykrx import stock as pykrx_stock
+                            import krx_auth
+                            krx_auth.login()
+
+                            # 252거래일 ≈ 370일
+                            ohlcv_end = ohlcv_df.index[-1].strftime('%Y%m%d')
+                            from datetime import timedelta as _td
+                            ohlcv_start = (ohlcv_df.index[-1] - _td(days=370)).strftime('%Y%m%d')
+
+                            collected = 0
+                            failed = 0
+                            for ticker in sorted(missing):
+                                try:
+                                    tk_df = pykrx_stock.get_market_ohlcv_by_date(
+                                        ohlcv_start, ohlcv_end, ticker
+                                    )
+                                    if not tk_df.empty and '종가' in tk_df.columns:
+                                        ohlcv_df[ticker] = tk_df['종가'].reindex(ohlcv_df.index)
+                                        collected += 1
+                                    _time.sleep(1)  # CRITICAL: 1초 sleep, IP 차단 방지
+                                except Exception as e:
+                                    failed += 1
+                                    log(f"    {ticker} 수집 실패: {e}", logfile)
+                                    _time.sleep(1)
+
+                            if collected > 0:
+                                # 기존 파일에 덮어쓰기 (파일명 유지)
+                                ohlcv_df.to_parquet(best_ohlcv)
+                                log(f"  OHLCV 증분 완료: +{collected}종목 (실패 {failed}) → {best_ohlcv.name}", logfile)
+
+                                # 다른 OHLCV 파일에도 신규 종목 추가
+                                for other_f in data_cache.glob("all_ohlcv_*.parquet"):
+                                    if other_f == best_ohlcv:
+                                        continue
+                                    try:
+                                        other_df = pd.read_parquet(other_f)
+                                        new_cols = set(ohlcv_df.columns) - set(other_df.columns)
+                                        if new_cols:
+                                            for col in new_cols:
+                                                other_df[col] = ohlcv_df[col].reindex(other_df.index)
+                                            other_df.to_parquet(other_f)
+                                            log(f"    동기화: {other_f.name} (+{len(new_cols)}종목)", logfile)
+                                    except Exception:
+                                        pass
+                            else:
+                                log(f"  수집된 종목 없음 (실패 {failed})", logfile)
+                        else:
+                            log("  누락 종목 없음 — 스킵", logfile)
+                    else:
+                        log("  market_cap에 시가총액 컬럼 없음 — 스킵", logfile)
+                else:
+                    log("  market_cap 파일 없음 — 스킵", logfile)
+            else:
+                log("  OHLCV 파일 없음 — 스킵", logfile)
+        except Exception as e:
+            log(f"OHLCV 증분 수집 오류: {e} — 기존 데이터로 진행", logfile)
+
+        # 0.5. 국면 판단 (v75: KP120+VIX25 — KOSPI>MA120 AND VIX<25)
+        log("국면 판단 (KP120_3d+VIX25 — KOSPI MA120 + VIX)", logfile)
         try:
             sys.path.insert(0, str(SCRIPT_DIR))
             from regime_indicator import get_current_regime, get_regime_params
-            import krx_auth
-            krx_auth.login()
-            from pykrx import stock as pykrx_stock
-            import time as _time
             import pandas as pd
+            import numpy as np
+            from pathlib import Path
 
-            # KOSPI
-            kospi_df = pykrx_stock.get_market_ohlcv(
-                (datetime.now() - __import__('datetime').timedelta(days=90)).strftime('%Y%m%d'),
-                today, '005930'
-            )
-            _time.sleep(1)
-            kospi_idx = pykrx_stock.get_index_ohlcv(
-                (datetime.now() - __import__('datetime').timedelta(days=90)).strftime('%Y%m%d'),
-                today, '1001'
-            )
-            kospi_close = kospi_idx.iloc[-1, 3] if not kospi_idx.empty else None
-            kospi_ma60 = kospi_idx.iloc[:, 3].rolling(60).mean().iloc[-1] if len(kospi_idx) >= 60 else None
+            # KOSPI MA120 계산
+            kospi_file = Path('data_cache/kospi_yf.parquet')
+            kospi_close = kospi_ma120 = None
+            if kospi_file.exists():
+                kp = pd.read_parquet(kospi_file).iloc[:, 0].dropna()
+                if len(kp) >= 120:
+                    kospi_close = float(kp.iloc[-1])
+                    kospi_ma120 = float(kp.rolling(120).mean().iloc[-1])
 
-            _time.sleep(1)
-            kosdaq_idx = pykrx_stock.get_index_ohlcv(
-                (datetime.now() - __import__('datetime').timedelta(days=90)).strftime('%Y%m%d'),
-                today, '2001'
-            )
-            kosdaq_close = kosdaq_idx.iloc[-1, 3] if not kosdaq_idx.empty else None
-            kosdaq_ma60 = kosdaq_idx.iloc[:, 3].rolling(60).mean().iloc[-1] if len(kosdaq_idx) >= 60 else None
+            # VIX
+            vix_file = Path('data_cache/vix_daily.parquet')
+            vix_val = None
+            if vix_file.exists():
+                vx = pd.read_parquet(vix_file).iloc[:, 0].dropna()
+                if not vx.empty:
+                    vix_val = float(vx.iloc[-1])
+
+            # 브레스 (fallback용)
+            breadth_ratio = None
+            ohlcv_files = sorted(Path('data_cache').glob('all_ohlcv_2019*.parquet'))
+            if not ohlcv_files:
+                ohlcv_files = sorted(Path('data_cache').glob('all_ohlcv_*.parquet'))
+            full_files = [f for f in ohlcv_files if '_full' in f.stem]
+            if full_files:
+                ohlcv_files = full_files
+            if ohlcv_files:
+                ohlcv = pd.read_parquet(ohlcv_files[0]).replace(0, np.nan)
+                mc_files = sorted(Path('data_cache').glob('market_cap_ALL_*.parquet'))
+                if mc_files:
+                    mc = pd.read_parquet(mc_files[-1])
+                    big_tickers = set(mc[mc['시가총액'] >= 1e11].index)
+                    valid_cols = [c for c in ohlcv.columns if c in big_tickers]
+                    ohlcv_f = ohlcv[valid_cols]
+                    ma120 = ohlcv_f.rolling(120).mean()
+                    above = (ohlcv_f > ma120).sum(axis=1)
+                    total_valid = ohlcv_f.notna().sum(axis=1)
+                    br = above / total_valid
+                    breadth_ratio = float(br.iloc[-1]) if not br.empty else None
 
             regime = get_current_regime(
-                kospi_close=kospi_close, kospi_ma60=kospi_ma60,
-                kosdaq_close=kosdaq_close, kosdaq_ma60=kosdaq_ma60,
+                kospi_close=kospi_close, kospi_ma120=kospi_ma120,
+                vix=vix_val, breadth_ratio=breadth_ratio,
                 date_str=today
             )
             params = get_regime_params(regime['mode'])
-            log(f"국면: {params['icon']} {params['label']} (신호={regime['signal']}, 연속={regime['streak']}일, 전환={regime['switched']})", logfile)
+            log(f"국면: {params['icon']} {params['label']} (브레스={breadth_ratio:.1%}, 신호={regime['signal']}, 전환={regime['switched']})", logfile)
         except Exception as e:
             log(f"국면 판단 실패: {e} — 기본 방어 모드", logfile)
             from regime_indicator import get_regime_params
-            regime = {'mode': 'cal3', 'switched': False, 'signal': 'cal3', 'streak': 0, 'prev_mode': 'cal3'}
-            params = get_regime_params('cal3')
+            regime = {'mode': 'defense', 'switched': False, 'signal': 'defense', 'streak': 0, 'prev_mode': 'defense'}
+            params = get_regime_params('defense')
 
         # 1. 포트폴리오 생성 (국면 파라미터 환경변수 주입)
         regime_env = {

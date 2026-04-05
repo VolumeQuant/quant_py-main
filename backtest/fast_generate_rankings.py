@@ -36,6 +36,9 @@ def preload_all_data(start_str, end_str):
 
     # 1. OHLCV (가장 긴 파일)
     ohlcv_files = sorted(CACHE_DIR.glob('all_ohlcv_*.parquet'))
+    full_files = [f for f in ohlcv_files if '_full' in f.stem]
+    if full_files:
+        ohlcv_files = full_files
     # 가장 이른 시작일 파일 선택
     ohlcv_files.sort(key=lambda f: f.stem.split('_')[2])
     ohlcv_file = ohlcv_files[0]
@@ -349,6 +352,9 @@ def main():
 
     # 거래일 목록
     ohlcv_files = sorted(CACHE_DIR.glob('all_ohlcv_*.parquet'))
+    full_files = [f for f in ohlcv_files if '_full' in f.stem]
+    if full_files:
+        ohlcv_files = full_files
     ohlcv_files.sort(key=lambda f: f.stem.split('_')[2])
     ohlcv_df = pd.read_parquet(ohlcv_files[0])
     all_dates = ohlcv_df.index

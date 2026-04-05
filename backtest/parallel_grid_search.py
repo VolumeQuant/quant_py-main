@@ -38,8 +38,11 @@ def _load_data_once():
 
     all_rankings, dates = load_data(['2020', '2021', '2022', '2023', '2024', '2025'])
 
-    ohlcv_files = sorted(CACHE_DIR.glob('all_ohlcv_*.parquet'),
-                          key=lambda f: f.stem.split('_')[2])
+    ohlcv_files = sorted(CACHE_DIR.glob('all_ohlcv_*.parquet'))
+    full_files = [f for f in ohlcv_files if '_full' in f.stem]
+    if full_files:
+        ohlcv_files = full_files
+    ohlcv_files.sort(key=lambda f: f.stem.split('_')[2])
     prices = pd.read_parquet(ohlcv_files[0]).replace(0, np.nan)
 
     bench_file = CACHE_DIR / 'index_benchmarks.parquet'

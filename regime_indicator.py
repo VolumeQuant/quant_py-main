@@ -1,8 +1,12 @@
-"""국면 판단 모듈 — KOSPI+KOSDAQ MA60 기반, 3일 확인
+"""국면 판단 모듈 — B126_40 (시총1000억+ 126일+ 종목 MA120 위 비율 ≥40%) 기반, 1일 확인
+
+v75 확정: KP120_3d+VIX25 (KOSPI>MA120 3일확인 + VIX<25)
+  방어: V20 Q10 G20 M50, g_rev=0.6, mom=6m-1m, E5 X8 S7, sl=-10%, trail=-15%, corr=0.6
+  공격: V25 Q0 G50 M25, g_rev=0.3, mom=12m-1m, E3 X4 S7, trail=-20%
 
 사용:
     from regime_indicator import get_current_regime
-    regime = get_current_regime()  # 'boost' or 'cal3'
+    regime = get_current_regime()  # 'boost' or 'defense'
 """
 import json
 import sys
@@ -24,9 +28,9 @@ def _load_state():
         except Exception:
             pass
     return {
-        'mode': 'cal3',
+        'mode': 'defense',
         'streak': 0,
-        'streak_mode': 'cal3',
+        'streak_mode': 'defense',
         'last_date': None,
         'history': [],
     }
@@ -38,38 +42,51 @@ def _save_state(state):
         json.dump(state, f, ensure_ascii=False, indent=2)
 
 
-def check_regime_signal(kospi_close, kospi_ma60, kosdaq_close, kosdaq_ma60):
-    """KOSPI+KOSDAQ 둘 다 MA60 위면 'boost', 아니면 'cal3'"""
+def check_regime_signal(kospi_close=None, kospi_ma120=None,
+                        vix=None, breadth_ratio=None,
+                        kospi_ma60=None, kosdaq_close=None, kosdaq_ma60=None):
+    """KP120 + VIX25: KOSPI > MA120 AND VIX < 25 = boost
+
+    Primary: kospi_close > kospi_ma120 AND vix < 25
+    Fallback: breadth_ratio >= 0.40
+    """
+    if kospi_close is not None and kospi_ma120 is not None and vix is not None:
+        if kospi_close > kospi_ma120 and vix < 25:
+            return 'boost'
+        return 'defense'
+    if breadth_ratio is not None:
+        return 'boost' if breadth_ratio >= 0.40 else 'defense'
     if (kospi_close is not None and kospi_ma60 is not None and
         kosdaq_close is not None and kosdaq_ma60 is not None):
         if kospi_close >= kospi_ma60 and kosdaq_close >= kosdaq_ma60:
             return 'boost'
-    return 'cal3'
+    return 'defense'
 
 
-def get_current_regime(kospi_close=None, kospi_ma60=None,
-                        kosdaq_close=None, kosdaq_ma60=None,
+def get_current_regime(kospi_close=None, kospi_ma120=None,
+                        vix=None, breadth_ratio=None,
+                        kospi_ma60=None, kosdaq_close=None, kosdaq_ma60=None,
                         date_str=None):
-    """현재 국면 판단 (3일 확인).
+    """현재 국면 판단 (3일 확인, KP120+VIX25 기반).
 
     Args:
-        kospi_close, kospi_ma60, kosdaq_close, kosdaq_ma60: 당일 값
+        kospi_close: KOSPI 종가
+        kospi_ma120: KOSPI MA120
+        vix: VIX 지수
+        breadth_ratio: fallback용 브레스 비율
         date_str: 날짜 (YYYYMMDD)
 
     Returns:
-        dict: {
-            'mode': 'boost' or 'cal3',
-            'signal': 'boost' or 'cal3' (당일 신호, 확인 전),
-            'streak': int (연속 일수),
-            'switched': bool (오늘 전환되었는지),
-            'prev_mode': str (이전 모드),
-        }
+        dict: mode, signal, streak, switched, prev_mode
     """
     state = _load_state()
     prev_mode = state['mode']
 
     # 당일 신호
-    signal = check_regime_signal(kospi_close, kospi_ma60, kosdaq_close, kosdaq_ma60)
+    signal = check_regime_signal(kospi_close=kospi_close, kospi_ma120=kospi_ma120,
+                                  vix=vix, breadth_ratio=breadth_ratio,
+                                  kospi_ma60=kospi_ma60, kosdaq_close=kosdaq_close,
+                                  kosdaq_ma60=kosdaq_ma60)
 
     # 연속 카운트
     if signal == state['streak_mode']:
@@ -78,9 +95,10 @@ def get_current_regime(kospi_close=None, kospi_ma60=None,
         state['streak'] = 1
         state['streak_mode'] = signal
 
-    # 3일 확인
+    # 1일 확인 (v75: 즉시 전환)
+    CONFIRM_DAYS = 3  # v75 확정: KP120_3d (3일 확인)
     switched = False
-    if state['streak'] >= 3 and state['mode'] != signal:
+    if state['streak'] >= CONFIRM_DAYS and state['mode'] != signal:
         state['mode'] = signal
         switched = True
 
@@ -115,20 +133,28 @@ def get_regime_params(mode):
     """
     if mode == 'boost':
         return {
-            'V_W': 0.15, 'Q_W': 0.05, 'G_W': 0.65, 'M_W': 0.15,
-            'G_REV': 0.95,
-            'ENTRY_RANK': 3, 'EXIT_RANK': 4, 'MAX_SLOTS': 3,
+            'V_W': 0.25, 'Q_W': 0.00, 'G_W': 0.50, 'M_W': 0.25,
+            'G_REV': 0.3,
+            'MOM_PERIOD': '12m-1m',
+            'ENTRY_RANK': 3, 'EXIT_RANK': 4, 'MAX_SLOTS': 7,
+            'STOP_LOSS': None,
+            'TRAILING_STOP': -0.20,
+            'CORR_THRESHOLD': None,
             'USE_REV_ACCEL': False,
-            'label': '공격 모드',
+            'label': '공격 모드 (Growth+매출 중심)',
             'icon': '⚔️',
         }
-    else:  # v70 방어
+    else:  # v75 방어 (defense)
         return {
-            'V_W': 0.20, 'Q_W': 0.20, 'G_W': 0.30, 'M_W': 0.30,
-            'G_REV': 0.7,
-            'ENTRY_RANK': 5, 'EXIT_RANK': 15, 'MAX_SLOTS': 7,
+            'V_W': 0.20, 'Q_W': 0.10, 'G_W': 0.20, 'M_W': 0.50,
+            'G_REV': 0.6,
+            'MOM_PERIOD': '6m-1m',
+            'ENTRY_RANK': 5, 'EXIT_RANK': 8, 'MAX_SLOTS': 7,
+            'STOP_LOSS': -0.10,
+            'TRAILING_STOP': -0.15,
+            'CORR_THRESHOLD': 0.6,
             'USE_REV_ACCEL': False,
-            'label': '방어 모드',
+            'label': '방어 모드 (Momentum+분산)',
             'icon': '🛡️',
         }
 

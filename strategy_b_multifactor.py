@@ -6,7 +6,6 @@ V25(PER+PBR+PCR+PSR) + Q25(ROE+GPA+CFO) + G25(TTM매출YoY+op_change_asset) + M2
 V/Q: 전체 유니버스 rank z-score (절대 비교)
 M: 섹터 내 rank z-score (섹터 추세 제거)
 G: 전체 유니버스 rank z-score (매출TTM 50% + op_change_asset 50%, 연간 폴백)
-+ FWD_PER 보너스 (커버 종목 가산)
 """
 
 import os
@@ -444,7 +443,6 @@ class MultiFactorStrategy:
         헨리 원본 rank z-score 기반 + 실시간/전방성 강화
         V/Q/G: 전체 유니버스 rank z-score (절대 비교)
         M: 섹터 내 rank z-score (섹터 추세 제거)
-        + FWD_PER 보너스
 
         Args:
             data: 재무 데이터프레임
@@ -655,21 +653,6 @@ class MultiFactorStrategy:
             data['멀티팩터_점수'] = (data['밸류_점수'] * 0.5 +
                                     data['퀄리티_점수'] * 0.5)
             print("멀티팩터 가중치: Value 50% + Quality 50% (모멘텀 없음)")
-
-        # 8.5 FWD_PER 보너스: 컨센서스 있고 EPS 개선 시 가산
-        # DISABLE_FWD_BONUS=1 → 백테스트 시 과거 컨센서스 없으므로 비활성화
-        if os.environ.get('DISABLE_FWD_BONUS') == '1':
-            pass  # 보너스 스킵
-        elif 'forward_per' in data.columns and 'PER' in data.columns:
-            fwd_mask = (data['forward_per'] > 0) & (data['PER'] > 0)
-            eps_improving = fwd_mask & (data['forward_per'] < data['PER'])  # FWD_PER < PER = 실적 개선
-            bonus_count = eps_improving.sum()
-            if bonus_count > 0:
-                # 보너스 크기: 전체 점수 std의 10%
-                score_std = data['멀티팩터_점수'].std()
-                BONUS_ALPHA = 0.10
-                data.loc[eps_improving, '멀티팩터_점수'] += score_std * BONUS_ALPHA
-                print(f"FWD_PER 보너스: {bonus_count}개 종목 (EPS 개선 기대, +{BONUS_ALPHA*100:.0f}% std)")
 
         # 순위 계산 (높을수록 좋음)
         data['멀티팩터_순위'] = data['멀티팩터_점수'].rank(ascending=False, method='first', na_option='bottom')
