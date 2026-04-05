@@ -95,11 +95,25 @@ def get_current_regime(kospi_close=None, kospi_ma120=None,
         state['streak'] = 1
         state['streak_mode'] = signal
 
-    # 1일 확인 (v75: 즉시 전환)
+    # 3일 확인 + 10거래일 cooldown (whipsaw 방지)
     CONFIRM_DAYS = 3  # v75 확정: KP120_3d (3일 확인)
+    COOLDOWN_DAYS = 10  # 전환 후 최소 10거래일 재전환 금지
     switched = False
-    if state['streak'] >= CONFIRM_DAYS and state['mode'] != signal:
+
+    # cooldown 체크: 마지막 전환 이후 경과일
+    last_switch = state.get('last_switch_date')
+    cooldown_ok = True
+    if last_switch and date_str:
+        from datetime import datetime
+        try:
+            gap = (datetime.strptime(date_str, '%Y%m%d') - datetime.strptime(last_switch, '%Y%m%d')).days
+            cooldown_ok = gap >= COOLDOWN_DAYS * 1.5  # 10거래일 ≈ 15캘린더일
+        except (ValueError, TypeError):
+            cooldown_ok = True
+
+    if state['streak'] >= CONFIRM_DAYS and state['mode'] != signal and cooldown_ok:
         state['mode'] = signal
+        state['last_switch_date'] = date_str
         switched = True
 
     # 히스토리 추가
@@ -137,11 +151,11 @@ def get_regime_params(mode):
             'G_REV': 0.3,
             'MOM_PERIOD': '12m-1m',
             'ENTRY_RANK': 3, 'EXIT_RANK': 4, 'MAX_SLOTS': 7,
-            'STOP_LOSS': None,
+            'STOP_LOSS': -0.15,
             'TRAILING_STOP': -0.20,
             'CORR_THRESHOLD': None,
             'USE_REV_ACCEL': False,
-            'label': '공격 모드 (Growth+매출 중심)',
+            'label': '공격 모드 (Growth+매출 중심, 안전망 -15%)',
             'icon': '⚔️',
         }
     else:  # v75 방어 (defense)
