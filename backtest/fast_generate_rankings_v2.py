@@ -49,6 +49,79 @@ EXCLUDE_KEYWORDS = ['금융', '은행', '증권', '보험', '캐피탈', '카드
 
 
 # ============================================================================
+# 0. DART+FnGuide FS 유틸 (모듈 레벨 — CP에서도 import 가능)
+# ============================================================================
+
+def check_data_mismatch(dart_df, fn_df):
+    """DART vs FnGuide 연간 데이터 불일치 체크"""
+    try:
+        mismatch_count = 0
+        check_accounts = ['매출액', '영업이익', '당기순이익', '자산', '자본', '영업활동으로인한현금흐름']
+        for acct in check_accounts:
+            d_rows = dart_df[(dart_df['공시구분'] == 'y') & (dart_df['계정'] == acct)].copy()
+            f_rows = fn_df[(fn_df['공시구분'] == 'y') & (fn_df['계정'] == acct)].copy()
+            if d_rows.empty or f_rows.empty:
+                continue
+            d_rows['year'] = d_rows['기준일'].dt.year
+            f_rows['year'] = f_rows['기준일'].dt.year
+            common_years = set(d_rows['year']) & set(f_rows['year'])
+            for yr in common_years:
+                dv = d_rows[d_rows['year'] == yr].iloc[0]['값']
+                fv = f_rows[f_rows['year'] == yr].iloc[0]['값']
+                if acct in ('매출액', '자산'):
+                    if fv > 0 and dv > 0:
+                        ratio = dv / fv
+                        if ratio < 0.5 or ratio > 2.0:
+                            mismatch_count += 1
+                            break
+                else:
+                    if dv != 0 and fv != 0 and (dv > 0) != (fv > 0):
+                        mismatch_count += 1
+                        break
+                    if fv != 0 and dv != 0:
+                        ratio = dv / fv
+                        if ratio < 0.2 or ratio > 5.0:
+                            mismatch_count += 1
+                            break
+        return mismatch_count >= 1
+    except Exception:
+        return False
+
+
+def merge_fs_supplement(primary_df, secondary_df):
+    """primary에 없는 계정을 secondary에서 보충"""
+    primary_keys = set()
+    for _, row in primary_df.iterrows():
+        primary_keys.add((row['기준일'], row['공시구분'], row['계정']))
+    rcept_map = {}
+    if 'rcept_dt' in primary_df.columns:
+        for _, row in primary_df.iterrows():
+            key = (row['기준일'], row['공시구분'])
+            if key not in rcept_map and pd.notna(row.get('rcept_dt')):
+                rcept_map[key] = row['rcept_dt']
+    supplement_rows = []
+    for _, row in secondary_df.iterrows():
+        full_key = (row['기준일'], row['공시구분'], row['계정'])
+        if full_key not in primary_keys and pd.notna(row['값']):
+            period_key = (row['기준일'], row['공시구분'])
+            new_row = {
+                '계정': row['계정'], '기준일': row['기준일'], '값': row['값'],
+                '종목코드': row.get('종목코드', primary_df.iloc[0].get('종목코드', '')),
+                '공시구분': row['공시구분'],
+            }
+            if 'rcept_dt' in primary_df.columns:
+                rcept = rcept_map.get(period_key)
+                if rcept is None and 'rcept_dt' in secondary_df.columns:
+                    rcept = row.get('rcept_dt')
+                new_row['rcept_dt'] = rcept
+            supplement_rows.append(new_row)
+    if supplement_rows:
+        merged = pd.concat([primary_df, pd.DataFrame(supplement_rows)], ignore_index=True)
+        return merged, len(supplement_rows)
+    return primary_df, 0
+
+
+# ============================================================================
 # 1. 사전계산: Growth 팩터 (핵심 최적화)
 # ============================================================================
 
@@ -595,47 +668,7 @@ def preload_all_data(start_str, end_str, trading_dates=None, use_rev_accel=False
 
     print(f'  sectors: {len(data["sectors"])}일')
 
-    # 5. 재무제표 (DART + FnGuide mismatch 체크)
-    # _check_data_mismatch를 직접 import하면 KRX 인증이 발생 → lazy import
-    import importlib.util as _iu
-    _spec = _iu.spec_from_file_location('cp', PROJECT_ROOT / 'create_current_portfolio.py',
-                                         submodule_search_locations=[])
-    # 함수만 필요하므로 모듈 실행 없이 코드에서 직접 정의
-    def _check_data_mismatch_local(dart_df, fn_df):
-        try:
-            mismatch_count = 0
-            check_accounts = ['매출액', '영업이익', '당기순이익', '자산', '자본', '영업활동으로인한현금흐름']
-            for acct in check_accounts:
-                d_rows = dart_df[(dart_df['공시구분'] == 'y') & (dart_df['계정'] == acct)].copy()
-                f_rows = fn_df[(fn_df['공시구분'] == 'y') & (fn_df['계정'] == acct)].copy()
-                if d_rows.empty or f_rows.empty:
-                    continue
-                d_rows['year'] = d_rows['기준일'].dt.year
-                f_rows['year'] = f_rows['기준일'].dt.year
-                common_years = set(d_rows['year']) & set(f_rows['year'])
-                for yr in common_years:
-                    dv = d_rows[d_rows['year'] == yr].iloc[0]['값']
-                    fv = f_rows[f_rows['year'] == yr].iloc[0]['값']
-                    if acct in ('매출액', '자산'):
-                        if fv > 0 and dv > 0:
-                            ratio = dv / fv
-                            if ratio < 0.5 or ratio > 2.0:
-                                mismatch_count += 1
-                                break
-                    else:
-                        if dv != 0 and fv != 0 and (dv > 0) != (fv > 0):
-                            mismatch_count += 1
-                            break
-                        if fv != 0 and dv != 0:
-                            ratio = dv / fv
-                            if ratio < 0.2 or ratio > 5.0:
-                                mismatch_count += 1
-                                break
-            return mismatch_count >= 1
-        except Exception:
-            return False
-
-    _check_data_mismatch = _check_data_mismatch_local
+    # 5. 재무제표 (DART + FnGuide mismatch 체크 — 모듈 레벨 함수 사용)
     print('  재무제표 로드 중...')
     data['fs'] = {}
     dart_count = fn_count = mismatch_swap = 0
@@ -660,43 +693,11 @@ def preload_all_data(start_str, end_str, trading_dates=None, use_rev_accel=False
         except Exception:
             pass
 
-    def _merge_fs_supplement_local(primary_df, secondary_df):
-        primary_keys = set()
-        for _, row in primary_df.iterrows():
-            primary_keys.add((row['기준일'], row['공시구분'], row['계정']))
-        rcept_map = {}
-        if 'rcept_dt' in primary_df.columns:
-            for _, row in primary_df.iterrows():
-                key = (row['기준일'], row['공시구분'])
-                if key not in rcept_map and pd.notna(row.get('rcept_dt')):
-                    rcept_map[key] = row['rcept_dt']
-        supplement_rows = []
-        for _, row in secondary_df.iterrows():
-            full_key = (row['기준일'], row['공시구분'], row['계정'])
-            if full_key not in primary_keys and pd.notna(row['값']):
-                period_key = (row['기준일'], row['공시구분'])
-                new_row = {
-                    '계정': row['계정'], '기준일': row['기준일'], '값': row['값'],
-                    '종목코드': row.get('종목코드', primary_df.iloc[0].get('종목코드', '')),
-                    '공시구분': row['공시구분'],
-                }
-                if 'rcept_dt' in primary_df.columns:
-                    rcept = rcept_map.get(period_key)
-                    if rcept is None and 'rcept_dt' in secondary_df.columns:
-                        rcept = row.get('rcept_dt')
-                    new_row['rcept_dt'] = rcept
-                supplement_rows.append(new_row)
-        if supplement_rows:
-            merged = pd.concat([primary_df, pd.DataFrame(supplement_rows)], ignore_index=True)
-            return merged, len(supplement_rows)
-        return primary_df, 0
-
-    _merge_fs_supplement = _merge_fs_supplement_local
     supplement_total = 0
     all_tickers = set(dart_map) | set(fn_map)
     for ticker in all_tickers:
         if ticker in dart_map:
-            if ticker in fn_map and _check_data_mismatch(dart_map[ticker], fn_map[ticker]):
+            if ticker in fn_map and check_data_mismatch(dart_map[ticker], fn_map[ticker]):
                 data['fs'][ticker] = fn_map[ticker]
                 fn_count += 1
                 mismatch_swap += 1
@@ -705,13 +706,13 @@ def preload_all_data(start_str, end_str, trading_dates=None, use_rev_accel=False
                 fn_q = len(fn_map[ticker][fn_map[ticker]['공시구분'] == 'q']['기준일'].unique())
                 if dart_q < 8 and fn_q > dart_q:
                     # DART 부족 → FnGuide 주 데이터 + DART 보충
-                    merged, n_sup = _merge_fs_supplement(fn_map[ticker], dart_map[ticker])
+                    merged, n_sup = merge_fs_supplement(fn_map[ticker], dart_map[ticker])
                     data['fs'][ticker] = merged
                     fn_count += 1
                     supplement_total += n_sup
                 else:
                     # DART 기반 + FnGuide 보충
-                    merged, n_sup = _merge_fs_supplement(dart_map[ticker], fn_map[ticker])
+                    merged, n_sup = merge_fs_supplement(dart_map[ticker], fn_map[ticker])
                     data['fs'][ticker] = merged
                     dart_count += 1
                     supplement_total += n_sup

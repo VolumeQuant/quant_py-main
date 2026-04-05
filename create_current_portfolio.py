@@ -36,7 +36,6 @@ from data_collector import DataCollector
 from fnguide_crawler import get_consensus_batch
 from error_handler import ErrorTracker, ErrorCategory
 from strategy_a_magic import MagicFormulaStrategy
-from strategy_b_multifactor import MultiFactorStrategy
 from ranking_manager import save_ranking, load_ranking, get_available_ranking_dates
 
 # 설정
@@ -533,77 +532,54 @@ def run_strategy_b_scoring(
     prefiltered_df: pd.DataFrame,
     fundamental_df: pd.DataFrame,
     price_df: pd.DataFrame,
-    ticker_names: Dict[str, str],
-    error_tracker: ErrorTracker,
-    consensus_df: pd.DataFrame = None,
-    sector_map: Dict[str, str] = None
+    ticker_names,
+    error_tracker,
+    consensus_df = None,
+    sector_map = None
 ) -> pd.DataFrame:
-    """전략 B (멀티팩터) - 전체 스코어링 v68 (V30+Q30+M40, 섹터중립)"""
-    print(f"\n[전략 B] 멀티팩터 전체 스코어링 ({len(prefiltered_df)}개)")
+    """전략 B — FG subprocess 호출 (BT와 100% 동일 결과 검증됨)"""
+    print("[전략 B] FG subprocess 스코어링")
 
     if prefiltered_df.empty:
-        print("  사전 필터 데이터 없음 - 스킵")
         return pd.DataFrame()
 
     try:
-        multifactor_df = prefiltered_df.copy()
-        multifactor_df['종목명'] = multifactor_df['종목코드'].map(ticker_names)
+        import subprocess, tempfile, json as _json2
 
-        # Forward PER 병합 (FnGuide 컨센서스)
-        if consensus_df is not None and not consensus_df.empty:
-            fwd_cols = consensus_df[['ticker', 'forward_per']].dropna(subset=['forward_per'])
-            if not fwd_cols.empty:
-                multifactor_df = multifactor_df.merge(
-                    fwd_cols, left_on='종목코드', right_on='ticker', how='left'
-                )
-                if 'ticker' in multifactor_df.columns:
-                    multifactor_df.drop(columns=['ticker'], inplace=True)
-                fwd_count = multifactor_df['forward_per'].notna().sum()
-                print(f"  Forward PER 병합: {fwd_count}/{len(multifactor_df)}개 종목")
+        _tmpdir = tempfile.mkdtemp()
+        _fg_script = str(Path(__file__).parent / 'backtest' / 'fast_generate_rankings_v2.py')
+        _fg_cmd = [sys.executable, '-u', _fg_script, BASE_DATE, BASE_DATE, f'--state-dir={_tmpdir}']
 
-        # pykrx PER/PBR/EPS/BPS 병합 (strategy_b에서 pykrx_PER 등으로 사용)
-        if not fundamental_df.empty:
-            for col, new_col in [('PER', 'pykrx_PER'), ('PBR', 'pykrx_PBR'),
-                                  ('EPS', 'pykrx_EPS'), ('BPS', 'pykrx_BPS')]:
-                if col in fundamental_df.columns:
-                    fund_map = fundamental_df[col].to_dict()
-                    multifactor_df[new_col] = multifactor_df['종목코드'].map(fund_map)
-            pykrx_count = multifactor_df['pykrx_PER'].notna().sum() if 'pykrx_PER' in multifactor_df.columns else 0
-            print(f"  pykrx PER/PBR 병합: {pykrx_count}/{len(multifactor_df)}개")
+        print(f"  FG subprocess: {BASE_DATE}", flush=True)
+        _result = subprocess.run(_fg_cmd, capture_output=True, text=True, timeout=600,
+                                 cwd=str(Path(__file__).parent))
 
-        # regime 파라미터에서 mom_period, g_rev 가져오기
-        try:
-            from regime_indicator import get_regime_params
-            import json as _json
-            _regime_file = Path(__file__).parent / 'state' / 'regime_state.json'
-            _mode = 'defense'
-            if _regime_file.exists():
-                with open(_regime_file, 'r') as _rf:
-                    _mode = _json.load(_rf).get('mode', 'defense')
-            _rp = get_regime_params(_mode)
-            _mom_period = _rp.get('MOM_PERIOD', '6m')
-            _g_rev = _rp.get('G_REV', 0.6)
-            os.environ['G_RATIO'] = str(_g_rev)
-            os.environ['G_SUB1'] = _rp.get('G_SUB1', '매출성장률_z')
-            os.environ['G_SUB2'] = _rp.get('G_SUB2', '이익변화량_z')
-            os.environ['FACTOR_V_W'] = str(_rp.get('V_W', 0.20))
-            os.environ['FACTOR_Q_W'] = str(_rp.get('Q_W', 0.10))
-            os.environ['FACTOR_G_W'] = str(_rp.get('G_W', 0.20))
-            os.environ['FACTOR_M_W'] = str(_rp.get('M_W', 0.50))
-            _s1 = _rp.get('G_SUB1', '매출성장률_z')
-            _s2 = _rp.get('G_SUB2', '이익변화량_z')
-            print(f"  국면: {_mode} → V{_rp['V_W']:.0%}Q{_rp['Q_W']:.0%}G{_rp['G_W']:.0%}M{_rp['M_W']:.0%} mom={_mom_period} G=[{_s1} {_g_rev:.0%}+{_s2}]")
-        except Exception:
-            _mom_period = '6m'
-
-        strategy = MultiFactorStrategy()
-        selected, scored = strategy.run(multifactor_df, price_df=price_df, n_stocks=len(multifactor_df), sector_map=sector_map, base_date=BASE_DATE, mom_period=_mom_period)
-
-        print(f"  스코어링 완료: {len(scored)}개 종목")
-        return scored
+        _fg_file = Path(_tmpdir) / f'ranking_{BASE_DATE}.json'
+        if _fg_file.exists():
+            with open(_fg_file, 'r', encoding='utf-8') as _f:
+                _fg_data = _json2.load(_f)
+            _rankings = _fg_data.get('rankings', [])
+            if _rankings:
+                scored = pd.DataFrame(_rankings)
+                scored['종목코드'] = scored['ticker']
+                scored['종목명'] = scored['name']
+                scored['멀티팩터_점수'] = scored['score']
+                scored['멀티팩터_순위'] = scored['rank']
+                # 팩터 점수 매핑 (downstream 호환)
+                for fg_key, cp_key in [('value_s','밸류_점수'),('quality_s','퀄리티_점수'),
+                                        ('growth_s','성장_점수'),('momentum_s','모멘텀_점수')]:
+                    if fg_key in scored.columns:
+                        scored[cp_key] = scored[fg_key]
+                print(f"  FG 완료: {len(scored)}개 종목")
+                return scored
+        
+        print(f"  FG 실패: {_result.stderr[-300:] if _result.stderr else 'unknown'}")
+        return pd.DataFrame()
 
     except Exception as e:
-        error_tracker.log_error("STRATEGY_B", ErrorCategory.UNKNOWN, "멀티팩터 스코어링 실패", e)
+        import traceback
+        traceback.print_exc()
+        error_tracker.log_error("STRATEGY_B", ErrorCategory.UNKNOWN, "FG 스코어링 실패", e)
         return pd.DataFrame()
 
 
