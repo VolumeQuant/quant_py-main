@@ -8,37 +8,30 @@
 - 국면전환: B126_40_3d (시총1000억+ MA120 위 비율 ≥40%, 3일 확인)
 - ranking_boost/ranking_core 분리 → **ranking 단일파일로 통합 완료**
 
-### CP → FG subprocess 전환 (진행중, 토큰 만료로 중단)
+### CP → FG subprocess 전환 (완료, 검증됨)
 - `create_current_portfolio.py`의 `run_strategy_b_scoring()`을 전면 수정
 - 기존: `MultiFactorStrategy` 직접 호출 (CP 자체 로직)
 - 변경: `fast_generate_rankings_v2.py`를 subprocess로 호출 → JSON 결과 파싱
 - **목적**: CP와 FG(백테스트)의 결과 100% 동일 보장
-- **현재**: 코드 수정 완료, 실행 테스트 필요
+- **검증 결과 (2026-04-06)**:
+  - CP 259종목 vs BT_v75 259종목 — 종목 수 동일
+  - **모든 종목 score 100% 일치** (차이 0.00000000)
+  - Top 10: 10/10 완벽 일치
+  - 11~20위 순서 차이는 가중순위(T0×0.5+T1×0.3+T2×0.2) 적용 때문 (정상)
+- Forward PER 수집 단계 완전 제거 (불필요한 FnGuide 크롤링 500종목 절약)
+- cp949 인코딩 에러 수정 (subprocess bytes 모드)
 
 ---
 
 ## 회사PC에서 할 일
 
-### 1. CP 실행 + FG 결과 일치 검증 (최우선)
-```bash
-# CP 실행 (FG subprocess 방식)
-python create_current_portfolio.py
-
-# state/ranking_20260403.json (프로덕션)과
-# state/fg_test/ranking_20260401.json (FG 직접)의 Top 20 비교
-# → ticker, rank, score 일치 여부 확인
-```
-- CP가 FG를 subprocess로 호출할 때 regime_state.json에서 mode 읽어서 자동으로 공격/방어 세팅
-- 일치 확인되면 프로덕션 적용 완료
-
-### 2. 일치 안 하면 디버깅
-- FG stdout/stderr 확인 (subprocess.run의 capture_output)
-- 컬럼 매핑 확인: fg_key → cp_key (value_s→밸류_점수 등)
-- regime_state.json의 mode가 올바른지 확인
-
-### 3. 텔레그램 메시지 동작 확인
+### 1. 텔레그램 메시지 동작 확인
 - `send_telegram_auto.py`가 통합 ranking 파일 읽는지 확인
 - 국면 표시(공격/방어) 정상 출력 확인
+- 내일(04/07) 장 종료 후 run_daily.py 실행 → 텔레그램 메시지 수신 확인
+
+### 2. 스케줄러 확인
+- 기존 스케줄러(QuanT_DailyPipeline)가 v75 코드 정상 실행하는지 확인
 
 ---
 
