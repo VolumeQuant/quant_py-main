@@ -538,8 +538,8 @@ def create_regime_switch_message(regime_mode):
     today_str = datetime.now().strftime('%Y년 %m월 %d일')
 
     perf = [
-        ' · CAGR +178% | MDD -29% | Calmar 6.1',
-        ' · Sharpe 2.45 | Sortino 3.87 | Alpha +166%p/yr',
+        ' · CAGR +187% | MDD -27% | Calmar 6.9',
+        ' · Sharpe 2.53 | Sortino 3.99 | Alpha +175%p/yr',
         '※ 과거 성과이며 미래 수익을 보장하지 않습니다.',
     ]
     rules = [
@@ -556,7 +556,7 @@ def create_regime_switch_message(regime_mode):
             '📈 <b>공격 모드 전환</b>',
             '━━━━━━━━━━━━━━━',
             '',
-            '120일 이동평균 위 종목 비율이 <b>40%를 3거래일 연속 상회</b>하며 시장 회복을 확인했습니다.',
+            'KOSPI가 <b>200일 이동평균을 5거래일 연속 상회</b>하며 시장 회복을 확인했습니다.',
             '',
             '━━━━━━━━━━━━━━━',
             '📋 <b>전환 조치</b>',
@@ -569,7 +569,7 @@ def create_regime_switch_message(regime_mode):
             '📊 <b>공격 모드 전략</b>',
             '━━━━━━━━━━━━━━━',
             '',
-            '  Growth 75% + Momentum 15% + Value 10%',
+            '  Growth 60% + Momentum 20% + Value 15% + Quality 5%',
             '  최대 보유: 3종목',
             '',
         ] + rules + [
@@ -588,7 +588,7 @@ def create_regime_switch_message(regime_mode):
             '📉 <b>방어 모드 전환</b>',
             '━━━━━━━━━━━━━━━',
             '',
-            '120일 이동평균 위 종목 비율이 <b>40%를 3거래일 연속 하회</b>하며 시장 약세를 확인했습니다.',
+            'KOSPI가 <b>200일 이동평균을 5거래일 연속 하회</b>하며 시장 약세를 확인했습니다.',
             '',
             '━━━━━━━━━━━━━━━',
             '📋 <b>전환 조치</b>',

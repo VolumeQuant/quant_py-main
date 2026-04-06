@@ -1,12 +1,13 @@
-"""국면 판단 모듈 — B126_40_3d (시총1000억+ 종목 중 MA120 위 비율 ≥40%, 3일 확인)
+"""국면 판단 모듈 — KP_MA200_5d (KOSPI > 200일선, 5일 확인)
 
-v75 최종 확정:
-  방어: V20 Q10 G20 M50, g_rev=0.6(매출+이익률), 6m-1m, E5X8S7, sl-10%, tr-15%
-  공격: V10 Q0 G70 M20, g_rev=0.6(영업이익+이익률), 12m-1m, E5X8S3, sl-10%, tr-15%
+v76 확정:
+  공격: V15Q5G60M20, g_rev=0.6(영업이익+이익률), 12m-1m, E5X8S3, sl-10%, tr-15%
+  방어: V15Q10G25M50, g_rev=0.7(매출+이익률), 6m-1m, E5X8S5, sl-10%, tr-15%
+  국면: KOSPI > MA200 5일 확인 → 공격, 미만 → 방어
 
 사용:
     from regime_indicator import get_current_regime
-    regime = get_current_regime(breadth_ratio=0.45)  # 'boost' or 'defense'
+    regime = get_current_regime(kospi_close=5377, kospi_ma200=5200)
 """
 import json
 import sys
@@ -42,21 +43,23 @@ def _save_state(state):
         json.dump(state, f, ensure_ascii=False, indent=2)
 
 
-def check_regime_signal(breadth_ratio=None, **kwargs):
-    """B126_40: 시총1000억+ 종목 중 MA120 위 비율 >= 40% = boost
+def check_regime_signal(kospi_close=None, kospi_ma200=None, **kwargs):
+    """KP_MA200: KOSPI > 200일 이동평균 = boost
 
-    breadth_ratio: 시총1000억+ 종목 중 120일 이동평균 위 비율 (0~1)
+    kospi_close: KOSPI 종가
+    kospi_ma200: KOSPI 200일 이동평균
     """
-    if breadth_ratio is not None:
-        return 'boost' if breadth_ratio >= 0.40 else 'defense'
+    if kospi_close is not None and kospi_ma200 is not None:
+        return 'boost' if kospi_close > kospi_ma200 else 'defense'
     return 'defense'
 
 
-def get_current_regime(breadth_ratio=None, date_str=None, **kwargs):
-    """현재 국면 판단 (B126_40_3d: breadth >= 40%, 3일 확인).
+def get_current_regime(kospi_close=None, kospi_ma200=None, date_str=None, **kwargs):
+    """현재 국면 판단 (KP_MA200_5d: KOSPI > MA200, 5일 확인).
 
     Args:
-        breadth_ratio: 시총1000억+ 종목 중 MA120 위 비율 (0~1)
+        kospi_close: KOSPI 종가
+        kospi_ma200: KOSPI 200일 이동평균
         date_str: 날짜 (YYYYMMDD)
 
     Returns:
@@ -66,7 +69,7 @@ def get_current_regime(breadth_ratio=None, date_str=None, **kwargs):
     prev_mode = state['mode']
 
     # 당일 신호
-    signal = check_regime_signal(breadth_ratio=breadth_ratio)
+    signal = check_regime_signal(kospi_close=kospi_close, kospi_ma200=kospi_ma200)
 
     # 연속 카운트
     if signal == state['streak_mode']:
@@ -76,7 +79,7 @@ def get_current_regime(breadth_ratio=None, date_str=None, **kwargs):
         state['streak_mode'] = signal
 
     # 확인일수만으로 whipsaw 방지 (cooldown 삭제)
-    CONFIRM_DAYS = 3  # 국면전환 서치에서 최적화 예정
+    CONFIRM_DAYS = 5  # v76: KP_MA200_5d
     switched = False
 
     if state['streak'] >= CONFIRM_DAYS and state['mode'] != signal:
@@ -114,17 +117,17 @@ def get_regime_params(mode):
     """
     if mode == 'boost':
         return {
-            'V_W': 0.10, 'Q_W': 0.00, 'G_W': 0.75, 'M_W': 0.15,
-            'G_REV': 0.5,
-            'G_SUB1': 'oca_z',             # 영업이익변화 50%
-            'G_SUB2': 'op_margin_z',      # 이익률변화 50%
+            'V_W': 0.15, 'Q_W': 0.05, 'G_W': 0.60, 'M_W': 0.20,
+            'G_REV': 0.6,
+            'G_SUB1': 'oca_z',             # 영업이익변화 60%
+            'G_SUB2': 'op_margin_z',      # 이익률변화 40%
             'MOM_PERIOD': '12m-1m',
             'ENTRY_RANK': 5, 'EXIT_RANK': 8, 'MAX_SLOTS': 3,
             'STOP_LOSS': -0.10,
             'TRAILING_STOP': -0.15,
             'CORR_THRESHOLD': None,
             'USE_REV_ACCEL': False,
-            'label': '공격 모드 (Growth 75%)',
+            'label': '공격 모드 (Growth 60%)',
             'icon': '📈',
         }
     else:  # v76 방어 (defense)

@@ -442,41 +442,30 @@ def main():
         except Exception as e:
             log(f"OHLCV 증분 수집 오류: {e} — 기존 데이터로 진행", logfile)
 
-        # 0.5. 국면 판단 (v75: B126_40_3d — 시총1000억+ MA120 위 비율 >= 40%, 3일 확인)
-        log("국면 판단 (B126_40_3d)", logfile)
+        # 0.5. 국면 판단 (v76: KP_MA200_5d — KOSPI > 200일선, 5일 확인)
+        log("국면 판단 (KP_MA200_5d)", logfile)
         try:
             sys.path.insert(0, str(SCRIPT_DIR))
             from regime_indicator import get_current_regime, get_regime_params
             import pandas as pd
-            import numpy as np
             from pathlib import Path
 
-            # 시총1000억+ 종목의 MA120 위 비율 (breadth)
-            breadth_ratio = None
-            ohlcv_files = sorted(Path('data_cache').glob('all_ohlcv_*.parquet'))
-            full_files = [f for f in ohlcv_files if '_full' in f.stem]
-            if full_files:
-                ohlcv_files = full_files
-            if ohlcv_files:
-                ohlcv = pd.read_parquet(ohlcv_files[-1]).replace(0, np.nan)
-                mc_files = sorted(Path('data_cache').glob('market_cap_ALL_*.parquet'))
-                if mc_files:
-                    mc = pd.read_parquet(mc_files[-1])
-                    big_tickers = set(mc[mc['시가총액'] >= 1e11].index)
-                    valid_cols = [c for c in ohlcv.columns if c in big_tickers]
-                    ohlcv_f = ohlcv[valid_cols]
-                    ma120 = ohlcv_f.rolling(120).mean()
-                    above = (ohlcv_f > ma120).sum(axis=1)
-                    total_valid = ohlcv_f.notna().sum(axis=1)
-                    br = above / total_valid
-                    breadth_ratio = float(br.iloc[-1]) if not br.empty else None
+            # KOSPI MA200 계산
+            kospi_close = kospi_ma200 = None
+            kospi_file = Path('data_cache/kospi_yf.parquet')
+            if kospi_file.exists():
+                kp = pd.read_parquet(kospi_file).iloc[:, 0].dropna()
+                if len(kp) >= 200:
+                    kospi_close = float(kp.iloc[-1])
+                    kospi_ma200 = float(kp.rolling(200).mean().iloc[-1])
 
             regime = get_current_regime(
-                breadth_ratio=breadth_ratio,
+                kospi_close=kospi_close, kospi_ma200=kospi_ma200,
                 date_str=today
             )
             params = get_regime_params(regime['mode'])
-            log(f"국면: {params['icon']} {params['label']} (시장건전성={breadth_ratio:.1%}, 신호={regime['signal']}, 전환={regime['switched']})", logfile)
+            kp_str = f'KOSPI={kospi_close:.0f} MA200={kospi_ma200:.0f}' if kospi_close else '?'
+            log(f"국면: {params['icon']} {params['label']} ({kp_str}, 신호={regime['signal']}, 전환={regime['switched']})", logfile)
         except Exception as e:
             log(f"국면 판단 실패: {e} — 기본 방어 모드", logfile)
             from regime_indicator import get_regime_params
