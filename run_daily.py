@@ -294,13 +294,30 @@ def run_fg_pipeline(base_date, regime_env, regime_mode, logfile):
     return True
 
 
+def _is_trading_day():
+    """오늘이 거래일인지 확인 (삼성전자 OHLCV로 판단)"""
+    try:
+        from pykrx import stock as _pykrx
+        today_str = datetime.now().strftime('%Y%m%d')
+        df = _pykrx.get_market_ohlcv(today_str, today_str, '005930')
+        return not df.empty
+    except Exception:
+        # API 실패 시 요일로 판단 (주말 제외)
+        return datetime.now().weekday() < 5
+
+
 def main():
     today = datetime.now().strftime("%Y%m%d")
     log_path = LOG_DIR / f"daily_{today}.log"
     lock_file = LOG_DIR / f"daily_{today}.lock"
 
-    # 중복 실행 방지 (TEST_MODE에서는 스킵)
+    # 주말/공휴일 스킵 (TEST_MODE에서는 무시)
     is_test = os.environ.get('TEST_MODE') == '1'
+    if not is_test and not _is_trading_day():
+        print(f"[스킵] 오늘({today})은 휴장일입니다.")
+        return
+
+    # 중복 실행 방지 (TEST_MODE에서는 스킵)
     if lock_file.exists() and not is_test:
         print(f"[스킵] 오늘({today}) 이미 실행 완료됨 ({lock_file})")
         return

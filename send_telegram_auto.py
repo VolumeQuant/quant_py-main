@@ -147,7 +147,7 @@ def calc_system_returns(regime_info=None):
     for fp in files:
         basename = os.path.basename(fp)
         d = basename.replace('ranking_', '').replace('.json', '')
-        if d >= today_str:
+        if d > today_str:
             continue
         with open(fp, 'r', encoding='utf-8') as fh:
             all_data[d] = json.load(fh)
@@ -299,7 +299,7 @@ def get_recent_trading_dates(n=3):
     mc_dates = set()
     for f in cache_dir.glob('market_cap_ALL_*.parquet'):
         d = f.stem.split('_')[-1]
-        if len(d) == 8 and d.isdigit() and d < today_str:
+        if len(d) == 8 and d.isdigit() and d <= today_str:
             mc_dates.add(d)
     if mc_dates:
         sorted_dates = sorted(mc_dates, reverse=True)[:n]
@@ -492,6 +492,48 @@ def _build_top5_streak(top5_tickers):
     return streak
 
 
+def create_regime_switch_message(regime_mode):
+    """국면 전환 시 별도 안내 메시지 — Signal 메시지 앞에 전송"""
+    if regime_mode == 'boost':
+        return '\n'.join([
+            '🔄 <b>국면 전환 안내</b>',
+            '',
+            '🛡️ 방어 → ⚔️ 공격 모드 전환',
+            '',
+            '시장 회복으로 공격 전략으로 변경합니다.',
+            '',
+            '━━━━━━━━━━━━━━━',
+            '<b>📌 조치</b>',
+            ' 1. 기존 보유 종목 전량 매도',
+            ' 2. 오늘 브리핑의 ✅ 종목으로 재진입',
+            '',
+            '<b>📋 공격 모드</b>',
+            ' · 성장성 70% + 가치 10% + 모멘텀 20%',
+            ' · 최대 3종목 집중',
+            ' · 매수: 상위 5위 이내 (3일 검증 ✅)',
+            ' · 매도: 가중순위 8위 밖 · -10% 손절 · -15% 트레일링',
+        ])
+    else:
+        return '\n'.join([
+            '🔄 <b>국면 전환 안내</b>',
+            '',
+            '⚔️ 공격 → 🛡️ 방어 모드 전환',
+            '',
+            '시장 불안정으로 방어 전략으로 변경합니다.',
+            '',
+            '━━━━━━━━━━━━━━━',
+            '<b>📌 조치</b>',
+            ' 1. 기존 보유 종목 전량 매도',
+            ' 2. 오늘 브리핑의 ✅ 종목으로 재진입',
+            '',
+            '<b>📋 방어 모드</b>',
+            ' · 모멘텀 50% + 가치 20% + 성장성 20% + 수익성 10%',
+            ' · 최대 7종목 분산',
+            ' · 매수: 상위 5위 이내 (3일 검증 ✅)',
+            ' · 매도: 가중순위 8위 밖 · -10% 손절 · -15% 트레일링',
+        ])
+
+
 def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
                           market_max_picks, stock_weight, rankings_t0,
                           rankings_t1, rankings_t2, cold_start,
@@ -527,17 +569,6 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         f'📡 AI 종목 브리핑 KR · {date_str}',
         regime_label,
     ]
-
-    # 국면 전환 시 전량 매도 안내
-    regime_switched = os.environ.get('REGIME_SWITCHED') == '1'
-    if regime_switched and regime_info:
-        cur = regime_info.get('mode', 'defense')
-        prev = 'defense' if cur == 'boost' else 'boost'
-        prev_icon = '⚔️' if prev == 'boost' else '🛡️'
-        cur_icon = '⚔️' if cur == 'boost' else '🛡️'
-        lines.append('')
-        lines.append(f'🔄 <b>국면 전환: {prev_icon}→{cur_icon} 기존 보유 전량 매도</b>')
-        lines.append('새 국면 전략으로 재진입합니다.')
 
     lines += [
         '국내 전 종목을 매일 자동 분석한',
@@ -1287,7 +1318,13 @@ def main():
         rp_current=_rp,
     )
 
-    messages = [msg_signal, msg_ai_risk, msg_watchlist]
+    messages = []
+    # 국면 전환 시 전환 안내 메시지를 먼저 전송
+    if regime_switched:
+        msg_switch = create_regime_switch_message(regime_mode)
+        messages.append(msg_switch)
+        print(f"\n[국면 전환] {regime_mode} 전환 안내 메시지 추가")
+    messages += [msg_signal, msg_ai_risk, msg_watchlist]
 
     # ============================================================
     # 웹 대시보드용 데이터 캐시 저장
@@ -1354,7 +1391,7 @@ def main():
     IS_GITHUB_ACTIONS = os.environ.get('GITHUB_ACTIONS') == 'true'
 
     print("\n=== 메시지 미리보기 ===")
-    msg_labels = ['Signal', 'AI Risk', 'Watchlist']
+    msg_labels = (['Regime Switch'] if regime_switched else []) + ['Signal', 'AI Risk', 'Watchlist']
     for i, msg in enumerate(messages):
         label = msg_labels[i] if i < len(msg_labels) else f'#{i+1}'
         print(f"\n--- {label} ({len(msg)}자) ---")
