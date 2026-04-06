@@ -177,6 +177,7 @@ def calc_system_returns(regime_info=None):
     portfolio = {}  # ticker → entry_price
     equity = 1.0
     start_date = None
+    equity_history = {}  # date → equity
 
     for i in range(len(dates)):
         d0 = dates[i]
@@ -194,6 +195,7 @@ def calc_system_returns(regime_info=None):
             if daily_rets:
                 avg_ret = sum(daily_rets) / len(daily_rets)
                 equity *= (1 + avg_ret)
+        equity_history[d0] = equity
 
         if i < 2:
             continue  # 3일 데이터 필요
@@ -274,12 +276,36 @@ def calc_system_returns(regime_info=None):
     except:
         pass
 
+    # YTD / 최근 1개월 수익률
+    ytd_pct = None
+    month_pct = None
+    year_start = dates[-1][:4] + '0101'  # 올해 1/1
+    month_ago = (pd.Timestamp(dates[-1]) - pd.Timedelta(days=30)).strftime('%Y%m%d')
+
+    # YTD: 올해 첫 거래일 equity → 현재 equity
+    ytd_dates = [d for d in sorted(equity_history) if d >= year_start]
+    if len(ytd_dates) >= 2:
+        eq_start = equity_history[ytd_dates[0]]
+        eq_end = equity_history[ytd_dates[-1]]
+        if eq_start > 0:
+            ytd_pct = round((eq_end / eq_start - 1) * 100, 1)
+
+    # 1개월: 30일 전 equity → 현재 equity
+    month_dates = [d for d in sorted(equity_history) if d >= month_ago]
+    if len(month_dates) >= 2:
+        eq_start = equity_history[month_dates[0]]
+        eq_end = equity_history[month_dates[-1]]
+        if eq_start > 0:
+            month_pct = round((eq_end / eq_start - 1) * 100, 1)
+
     return {
         'system_pct': round(system_pct, 1),
         'kospi_pct': round(kospi_pct, 1),
         'start_date': start_date,
         'days': len(dates) - 2,
         'holdings': len(portfolio),
+        'ytd_pct': ytd_pct,
+        'month_pct': month_pct,
     }
 
 
@@ -647,12 +673,21 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         lines.append('투자 손실에 대한 책임은 투자자 본인에게 있습니다.')
         return '\n'.join(lines)
 
-    # ── 시스템 수익률 (US 프로젝트 포맷) ──
+    # ── 시스템 수익률 ──
     if system_returns and system_returns.get('days', 0) >= 5:
         sr = system_returns
         lines.append('')
-        lines.append(f'📈 <b>시스템 누적 수익률 {sr["system_pct"]:+.1f}% ({sr["days"]}거래일)</b>')
-        lines.append(f'    같은 기간 KOSPI는 {sr["kospi_pct"]:+.1f}%')
+        # YTD/1개월 우선, 누적은 보조
+        parts = []
+        if sr.get('ytd_pct') is not None:
+            parts.append(f'올해 {sr["ytd_pct"]:+.1f}%')
+        if sr.get('month_pct') is not None:
+            parts.append(f'1개월 {sr["month_pct"]:+.1f}%')
+        if parts:
+            lines.append(f'📈 <b>시스템 수익률: {" · ".join(parts)}</b>')
+        else:
+            lines.append(f'📈 <b>시스템 수익률 {sr["system_pct"]:+.1f}%</b>')
+        lines.append(f'    KOSPI {sr["kospi_pct"]:+.1f}% (누적 {sr["system_pct"]:+.1f}%, {sr["days"]}거래일)')
 
     n = len(picks)
     lines.append('')
@@ -1282,10 +1317,16 @@ def main():
                     'rsi': tech.get('rsi', 50),
                     'w52_pct': tech.get('w52_pct', 0),
                 })
-            ai_picks_text = run_final_picks_analysis(final_stock_list, stock_weight, BASE_DATE, market_context=market_ctx)
-            if ai_picks_text:
-                ai_narratives = parse_narratives(ai_picks_text)
-                print(f"  AI 내러티브: {len(ai_narratives)}종목 추출")
+            import time as _t
+            for _attempt in range(3):
+                ai_picks_text = run_final_picks_analysis(final_stock_list, stock_weight, BASE_DATE, market_context=market_ctx)
+                if ai_picks_text:
+                    ai_narratives = parse_narratives(ai_picks_text)
+                    if ai_narratives:
+                        print(f"  AI 내러티브: {len(ai_narratives)}종목 추출 (시도 {_attempt+1})")
+                        break
+                print(f"  AI 내러티브 시도 {_attempt+1}/3 실패, 재시도...")
+                _t.sleep(2)
         except Exception as e:
             print(f"최종 추천 AI 설명 실패 (fallback 사용): {e}")
 
