@@ -961,13 +961,11 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         exit_parts = [f'WR > {_x}']
         if sl_s: exit_parts.append(sl_s)
         if tr_s: exit_parts.append(tr_s)
-        lines.append(f'매수: 3일 검증 상위 {_e}종목{corr_s}')
+        lines.append(f'매수: 3일 검증 상위 {_e}종목 중 {_s}종목{corr_s}')
         lines.append(f'매도: {" 또는 ".join(exit_parts)}')
-        lines.append(f'최대 {_s}종목 보유')
     else:
-        lines.append(f'매수: 3일 검증 상위 {ENTRY_RANK}종목')
+        lines.append(f'매수: 3일 검증 상위 {ENTRY_RANK}종목 중 {MAX_SLOTS}종목')
         lines.append(f'매도: 3일 가중순위 > {EXIT_RANK}.0 또는 -10% 손절')
-        lines.append(f'최대 {MAX_SLOTS}종목 보유')
 
     return '\n'.join(lines)
 
