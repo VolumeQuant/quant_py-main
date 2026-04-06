@@ -662,16 +662,17 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
     if system_returns and system_returns.get('days', 0) >= 5:
         sr = system_returns
         lines.append('')
+        lines.append('📈 <b>시스템 수익률</b>')
         if sr.get('ytd_pct') is not None:
             ky = sr.get('kospi_ytd')
             ky_str = f' (KOSPI {ky:+.1f}%)' if ky is not None else ''
-            lines.append(f'📈 올해 {sr["ytd_pct"]:+.1f}%{ky_str}')
+            lines.append(f'    올해 {sr["ytd_pct"]:+.1f}%{ky_str}')
         if sr.get('month_pct') is not None:
             km = sr.get('kospi_month')
             km_str = f' (KOSPI {km:+.1f}%)' if km is not None else ''
-            lines.append(f'📈 1개월 {sr["month_pct"]:+.1f}%{km_str}')
+            lines.append(f'    1개월 {sr["month_pct"]:+.1f}%{km_str}')
         if sr.get('ytd_pct') is None and sr.get('month_pct') is None:
-            lines.append(f'📈 시스템 {sr["system_pct"]:+.1f}% · KOSPI {sr["kospi_pct"]:+.1f}%')
+            lines.append(f'    누적 {sr["system_pct"]:+.1f}% (KOSPI {sr["kospi_pct"]:+.1f}%)')
 
     n = len(picks)
     lines.append('')
