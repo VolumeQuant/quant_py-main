@@ -1,12 +1,12 @@
-"""국면 판단 모듈 — B126_40 (시총1000억+ 126일+ 종목 MA120 위 비율 ≥40%) 기반, 1일 확인
+"""국면 판단 모듈 — B126_40_3d (시총1000억+ 종목 중 MA120 위 비율 ≥40%, 3일 확인)
 
-v75 확정: KP120_3d+VIX25 (KOSPI>MA120 3일확인 + VIX<25)
-  방어: V20 Q10 G20 M50, g_rev=0.6, mom=6m-1m, E5 X8 S7, sl=-10%, trail=-15%, corr=0.6
-  공격: V25 Q0 G50 M25, g_rev=0.3, mom=12m-1m, E3 X4 S7, trail=-20%
+v75 최종 확정:
+  방어: V20 Q10 G20 M50, g_rev=0.6(매출+이익률), 6m-1m, E5X8S7, sl-10%, tr-15%
+  공격: V10 Q0 G70 M20, g_rev=0.6(영업이익+이익률), 12m-1m, E5X8S3, sl-10%, tr-15%
 
 사용:
     from regime_indicator import get_current_regime
-    regime = get_current_regime()  # 'boost' or 'defense'
+    regime = get_current_regime(breadth_ratio=0.45)  # 'boost' or 'defense'
 """
 import json
 import sys
@@ -42,38 +42,21 @@ def _save_state(state):
         json.dump(state, f, ensure_ascii=False, indent=2)
 
 
-def check_regime_signal(kospi_close=None, kospi_ma120=None,
-                        vix=None, breadth_ratio=None,
-                        kospi_ma60=None, kosdaq_close=None, kosdaq_ma60=None):
-    """KP120 + VIX25: KOSPI > MA120 AND VIX < 25 = boost
+def check_regime_signal(breadth_ratio=None, **kwargs):
+    """B126_40: 시총1000억+ 종목 중 MA120 위 비율 >= 40% = boost
 
-    Primary: kospi_close > kospi_ma120 AND vix < 25
-    Fallback: breadth_ratio >= 0.40
+    breadth_ratio: 시총1000억+ 종목 중 120일 이동평균 위 비율 (0~1)
     """
-    if kospi_close is not None and kospi_ma120 is not None and vix is not None:
-        if kospi_close > kospi_ma120 and vix < 25:
-            return 'boost'
-        return 'defense'
     if breadth_ratio is not None:
         return 'boost' if breadth_ratio >= 0.40 else 'defense'
-    if (kospi_close is not None and kospi_ma60 is not None and
-        kosdaq_close is not None and kosdaq_ma60 is not None):
-        if kospi_close >= kospi_ma60 and kosdaq_close >= kosdaq_ma60:
-            return 'boost'
     return 'defense'
 
 
-def get_current_regime(kospi_close=None, kospi_ma120=None,
-                        vix=None, breadth_ratio=None,
-                        kospi_ma60=None, kosdaq_close=None, kosdaq_ma60=None,
-                        date_str=None):
-    """현재 국면 판단 (3일 확인, KP120+VIX25 기반).
+def get_current_regime(breadth_ratio=None, date_str=None, **kwargs):
+    """현재 국면 판단 (B126_40_3d: breadth >= 40%, 3일 확인).
 
     Args:
-        kospi_close: KOSPI 종가
-        kospi_ma120: KOSPI MA120
-        vix: VIX 지수
-        breadth_ratio: fallback용 브레스 비율
+        breadth_ratio: 시총1000억+ 종목 중 MA120 위 비율 (0~1)
         date_str: 날짜 (YYYYMMDD)
 
     Returns:
@@ -83,10 +66,7 @@ def get_current_regime(kospi_close=None, kospi_ma120=None,
     prev_mode = state['mode']
 
     # 당일 신호
-    signal = check_regime_signal(kospi_close=kospi_close, kospi_ma120=kospi_ma120,
-                                  vix=vix, breadth_ratio=breadth_ratio,
-                                  kospi_ma60=kospi_ma60, kosdaq_close=kosdaq_close,
-                                  kosdaq_ma60=kosdaq_ma60)
+    signal = check_regime_signal(breadth_ratio=breadth_ratio)
 
     # 연속 카운트
     if signal == state['streak_mode']:

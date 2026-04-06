@@ -442,8 +442,8 @@ def main():
         except Exception as e:
             log(f"OHLCV 증분 수집 오류: {e} — 기존 데이터로 진행", logfile)
 
-        # 0.5. 국면 판단 (v75: KP120+VIX25 — KOSPI>MA120 AND VIX<25)
-        log("국면 판단 (KP120_3d+VIX25 — KOSPI MA120 + VIX)", logfile)
+        # 0.5. 국면 판단 (v75: B126_40_3d — 시총1000억+ MA120 위 비율 >= 40%, 3일 확인)
+        log("국면 판단 (B126_40_3d)", logfile)
         try:
             sys.path.insert(0, str(SCRIPT_DIR))
             from regime_indicator import get_current_regime, get_regime_params
@@ -451,33 +451,14 @@ def main():
             import numpy as np
             from pathlib import Path
 
-            # KOSPI MA120 계산
-            kospi_file = Path('data_cache/kospi_yf.parquet')
-            kospi_close = kospi_ma120 = None
-            if kospi_file.exists():
-                kp = pd.read_parquet(kospi_file).iloc[:, 0].dropna()
-                if len(kp) >= 120:
-                    kospi_close = float(kp.iloc[-1])
-                    kospi_ma120 = float(kp.rolling(120).mean().iloc[-1])
-
-            # VIX
-            vix_file = Path('data_cache/vix_daily.parquet')
-            vix_val = None
-            if vix_file.exists():
-                vx = pd.read_parquet(vix_file).iloc[:, 0].dropna()
-                if not vx.empty:
-                    vix_val = float(vx.iloc[-1])
-
-            # 브레스 (fallback용)
+            # 시총1000억+ 종목의 MA120 위 비율 (breadth)
             breadth_ratio = None
-            ohlcv_files = sorted(Path('data_cache').glob('all_ohlcv_2019*.parquet'))
-            if not ohlcv_files:
-                ohlcv_files = sorted(Path('data_cache').glob('all_ohlcv_*.parquet'))
+            ohlcv_files = sorted(Path('data_cache').glob('all_ohlcv_*.parquet'))
             full_files = [f for f in ohlcv_files if '_full' in f.stem]
             if full_files:
                 ohlcv_files = full_files
             if ohlcv_files:
-                ohlcv = pd.read_parquet(ohlcv_files[0]).replace(0, np.nan)
+                ohlcv = pd.read_parquet(ohlcv_files[-1]).replace(0, np.nan)
                 mc_files = sorted(Path('data_cache').glob('market_cap_ALL_*.parquet'))
                 if mc_files:
                     mc = pd.read_parquet(mc_files[-1])
@@ -491,12 +472,11 @@ def main():
                     breadth_ratio = float(br.iloc[-1]) if not br.empty else None
 
             regime = get_current_regime(
-                kospi_close=kospi_close, kospi_ma120=kospi_ma120,
-                vix=vix_val, breadth_ratio=breadth_ratio,
+                breadth_ratio=breadth_ratio,
                 date_str=today
             )
             params = get_regime_params(regime['mode'])
-            log(f"국면: {params['icon']} {params['label']} (브레스={breadth_ratio:.1%}, 신호={regime['signal']}, 전환={regime['switched']})", logfile)
+            log(f"국면: {params['icon']} {params['label']} (시장건전성={breadth_ratio:.1%}, 신호={regime['signal']}, 전환={regime['switched']})", logfile)
         except Exception as e:
             log(f"국면 판단 실패: {e} — 기본 방어 모드", logfile)
             from regime_indicator import get_regime_params
