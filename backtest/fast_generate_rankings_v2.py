@@ -45,7 +45,8 @@ def get_broad_sector(krx_sector: str) -> str:
     return KRX_SECTOR_MAP.get(krx_sector, krx_sector or '기타')
 
 EXCLUDE_KEYWORDS = ['금융', '은행', '증권', '보험', '캐피탈', '카드', '저축',
-                   '지주', '홀딩스', 'SPAC', '스팩', '리츠', 'REIT']
+                   '지주', '홀딩스', 'SPAC', '스팩', '리츠', 'REIT',
+                   '생명', '화재', '손해보험', 'IB투자', '벤처투자', '자산운용', '신탁']
 
 
 # ============================================================================
@@ -775,6 +776,15 @@ def preload_all_data(start_str, end_str, trading_dates=None, use_rev_accel=False
     data['avg_volume'] = precompute_avg_volume(data['market_cap'])
     print(f'    {len(data["avg_volume"])}일 ({time.time()-t_vol:.1f}초)')
 
+    # 9. 3년 연속 적자 종목 사전계산
+    chronic_3yr = set()
+    for ticker, fs_df in data['fs'].items():
+        ni = fs_df[(fs_df['계정'] == '당기순이익') & (fs_df['공시구분'] == 'y')].sort_values('기준일')
+        if len(ni) >= 3 and all(v < 0 for v in ni.tail(3)['값']):
+            chronic_3yr.add(ticker)
+    data['chronic_loss_3yr'] = chronic_3yr
+    print(f'  3년 연속 적자: {len(chronic_3yr)}종목')
+
     elapsed = time.time() - t0
     print(f'  프리로드 완료: {elapsed:.1f}초')
     return data
@@ -1212,9 +1222,9 @@ def calculate_multifactor_fast(multifactor_df, price_df, sector_map, base_date,
             data[score_col] = 0.0
         data[score_col] = data[score_col].fillna(0.0)
 
-    # ROE 하드게이트
+    # ROE 하드게이트 (NaN도 제외 — pykrx 0값 종목 우회 방지)
     if 'ROE' in data.columns:
-        roe_neg_mask = data['ROE'] <= 0
+        roe_neg_mask = (data['ROE'] <= 0) | data['ROE'].isna()
         if roe_neg_mask.any():
             data = data[~roe_neg_mask].copy()
 
@@ -1384,6 +1394,19 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
                 multifactor_df[new_col] = multifactor_df['종목코드'].map(col_map)
 
     multifactor_df['종목명'] = multifactor_df['종목코드'].map(tnames)
+
+    # --- 7.5. 데이터 품질 필터 ---
+    # (a) pykrx PER/PBR/EPS/BPS 전부 0 → 데이터 산출 불가 (적자 or 신규상장)
+    if all(c in multifactor_df.columns for c in ['pykrx_PER', 'pykrx_PBR', 'pykrx_EPS', 'pykrx_BPS']):
+        all_zero = ((multifactor_df['pykrx_PER'].fillna(0) == 0) &
+                    (multifactor_df['pykrx_PBR'].fillna(0) == 0) &
+                    (multifactor_df['pykrx_EPS'].fillna(0) == 0) &
+                    (multifactor_df['pykrx_BPS'].fillna(0) == 0))
+        multifactor_df = multifactor_df[~all_zero]
+    # (b) 3년 연속 적자 제거 (만성 적자 = 구조적 문제, 백테스트 검증: CAGR+5%p)
+    if preloaded.get('chronic_loss_3yr'):
+        chronic = preloaded['chronic_loss_3yr']
+        multifactor_df = multifactor_df[~multifactor_df['종목코드'].isin(chronic)]
 
     # --- 8. 멀티팩터 계산 (인라인, disk I/O 없음) ---
     mom_period = os.environ.get('MOM_PERIOD', '6m')

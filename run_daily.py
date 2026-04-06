@@ -290,28 +290,6 @@ def run_fg_pipeline(base_date, regime_env, regime_mode, logfile):
     if ok_def:
         _postprocess_ranking(base_date, state_def_dir, 'defense', logfile)
 
-    # --- Step 5: 시장조치 종목 필터 (네이버 금융) ---
-    log("시장조치 필터 (네이버)", logfile)
-    try:
-        import json as _json
-        from market_warning import filter_warned_stocks
-        ranking_path = Path(active_dir) / f'ranking_{base_date}.json'
-        with open(ranking_path, 'r', encoding='utf-8') as f:
-            rdata = _json.load(f)
-        filtered, warned = filter_warned_stocks(rdata.get('rankings', []), top_n=30)
-        if warned:
-            rdata['rankings'] = filtered
-            meta = rdata.get('metadata', {})
-            meta['market_warned'] = {tk: ws for tk, ws in warned.items()}
-            rdata['metadata'] = meta
-            with open(ranking_path, 'w', encoding='utf-8') as f:
-                _json.dump(rdata, f, ensure_ascii=False, indent=2)
-            log(f"시장조치 {len(warned)}종목 제외", logfile)
-        else:
-            log("시장조치 해당 종목 없음", logfile)
-    except Exception as e:
-        log(f"시장조치 필터 오류 (무시): {e}", logfile)
-
     log(f"완료: boost+defense 양쪽 생성, 활성={regime_mode}", logfile)
     return True
 
