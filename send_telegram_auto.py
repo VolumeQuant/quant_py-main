@@ -276,27 +276,39 @@ def calc_system_returns(regime_info=None):
     except:
         pass
 
-    # YTD / 최근 1개월 수익률
-    ytd_pct = None
-    month_pct = None
-    year_start = dates[-1][:4] + '0101'  # 올해 1/1
+    # YTD / 최근 1개월 수익률 (시스템 + 코스피)
+    ytd_pct = month_pct = kospi_ytd = kospi_month = None
+    year_start = dates[-1][:4] + '0101'
     month_ago = (pd.Timestamp(dates[-1]) - pd.Timedelta(days=30)).strftime('%Y%m%d')
 
-    # YTD: 올해 첫 거래일 equity → 현재 equity
     ytd_dates = [d for d in sorted(equity_history) if d >= year_start]
     if len(ytd_dates) >= 2:
-        eq_start = equity_history[ytd_dates[0]]
-        eq_end = equity_history[ytd_dates[-1]]
-        if eq_start > 0:
-            ytd_pct = round((eq_end / eq_start - 1) * 100, 1)
+        eq_s, eq_e = equity_history[ytd_dates[0]], equity_history[ytd_dates[-1]]
+        if eq_s > 0:
+            ytd_pct = round((eq_e / eq_s - 1) * 100, 1)
 
-    # 1개월: 30일 전 equity → 현재 equity
     month_dates = [d for d in sorted(equity_history) if d >= month_ago]
     if len(month_dates) >= 2:
-        eq_start = equity_history[month_dates[0]]
-        eq_end = equity_history[month_dates[-1]]
-        if eq_start > 0:
-            month_pct = round((eq_end / eq_start - 1) * 100, 1)
+        eq_s, eq_e = equity_history[month_dates[0]], equity_history[month_dates[-1]]
+        if eq_s > 0:
+            month_pct = round((eq_e / eq_s - 1) * 100, 1)
+
+    # 코스피 YTD/1개월
+    try:
+        kospi_ohlcv = stock.get_index_ohlcv(year_start, dates[-1], '1001')
+        if not kospi_ohlcv.empty and len(kospi_ohlcv) >= 2:
+            k_first = kospi_ohlcv.iloc[0, 3]
+            k_last = kospi_ohlcv.iloc[-1, 3]
+            if k_first > 0:
+                kospi_ytd = round((k_last / k_first - 1) * 100, 1)
+            # 1개월
+            k_month = kospi_ohlcv[kospi_ohlcv.index >= pd.Timestamp(month_ago)]
+            if len(k_month) >= 2:
+                km_first = k_month.iloc[0, 3]
+                if km_first > 0:
+                    kospi_month = round((k_last / km_first - 1) * 100, 1)
+    except Exception:
+        pass
 
     return {
         'system_pct': round(system_pct, 1),
@@ -306,6 +318,8 @@ def calc_system_returns(regime_info=None):
         'holdings': len(portfolio),
         'ytd_pct': ytd_pct,
         'month_pct': month_pct,
+        'kospi_ytd': kospi_ytd,
+        'kospi_month': kospi_month,
     }
 
 
@@ -648,17 +662,16 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
     if system_returns and system_returns.get('days', 0) >= 5:
         sr = system_returns
         lines.append('')
-        # YTD/1개월 우선, 누적은 보조
-        parts = []
         if sr.get('ytd_pct') is not None:
-            parts.append(f'올해 {sr["ytd_pct"]:+.1f}%')
+            ky = sr.get('kospi_ytd')
+            ky_str = f' (KOSPI {ky:+.1f}%)' if ky is not None else ''
+            lines.append(f'📈 올해 {sr["ytd_pct"]:+.1f}%{ky_str}')
         if sr.get('month_pct') is not None:
-            parts.append(f'1개월 {sr["month_pct"]:+.1f}%')
-        if parts:
-            lines.append(f'📈 <b>시스템 수익률: {" · ".join(parts)}</b>')
-        else:
-            lines.append(f'📈 <b>시스템 수익률 {sr["system_pct"]:+.1f}%</b>')
-        lines.append(f'    KOSPI {sr["kospi_pct"]:+.1f}% (누적 {sr["system_pct"]:+.1f}%, {sr["days"]}거래일)')
+            km = sr.get('kospi_month')
+            km_str = f' (KOSPI {km:+.1f}%)' if km is not None else ''
+            lines.append(f'📈 1개월 {sr["month_pct"]:+.1f}%{km_str}')
+        if sr.get('ytd_pct') is None and sr.get('month_pct') is None:
+            lines.append(f'📈 시스템 {sr["system_pct"]:+.1f}% · KOSPI {sr["kospi_pct"]:+.1f}%')
 
     n = len(picks)
     lines.append('')
