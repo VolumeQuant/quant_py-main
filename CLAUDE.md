@@ -92,13 +92,21 @@
 - FWD_BONUS: 삭제
 - MA120 필터: 126일(6M) 미만 제외 (모멘텀 계산 불가, IPO 노이즈)
 
-## v75 데이터 파이프라인 개선 (2026-04-05)
-- DART+FnGuide 데이터 합치기: DART에 빠진 계정을 FnGuide에서 보충
-- TTM YoY 갭 체크: 450일 이상 갭 → TTM 거부, 연간 fallback
+## 프로덕션 파이프라인 (v75 리팩토링, 2026-04-06)
+- **run_daily.py → data_refresher → FG 직접 호출 → weighted_rank 후처리**
+- CP(create_current_portfolio.py) 경유 제거, FG가 직접 스코어링
+- `USE_NEW_PIPELINE=1`(기본) 새 파이프라인, `=0`으로 CP 레거시 롤백 가능
+- FG env vars: `FACTOR_V_W/Q_W/G_W/M_W`, `G_SUB1/G_SUB2`, `MOM_PERIOD`, `G_REVENUE_WEIGHT`
+- G 서브팩터: env var 영문 short name (rev_z, oca_z, op_margin_z 등)
+- weighted_rank: FG 출력에 T0×0.5+T1×0.3+T2×0.2 후처리, mode를 metadata에 저장
+- per/pbr/roe: FG 미출력 → 후처리에서 pykrx 캐시로 보충
+- data_refresher.py: 시총/펀더멘털/OHLCV증분/섹터 캐시 갱신
+
+## v75 데이터 파이프라인 (2026-04-05)
+- DART+FnGuide 합치기, TTM YoY 갭 체크 (450일)
 - MA120 필터: 126일 미만 제외 (IPO 시즈닝)
-- DART USD 환율 변환 (두산밥캣 등)
 - 4종 모멘텀 BT (6m, 6m-1m, 12m, 12m-1m)
-- FG/CP 완전 일치: 20종목 Growth 100% 일치 + z-score 함수 동일
+- ma120_failed: FG metadata에 저장 (이탈 사유 판단용)
 
 ## 유니버스 필터
 - 시총 ≥ 1000억, 거래대금: 대형 ≥ 50억, 중소형 ≥ 20억

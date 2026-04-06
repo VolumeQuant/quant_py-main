@@ -103,6 +103,108 @@ def git_push_state(logfile):
         log("git: 변경 없음", logfile)
 
 
+def run_fg_pipeline(base_date, regime_env, regime_mode, logfile):
+    """FG 직접 호출 파이프라인 (CP 경유 없음)
+
+    1. data_refresher로 캐시 갱신
+    2. FG subprocess 직접 호출 (env vars로 전략 파라미터 전달)
+    3. FG 출력에 weighted_rank 추가 + mode 기록
+    4. per/pbr/roe 보충 (FG가 출력 안 하는 필드)
+    """
+    import json
+    import pandas as pd
+
+    # --- Step 1: 데이터 캐시 갱신 ---
+    log("데이터 캐시 갱신 (data_refresher)", logfile)
+    try:
+        sys.path.insert(0, str(SCRIPT_DIR))
+        from data_refresher import refresh_all
+        refresh_all(base_date)
+    except Exception as e:
+        log(f"데이터 갱신 오류: {e} - 기존 캐시로 진행", logfile)
+
+    # --- Step 2: FG subprocess 직접 호출 ---
+    log("FG 스코어링 (subprocess)", logfile)
+    fg_script = str(SCRIPT_DIR / 'backtest' / 'fast_generate_rankings_v2.py')
+    state_dir = str(SCRIPT_DIR / 'state')
+    fg_cmd = [PYTHON, '-u', fg_script, base_date, base_date, f'--state-dir={state_dir}']
+    env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+    env.update(regime_env)
+    result = subprocess.run(
+        fg_cmd, cwd=str(SCRIPT_DIR), capture_output=True,
+        text=True, timeout=600, encoding="utf-8", errors="replace", env=env,
+    )
+    if result.stdout:
+        logfile.write(result.stdout)
+    if result.stderr:
+        logfile.write(result.stderr)
+    logfile.flush()
+
+    if result.returncode != 0:
+        log(f"FG 실패 (exit {result.returncode})", logfile)
+        return False
+
+    # --- Step 3: weighted_rank 후처리 ---
+    log("가중순위 후처리", logfile)
+    from ranking_manager import load_ranking, save_ranking, get_available_ranking_dates
+
+    ranking_data = load_ranking(base_date)
+    if not ranking_data or not ranking_data.get('rankings'):
+        log("FG 출력 없음", logfile)
+        return False
+
+    rankings = ranking_data['rankings']
+
+    # T-1, T-2 로드
+    available = sorted([d for d in get_available_ranking_dates() if d < base_date])
+    t1_data = load_ranking(available[-1]) if len(available) >= 1 else None
+    t2_data = load_ranking(available[-2]) if len(available) >= 2 else None
+
+    t1_map = {r['ticker']: r.get('composite_rank', r['rank'])
+              for r in (t1_data or {}).get('rankings', [])}
+    t2_map = {r['ticker']: r.get('composite_rank', r['rank'])
+              for r in (t2_data or {}).get('rankings', [])}
+
+    PENALTY = 50
+    for item in rankings:
+        r0 = item.get('composite_rank', item['rank'])
+        r1 = t1_map.get(item['ticker'], PENALTY)
+        r2 = t2_map.get(item['ticker'], PENALTY)
+        item['weighted_rank'] = round(r0 * 0.5 + r1 * 0.3 + r2 * 0.2, 1)
+
+    rankings.sort(key=lambda x: x['weighted_rank'])
+    for i, item in enumerate(rankings):
+        item['rank'] = i + 1
+
+    # --- Step 4: per/pbr/roe 보충 (pykrx 캐시에서) ---
+    fund_files = sorted((SCRIPT_DIR / 'data_cache').glob('fundamental_batch_ALL_*.parquet'))
+    if fund_files:
+        try:
+            fund_df = pd.read_parquet(fund_files[-1])
+            for item in rankings:
+                ticker = item['ticker']
+                if ticker in fund_df.index:
+                    row = fund_df.loc[ticker]
+                    for col, key in [('PER', 'per'), ('PBR', 'pbr')]:
+                        v = row.get(col)
+                        if v is not None and pd.notna(v) and v > 0:
+                            item[key] = round(float(v), 2)
+                    # ROE = EPS/BPS*100
+                    eps, bps = row.get('EPS'), row.get('BPS')
+                    if eps is not None and bps is not None and pd.notna(eps) and pd.notna(bps) and bps > 0:
+                        item['roe'] = round(float(eps / bps * 100), 2)
+        except Exception as e:
+            log(f"per/pbr/roe 보충 실패: {e}", logfile)
+
+    # mode를 metadata에 추가 + 저장 (FG metadata 보존)
+    ranking_data['rankings'] = rankings
+    metadata = ranking_data.get('metadata', {})
+    metadata['mode'] = regime_mode
+    save_ranking(base_date, rankings, metadata=metadata)
+    log(f"순위 저장 완료: {len(rankings)}종목, mode={regime_mode}", logfile)
+    return True
+
+
 def main():
     today = datetime.now().strftime("%Y%m%d")
     log_path = LOG_DIR / f"daily_{today}.log"
@@ -307,18 +409,38 @@ def main():
             'REGIME_ENTRY_RANK': str(params['ENTRY_RANK']),
             'REGIME_EXIT_RANK': str(params['EXIT_RANK']),
             'REGIME_MAX_SLOTS': str(params['MAX_SLOTS']),
+            'MOM_PERIOD': params['MOM_PERIOD'],
+            'G_SUB1': params['G_SUB1'],
+            'G_SUB2': params['G_SUB2'],
         }
-        try:
-            ok = run_script("create_current_portfolio.py", timeout=1200, logfile=logfile, extra_env=regime_env)
-        except subprocess.TimeoutExpired:
-            log("포트폴리오 생성 타임아웃 (20분)", logfile)
-            ok = False
-        except Exception as e:
-            log(f"포트폴리오 생성 오류: {e}", logfile)
-            ok = False
+
+        use_new = os.environ.get('USE_NEW_PIPELINE', '1') == '1'
+
+        if use_new:
+            # === 새 파이프라인: data_refresher + FG 직접 + weighted_rank ===
+            log("파이프라인: FG 직접 호출 (v75)", logfile)
+            try:
+                ok = run_fg_pipeline(today, regime_env, regime['mode'], logfile)
+            except subprocess.TimeoutExpired:
+                log("FG 파이프라인 타임아웃 (10분)", logfile)
+                ok = False
+            except Exception as e:
+                log(f"FG 파이프라인 오류: {e}", logfile)
+                ok = False
+        else:
+            # === 기존 파이프라인: CP 경유 (레거시) ===
+            log("파이프라인: CP 경유 (레거시)", logfile)
+            try:
+                ok = run_script("create_current_portfolio.py", timeout=1200, logfile=logfile, extra_env=regime_env)
+            except subprocess.TimeoutExpired:
+                log("포트폴리오 생성 타임아웃 (20분)", logfile)
+                ok = False
+            except Exception as e:
+                log(f"포트폴리오 생성 오류: {e}", logfile)
+                ok = False
 
         if not ok:
-            log("포트폴리오 실패 → 에러 알림 전송", logfile)
+            log("포트폴리오 실패 -> 에러 알림 전송", logfile)
             send_error_notification()
             return
 

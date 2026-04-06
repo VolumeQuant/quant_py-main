@@ -136,8 +136,8 @@ def get_regime_params(mode):
         return {
             'V_W': 0.10, 'Q_W': 0.00, 'G_W': 0.70, 'M_W': 0.20,
             'G_REV': 0.6,
-            'G_SUB1': '이익변화량_z',     # 영업이익변화 60%
-            'G_SUB2': '이익률변화_z',     # 이익률변화 40%
+            'G_SUB1': 'oca_z',             # 영업이익변화 60%
+            'G_SUB2': 'op_margin_z',      # 이익률변화 40%
             'MOM_PERIOD': '12m-1m',
             'ENTRY_RANK': 5, 'EXIT_RANK': 8, 'MAX_SLOTS': 3,
             'STOP_LOSS': -0.10,
@@ -151,8 +151,8 @@ def get_regime_params(mode):
         return {
             'V_W': 0.20, 'Q_W': 0.10, 'G_W': 0.20, 'M_W': 0.50,
             'G_REV': 0.6,
-            'G_SUB1': '매출성장률_z',     # 매출성장 60%
-            'G_SUB2': '이익률변화_z',     # 이익률변화 40%
+            'G_SUB1': 'rev_z',             # 매출성장 60%
+            'G_SUB2': 'op_margin_z',      # 이익률변화 40%
             'MOM_PERIOD': '6m-1m',
             'ENTRY_RANK': 5, 'EXIT_RANK': 8, 'MAX_SLOTS': 7,
             'STOP_LOSS': -0.10,

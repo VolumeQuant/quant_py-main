@@ -1155,9 +1155,20 @@ def calculate_multifactor_fast(multifactor_df, price_df, sector_map, base_date,
     data['밸류_raw'] = data[value_zs].mean(axis=1) if value_zs else 0
     data['퀄리티_raw'] = data[quality_zs].mean(axis=1) if quality_zs else 0
 
-    # Growth 가중
-    if len(growth_zs) == 2 and '매출성장률_z' in growth_zs and '이익변화량_z' in growth_zs:
-        g_rev_w = float(os.environ.get('G_REVENUE_WEIGHT', '0.7'))
+    # Growth 가중 — G_SUB1/G_SUB2 env var로 서브팩터 선택 (v75)
+    g_rev_w = float(os.environ.get('G_REVENUE_WEIGHT', '0.7'))
+    _g_sub1_env = os.environ.get('G_SUB1')
+    _g_sub2_env = os.environ.get('G_SUB2')
+    if _g_sub1_env and _g_sub2_env:
+        _sub_map = {'rev_z': '매출성장률_z', 'oca_z': '이익변화량_z', 'rev_accel_z': '매출가속도_z',
+                    'gp_growth_z': '매출총이익성장_z', 'op_margin_z': '영업이익률변화_z', 'cfo_growth_z': '현금흐름성장_z'}
+        g_s1 = _sub_map.get(_g_sub1_env, '매출성장률_z')
+        g_s2 = _sub_map.get(_g_sub2_env, '이익변화량_z')
+        if g_s1 in data.columns and g_s2 in data.columns:
+            data['성장_raw'] = data[g_s1] * g_rev_w + data[g_s2] * (1.0 - g_rev_w)
+        else:
+            data['성장_raw'] = data[growth_zs].mean(axis=1) if growth_zs else 0
+    elif len(growth_zs) == 2 and '매출성장률_z' in growth_zs and '이익변화량_z' in growth_zs:
         data['성장_raw'] = data['매출성장률_z'] * g_rev_w + data['이익변화량_z'] * (1.0 - g_rev_w)
     else:
         data['성장_raw'] = data[growth_zs].mean(axis=1) if growth_zs else 0
@@ -1332,6 +1343,7 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
     # 0→NaN은 프리로드에서 1회 처리, copy 불필요 (읽기전용)
     price_df = ohlcv[ohlcv.index <= base_ts]
 
+    ma120_fail = []
     if preloaded.get('no_ma120', False):
         ma120_pass = magic_df['종목코드'].tolist()
     else:
@@ -1436,6 +1448,7 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
             'scored_count': len(scored),
             'generator': 'fast_generate_rankings_v2',
             'correlation_60d': corr_60d,
+            'ma120_failed': ma120_fail,
         },
     }
     out_path = state_dir / f'ranking_{date_str}.json'

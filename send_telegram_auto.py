@@ -74,41 +74,16 @@ def load_regime_state():
 
 
 def load_ranking_for_regime(date_str: str, regime_mode: str):
-    """국면에 맞는 랭킹 파일 로드.
-
-    boost 모드: ranking_boost_{date}.json 우선, 없으면 ranking_{date}.json fallback
-    defense 모드: ranking_{date}.json
-    """
-    if regime_mode == 'boost':
-        boost_path = STATE_DIR / f'ranking_boost_{date_str}.json'
-        if boost_path.exists():
-            with open(boost_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                print(f"  로드: ranking_boost_{date_str}.json")
-                return data
-        # fallback to defense ranking
-        print(f"  ranking_boost_{date_str}.json 없음 → ranking_{date_str}.json fallback")
+    """국면에 맞는 랭킹 파일 로드 (v75: 단일 ranking 파일)."""
     return load_ranking(date_str)
 
 
 def get_available_regime_dates(regime_mode: str):
-    """국면에 맞는 랭킹 파일의 날짜 목록 (최신순).
-
-    boost 모드: ranking_boost_*.json 파일에서 날짜 추출
-    defense 모드: ranking_*.json (boost/core 제외)
-    """
-    if regime_mode == 'boost':
-        pattern = 'ranking_boost_*.json'
-        prefix = 'ranking_boost_'
-    else:
-        pattern = 'ranking_*.json'
-        prefix = 'ranking_'
-
-    files = sorted(STATE_DIR.glob(pattern), reverse=True)
+    """랭킹 파일의 날짜 목록 (최신순, v75: 단일 ranking 파일)."""
+    files = sorted(STATE_DIR.glob('ranking_*.json'), reverse=True)
     dates = []
     for f in files:
-        date_str = f.stem.replace(prefix, '')
-        # defense 모드에서 boost_/core_ 날짜 제외
+        date_str = f.stem.replace('ranking_', '')
         if len(date_str) == 8 and date_str.isdigit():
             dates.append(date_str)
     return dates
@@ -152,12 +127,9 @@ def calc_system_returns(regime_info=None):
     _max_slots = rp['MAX_SLOTS']
     _stop_loss = rp.get('STOP_LOSS', -0.10)
 
-    # 국면에 맞는 ranking 로드
-    if regime_mode == 'boost':
-        files = sorted(_glob.glob(str(STATE_DIR / 'ranking_boost_*.json')))
-    else:
-        files = sorted(_glob.glob(str(STATE_DIR / 'ranking_*.json')))
-        files = [f for f in files if 'boost' not in f and 'core' not in f and 'backup' not in f]
+    # v75: 단일 ranking 파일 사용 (boost/core 분리 제거)
+    files = sorted(_glob.glob(str(STATE_DIR / 'ranking_*.json')))
+    files = [f for f in files if 'boost' not in f and 'core' not in f and 'backup' not in f]
     if len(files) < 3:
         return None
 
@@ -165,7 +137,7 @@ def calc_system_returns(regime_info=None):
     all_data = {}
     for fp in files:
         basename = os.path.basename(fp)
-        d = basename.replace('ranking_boost_', '').replace('ranking_', '').replace('.json', '')
+        d = basename.replace('ranking_', '').replace('.json', '')
         if d >= today_str:
             continue
         with open(fp, 'r', encoding='utf-8') as fh:
