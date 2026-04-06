@@ -501,6 +501,7 @@ def main():
             'MOM_PERIOD': params['MOM_PERIOD'],
             'G_SUB1': params['G_SUB1'],
             'G_SUB2': params['G_SUB2'],
+            'REGIME_SWITCHED': '1' if regime.get('switched') else '0',
         }
 
         use_new = os.environ.get('USE_NEW_PIPELINE', '1') == '1'

@@ -74,7 +74,12 @@ def load_regime_state():
 
 
 def load_ranking_for_regime(date_str: str, regime_mode: str):
-    """국면에 맞는 랭킹 파일 로드 (v75: 단일 ranking 파일)."""
+    """국면에 맞는 랭킹 파일 로드 (v75: boost=state/, defense=state/defense/)."""
+    if regime_mode == 'defense':
+        def_path = STATE_DIR / 'defense' / f'ranking_{date_str}.json'
+        if def_path.exists():
+            with open(def_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
     return load_ranking(date_str)
 
 
@@ -127,8 +132,12 @@ def calc_system_returns(regime_info=None):
     _max_slots = rp['MAX_SLOTS']
     _stop_loss = rp.get('STOP_LOSS', -0.10)
 
-    # v75: 단일 ranking 파일 사용 (boost/core 분리 제거)
-    files = sorted(_glob.glob(str(STATE_DIR / 'ranking_*.json')))
+    # v75: 국면별 ranking 디렉토리 (boost=state/, defense=state/defense/)
+    if regime_mode == 'defense':
+        ranking_dir = STATE_DIR / 'defense'
+    else:
+        ranking_dir = STATE_DIR
+    files = sorted(_glob.glob(str(ranking_dir / 'ranking_*.json')))
     files = [f for f in files if 'boost' not in f and 'core' not in f and 'backup' not in f]
     if len(files) < 3:
         return None
@@ -517,6 +526,20 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
     lines = [
         f'📡 AI 종목 브리핑 KR · {date_str}',
         regime_label,
+    ]
+
+    # 국면 전환 시 전량 매도 안내
+    regime_switched = os.environ.get('REGIME_SWITCHED') == '1'
+    if regime_switched and regime_info:
+        cur = regime_info.get('mode', 'defense')
+        prev = 'defense' if cur == 'boost' else 'boost'
+        prev_icon = '⚔️' if prev == 'boost' else '🛡️'
+        cur_icon = '⚔️' if cur == 'boost' else '🛡️'
+        lines.append('')
+        lines.append(f'🔄 <b>국면 전환: {prev_icon}→{cur_icon} 기존 보유 전량 매도</b>')
+        lines.append('새 국면 전략으로 재진입합니다.')
+
+    lines += [
         '국내 전 종목을 매일 자동 분석한',
         '종합 점수 상위 종목입니다.',
     ]
@@ -879,8 +902,9 @@ def main():
     if os.environ.get('REGIME_MODE'):
         regime_mode = os.environ['REGIME_MODE']
         regime_info['mode'] = regime_mode
+    regime_switched = os.environ.get('REGIME_SWITCHED') == '1'
     print(f"\n[국면 상태] 모드: {regime_mode}, 브레스: {regime_info.get('breadth')}, "
-          f"규칙: {regime_info.get('rule', '')}")
+          f"규칙: {regime_info.get('rule', '')}, 전환: {regime_switched}")
 
     # ============================================================
     # 날짜 계산 (최근 3거래일)
