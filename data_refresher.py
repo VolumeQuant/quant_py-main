@@ -226,6 +226,37 @@ def refresh_ohlcv_incremental(base_date: str, market_cap_df: pd.DataFrame = None
         print(f"[OHLCV] 캐시 저장: {new_cache.name}")
 
 
+def refresh_index(base_date: str) -> None:
+    """KOSPI/KOSDAQ 인덱스 OHLCV 갱신 (국면 판단용 MA200)"""
+    for name, ticker in [('kospi', '1001'), ('kosdaq', '2001')]:
+        cache_file = CACHE_DIR / f'{name}_yf.parquet'
+        try:
+            if cache_file.exists():
+                existing = pd.read_parquet(cache_file).iloc[:, 0].dropna()
+                last = existing.index[-1].strftime('%Y%m%d')
+                if last >= base_date:
+                    print(f"[인덱스] {name}: 캐시 히트 ({last})")
+                    continue
+                start = last
+            else:
+                start = '20200101'
+            df = pykrx_stock.get_index_ohlcv(start, base_date, ticker)
+            if not df.empty and len(df.columns) >= 4:
+                close = df.iloc[:, 3]  # 종가
+                close.name = name
+                if cache_file.exists():
+                    old = pd.read_parquet(cache_file)
+                    combined = pd.concat([old, pd.DataFrame(close)])
+                    combined = combined[~combined.index.duplicated(keep='last')].sort_index()
+                    combined.to_parquet(cache_file)
+                else:
+                    pd.DataFrame(close).to_parquet(cache_file)
+                print(f"[인덱스] {name}: {len(df)}일 갱신 ({base_date})")
+            time.sleep(1)
+        except Exception as e:
+            print(f"[인덱스] {name} 갱신 실패: {e}")
+
+
 def refresh_all(base_date: str = None) -> str:
     """모든 데이터 캐시 갱신. base_date 반환."""
     if base_date is None:
@@ -238,6 +269,7 @@ def refresh_all(base_date: str = None) -> str:
     refresh_fundamentals(base_date)
     refresh_ohlcv_incremental(base_date, market_cap_df=mc_df)
     refresh_sector(base_date)
+    refresh_index(base_date)
 
     print(f"[완료] 데이터 캐시 갱신: {base_date}\n")
     return base_date
