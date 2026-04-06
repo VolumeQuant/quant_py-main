@@ -785,6 +785,22 @@ def preload_all_data(start_str, end_str, trading_dates=None, use_rev_accel=False
     data['chronic_loss_3yr'] = chronic_3yr
     print(f'  3년 연속 적자: {len(chronic_3yr)}종목')
 
+    # 10. 자산급변 vs 매출괴리 (유상증자 세탁 감지)
+    asset_dilution = set()
+    for ticker, fs_df in data['fs'].items():
+        assets = fs_df[(fs_df['계정'] == '자산') & (fs_df['공시구분'] == 'y')].sort_values('기준일')
+        rev = fs_df[(fs_df['계정'] == '매출액') & (fs_df['공시구분'] == 'y')].sort_values('기준일')
+        if len(assets) >= 2 and len(rev) >= 2:
+            a_prev, a_curr = assets.iloc[-2]['값'], assets.iloc[-1]['값']
+            r_prev, r_curr = rev.iloc[-2]['값'], rev.iloc[-1]['값']
+            if a_prev > 0 and r_prev > 0:
+                a_growth = (a_curr / a_prev - 1) * 100
+                r_growth = (r_curr / r_prev - 1) * 100
+                if a_growth > 100 and r_growth < a_growth * 0.5:
+                    asset_dilution.add(ticker)
+    data['asset_dilution'] = asset_dilution
+    print(f'  자산급변(유상증자 의심): {len(asset_dilution)}종목')
+
     elapsed = time.time() - t0
     print(f'  프리로드 완료: {elapsed:.1f}초')
     return data
@@ -1404,9 +1420,12 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
                     (multifactor_df['pykrx_BPS'].fillna(0) == 0))
         multifactor_df = multifactor_df[~all_zero]
     # (b) 3년 연속 적자 제거 (만성 적자 = 구조적 문제, 백테스트 검증: CAGR+5%p)
-    if preloaded.get('chronic_loss_3yr'):
+    if preloaded.get('chronic_loss_3yr') and os.environ.get('FILTER_NO_CHRONIC') != '1':
         chronic = preloaded['chronic_loss_3yr']
         multifactor_df = multifactor_df[~multifactor_df['종목코드'].isin(chronic)]
+    # (c) 자산급변 vs 매출괴리 (유상증자 세탁)
+    if preloaded.get('asset_dilution') and os.environ.get('FILTER_NO_ASSET_DIL') != '1':
+        multifactor_df = multifactor_df[~multifactor_df['종목코드'].isin(preloaded['asset_dilution'])]
 
     # --- 8. 멀티팩터 계산 (인라인, disk I/O 없음) ---
     mom_period = os.environ.get('MOM_PERIOD', '6m')
@@ -1433,7 +1452,7 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
             'sector': get_broad_sector(sector_map.get(ticker, '')),
         }
         for col, key in [('밸류_점수', 'value_s'), ('퀄리티_점수', 'quality_s'),
-                         ('성장_점수', 'growth_s'), ('모멘텀_점수', 'momentum_s')]:
+                         ('모멘텀_점수', 'momentum_s')]:
             val = row.get(col)
             if val is not None and pd.notna(val):
                 item[key] = round(float(val), 4)

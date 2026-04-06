@@ -114,33 +114,33 @@ def get_regime_params(mode):
     """
     if mode == 'boost':
         return {
-            'V_W': 0.10, 'Q_W': 0.00, 'G_W': 0.70, 'M_W': 0.20,
-            'G_REV': 0.6,
-            'G_SUB1': 'oca_z',             # 영업이익변화 60%
-            'G_SUB2': 'op_margin_z',      # 이익률변화 40%
+            'V_W': 0.10, 'Q_W': 0.00, 'G_W': 0.75, 'M_W': 0.15,
+            'G_REV': 0.5,
+            'G_SUB1': 'oca_z',             # 영업이익변화 50%
+            'G_SUB2': 'op_margin_z',      # 이익률변화 50%
             'MOM_PERIOD': '12m-1m',
             'ENTRY_RANK': 5, 'EXIT_RANK': 8, 'MAX_SLOTS': 3,
             'STOP_LOSS': -0.10,
             'TRAILING_STOP': -0.15,
             'CORR_THRESHOLD': None,
             'USE_REV_ACCEL': False,
-            'label': '공격 모��� (Growth 70%, 영업이익+이익률)',
-            'icon': '⚔️',
+            'label': '공격 모드 (Growth 75%)',
+            'icon': '📈',
         }
-    else:  # v75 방어 (defense)
+    else:  # v76 방어 (defense)
         return {
-            'V_W': 0.20, 'Q_W': 0.10, 'G_W': 0.20, 'M_W': 0.50,
-            'G_REV': 0.6,
-            'G_SUB1': 'rev_z',             # 매출성장 60%
-            'G_SUB2': 'op_margin_z',      # 이익률변화 40%
+            'V_W': 0.15, 'Q_W': 0.10, 'G_W': 0.25, 'M_W': 0.50,
+            'G_REV': 0.7,
+            'G_SUB1': 'rev_z',             # 매출성장 70%
+            'G_SUB2': 'op_margin_z',      # 이익률변화 30%
             'MOM_PERIOD': '6m-1m',
-            'ENTRY_RANK': 5, 'EXIT_RANK': 8, 'MAX_SLOTS': 7,
+            'ENTRY_RANK': 5, 'EXIT_RANK': 8, 'MAX_SLOTS': 5,
             'STOP_LOSS': -0.10,
             'TRAILING_STOP': -0.15,
             'CORR_THRESHOLD': None,
             'USE_REV_ACCEL': False,
-            'label': '방어 ��드 (Momentum 50%, 매출+이익률)',
-            'icon': '🛡️',
+            'label': '방어 모드 (Momentum 50%)',
+            'icon': '📉',
         }
 
 
