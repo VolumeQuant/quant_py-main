@@ -534,52 +534,99 @@ def _build_top5_streak(top5_tickers):
 
 def create_regime_switch_message(regime_mode):
     """국면 전환 시 별도 안내 메시지 — Signal 메시지 앞에 전송"""
-    common = [
+    from datetime import datetime
+    today_str = datetime.now().strftime('%Y년 %m월 %d일')
+
+    common_reason = [
+        '',
+        '시총 1000억 이상 종목 중',
+        '120일선 위 비율이 40%를 {}',
+        '3거래일 연속 확인되었습니다.',
+    ]
+    common_action = [
+        '',
         '━━━━━━━━━━━━━━━',
-        '<b>📌 왜 전환하나?</b>',
-        '시장 상황에 따라 유효한 전략이 다릅니다. 상승장에서는 성장주 집중, 하락장에서는 모멘텀 분산이 더 좋은 성과를 보였습니다.',
-        '전환 기준: 시총 1000억+ 종목 중 120일 이동평균 위 비율이 40% 이상이면 공격, 미만이면 방어. 3일 연속 확인 후 전환.',
+        '<b>조치 사항</b>',
         '━━━━━━━━━━━━━━━',
-        '<b>📊 백테스트 성과 (2021~2026, 5.25년)</b>',
-        ' · 총 수익률: +11,001% · CAGR: +152% · MDD: -28%',
-        ' · Calmar: 5.3 · Sharpe: 2.26 · Sortino: 3.42',
-        ' · 코스피 대비 초과 수익: 연 +139%p',
-        '※ 과거 성과이며 미래 수익을 보장하지 않습니다.',
-        '━━━━━━━━━━━━━━━',
-        '<b>📌 조치 사항</b>',
-        ' 1. <b>기존 보유 종목 전량 매도</b>',
-        ' 2. 아래 브리핑의 ✅ 종목으로 재진입',
+        '',
+        '<b>1. {} 보유 종목 전량 매도</b>',
+        '<b>2. 오늘 브리핑의 ✅ 종목 매수</b>',
+        '',
+        '모드 전환 시 포트폴리오를',
+        '완전히 교체합니다.',
     ]
     common_rules = [
+        '',
+        '<b>매수</b>',
+        ' · 3일 연속 상위 유지 (✅ 표시)',
+        ' · 상위 5위 내, 최대 {}종목',
+        '',
+        '<b>매도</b>',
+        ' · 가중순위 8위 밖 이탈',
+        ' · 손절 -10%',
+        ' · 트레일링 스톱 -15%',
+    ]
+    common_perf = [
+        '',
         '━━━━━━━━━━━━━━━',
-        '<b>📋 매매 기준</b>',
-        ' · 매수: 3일 연속 상위 5위 이내 (✅ 표시)',
-        ' · 매도: 가중순위 8위 밖 · -10% 손절 · -15% 트레일링',
-        ' · 종목당 균등 비중',
+        '<b>백테스트 성과</b> (2021~2026)',
+        '━━━━━━━━━━━━━━━',
+        '',
+        ' · CAGR +152% · MDD -28%',
+        ' · Calmar 5.3 · Sharpe 2.26',
+        ' · 코스피 대비 초과: 연 +139%p',
+        '',
+        '※ 과거 성과이며 미래 수익을',
+        '보장하지 않습니다.',
+        '━━━━━━━━━━━━━━━',
     ]
 
     if regime_mode == 'boost':
+        reason = [r.format('넘어') if '{}' in r else r for r in common_reason]
+        action = [r.format('방어 모드') if '{}' in r else r for r in common_action]
+        rules = [r.format('3') if '{}' in r else r for r in common_rules]
         return '\n'.join([
-            '🔄 <b>국면 전환 안내</b>',
-            '🛡️ 방어 → ⚔️ <b>공격 모드</b> 전환',
-            '시장이 회복되어 공격 전략으로 변경합니다.',
-        ] + common + [
+            f'<b>AI 종목 브리핑 KR</b>',
+            today_str,
+            '',
             '━━━━━━━━━━━━━━━',
-            '<b>⚔️ 공격 모드 상세</b>',
-            ' · 성장성 70% + 가치 10% + 모멘텀 20%',
-            ' · 고성장 기업 집중 · 최대 <b>3종목</b>',
-        ] + common_rules)
+            '<b>공격 모드 전환</b>',
+            '━━━━━━━━━━━━━━━',
+            '',
+            '방어 → 공격 모드로 전환합니다.',
+        ] + reason + action + [
+            '',
+            '━━━━━━━━━━━━━━━',
+            '<b>공격 모드 전략</b>',
+            '━━━━━━━━━━━━━━━',
+            '',
+            '성장주 집중, 최대 3종목 보유',
+            ' · Growth 70% + Value 10%',
+            ' · Momentum 20%',
+        ] + rules + common_perf)
     else:
+        reason = [r.format('아래로') if '{}' in r else r for r in common_reason]
+        action = [r.format('공격 모드') if '{}' in r else r for r in common_action]
+        rules = [r.format('7') if '{}' in r else r for r in common_rules]
         return '\n'.join([
-            '🔄 <b>국면 전환 안내</b>',
-            '⚔️ 공격 → 🛡️ <b>방어 모드</b> 전환',
-            '시장이 불안정하여 방어 전략으로 변경합니다.',
-        ] + common + [
+            f'<b>AI 종목 브리핑 KR</b>',
+            today_str,
+            '',
             '━━━━━━━━━━━━━━━',
-            '<b>🛡️ 방어 모드 상세</b>',
-            ' · 모멘텀 50% + 가치 20% + 성장성 20% + 수익성 10%',
-            ' · 추세 강한 기업 분산 · 최대 <b>7종목</b>',
-        ] + common_rules)
+            '<b>방어 모드 전환</b>',
+            '━━━━━━━━━━━━━━━',
+            '',
+            '공격 → 방어 모드로 전환합니다.',
+        ] + reason + action + [
+            '',
+            '━━━━━━━━━━━━━━━',
+            '<b>방어 모드 전략</b>',
+            '━━━━━━━━━━━━━━━',
+            '',
+            '팩터 분산, 최대 7종목 보유',
+            ' · Momentum 50% + Value 20%',
+            ' · Growth 20% + Quality 10%',
+        ] + rules + common_perf)
 
 
 def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
