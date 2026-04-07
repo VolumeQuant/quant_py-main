@@ -293,22 +293,30 @@ def calc_system_returns(regime_info=None):
         if eq_s > 0:
             month_pct = round((eq_e / eq_s - 1) * 100, 1)
 
-    # 코스피 YTD/1개월
-    try:
-        kospi_ohlcv = stock.get_index_ohlcv(year_start, dates[-1], '1001')
-        if not kospi_ohlcv.empty and len(kospi_ohlcv) >= 2:
-            k_first = kospi_ohlcv.iloc[0, 3]
-            k_last = kospi_ohlcv.iloc[-1, 3]
-            if k_first > 0:
-                kospi_ytd = round((k_last / k_first - 1) * 100, 1)
-            # 1개월
-            k_month = kospi_ohlcv[kospi_ohlcv.index >= pd.Timestamp(month_ago)]
-            if len(k_month) >= 2:
-                km_first = k_month.iloc[0, 3]
-                if km_first > 0:
-                    kospi_month = round((k_last / km_first - 1) * 100, 1)
-    except Exception:
-        pass
+    # 코스피/코스닥 YTD/1개월
+    kosdaq_ytd = kosdaq_month = None
+    for idx_name, idx_code, ytd_key, month_key in [('kospi', '1001', 'kospi_ytd', 'kospi_month'),
+                                                     ('kosdaq', '2001', 'kosdaq_ytd', 'kosdaq_month')]:
+        try:
+            idx_ohlcv = stock.get_index_ohlcv(year_start, dates[-1], idx_code)
+            if not idx_ohlcv.empty and len(idx_ohlcv) >= 2:
+                i_first = idx_ohlcv.iloc[0, 3]
+                i_last = idx_ohlcv.iloc[-1, 3]
+                if i_first > 0:
+                    if idx_name == 'kospi':
+                        kospi_ytd = round((i_last / i_first - 1) * 100, 1)
+                    else:
+                        kosdaq_ytd = round((i_last / i_first - 1) * 100, 1)
+                i_month = idx_ohlcv[idx_ohlcv.index >= pd.Timestamp(month_ago)]
+                if len(i_month) >= 2:
+                    im_first = i_month.iloc[0, 3]
+                    if im_first > 0:
+                        if idx_name == 'kospi':
+                            kospi_month = round((i_last / im_first - 1) * 100, 1)
+                        else:
+                            kosdaq_month = round((i_last / im_first - 1) * 100, 1)
+        except Exception:
+            pass
 
     return {
         'system_pct': round(system_pct, 1),
@@ -320,6 +328,8 @@ def calc_system_returns(regime_info=None):
         'month_pct': month_pct,
         'kospi_ytd': kospi_ytd,
         'kospi_month': kospi_month,
+        'kosdaq_ytd': kosdaq_ytd,
+        'kosdaq_month': kosdaq_month,
     }
 
 
@@ -688,14 +698,16 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         lines.append('📈 <b>시스템 수익률</b>')
         if sr.get('ytd_pct') is not None:
             ky = sr.get('kospi_ytd')
-            ky_str = f' (KOSPI {ky:+.1f}%)' if ky is not None else ''
-            lines.append(f'    올해 {sr["ytd_pct"]:+.1f}%{ky_str}')
+            kd = sr.get('kosdaq_ytd')
+            idx = f' (코스피 {ky:+.1f}% 코스닥 {kd:+.1f}%)' if ky is not None and kd is not None else (f' (코스피 {ky:+.1f}%)' if ky is not None else '')
+            lines.append(f'    올해 {sr["ytd_pct"]:+.1f}%{idx}')
         if sr.get('month_pct') is not None:
             km = sr.get('kospi_month')
-            km_str = f' (KOSPI {km:+.1f}%)' if km is not None else ''
-            lines.append(f'    1개월 {sr["month_pct"]:+.1f}%{km_str}')
+            kmd = sr.get('kosdaq_month')
+            idx = f' (코스피 {km:+.1f}% 코스닥 {kmd:+.1f}%)' if km is not None and kmd is not None else (f' (코스피 {km:+.1f}%)' if km is not None else '')
+            lines.append(f'    1개월 {sr["month_pct"]:+.1f}%{idx}')
         if sr.get('ytd_pct') is None and sr.get('month_pct') is None:
-            lines.append(f'    누적 {sr["system_pct"]:+.1f}% (KOSPI {sr["kospi_pct"]:+.1f}%)')
+            lines.append(f'    누적 {sr["system_pct"]:+.1f}% (코스피 {sr["kospi_pct"]:+.1f}%)')
 
     n = len(picks)
     lines.append('')
