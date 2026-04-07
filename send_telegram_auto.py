@@ -212,9 +212,9 @@ def calc_system_returns(regime_info=None):
         r1 = all_data[d1].get('rankings', [])
         r2 = all_data[d2].get('rankings', [])
 
-        top20_t0 = {r['ticker']: r for r in r0 if r.get('composite_rank', r['rank']) <= 20}
-        top20_t1 = {r['ticker']: r for r in r1 if r.get('composite_rank', r['rank']) <= 20}
-        top20_t2 = {r['ticker']: r for r in r2 if r.get('composite_rank', r['rank']) <= 20}
+        top20_t0 = {r['ticker']: r for r in r0 if r['rank'] <= 20}
+        top20_t1 = {r['ticker']: r for r in r1 if r['rank'] <= 20}
+        top20_t2 = {r['ticker']: r for r in r2 if r['rank'] <= 20}
 
         common = set(top20_t0) & set(top20_t1) & set(top20_t2)
 
