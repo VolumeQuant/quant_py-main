@@ -98,15 +98,20 @@
 - FWD_BONUS: 삭제
 - MA120 필터: 126일(6M) 미만 제외 (모멘텀 계산 불가, IPO 노이즈)
 
-## 프로덕션 파이프라인 (v75 리팩토링, 2026-04-06)
+## 프로덕션 파이프라인 (v76, 2026-04-07)
 - **run_daily.py → data_refresher → FG 직접 호출 → weighted_rank 후처리**
-- CP(create_current_portfolio.py) 경유 제거, FG가 직접 스코어링
-- `USE_NEW_PIPELINE=1`(기본) 새 파이프라인, `=0`으로 CP 레거시 롤백 가능
-- FG env vars: `FACTOR_V_W/Q_W/G_W/M_W`, `G_SUB1/G_SUB2`, `MOM_PERIOD`, `G_REVENUE_WEIGHT`
-- G 서브팩터: env var 영문 short name (rev_z, oca_z, op_margin_z 등)
-- weighted_rank: FG 출력에 T0×0.5+T1×0.3+T2×0.2 후처리, mode를 metadata에 저장
-- per/pbr/roe: FG 미출력 → 후처리에서 pykrx 캐시로 보충
-- data_refresher.py: 시총/펀더멘털/OHLCV증분/섹터 캐시 갱신
+- CP 경유 제거, FG가 직접 스코어링
+- `USE_NEW_PIPELINE=1`(기본)
+- data_refresher.py: 시총/펀더멘털/OHLCV증분/섹터/KOSPI인덱스 갱신
+- weighted_rank: FG 출력에 T0×0.5+T1×0.3+T2×0.2 후처리
+- per/pbr/roe: 후처리에서 pykrx 캐시로 보충
+- 매일 boost + defense 양쪽 ranking 생성 (국면 전환 대비)
+
+### 주의사항 (v76 시행착오)
+- send_telegram 단독 실행 금지 — 반드시 data_refresher 먼저 (OHLCV 미갱신 시 수익률 틀림)
+- 스케줄러 변경 시 구 스케줄러 `schtasks //Query`로 확인 후 삭제
+- 필터 효과 검증은 FG 재생성 기준 (TurboSim 필터링은 z-score 불변이라 낙관적)
+- bt 파일의 score/rank는 쓰레기 — z-score만 유효 (TurboSim이 재계산)
 
 ## v75 데이터 파이프라인 (2026-04-05)
 - DART+FnGuide 합치기, TTM YoY 갭 체크 (450일)
