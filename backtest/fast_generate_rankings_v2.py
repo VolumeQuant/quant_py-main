@@ -1085,7 +1085,12 @@ def calculate_multifactor_fast(multifactor_df, price_df, sector_map, base_date,
         if '지배주주당기순이익' in data.columns and '지배주주자본' in data.columns:
             dart_parent = roe_missing & data['지배주주당기순이익'].notna() & (data['지배주주자본'] > 0)
             data.loc[dart_parent, 'ROE'] = data.loc[dart_parent, '지배주주당기순이익'] / data.loc[dart_parent, '지배주주자본'] * 100
-        # 2순위: 당기순이익 TTM / 자본 (별도재무제표 — 당기순이익=지배주주순이익)
+        # 2순위: 지배주주당기순이익 TTM / 자본 (지배주주자본 없을 때 차선 — 과소계상 가능하나 당기NI/자본보다 정확)
+        roe_still_missing = data['ROE'].isna()
+        if roe_still_missing.any() and '지배주주당기순이익' in data.columns and '자본' in data.columns:
+            dart_parent_fallback = roe_still_missing & data['지배주주당기순이익'].notna() & (data['자본'] > 0)
+            data.loc[dart_parent_fallback, 'ROE'] = data.loc[dart_parent_fallback, '지배주주당기순이익'] / data.loc[dart_parent_fallback, '자본'] * 100
+        # 3순위: 당기순이익 TTM / 자본 (별도재무제표 — 당기순이익=지배주주순이익)
         roe_still_missing = data['ROE'].isna()
         if roe_still_missing.any() and '당기순이익' in data.columns and '자본' in data.columns:
             dart_ni = roe_still_missing & data['당기순이익'].notna() & (data['자본'] > 0)
