@@ -174,8 +174,9 @@ class TurboSimulator:
         self._cached_base_key = None  # (v_w, q_w, g_w, g_rev) for partial reuse
         self._cached_partials = None  # V+Q+G partial sums per date
 
-    def _compute_partial(self, date, v_w, q_w, g_w, g_rev, g_sub1='rev_z', g_sub2='oca_z'):
-        """V+Q+G 부분합 계산. G = g_rev*sub1 + (1-g_rev)*sub2, 재표준화."""
+    def _compute_partial(self, date, v_w, q_w, g_w, g_rev, g_sub1='rev_z', g_sub2='oca_z',
+                         g_sub3=None, g_w1=None, g_w2=None, g_w3=None):
+        """V+Q+G 부분합 계산. 2팩터: g_rev*sub1 + (1-g_rev)*sub2. 3팩터: w1*s1+w2*s2+w3*s3."""
         pre = self._preextracted.get(date)
         if pre is None:
             return None
@@ -185,7 +186,11 @@ class TurboSimulator:
         n = len(tickers)
         sub1_arr = g_subs.get(g_sub1, g_subs.get('rev_z'))
         sub2_arr = g_subs.get(g_sub2, g_subs.get('oca_z'))
-        g_raw = g_rev * sub1_arr + (1 - g_rev) * sub2_arr
+        if g_sub3 is not None and g_w1 is not None:
+            sub3_arr = g_subs.get(g_sub3, np.zeros(n))
+            g_raw = g_w1 * sub1_arr + g_w2 * sub2_arr + g_w3 * sub3_arr
+        else:
+            g_raw = g_rev * sub1_arr + (1 - g_rev) * sub2_arr
         g_std = g_raw.std()
         g_standardized = (g_raw - g_raw.mean()) / g_std if g_std > 0 else np.zeros(n)
         partial = v_w * value_s + q_w * quality_s + g_w * g_standardized
@@ -439,9 +444,10 @@ class TurboSimulator:
         return corr_all
 
     def _ensure_cache(self, v_w, q_w, g_w, m_w, g_rev, top_n=20, mom_type='6m',
-                      g_sub1='rev_z', g_sub2='oca_z'):
-        """Build optimized cache — V+Q+G 부분합 재사용, G 서브팩터 선택 가능."""
-        key = (v_w, q_w, g_w, m_w, g_rev, top_n, mom_type, g_sub1, g_sub2)
+                      g_sub1='rev_z', g_sub2='oca_z',
+                      g_sub3=None, g_w1=None, g_w2=None, g_w3=None):
+        """Build optimized cache — V+Q+G 부분합 재사용, G 서브팩터 2/3팩터 선택 가능."""
+        key = (v_w, q_w, g_w, m_w, g_rev, top_n, mom_type, g_sub1, g_sub2, g_sub3, g_w1, g_w2, g_w3)
         if self._cached_key == key:
             return
         self._cached_key = key
@@ -451,11 +457,12 @@ class TurboSimulator:
         n_cols = self._n_cols
 
         # Step 0: V+Q+G 부분합 캐싱 (G 서브팩터 + 비율이 같으면 재사용)
-        base_key = (v_w, q_w, g_w, g_rev, g_sub1, g_sub2)
+        base_key = (v_w, q_w, g_w, g_rev, g_sub1, g_sub2, g_sub3, g_w1, g_w2, g_w3)
         if self._cached_base_key != base_key:
             self._cached_partials = [None] * n_dates
             for i in range(n_dates):
-                self._cached_partials[i] = self._compute_partial(dates[i], v_w, q_w, g_w, g_rev, g_sub1, g_sub2)
+                self._cached_partials[i] = self._compute_partial(
+                    dates[i], v_w, q_w, g_w, g_rev, g_sub1, g_sub2, g_sub3, g_w1, g_w2, g_w3)
             self._cached_base_key = base_key
 
         # Step 1: 부분합 + 모멘텀으로 최종 스코어 (빠름)
@@ -489,12 +496,14 @@ class TurboSimulator:
     def run_fast(self, v_w, q_w, g_w, m_w, g_rev,
                  entry_param, exit_param, max_slots, top_n=20, stop_loss=-0.10,
                  corr_threshold=None, trailing_stop=None, mom_type='6m',
-                 take_profit=None, g_sub1='rev_z', g_sub2='oca_z'):
+                 take_profit=None, g_sub1='rev_z', g_sub2='oca_z',
+                 g_sub3=None, g_w1=None, g_w2=None, g_w3=None):
         """Run simulation. Builds cache if needed, then runs hot loop.
-        g_sub1/g_sub2: G 서브팩터 키 (rev_z, oca_z, rev_accel_z, gp_growth_z, op_margin_z, cfo_growth_z)
-        g_rev: sub1 비율 (0.0~1.0)
+        2팩터: g_sub1/g_sub2 + g_rev (sub1 비율)
+        3팩터: g_sub1/g_sub2/g_sub3 + g_w1/g_w2/g_w3 (각 비율, 합=1.0)
         """
-        self._ensure_cache(v_w, q_w, g_w, m_w, g_rev, top_n, mom_type, g_sub1, g_sub2)
+        self._ensure_cache(v_w, q_w, g_w, m_w, g_rev, top_n, mom_type, g_sub1, g_sub2,
+                          g_sub3, g_w1, g_w2, g_w3)
         return _run_inner(
             self._cached_flat, self._price_arr, self._bench_arr,
             self._has_bench, self._date_row_indices, len(self.dates),
@@ -507,7 +516,9 @@ class TurboSimulator:
                    stop_loss=-0.10, corr_threshold=None, trailing_stop=None,
                    take_profit=None,
                    g_sub1_d='rev_z', g_sub2_d='oca_z',
-                   g_sub1_o='rev_z', g_sub2_o='oca_z'):
+                   g_sub1_o='rev_z', g_sub2_o='oca_z',
+                   g_sub3_d=None, g_w1_d=None, g_w2_d=None, g_w3_d=None,
+                   g_sub3_o=None, g_w1_o=None, g_w2_o=None, g_w3_o=None):
         """국면전환 시뮬레이션 — 전환 시 포트폴리오 완전 청산 후 새 전략 재진입.
 
         Args:
@@ -519,11 +530,13 @@ class TurboSimulator:
 
         # 방어/공격 캐시 각각 빌드
         self._ensure_cache(dp['v'], dp['q'], dp['g'], dp['m'],
-                          dp['g_rev'], 20, dp.get('mom', '6m'), g_sub1_d, g_sub2_d)
+                          dp['g_rev'], 20, dp.get('mom', '6m'), g_sub1_d, g_sub2_d,
+                          g_sub3_d, g_w1_d, g_w2_d, g_w3_d)
         defense_flat = list(self._cached_flat)
 
         self._ensure_cache(op['v'], op['q'], op['g'], op['m'],
-                          op['g_rev'], 20, op.get('mom', '6m'), g_sub1_o, g_sub2_o)
+                          op['g_rev'], 20, op.get('mom', '6m'), g_sub1_o, g_sub2_o,
+                          g_sub3_o, g_w1_o, g_w2_o, g_w3_o)
         offense_flat = list(self._cached_flat)
 
         return _run_regime_inner(
