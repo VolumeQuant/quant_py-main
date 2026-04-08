@@ -1072,10 +1072,24 @@ def calculate_multifactor_fast(multifactor_df, price_df, sector_map, base_date,
         data['PSR'] = np.where(data['매출액'] > 0, data['시가총액'] / data['매출액'], np.nan)
 
     # --- Quality 팩터 ---
+    # ROE: pykrx EPS > 0이면 pykrx 사용, EPS=0이면 DART TTM 폴백
+    data['ROE'] = np.nan
     if 'pykrx_EPS' in data.columns and 'pykrx_BPS' in data.columns:
-        data['ROE'] = np.where(data['pykrx_BPS'] > 0, data['pykrx_EPS'] / data['pykrx_BPS'] * 100, np.nan)
-    else:
-        data['ROE'] = np.nan
+        pykrx_valid = (data['pykrx_EPS'] != 0) & (data['pykrx_BPS'] > 0)
+        data.loc[pykrx_valid, 'ROE'] = data.loc[pykrx_valid, 'pykrx_EPS'] / data.loc[pykrx_valid, 'pykrx_BPS'] * 100
+
+    # DART TTM 폴백: pykrx ROE가 NaN인 종목 (EPS=0 등)
+    roe_missing = data['ROE'].isna()
+    if roe_missing.any():
+        # 1순위: 지배주주당기순이익 TTM / 지배주주자본 (분자분모 기준 일치)
+        if '지배주주당기순이익' in data.columns and '지배주주자본' in data.columns:
+            dart_parent = roe_missing & data['지배주주당기순이익'].notna() & (data['지배주주자본'] > 0)
+            data.loc[dart_parent, 'ROE'] = data.loc[dart_parent, '지배주주당기순이익'] / data.loc[dart_parent, '지배주주자본'] * 100
+        # 2순위: 당기순이익 TTM / 자본 (별도재무제표 — 당기순이익=지배주주순이익)
+        roe_still_missing = data['ROE'].isna()
+        if roe_still_missing.any() and '당기순이익' in data.columns and '자본' in data.columns:
+            dart_ni = roe_still_missing & data['당기순이익'].notna() & (data['자본'] > 0)
+            data.loc[dart_ni, 'ROE'] = data.loc[dart_ni, '당기순이익'] / data.loc[dart_ni, '자본'] * 100
 
     if '매출총이익' in data.columns and '자산' in data.columns:
         data['GPA'] = data['매출총이익'] / data['자산'] * 100
@@ -1238,9 +1252,10 @@ def calculate_multifactor_fast(multifactor_df, price_df, sector_map, base_date,
             data[score_col] = 0.0
         data[score_col] = data[score_col].fillna(0.0)
 
-    # ROE 하드게이트 (NaN도 제외 — pykrx 0값 종목 우회 방지)
+    # ROE 하드게이트: ROE <= 0 제거 (적자 기업)
+    # ROE NaN(pykrx+DART 모두 산출 불가)은 스킵 — GPA/CFO로 Quality 평가
     if 'ROE' in data.columns:
-        roe_neg_mask = (data['ROE'] <= 0) | data['ROE'].isna()
+        roe_neg_mask = data['ROE'] <= 0
         if roe_neg_mask.any():
             data = data[~roe_neg_mask].copy()
 
@@ -1307,6 +1322,9 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
     # 시총 필터
     min_mcap = preloaded.get('min_mcap', 1000)
     filtered = mcap_df[mcap_df['시가총액_억'] >= min_mcap].copy()
+
+    # 우선주 제거 (보통주 티커는 끝자리 0)
+    filtered = filtered[filtered.index.str[-1] == '0']
 
     # --- 2. 거래대금 (사전계산된 20일 평균) ---
     avg_vol_key = find_nearest_cache(preloaded['avg_volume'], date_str, max_gap_days=10)
