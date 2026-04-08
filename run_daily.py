@@ -123,7 +123,7 @@ def _run_fg_single(base_date, env_vars, state_dir, logfile):
 
 def _build_mode_env(params):
     """regime params → FG env vars dict"""
-    return {
+    env = {
         'FACTOR_V_W': str(params['V_W']),
         'FACTOR_Q_W': str(params['Q_W']),
         'FACTOR_G_W': str(params['G_W']),
@@ -133,6 +133,13 @@ def _build_mode_env(params):
         'G_SUB1': params['G_SUB1'],
         'G_SUB2': params['G_SUB2'],
     }
+    # 3팩터 G서브 (v77)
+    if params.get('G_SUB3'):
+        env['G_SUB3'] = params['G_SUB3']
+        env['G_W1'] = str(params['G_W1'])
+        env['G_W2'] = str(params['G_W2'])
+        env['G_W3'] = str(params['G_W3'])
+    return env
 
 
 def _postprocess_ranking(base_date, state_dir, mode, logfile):
@@ -214,7 +221,7 @@ def _postprocess_ranking(base_date, state_dir, mode, logfile):
                         if v is not None and pd.notna(v) and v > 0:
                             item[key] = round(float(v), 2)
                     eps, bps = row.get('EPS'), row.get('BPS')
-                    if eps is not None and bps is not None and pd.notna(eps) and pd.notna(bps) and bps > 0:
+                    if eps is not None and bps is not None and pd.notna(eps) and pd.notna(bps) and bps > 0 and eps != 0:
                         item['roe'] = round(float(eps / bps * 100), 2)
         except Exception:
             pass

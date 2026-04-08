@@ -1200,23 +1200,42 @@ def calculate_multifactor_fast(multifactor_df, price_df, sector_map, base_date,
     data['밸류_raw'] = data[value_zs].mean(axis=1) if value_zs else 0
     data['퀄리티_raw'] = data[quality_zs].mean(axis=1) if quality_zs else 0
 
-    # Growth 가중 — G_SUB1/G_SUB2 env var로 서브팩터 선택 (v75)
-    g_rev_w = float(os.environ.get('G_REVENUE_WEIGHT', '0.7'))
+    # Growth 가중 — G_SUB1/G_SUB2(/G_SUB3) env var로 서브팩터 선택 (v77: 3팩터 지원)
+    _sub_map = {'rev_z': '매출성장률_z', 'oca_z': '이익변화량_z', 'rev_accel_z': '매출가속도_z',
+                'gp_growth_z': '매출총이익성장_z', 'op_margin_z': '영업이익률변화_z', 'cfo_growth_z': '현금흐름성장_z'}
     _g_sub1_env = os.environ.get('G_SUB1')
     _g_sub2_env = os.environ.get('G_SUB2')
-    if _g_sub1_env and _g_sub2_env:
-        _sub_map = {'rev_z': '매출성장률_z', 'oca_z': '이익변화량_z', 'rev_accel_z': '매출가속도_z',
-                    'gp_growth_z': '매출총이익성장_z', 'op_margin_z': '영업이익률변화_z', 'cfo_growth_z': '현금흐름성장_z'}
+    _g_sub3_env = os.environ.get('G_SUB3')  # 3팩터 (None이면 2팩터)
+    _g_w1_env = os.environ.get('G_W1')
+
+    if _g_sub3_env and _g_w1_env:
+        # 3팩터: G_W1*SUB1 + G_W2*SUB2 + G_W3*SUB3
+        g_s1 = _sub_map.get(_g_sub1_env, '매출성장률_z')
+        g_s2 = _sub_map.get(_g_sub2_env, '이익변화량_z')
+        g_s3 = _sub_map.get(_g_sub3_env, '매출총이익성장_z')
+        w1 = float(os.environ.get('G_W1', '0.5'))
+        w2 = float(os.environ.get('G_W2', '0.3'))
+        w3 = float(os.environ.get('G_W3', '0.2'))
+        cols_ok = all(c in data.columns for c in [g_s1, g_s2, g_s3])
+        if cols_ok:
+            data['성장_raw'] = data[g_s1] * w1 + data[g_s2] * w2 + data[g_s3] * w3
+        else:
+            data['성장_raw'] = data[growth_zs].mean(axis=1) if growth_zs else 0
+    elif _g_sub1_env and _g_sub2_env:
+        # 2팩터: G_REVENUE_WEIGHT * SUB1 + (1-w) * SUB2
+        g_rev_w = float(os.environ.get('G_REVENUE_WEIGHT', '0.7'))
         g_s1 = _sub_map.get(_g_sub1_env, '매출성장률_z')
         g_s2 = _sub_map.get(_g_sub2_env, '이익변화량_z')
         if g_s1 in data.columns and g_s2 in data.columns:
             data['성장_raw'] = data[g_s1] * g_rev_w + data[g_s2] * (1.0 - g_rev_w)
         else:
             data['성장_raw'] = data[growth_zs].mean(axis=1) if growth_zs else 0
-    elif len(growth_zs) == 2 and '매출성장률_z' in growth_zs and '이익변화량_z' in growth_zs:
-        data['성장_raw'] = data['매출성장률_z'] * g_rev_w + data['이익변화량_z'] * (1.0 - g_rev_w)
     else:
-        data['성장_raw'] = data[growth_zs].mean(axis=1) if growth_zs else 0
+        g_rev_w = float(os.environ.get('G_REVENUE_WEIGHT', '0.7'))
+        if len(growth_zs) == 2 and '매출성장률_z' in growth_zs and '이익변화량_z' in growth_zs:
+            data['성장_raw'] = data['매출성장률_z'] * g_rev_w + data['이익변화량_z'] * (1.0 - g_rev_w)
+        else:
+            data['성장_raw'] = data[growth_zs].mean(axis=1) if growth_zs else 0
 
     data['모멘텀_raw'] = data[momentum_zs].mean(axis=1) if momentum_zs else 0
 
