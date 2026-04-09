@@ -795,8 +795,17 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
     lines.append('📌 <b>종목 선정 근거</b>')
     lines.append('━━━━━━━━━━━━━━━')
 
-    t1_wr_map = {r['ticker']: round(r['weighted_rank']) for r in rankings_t1.get('rankings', []) if 'weighted_rank' in r} if rankings_t1 else {}
-    t2_wr_map = {r['ticker']: round(r['weighted_rank']) for r in rankings_t2.get('rankings', []) if 'weighted_rank' in r} if rankings_t2 else {}
+    # wr 정렬 후 정수 순위 맵 (Signal용)
+    def _wr_int_rank_map_sig(rankings):
+        if not rankings:
+            return {}
+        rlist = rankings.get('rankings', [])
+        sorted_by_wr = sorted(rlist, key=lambda r: r.get('weighted_rank', 999))
+        return {r['ticker']: i + 1 for i, r in enumerate(sorted_by_wr)}
+
+    t0_wr_rank_sig = _wr_int_rank_map_sig(rankings_t0)
+    t1_wr_rank_sig = _wr_int_rank_map_sig(rankings_t1)
+    t2_wr_rank_sig = _wr_int_rank_map_sig(rankings_t2)
 
     for i, pick in enumerate(picks):
         ticker = pick['ticker']
@@ -808,10 +817,10 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         price_str = f'₩{price:,.0f}' if price else ''
         lines.append(f'<b>{i+1}. {name}({ticker}) {sector} · {price_str}</b>')
 
-        # L1: 순위 궤적 + 점수 (weighted_rank 기준)
-        r0 = pick.get('rank_t0', '?')
-        r1 = t1_wr_map.get(ticker, '-')
-        r2 = t2_wr_map.get(ticker, '-')
+        # L1: 순위 궤적 + 점수 (wr 정수순위 기준)
+        r0 = t0_wr_rank_sig.get(ticker, pick.get('rank_t0', '?'))
+        r1 = t1_wr_rank_sig.get(ticker, '-')
+        r2 = t2_wr_rank_sig.get(ticker, '-')
         score_100 = weighted_score_100(ticker, rankings_t0, rankings_t1, rankings_t2)
         lines.append(f'순위 {r2}→{r1}→{r0}위 · {score_100:.1f}점')
 
@@ -935,15 +944,21 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         lines.append('데이터 없음')
         return '\n'.join(lines)
 
-    # T-1, T-2 weighted_rank 맵 (각 날의 3일 가중순위 — cr보다 안정적)
-    t1_full = {r['ticker']: r for r in rankings_t1.get('rankings', [])} if rankings_t1 else {}
-    t2_full = {r['ticker']: r for r in rankings_t2.get('rankings', [])} if rankings_t2 else {}
+    # wr 정렬 후 정수 순위 맵: {ticker: 1, 2, 3, ...} (연속 정수, 빈 번호 없음)
+    def _wr_int_rank_map(rankings):
+        if not rankings:
+            return {}
+        rlist = rankings.get('rankings', [])
+        sorted_by_wr = sorted(rlist, key=lambda r: r.get('weighted_rank', 999))
+        return {r['ticker']: i + 1 for i, r in enumerate(sorted_by_wr)}
+
+    t0_wr_rank = _wr_int_rank_map(rankings_t0)
+    t1_wr_rank = _wr_int_rank_map(rankings_t1)
+    t2_wr_rank = _wr_int_rank_map(rankings_t2)
 
     for s in pipeline:
-        t1_item = t1_full.get(s['ticker'])
-        t2_item = t2_full.get(s['ticker'])
-        s['_r1'] = round(t1_item['weighted_rank']) if t1_item and 'weighted_rank' in t1_item else '-'
-        s['_r2'] = round(t2_item['weighted_rank']) if t2_item and 'weighted_rank' in t2_item else '-'
+        s['_r1'] = t1_wr_rank.get(s['ticker'], '-')
+        s['_r2'] = t2_wr_rank.get(s['ticker'], '-')
 
     # v70: weighted_rank 순 정렬 (rank 기반 진입/이탈과 일관)
     sorted_pipeline = sorted(pipeline, key=lambda x: (x.get('weighted_rank', x['rank']), -(score_100_map or {}).get(x['ticker'], 0)))
@@ -971,7 +986,7 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         name = s['name']
         sector = _SECTOR_SHORT.get(s.get('sector', '기타'), s.get('sector', '기타'))
         status = s['status']
-        r0 = round(s.get('weighted_rank', s.get('composite_rank', s['rank'])))  # T-0 가중순위
+        r0 = t0_wr_rank.get(s['ticker'], s.get('composite_rank', s['rank']))  # T-0 wr 정수순위
         r1 = s.get('_r1', '-')
         r2 = s.get('_r2', '-')
         score_100 = weighted_score_100(s['ticker'], rankings_t0, rankings_t1, rankings_t2)
@@ -1260,15 +1275,24 @@ def main():
         verified_picks.sort(key=lambda x: score_100_pre.get(x['ticker'], 0), reverse=True)
         print(f"  ✅ 검증 종목: {len(verified_picks)}개")
 
-        t1_wr_map = {r['ticker']: round(r['weighted_rank']) for r in rankings_t1.get('rankings', []) if 'weighted_rank' in r} if rankings_t1 else {}
-        t2_wr_map = {r['ticker']: round(r['weighted_rank']) for r in rankings_t2.get('rankings', []) if 'weighted_rank' in r} if rankings_t2 else {}
+        # wr 정렬 후 정수 순위 맵 (main용)
+        def _wr_int_rank_map_main(rankings):
+            if not rankings:
+                return {}
+            rlist = rankings.get('rankings', [])
+            sorted_by_wr = sorted(rlist, key=lambda r: r.get('weighted_rank', 999))
+            return {r['ticker']: i + 1 for i, r in enumerate(sorted_by_wr)}
+
+        t0_wr_rank_main = _wr_int_rank_map_main(rankings_t0)
+        t1_wr_rank_main = _wr_int_rank_map_main(rankings_t1)
+        t2_wr_rank_main = _wr_int_rank_map_main(rankings_t2)
 
         for candidate in verified_picks:
             tech = get_stock_technical(candidate['ticker'], BASE_DATE)
             candidate['_tech'] = tech
-            candidate['rank_t0'] = round(candidate['weighted_rank']) if 'weighted_rank' in candidate else candidate.get('composite_rank', candidate['rank'])
-            candidate['rank_t1'] = t1_wr_map.get(candidate['ticker'], '-')
-            candidate['rank_t2'] = t2_wr_map.get(candidate['ticker'], '-')
+            candidate['rank_t0'] = t0_wr_rank_main.get(candidate['ticker'], candidate.get('composite_rank', candidate['rank']))
+            candidate['rank_t1'] = t1_wr_rank_main.get(candidate['ticker'], '-')
+            candidate['rank_t2'] = t2_wr_rank_main.get(candidate['ticker'], '-')
             daily_chg = (tech or {}).get('daily_chg', 0)
 
             if daily_chg <= -5:
