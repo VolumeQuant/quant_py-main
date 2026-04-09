@@ -770,11 +770,18 @@ def preload_all_data(start_str, end_str, trading_dates=None, use_rev_accel=False
         except Exception as e:
             print(f'    종목명 매핑 실패: {e}')
 
-    # 8. 거래대금 20일 평균 사전계산
+    # 8. 거래대금 20일 평균 사전계산 (+보조 N일 평균)
     print('  거래대금 20일 평균 사전계산 중...')
     t_vol = time.time()
     data['avg_volume'] = precompute_avg_volume(data['market_cap'])
-    print(f'    {len(data["avg_volume"])}일 ({time.time()-t_vol:.1f}초)')
+    # 보조 필터용 N일 평균 (VOL_SUB_DAYS env var, 기본: 없음)
+    vol_sub_days = int(os.environ.get('VOL_SUB_DAYS', '0'))
+    if vol_sub_days > 0:
+        data['avg_volume_sub'] = precompute_avg_volume(data['market_cap'], window=vol_sub_days)
+        print(f'    {len(data["avg_volume"])}일 + 보조 {vol_sub_days}일 ({time.time()-t_vol:.1f}초)')
+    else:
+        data['avg_volume_sub'] = {}
+        print(f'    {len(data["avg_volume"])}일 ({time.time()-t_vol:.1f}초)')
 
     # 9. 3년 연속 적자 종목 사전계산
     chronic_3yr = set()
@@ -806,11 +813,11 @@ def preload_all_data(start_str, end_str, trading_dates=None, use_rev_accel=False
     return data
 
 
-def precompute_avg_volume(market_cap_dict):
-    """거래대금 20일 이동평균 사전계산 — 최적화 버전
+def precompute_avg_volume(market_cap_dict, window=20):
+    """거래대금 N일 이동평균 사전계산 — 최적화 버전
 
     1단계: 모든 날짜의 거래대금을 하나의 DataFrame으로 합침
-    2단계: rolling(20).mean() 으로 한방에 계산
+    2단계: rolling(N).mean() 으로 한방에 계산
     """
     sorted_dates = sorted(market_cap_dict.keys())
 
@@ -829,8 +836,8 @@ def precompute_avg_volume(market_cap_dict):
     # DataFrame: rows=dates, cols=tickers
     vol_df = pd.DataFrame(vol_series_list, index=valid_dates)
 
-    # rolling 20일 평균 (한방 계산)
-    avg_df = vol_df.rolling(window=20, min_periods=1).mean() / 1e8
+    # rolling N일 평균 (한방 계산)
+    avg_df = vol_df.rolling(window=window, min_periods=1).mean() / 1e8
 
     # dict 변환
     avg_vol = {}
@@ -1374,6 +1381,15 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
         pass_large = large[large['avg_tv'] >= 50]
         pass_mid = mid[mid['avg_tv'] >= mid_threshold]
         filtered = pd.concat([pass_large, pass_mid])
+        # 보조 필터 (VOL_SUB_DAYS + VOL_SUB_THRESHOLD)
+        vol_sub_threshold = float(os.environ.get('VOL_SUB_THRESHOLD', '0'))
+        if vol_sub_threshold > 0 and preloaded.get('avg_volume_sub'):
+            sub_key = find_nearest_cache(preloaded['avg_volume_sub'], date_str, max_gap_days=10)
+            if sub_key:
+                sub_tv = preloaded['avg_volume_sub'][sub_key]
+                filtered = filtered.join(pd.DataFrame({'sub_tv': sub_tv}), how='left')
+                filtered['sub_tv'] = filtered['sub_tv'].fillna(0)
+                filtered = filtered[filtered['sub_tv'] >= vol_sub_threshold]
     else:
         large = filtered[filtered['시가총액_억'] >= 10000]
         mid = filtered[(filtered['시가총액_억'] >= 3000) & (filtered['시가총액_억'] < 10000)]
@@ -1409,7 +1425,10 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
 
     # --- 5. OHLCV slice + MA120 필터 (벡터화) ---
     # 0→NaN은 프리로드에서 1회 처리, copy 불필요 (읽기전용)
-    price_df = ohlcv[ohlcv.index <= base_ts]
+    # point-in-time: market_cap에 존재하는 종목만 OHLCV에서 사용 (look-ahead bias 방지)
+    mcap_tickers = set(mcap_df.index)
+    ohlcv_cols = [c for c in ohlcv.columns if c in mcap_tickers]
+    price_df = ohlcv.loc[ohlcv.index <= base_ts, ohlcv_cols]
 
     ma120_fail = []
     if preloaded.get('no_ma120', False):
