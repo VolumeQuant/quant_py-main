@@ -9,6 +9,7 @@ Gemini AI 포트폴리오 브리핑 모듈 — v3 정량 리스크 스캐너
 
 import re
 import os
+import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -287,37 +288,35 @@ def run_ai_analysis(portfolio_message, stock_list, base_date=None, market_contex
         prompt = build_prompt(stock_list, base_date=base_date, market_context=market_context, market_index=market_index)
         grounding_tool = types.Tool(google_search=types.GoogleSearch())
 
-        print("[Gemini] AI 브리핑 요청 중...")
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                tools=[grounding_tool],
-                temperature=0.2,
-            ),
-        )
-
-        # 빈 응답 방어 — extract_text + 1회 재시도
-        analysis_text = extract_text(response)
-        if not analysis_text:
+        # 503/UNAVAILABLE 재시도 (최대 3회, 지수 백오프)
+        analysis_text = None
+        for attempt in range(3):
             try:
-                if hasattr(response, 'candidates') and response.candidates:
-                    print(f"[Gemini] finish_reason: {response.candidates[0].finish_reason}")
-            except Exception:
-                pass
-            print("[Gemini] 응답이 비어있음 — 재시도 (temp 0.3)")
-            response = client.models.generate_content(
-                model='gemini-2.5-flash',
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    tools=[grounding_tool],
-                    temperature=0.3,
-                ),
-            )
-            analysis_text = extract_text(response)
-            if not analysis_text:
-                print("[Gemini] 재시도도 실패")
-                return None
+                print(f"[Gemini] AI 브리핑 요청 중...{f' (재시도 {attempt})' if attempt > 0 else ''}")
+                response = client.models.generate_content(
+                    model='gemini-2.5-flash',
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        tools=[grounding_tool],
+                        temperature=0.2 + attempt * 0.1,
+                    ),
+                )
+                analysis_text = extract_text(response)
+                if analysis_text:
+                    break
+                print("[Gemini] 응답이 비어있음")
+            except Exception as retry_err:
+                err_str = str(retry_err)
+                if '503' in err_str or 'UNAVAILABLE' in err_str or '429' in err_str:
+                    wait = 10 * (2 ** attempt)
+                    print(f"[Gemini] {err_str[:80]} — {wait}초 후 재시도")
+                    time.sleep(wait)
+                else:
+                    raise  # 503/429 외 에러는 즉시 전파
+
+        if not analysis_text:
+            print("[Gemini] 3회 재시도 실패")
+            return None
 
         print(f"[Gemini] 응답 수신: {len(analysis_text)}자")
 
@@ -509,20 +508,36 @@ def run_final_picks_analysis(stock_list, weight_per_stock=20, base_date=None, ma
         client = genai.Client(api_key=api_key, http_options={'timeout': 180_000})
         prompt = build_final_picks_prompt(stock_list, weight_per_stock, base_date, market_context)
 
-        print("[Gemini] 최종 추천 설명 요청 중 (Google Search Grounding)...")
         grounding_tool = types.Tool(google_search=types.GoogleSearch())
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                tools=[grounding_tool],
-                temperature=0.3,
-            ),
-        )
 
-        text = extract_text(response)
+        # 503/UNAVAILABLE 재시도 (최대 3회, 지수 백오프)
+        text = None
+        for attempt in range(3):
+            try:
+                print(f"[Gemini] 최종 추천 설명 요청 중 (Google Search Grounding)...{f' (재시도 {attempt})' if attempt > 0 else ''}")
+                response = client.models.generate_content(
+                    model='gemini-2.5-flash',
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        tools=[grounding_tool],
+                        temperature=0.3,
+                    ),
+                )
+                text = extract_text(response)
+                if text:
+                    break
+                print("[Gemini] 최종 추천 응답 비어있음")
+            except Exception as retry_err:
+                err_str = str(retry_err)
+                if '503' in err_str or 'UNAVAILABLE' in err_str or '429' in err_str:
+                    wait = 10 * (2 ** attempt)
+                    print(f"[Gemini] {err_str[:80]} — {wait}초 후 재시도")
+                    time.sleep(wait)
+                else:
+                    raise
+
         if not text:
-            print("[Gemini] 최종 추천 응답 비어있음")
+            print("[Gemini] 최종 추천 설명 3회 실패")
             return None
 
         html = _convert_picks_markdown(text)
