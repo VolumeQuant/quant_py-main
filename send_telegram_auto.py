@@ -125,33 +125,59 @@ def calc_system_returns(regime_info=None):
             rs = json.load(f)
             regime_mode = rs.get('mode', 'defense')
 
-    # 현재 국면 파라미터
-    rp = get_regime_params(regime_mode)
-    _entry_rank = rp['ENTRY_RANK']
-    _exit_rank = rp['EXIT_RANK']
-    _max_slots = rp['MAX_SLOTS']
-    _stop_loss = rp.get('STOP_LOSS', -0.10)
+    # 국면별 파라미터
+    rp_boost = get_regime_params('boost')
+    rp_defense = get_regime_params('defense')
 
-    # v75: 국면별 ranking 디렉토리 (boost=state/, defense=state/defense/)
-    if regime_mode == 'defense':
-        ranking_dir = STATE_DIR / 'defense'
-    else:
-        ranking_dir = STATE_DIR
-    files = sorted(_glob.glob(str(ranking_dir / 'ranking_*.json')))
-    files = [f for f in files if 'boost' not in f and 'core' not in f and 'backup' not in f]
-    if len(files) < 3:
-        return None
-
+    # 양쪽 ranking 파일 모두 로드
     today_str = get_korea_now().strftime('%Y%m%d')
+    boost_data = {}
+    defense_data = {}
+    for label, data_dict, ranking_dir in [
+        ('boost', boost_data, STATE_DIR),
+        ('defense', defense_data, STATE_DIR / 'defense'),
+    ]:
+        files = sorted(_glob.glob(str(ranking_dir / 'ranking_*.json')))
+        files = [f for f in files if 'boost' not in os.path.basename(f).replace('ranking_','')
+                 and 'core' not in f and 'backup' not in f]
+        for fp in files:
+            d = os.path.basename(fp).replace('ranking_', '').replace('.json', '')
+            if d > today_str:
+                continue
+            with open(fp, 'r', encoding='utf-8') as fh:
+                data_dict[d] = json.load(fh)
+
+    # 날짜별 국면 판단 (KP_MA200_5d)
+    _kospi_file = Path(__file__).parent / 'data_cache' / 'kospi_yf.parquet'
+    _kospi = pd.read_parquet(_kospi_file).iloc[:, 0].dropna() if _kospi_file.exists() else pd.Series()
+    _km200 = _kospi.rolling(200).mean() if len(_kospi) >= 200 else pd.Series()
+
+    all_boost_dates = sorted(boost_data.keys())
+    regime_by_date = {}
+    _md = False; _stk = 0; _ss = False
+    for d in all_boost_dates:
+        ts = pd.Timestamp(d)
+        kv = _kospi.get(ts, None); mv = _km200.get(ts, None)
+        s = (kv > mv) if kv is not None and mv is not None else _md
+        if s == _ss: _stk += 1
+        else: _stk = 1; _ss = s
+        if _stk >= 5 and _md != s: _md = s
+        regime_by_date[d] = _md  # True=공격, False=방어
+
+    # 날짜별 국면에 맞는 ranking + 파라미터 선택
     all_data = {}
-    for fp in files:
-        basename = os.path.basename(fp)
-        d = basename.replace('ranking_', '').replace('.json', '')
-        if d > today_str:
-            continue
-        with open(fp, 'r', encoding='utf-8') as fh:
-            all_data[d] = json.load(fh)
-    dates = sorted(all_data.keys())
+    dates = []
+    for d in all_boost_dates:
+        is_boost = regime_by_date.get(d, True)
+        if is_boost and d in boost_data:
+            all_data[d] = boost_data[d]
+            dates.append(d)
+        elif not is_boost and d in defense_data:
+            all_data[d] = defense_data[d]
+            dates.append(d)
+        elif d in boost_data:  # 방어 파일 없으면 공격으로 대체
+            all_data[d] = boost_data[d]
+            dates.append(d)
 
     # 가격: OHLCV 기반 — _full 파일 우선 (전종목)
     import glob as _glob2
@@ -173,8 +199,9 @@ def calc_system_returns(regime_info=None):
                 return v
         return 0
 
-    # 포트폴리오 시뮬레이션 — 일간 수익률 기반 + 손절
+    # 포트폴리오 시뮬레이션 — 일간 수익률 기반 + 손절 + 트레일링
     portfolio = {}  # ticker → entry_price
+    peak_prices = {}  # ticker → 보유 중 최고가 (트레일링용)
     equity = 1.0
     start_date = None
     equity_history = {}  # date → equity
@@ -200,12 +227,40 @@ def calc_system_returns(regime_info=None):
         if i < 2:
             continue  # 3일 데이터 필요
 
-        # 손절 체크 (국면별 stop_loss)
+        # 국면별 파라미터 선택
+        is_boost = regime_by_date.get(d0, True)
+        rp = rp_boost if is_boost else rp_defense
+        _entry_rank = rp['ENTRY_RANK']
+        _exit_rank = rp['EXIT_RANK']
+        _max_slots = rp['MAX_SLOTS']
+        _stop_loss = rp.get('STOP_LOSS', -0.10)
+
+        # 국면 전환 시 포트폴리오 전량 청산
+        if i >= 1:
+            prev_boost = regime_by_date.get(dates[i-1], True)
+            if is_boost != prev_boost:
+                portfolio.clear()
+                peak_prices.clear()
+
+        # 손절 + 트레일링 체크
+        _trailing_stop = rp.get('TRAILING_STOP', -0.15)
         for tk in list(portfolio.keys()):
             cp = _get_price(tk, d0)
             ep = portfolio[tk]
+            # 최고가 갱신
+            if tk in peak_prices:
+                if cp > peak_prices[tk]:
+                    peak_prices[tk] = cp
+            else:
+                peak_prices[tk] = max(cp, ep) if cp > 0 else ep
+            # 손절: 진입가 대비
             if cp > 0 and ep > 0 and (cp / ep - 1) <= _stop_loss:
                 del portfolio[tk]
+                peak_prices.pop(tk, None)
+            # 트레일링: 고점 대비
+            elif cp > 0 and peak_prices.get(tk, 0) > 0 and (cp / peak_prices[tk] - 1) <= _trailing_stop:
+                del portfolio[tk]
+                peak_prices.pop(tk, None)
 
         # pipeline 계산 (3일 교집합)
         r0 = all_data[d0].get('rankings', [])
@@ -256,6 +311,7 @@ def calc_system_returns(regime_info=None):
             entry_price = _get_price(v['ticker'], d0)
             if entry_price > 0:
                 portfolio[v['ticker']] = entry_price
+                peak_prices[v['ticker']] = entry_price
                 if start_date is None:
                     start_date = d0
 
@@ -574,10 +630,10 @@ def create_regime_switch_message(regime_mode):
             '상승장에서는 성장주에 집중합니다.',
             '',
             '팩터 비중',
-            'Growth(성장) 60% + Momentum(추세) 20%',
-            '+ Value(가치) 15% + Quality(수익성) 5%',
+            'Growth(성장) 65% + Momentum(추세) 30%',
+            '+ Value(가치) 5%',
             '',
-            '매수: 3일 연속 상위 5위 이내 ✅',
+            '매수: 3일 연속 상위 7위 이내 ✅',
             '보유: 최대 3종목 (균등 비중)',
             '매도: 가중순위 8위 밖 이탈',
             '손절: 매수가 -10% | 트레일링: 고점 -15%',
@@ -603,12 +659,12 @@ def create_regime_switch_message(regime_mode):
             '하락장에서는 추세가 살아있는 종목에 분산합니다.',
             '',
             '팩터 비중',
-            'Momentum(추세) 50% + Growth(성장) 25%',
-            '+ Value(가치) 15% + Quality(수익성) 10%',
+            'Momentum(추세) 55% + Value(가치) 30%',
+            '+ Growth(성장) 10% + Quality(수익성) 5%',
             '',
-            '매수: 3일 연속 상위 5위 이내 ✅',
-            '보유: 최대 5종목 (균등 비중)',
-            '매도: 가중순위 8위 밖 이탈',
+            '매수: 3일 연속 상위 3위 이내 ✅',
+            '보유: 최대 7종목 (균등 비중)',
+            '매도: 가중순위 6위 밖 이탈',
             '손절: 매수가 -10% | 트레일링: 고점 -15%',
             '',
             perf,
