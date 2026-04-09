@@ -818,7 +818,7 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         lines.append(f'<b>{i+1}. {name}({ticker}) {sector} · {price_str}</b>')
 
         # L1: 순위 궤적 + 점수 (wr 정수순위 기준)
-        r0 = t0_wr_rank_sig.get(ticker, pick.get('rank_t0', '?'))
+        r0 = pick.get('rank_t0', t0_wr_rank_sig.get(ticker, '?'))
         r1 = t1_wr_rank_sig.get(ticker, '-')
         r2 = t2_wr_rank_sig.get(ticker, '-')
         score_100 = weighted_score_100(ticker, rankings_t0, rankings_t1, rankings_t2)
@@ -986,7 +986,7 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         name = s['name']
         sector = _SECTOR_SHORT.get(s.get('sector', '기타'), s.get('sector', '기타'))
         status = s['status']
-        r0 = t0_wr_rank.get(s['ticker'], s.get('composite_rank', s['rank']))  # T-0 wr 정수순위
+        r0 = idx  # T-0: 리스트 순번 = 표시 순위 (정렬 일치 보장)
         r1 = s.get('_r1', '-')
         r2 = s.get('_r2', '-')
         score_100 = weighted_score_100(s['ticker'], rankings_t0, rankings_t1, rankings_t2)
