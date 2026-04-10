@@ -107,7 +107,7 @@ def _run_fg_single(base_date, env_vars, state_dir, logfile):
     """FG subprocess 1회 실행 → ranking JSON 생성"""
     fg_script = str(SCRIPT_DIR / 'backtest' / 'fast_generate_rankings_v2.py')
     fg_cmd = [PYTHON, '-u', fg_script, base_date, base_date, f'--state-dir={state_dir}']
-    env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+    env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PRODUCTION_MODE": "1"}
     env.update(env_vars)
     result = subprocess.run(
         fg_cmd, cwd=str(SCRIPT_DIR), capture_output=True,
@@ -262,16 +262,46 @@ def run_fg_pipeline(base_date, regime_env, regime_mode, logfile):
     boost_params = get_regime_params('boost')
     defense_params = get_regime_params('defense')
 
-    # --- Step 2: FG(boost) → state/ranking_{date}.json ---
-    log("FG 스코어링: boost", logfile)
-    ok_boost = _run_fg_single(base_date, _build_mode_env(boost_params), state_dir, logfile)
+    # --- Step 2+3: FG(boost) + FG(defense) 병렬 실행 ---
+    log("FG 스코어링: boost + defense 병렬", logfile)
+    fg_script = str(SCRIPT_DIR / 'backtest' / 'fast_generate_rankings_v2.py')
+    base_env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PRODUCTION_MODE": "1"}
+
+    boost_env = {**base_env, **_build_mode_env(boost_params)}
+    defense_env = {**base_env, **_build_mode_env(defense_params)}
+
+    boost_cmd = [PYTHON, '-u', fg_script, base_date, base_date, f'--state-dir={state_dir}']
+    def_cmd = [PYTHON, '-u', fg_script, base_date, base_date, f'--state-dir={state_def_dir}']
+
+    proc_boost = subprocess.Popen(boost_cmd, cwd=str(SCRIPT_DIR), stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE, env=boost_env, text=True, encoding="utf-8", errors="replace")
+    proc_def = subprocess.Popen(def_cmd, cwd=str(SCRIPT_DIR), stdout=subprocess.PIPE,
+                                 stderr=subprocess.PIPE, env=defense_env, text=True, encoding="utf-8", errors="replace")
+
+    # 양쪽 완료 대기 (timeout 10분)
+    try:
+        boost_out, boost_err = proc_boost.communicate(timeout=600)
+        if boost_out: logfile.write(boost_out)
+        if boost_err: logfile.write(boost_err)
+    except subprocess.TimeoutExpired:
+        proc_boost.kill()
+        boost_out, boost_err = proc_boost.communicate()
+
+    try:
+        def_out, def_err = proc_def.communicate(timeout=600)
+        if def_out: logfile.write(def_out)
+        if def_err: logfile.write(def_err)
+    except subprocess.TimeoutExpired:
+        proc_def.kill()
+        def_out, def_err = proc_def.communicate()
+
+    logfile.flush()
+    ok_boost = proc_boost.returncode == 0
+    ok_def = proc_def.returncode == 0
+
     if not ok_boost:
         log("FG boost 실패", logfile)
         return False
-
-    # --- Step 3: FG(defense) → state/defense/ranking_{date}.json ---
-    log("FG 스코어링: defense", logfile)
-    ok_def = _run_fg_single(base_date, _build_mode_env(defense_params), state_def_dir, logfile)
     if not ok_def:
         log("FG defense 실패 (비치명적)", logfile)
 

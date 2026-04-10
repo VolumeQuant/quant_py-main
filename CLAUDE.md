@@ -115,7 +115,7 @@
 - FWD_BONUS: 삭제
 - MA120 필터: 126일(6M) 미만 제외 (모멘텀 계산 불가, IPO 노이즈)
 
-## 프로덕션 파이프라인 (v77, 2026-04-08)
+## 프로덕션 파이프라인 (v77, 2026-04-10)
 - **run_daily.py → data_refresher → FG 직접 호출 → weighted_rank 후처리**
 - CP 경유 제거, FG가 직접 스코어링
 - `USE_NEW_PIPELINE=1`(기본)
@@ -123,6 +123,10 @@
 - weighted_rank: FG 출력에 T0×0.5+T1×0.3+T2×0.2 후처리
 - per/pbr/roe: 후처리에서 pykrx 캐시로 보충
 - 매일 boost + defense 양쪽 ranking 생성 (국면 전환 대비)
+- **파이프라인 속도 최적화 (14분→8분)**:
+  - `PRODUCTION_MODE=1`: MC 30일+유니버스 FS만 로드 (프리로드 4분→52초)
+  - boost+defense 병렬 subprocess (순차 109초→병렬 77초)
+  - merge_fs_supplement 벡터화 (iterrows 제거)
 
 ### 주의사항 (v76 시행착오)
 - send_telegram 단독 실행 금지 — 반드시 data_refresher 먼저 (OHLCV 미갱신 시 수익률 틀림)

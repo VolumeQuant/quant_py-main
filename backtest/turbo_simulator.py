@@ -239,7 +239,7 @@ class TurboSimulator:
 
         return (tickers, new_scores, new_ranks, r_prices, col_indices)
 
-    def _build_day_pipeline(self, rw_t0, rw_t1, rw_t2, top_n, n_cols):
+    def _build_day_pipeline(self, rw_t0, rw_t1, rw_t2, top_n, n_cols, use_score_wr=False):
         """Build pipeline for one day.
 
         Returns: (wrank_arr, candidates_sorted) or None
@@ -297,37 +297,59 @@ class TurboSimulator:
         # Flat wrank array: default = sentinel (triggers exit for unknown tickers)
         wrank_arr = np.full(n_cols, _SENTINEL_WRANK, dtype=np.float64)
 
-        # Candidates for verified tickers
-        candidates_raw = []  # list of (score_100, col, entry_price, w_rank)
-
+        # 1st pass: 모든 종목의 weighted score/rank 계산
+        all_ws = []  # (j, col, tk, ws, w_rank_legacy)
         for j in range(n):
             tk = tickers_0[j]
             col = int(cols_0[j])
             if col < 0:
                 continue
 
-            # Weighted rank
+            # score 가중평균
+            s0 = float(scores_0[j])
+            s1_val = float(scores_1[tk_to_idx_1[tk]]) if has_t1 and tk in tk_to_idx_1 else 0.0
+            s2_val = float(scores_2[tk_to_idx_2[tk]]) if has_t2 and tk in tk_to_idx_2 else 0.0
+            if has_both:
+                ws = s0 * 0.5 + s1_val * 0.3 + s2_val * 0.2
+            elif has_t1:
+                ws = s0 * 0.6 + s1_val * 0.4
+            else:
+                ws = s0
+
+            # rank 가중평균 (legacy)
             r0 = int(ranks_0[j])
             if has_t1:
                 idx1 = tk_to_idx_1.get(tk)
                 r1 = int(ranks_1[idx1]) if idx1 is not None else 999
             else:
                 r1 = 999
-
             if has_t2:
                 idx2 = tk_to_idx_2.get(tk)
                 r2 = int(ranks_2[idx2]) if idx2 is not None else 999
             else:
                 r2 = 999
-
             if has_both:
-                w_rank = r0 * 0.5 + r1 * 0.3 + r2 * 0.2
+                wr_legacy = r0 * 0.5 + r1 * 0.3 + r2 * 0.2
             elif has_t1:
-                w_rank = r0 * 0.6 + r1 * 0.4
+                wr_legacy = r0 * 0.6 + r1 * 0.4
             else:
-                w_rank = float(r0)
+                wr_legacy = float(r0)
 
-            # Store in flat array
+            all_ws.append((j, col, tk, ws, wr_legacy))
+
+        # score 기반 wr: ws 내림차순 → rank 1,2,3...
+        if use_score_wr and all_ws:
+            sorted_by_ws = sorted(all_ws, key=lambda x: -x[3])
+            score_rank_map = {}
+            for rank_i, (j, col, tk, ws, _) in enumerate(sorted_by_ws):
+                score_rank_map[(j, col, tk)] = rank_i + 1
+        else:
+            score_rank_map = None
+
+        # 2nd pass: wrank_arr + candidates 생성
+        candidates_raw = []
+        for j, col, tk, ws, wr_legacy in all_ws:
+            w_rank = score_rank_map[(j, col, tk)] if score_rank_map else wr_legacy
             wrank_arr[col] = w_rank
 
             # Check if verified
@@ -340,26 +362,6 @@ class TurboSimulator:
             in_t2 = tk in top_t2
             if not in_t2:
                 continue
-
-            # Verified: compute score_100
-            s0 = float(scores_0[j])
-            if has_t1:
-                idx1 = tk_to_idx_1.get(tk)
-                s1 = float(scores_1[idx1]) if idx1 is not None else 0.0
-            else:
-                s1 = 0.0
-            if has_t2:
-                idx2 = tk_to_idx_2.get(tk)
-                s2 = float(scores_2[idx2]) if idx2 is not None else 0.0
-            else:
-                s2 = 0.0
-
-            if has_both:
-                ws = s0 * 0.5 + s1 * 0.3 + s2 * 0.2
-            elif has_t1:
-                ws = s0 * 0.6 + s1 * 0.4
-            else:
-                ws = s0
 
             sc_100 = (ws + 0.7) / 2.4 * 100.0
             if sc_100 < 0.0:
@@ -445,9 +447,10 @@ class TurboSimulator:
 
     def _ensure_cache(self, v_w, q_w, g_w, m_w, g_rev, top_n=20, mom_type='6m',
                       g_sub1='rev_z', g_sub2='oca_z',
-                      g_sub3=None, g_w1=None, g_w2=None, g_w3=None):
+                      g_sub3=None, g_w1=None, g_w2=None, g_w3=None,
+                      use_score_wr=False):
         """Build optimized cache — V+Q+G 부분합 재사용, G 서브팩터 2/3팩터 선택 가능."""
-        key = (v_w, q_w, g_w, m_w, g_rev, top_n, mom_type, g_sub1, g_sub2, g_sub3, g_w1, g_w2, g_w3)
+        key = (v_w, q_w, g_w, m_w, g_rev, top_n, mom_type, g_sub1, g_sub2, g_sub3, g_w1, g_w2, g_w3, use_score_wr)
         if self._cached_key == key:
             return
         self._cached_key = key
@@ -489,7 +492,7 @@ class TurboSimulator:
             rw1 = reweighted[i - 1]
             rw2 = reweighted[i - 2]
             if rw0 is not None:
-                flat[i] = self._build_day_pipeline(rw0, rw1, rw2, top_n, n_cols)
+                flat[i] = self._build_day_pipeline(rw0, rw1, rw2, top_n, n_cols, use_score_wr)
 
         self._cached_flat = flat
 
@@ -497,13 +500,14 @@ class TurboSimulator:
                  entry_param, exit_param, max_slots, top_n=20, stop_loss=-0.10,
                  corr_threshold=None, trailing_stop=None, mom_type='6m',
                  take_profit=None, g_sub1='rev_z', g_sub2='oca_z',
-                 g_sub3=None, g_w1=None, g_w2=None, g_w3=None):
+                 g_sub3=None, g_w1=None, g_w2=None, g_w3=None,
+                 use_score_wr=False):
         """Run simulation. Builds cache if needed, then runs hot loop.
         2팩터: g_sub1/g_sub2 + g_rev (sub1 비율)
         3팩터: g_sub1/g_sub2/g_sub3 + g_w1/g_w2/g_w3 (각 비율, 합=1.0)
         """
         self._ensure_cache(v_w, q_w, g_w, m_w, g_rev, top_n, mom_type, g_sub1, g_sub2,
-                          g_sub3, g_w1, g_w2, g_w3)
+                          g_sub3, g_w1, g_w2, g_w3, use_score_wr)
         return _run_inner(
             self._cached_flat, self._price_arr, self._bench_arr,
             self._has_bench, self._date_row_indices, len(self.dates),
@@ -518,7 +522,8 @@ class TurboSimulator:
                    g_sub1_d='rev_z', g_sub2_d='oca_z',
                    g_sub1_o='rev_z', g_sub2_o='oca_z',
                    g_sub3_d=None, g_w1_d=None, g_w2_d=None, g_w3_d=None,
-                   g_sub3_o=None, g_w1_o=None, g_w2_o=None, g_w3_o=None):
+                   g_sub3_o=None, g_w1_o=None, g_w2_o=None, g_w3_o=None,
+                   use_score_wr=False):
         """국면전환 시뮬레이션 — 전환 시 포트폴리오 완전 청산 후 새 전략 재진입.
 
         Args:
@@ -531,12 +536,12 @@ class TurboSimulator:
         # 방어/공격 캐시 각각 빌드
         self._ensure_cache(dp['v'], dp['q'], dp['g'], dp['m'],
                           dp['g_rev'], 20, dp.get('mom', '6m'), g_sub1_d, g_sub2_d,
-                          g_sub3_d, g_w1_d, g_w2_d, g_w3_d)
+                          g_sub3_d, g_w1_d, g_w2_d, g_w3_d, use_score_wr)
         defense_flat = list(self._cached_flat)
 
         self._ensure_cache(op['v'], op['q'], op['g'], op['m'],
                           op['g_rev'], 20, op.get('mom', '6m'), g_sub1_o, g_sub2_o,
-                          g_sub3_o, g_w1_o, g_w2_o, g_w3_o)
+                          g_sub3_o, g_w1_o, g_w2_o, g_w3_o, use_score_wr)
         offense_flat = list(self._cached_flat)
 
         return _run_regime_inner(

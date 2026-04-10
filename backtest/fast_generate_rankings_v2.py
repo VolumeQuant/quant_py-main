@@ -90,36 +90,40 @@ def check_data_mismatch(dart_df, fn_df):
 
 
 def merge_fs_supplement(primary_df, secondary_df):
-    """primary에 없는 계정을 secondary에서 보충"""
-    primary_keys = set()
-    for _, row in primary_df.iterrows():
-        primary_keys.add((row['기준일'], row['공시구분'], row['계정']))
+    """primary에 없는 계정을 secondary에서 보충 — 벡터화 버전"""
+    # primary 키셋 (벡터화)
+    pk = primary_df[['기준일', '공시구분', '계정']].apply(tuple, axis=1)
+    primary_keys = set(pk)
+
+    # rcept_dt 맵 (벡터화)
     rcept_map = {}
     if 'rcept_dt' in primary_df.columns:
-        for _, row in primary_df.iterrows():
-            key = (row['기준일'], row['공시구분'])
-            if key not in rcept_map and pd.notna(row.get('rcept_dt')):
-                rcept_map[key] = row['rcept_dt']
-    supplement_rows = []
-    for _, row in secondary_df.iterrows():
-        full_key = (row['기준일'], row['공시구분'], row['계정'])
-        if full_key not in primary_keys and pd.notna(row['값']):
-            period_key = (row['기준일'], row['공시구분'])
-            new_row = {
-                '계정': row['계정'], '기준일': row['기준일'], '값': row['값'],
-                '종목코드': row.get('종목코드', primary_df.iloc[0].get('종목코드', '')),
-                '공시구분': row['공시구분'],
-            }
-            if 'rcept_dt' in primary_df.columns:
-                rcept = rcept_map.get(period_key)
-                if rcept is None and 'rcept_dt' in secondary_df.columns:
-                    rcept = row.get('rcept_dt')
-                new_row['rcept_dt'] = rcept
-            supplement_rows.append(new_row)
-    if supplement_rows:
-        merged = pd.concat([primary_df, pd.DataFrame(supplement_rows)], ignore_index=True)
-        return merged, len(supplement_rows)
-    return primary_df, 0
+        mask = primary_df['rcept_dt'].notna()
+        rdf = primary_df.loc[mask, ['기준일', '공시구분', 'rcept_dt']].drop_duplicates(subset=['기준일', '공시구분'], keep='first')
+        for _, row in rdf.iterrows():
+            rcept_map[(row['기준일'], row['공시구분'])] = row['rcept_dt']
+
+    # secondary에서 보충 대상 필터 (벡터화)
+    sk = secondary_df[['기준일', '공시구분', '계정']].apply(tuple, axis=1)
+    mask = ~sk.isin(primary_keys) & secondary_df['값'].notna()
+    sup = secondary_df.loc[mask].copy()
+
+    if sup.empty:
+        return primary_df, 0
+
+    default_ticker = primary_df.iloc[0].get('종목코드', '') if not primary_df.empty else ''
+    if '종목코드' not in sup.columns:
+        sup['종목코드'] = default_ticker
+
+    if 'rcept_dt' in primary_df.columns:
+        sup['rcept_dt'] = sup.apply(
+            lambda r: rcept_map.get((r['기준일'], r['공시구분']),
+                                    r.get('rcept_dt') if 'rcept_dt' in secondary_df.columns else None),
+            axis=1)
+
+    cols = [c for c in ['계정', '기준일', '값', '종목코드', '공시구분', 'rcept_dt'] if c in sup.columns]
+    merged = pd.concat([primary_df, sup[cols]], ignore_index=True)
+    return merged, len(sup)
 
 
 # ============================================================================
@@ -622,11 +626,22 @@ def ttm_lookup_to_dataframe(ttm_for_date, universe_tickers):
 # 2. 일괄 로드 + 인덱싱
 # ============================================================================
 
-def preload_all_data(start_str, end_str, trading_dates=None, use_rev_accel=False, use_gross_profit=False):
-    """모든 데이터 1회 로드 — v2: 모든 parquet를 메모리에"""
-    print('=== 데이터 프리로드 (v2) ===')
+def preload_all_data(start_str, end_str, trading_dates=None, use_rev_accel=False, use_gross_profit=False,
+                     production_mode=False):
+    """모든 데이터 1회 로드 — v2: 모든 parquet를 메모리에
+    production_mode=True: 최근 30일 MC/Fund만 로드 + 유니버스 FS만 로드 (4분→40초)
+    """
+    print(f'=== 데이터 프리로드 (v2{" — 프로덕션 경량" if production_mode else ""}) ===')
     t0 = time.time()
     data = {}
+
+    # 프로덕션 모드: MC 최근 30일만 로드 → 거래대금+시총 필터 → 유니버스 결정
+    prod_universe = None
+    mc_recent = None
+    if production_mode:
+        mc_files = sorted(CACHE_DIR.glob('market_cap_ALL_*.parquet'))
+        mc_files = [f for f in mc_files if f.stem.split('_')[-1] <= end_str]
+        mc_recent = mc_files[-30:] if len(mc_files) > 30 else mc_files
 
     # 1. OHLCV — _full 파일 우선 (전종목 3,237+)
     ohlcv_files = sorted(CACHE_DIR.glob('all_ohlcv_*.parquet'))
@@ -639,22 +654,55 @@ def preload_all_data(start_str, end_str, trading_dates=None, use_rev_accel=False
     data['ohlcv'] = pd.read_parquet(ohlcv_file).replace(0, np.nan)
     print(f'    {data["ohlcv"].shape[0]}거래일 × {data["ohlcv"].shape[1]}종목 (0→NaN 변환 완료)')
 
-    # 2. Market cap — 전부 메모리에 (핵심: per-day read 제거)
+    # 2. Market cap — 프로덕션: 최근 30일만 / 백테스트: 전부
     print('  Market cap 일괄 로드 중...')
     t_mc = time.time()
     data['market_cap'] = {}
-    mc_files = sorted(CACHE_DIR.glob('market_cap_ALL_*.parquet'))
-    for f in mc_files:
-        d = f.stem.split('_')[-1]
-        if d <= end_str:
+    if production_mode and mc_recent:
+        for f in mc_recent:
+            d = f.stem.split('_')[-1]
             data['market_cap'][d] = pd.read_parquet(f)
+    else:
+        mc_files = sorted(CACHE_DIR.glob('market_cap_ALL_*.parquet'))
+        for f in mc_files:
+            d = f.stem.split('_')[-1]
+            if d <= end_str:
+                data['market_cap'][d] = pd.read_parquet(f)
     print(f'    {len(data["market_cap"])}일 로드 ({time.time()-t_mc:.1f}초)')
 
-    # 3. Fundamentals (pykrx PER/PBR)
+    # 프로덕션 모드: MC+거래대금으로 유니버스 결정 (FS 로딩 전)
+    if production_mode and data['market_cap']:
+        t_univ = time.time()
+        avg_vol = precompute_avg_volume(data['market_cap'])
+        latest_mc_date = sorted(data['market_cap'].keys())[-1]
+        latest_mc = data['market_cap'][latest_mc_date]
+        latest_vol_date = sorted(avg_vol.keys())[-1] if avg_vol else None
+        latest_vol = avg_vol.get(latest_vol_date, pd.Series(dtype=float))
+        # 시총 1000억+ 종목 (여유분 800억으로 확장)
+        mcap_pass = set(latest_mc[latest_mc['시가총액'] >= 8e10].index) if '시가총액' in latest_mc.columns else set(latest_mc.index)
+        # 거래대금 필터 (억 단위): 대형(1조+) 50억, 중소형 15억 (여유분)
+        vol_pass = set()
+        for tk in mcap_pass:
+            mcap_val = latest_mc.loc[tk, '시가총액'] if tk in latest_mc.index else 0
+            vol_val = latest_vol.get(tk, 0) if isinstance(latest_vol, pd.Series) else 0
+            is_large = mcap_val >= 1e12
+            if is_large and vol_val >= 40:
+                vol_pass.add(tk)
+            elif not is_large and vol_val >= 15:
+                vol_pass.add(tk)
+        # 우선주 제거 (끝자리 != 0)
+        prod_universe = {tk for tk in vol_pass if tk[-1] == '0'}
+        print(f'  프로덕션 유니버스: {len(prod_universe)}종목 (시총+거래대금+보통주, {time.time()-t_univ:.1f}초)')
+
+    # 3. Fundamentals (pykrx PER/PBR) — 프로덕션: 최근 30일만
     print('  Fundamentals 일괄 로드 중...')
     t_fn = time.time()
     data['fundamentals_pykrx'] = {}
-    for f in sorted(CACHE_DIR.glob('fundamental_batch_ALL_*.parquet')):
+    fund_files = sorted(CACHE_DIR.glob('fundamental_batch_ALL_*.parquet'))
+    if production_mode:
+        fund_files = [f for f in fund_files if f.stem.split('_')[-1] <= end_str]
+        fund_files = fund_files[-30:] if len(fund_files) > 30 else fund_files
+    for f in fund_files:
         d = f.stem.split('_')[-1]
         if d <= end_str:
             data['fundamentals_pykrx'][d] = pd.read_parquet(f)
@@ -677,6 +725,8 @@ def preload_all_data(start_str, end_str, trading_dates=None, use_rev_accel=False
     dart_map = {}
     for f in CACHE_DIR.glob('fs_dart_*.parquet'):
         ticker = f.stem.replace('fs_dart_', '')
+        if prod_universe is not None and ticker not in prod_universe:
+            continue
         try:
             df = pd.read_parquet(f)
             if not df.empty:
@@ -687,6 +737,8 @@ def preload_all_data(start_str, end_str, trading_dates=None, use_rev_accel=False
     fn_map = {}
     for f in CACHE_DIR.glob('fs_fnguide_*.parquet'):
         ticker = f.stem.replace('fs_fnguide_', '')
+        if prod_universe is not None and ticker not in prod_universe:
+            continue
         try:
             df = pd.read_parquet(f)
             if not df.empty:
@@ -1645,10 +1697,12 @@ def main():
         return
 
     # 프리로드 (거래일 목록 전달 → growth 사전계산)
+    prod_mode = os.environ.get('PRODUCTION_MODE', '0') == '1'
     preload_start = (pd.Timestamp(todo[0]) - pd.Timedelta(days=70)).strftime('%Y%m%d')
     preloaded = preload_all_data(preload_start, end_str, trading_dates=todo,
                                  use_rev_accel=use_rev_accel,
-                                 use_gross_profit=use_gross_profit)
+                                 use_gross_profit=use_gross_profit,
+                                 production_mode=prod_mode)
     preloaded['no_ma120'] = no_ma120
     preloaded['strict_filter'] = use_strict_filter
     preloaded['min_mcap'] = min_mcap
