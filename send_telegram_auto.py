@@ -1002,11 +1002,11 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         score_100 = 100 - (_wr_val - _wr_min) / _wr_range * 50  # 1위=100, 마지막=50
         score_disp = f'{score_100:.1f}'
 
-        # 매도 검토선 (국면별 exit_rank)
+        # 자동매도선 (국면별 exit_rank)
         _cur_exit = rp_current.get('EXIT_RANK', EXIT_RANK) if rp_current else EXIT_RANK
         w_rank = s.get('weighted_rank', 999)
         if not exit_line_shown and w_rank > _cur_exit:
-            lines.append('── 매도 검토선 ──')
+            lines.append('── 매도 기준선 ──')
             exit_line_shown = True
 
         if status == '✅':
