@@ -397,10 +397,20 @@ def get_korea_now():
 
 
 def get_recent_trading_dates(n=3):
-    """최근 N개 거래일 찾기 — 캐시 우선, KRX API 폴백"""
+    """최근 N개 거래일 찾기 — ranking 파일 우선 (postprocessing과 동일 기준)"""
     today = get_korea_now()
     today_str = today.strftime('%Y%m%d')
-    # 1차: market_cap 캐시 파일에서 거래일 목록 구축 (당일 제외 — 전일 기준)
+    # 1차: ranking 파일 기준 (postprocessing과 동일 날짜 사용 보장)
+    state_dir = Path(__file__).parent / 'state'
+    rk_dates = set()
+    for f in state_dir.glob('ranking_*.json'):
+        d = f.stem.replace('ranking_', '')
+        if len(d) == 8 and d.isdigit() and d <= today_str:
+            rk_dates.add(d)
+    if len(rk_dates) >= n:
+        sorted_dates = sorted(rk_dates, reverse=True)[:n]
+        return sorted_dates
+    # 2차: market_cap 캐시 폴백
     cache_dir = Path(__file__).parent / 'data_cache'
     mc_dates = set()
     for f in cache_dir.glob('market_cap_ALL_*.parquet'):
