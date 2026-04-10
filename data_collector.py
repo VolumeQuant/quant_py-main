@@ -97,13 +97,17 @@ class DataCollector:
         except Exception as e:
             print(f"  벌크 API 실패: {e}")
 
-        # 폴백: 직전 캐시 파일 사용
+        # 폴백: 직전 캐시 파일 사용 + 해당 날짜로 복사 저장
         fallback_files = sorted(DATA_DIR.glob(f'market_cap_{market}_*.parquet'))
         valid = [f for f in fallback_files if f.stem.split('_')[-1] <= date]
         if valid:
             latest = valid[-1]
             print(f"  폴백: 직전 캐시 사용 ({latest.name})")
-            return pd.read_parquet(latest)
+            df_fb = pd.read_parquet(latest)
+            if latest.name != cache_file.name:
+                df_fb.to_parquet(cache_file)
+                print(f"  폴백 캐시 저장: {cache_file.name}")
+            return df_fb
 
         return pd.DataFrame()
 
