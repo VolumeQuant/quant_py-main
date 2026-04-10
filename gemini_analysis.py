@@ -314,8 +314,24 @@ def run_ai_analysis(portfolio_message, stock_list, base_date=None, market_contex
                 else:
                     raise  # 503/429 외 에러는 즉시 전파
 
+        # 3회 실패 시 lite 모델로 최종 시도
         if not analysis_text:
-            print("[Gemini] 3회 재시도 실패")
+            try:
+                print("[Gemini] 2.5-flash 3회 실패 → 2.5-flash-lite로 fallback")
+                response = client.models.generate_content(
+                    model='gemini-2.5-flash-lite',
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        tools=[grounding_tool],
+                        temperature=0.2,
+                    ),
+                )
+                analysis_text = extract_text(response)
+            except Exception as lite_err:
+                print(f"[Gemini] lite fallback도 실패: {str(lite_err)[:80]}")
+
+        if not analysis_text:
+            print("[Gemini] 전체 실패 (2.5-flash 3회 + lite 1회)")
             return None
 
         print(f"[Gemini] 응답 수신: {len(analysis_text)}자")
@@ -536,8 +552,24 @@ def run_final_picks_analysis(stock_list, weight_per_stock=20, base_date=None, ma
                 else:
                     raise
 
+        # 3회 실패 시 lite 모델로 최종 시도
         if not text:
-            print("[Gemini] 최종 추천 설명 3회 실패")
+            try:
+                print("[Gemini] 최종 추천 2.5-flash 3회 실패 → 2.5-flash-lite로 fallback")
+                response = client.models.generate_content(
+                    model='gemini-2.5-flash-lite',
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        tools=[grounding_tool],
+                        temperature=0.3,
+                    ),
+                )
+                text = extract_text(response)
+            except Exception as lite_err:
+                print(f"[Gemini] lite fallback도 실패: {str(lite_err)[:80]}")
+
+        if not text:
+            print("[Gemini] 최종 추천 전체 실패 (2.5-flash 3회 + lite 1회)")
             return None
 
         html = _convert_picks_markdown(text)
