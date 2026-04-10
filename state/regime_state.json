@@ -1,8 +1,8 @@
 {
   "mode": "boost",
-  "streak": 2,
-  "streak_mode": "boost",
-  "last_date": "20260409",
+  "streak": 1,
+  "streak_mode": "defense",
+  "last_date": "20260410",
   "version": "v77_final",
   "rule": "KP_MA200_5d",
   "history": [
@@ -33,6 +33,12 @@
     {
       "date": "20260409",
       "signal": "boost",
+      "mode": "boost",
+      "switched": false
+    },
+    {
+      "date": "20260410",
+      "signal": "defense",
       "mode": "boost",
       "switched": false
     }
