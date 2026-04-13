@@ -536,7 +536,8 @@ class TurboSimulator:
                    g_sub3_d=None, g_w1_d=None, g_w2_d=None, g_w3_d=None,
                    g_sub3_o=None, g_w1_o=None, g_w2_o=None, g_w3_o=None,
                    use_score_wr=False, quality_gate_d=0.0, quality_gate_o=0.0,
-                   g_sub4_d=None, g_w4_d=None, g_sub4_o=None, g_w4_o=None):
+                   g_sub4_d=None, g_w4_d=None, g_sub4_o=None, g_w4_o=None,
+                   breakout_hold=None):
         """국면전환 시뮬레이션 — 전환 시 포트폴리오 완전 청산 후 새 전략 재진입.
 
         Args:
@@ -568,7 +569,8 @@ class TurboSimulator:
             self._date_row_indices, len(self.dates),
             stop_loss,
             self._corr_all if corr_threshold is not None else None,
-            corr_threshold, trailing_stop)
+            corr_threshold, trailing_stop,
+            breakout_hold)
 
 
 def _run_regime_inner(defense_flat, offense_flat,
@@ -578,16 +580,24 @@ def _run_regime_inner(defense_flat, offense_flat,
                       price_arr, bench_arr, has_bench,
                       date_rows, n_dates,
                       stop_loss=-0.10, corr_maps=None,
-                      corr_threshold=None, trailing_stop=None):
+                      corr_threshold=None, trailing_stop=None,
+                      breakout_hold=None):
     """국면전환 시뮬레이션 핫루프 — 전환 시 포트폴리오 청산."""
     portfolio = {}
     peak_prices = {}
+    grace_days = {}  # breakout hold 유예 일수
     daily_rets = [0.0] * n_dates
     bench_rets = [0.0] * n_dates
     holdings_count = [0] * n_dates
 
     use_stop_loss = stop_loss is not None
     use_trailing = trailing_stop is not None
+    use_hold = breakout_hold is not None
+    if use_hold:
+        hold_lookback = breakout_hold.get('lookback', 20)
+        hold_price_chg = breakout_hold.get('price_chg_min', 0.25)
+        hold_ma_period = breakout_hold.get('ma_period', 60)
+        hold_max_grace = breakout_hold.get('max_grace', 2)
     prev_regime = None
 
     for i in range(2, n_dates):
@@ -651,8 +661,28 @@ def _run_regime_inner(defense_flat, offense_flat,
                 if not should_exit:
                     if wrank_arr[col] > exit_param:
                         should_exit = True
+                        # Breakout Hold: rank exit만 유예 (손절/트레일링은 유예 안 함)
+                        if use_hold and should_exit and cur_row >= hold_lookback:
+                            cur_p = price_arr[cur_row, col]
+                            past_p = price_arr[cur_row - hold_lookback, col]
+                            if (past_p > 0 and cur_p > 0 and
+                                (cur_p / past_p - 1.0) >= hold_price_chg):
+                                # MA 체크
+                                ma_start = max(0, cur_row - hold_ma_period)
+                                ma_slice = price_arr[ma_start:cur_row, col]
+                                ma_val = np.nanmean(ma_slice) if len(ma_slice) > 0 else 0
+                                if ma_val > 0 and cur_p > ma_val:
+                                    grace = grace_days.get(col, 0)
+                                    if grace < hold_max_grace:
+                                        grace_days[col] = grace + 1
+                                        should_exit = False
                 if should_exit:
                     to_remove.append(col)
+                    grace_days.pop(col, None)
+                else:
+                    # 유예 아닌데 rank 통과했으면 grace 초기화
+                    if col in grace_days and wrank_arr[col] <= exit_param:
+                        del grace_days[col]
             for col in to_remove:
                 del portfolio[col]
                 if col in peak_prices:
