@@ -1,8 +1,8 @@
 """국면 판단 모듈 — KP_MA200_5d (KOSPI > 200일선, 5일 확인)
 
-v77 확정:
-  공격: V5Q0G65M30, 3f rev+oca+gp(0.5/0.3/0.2), 12m-1m, E7X8S3, sl-10%, tr-15%
-  방어: V30Q5G10M55, 2f raccel+opm(0.5), 6m-1m, E3X6S7, sl-10%, tr-15%
+v78 확정 (2026-04-13, 7.8년 BT 기반):
+  공격: V20Q0G45M35, 3f rev+oca+opm(0.5/0.3/0.2), 12m, E10X11S5, sl-10%, tr-15%
+  방어: V30Q15G25M30, 2f rev+oca(0.7), 6m, E3X4S5, sl-10%, tr-15%
   국면: KOSPI > MA200 5일 확인 → 공격, 미만 → 방어
 
 사용:
@@ -117,36 +117,36 @@ def get_regime_params(mode):
     """
     if mode == 'boost':
         return {
-            'V_W': 0.05, 'Q_W': 0.00, 'G_W': 0.65, 'M_W': 0.30,
+            'V_W': 0.20, 'Q_W': 0.00, 'G_W': 0.45, 'M_W': 0.35,
             'G_REV': 0.0,  # 3팩터 사용 시 무시됨
             'G_SUB1': 'rev_z',
             'G_SUB2': 'oca_z',
-            'G_SUB3': 'gp_growth_z',       # 3팩터: 매출성장+영업이익변화+매출총이익성장
+            'G_SUB3': 'op_margin_z',       # 3팩터: 매출성장+영업이익변화+이익률변화
             'G_W1': 0.5, 'G_W2': 0.3, 'G_W3': 0.2,
-            'MOM_PERIOD': '12m-1m',
-            'ENTRY_RANK': 7, 'EXIT_RANK': 8, 'MAX_SLOTS': 3,
+            'MOM_PERIOD': '12m',
+            'ENTRY_RANK': 10, 'EXIT_RANK': 11, 'MAX_SLOTS': 5,
             'STOP_LOSS': -0.10,
             'TRAILING_STOP': -0.15,
             'CORR_THRESHOLD': None,
             'USE_REV_ACCEL': False,
-            'label': '공격 모드 (Growth 65%)',
+            'label': '공격 모드 (Growth 45%)',
             'icon': '📈',
         }
-    else:  # v77 방어 (defense)
+    else:  # v78 방어 (defense)
         return {
-            'V_W': 0.30, 'Q_W': 0.05, 'G_W': 0.10, 'M_W': 0.55,
-            'G_REV': 0.5,
-            'G_SUB1': 'rev_accel_z',       # 매출가속도 50%
-            'G_SUB2': 'op_margin_z',       # 이익률변화 50%
+            'V_W': 0.30, 'Q_W': 0.15, 'G_W': 0.25, 'M_W': 0.30,
+            'G_REV': 0.7,
+            'G_SUB1': 'rev_z',             # 매출성장 70%
+            'G_SUB2': 'oca_z',             # 영업이익변화 30%
             'G_SUB3': None,                # 2팩터
             'G_W1': None, 'G_W2': None, 'G_W3': None,
-            'MOM_PERIOD': '6m-1m',
-            'ENTRY_RANK': 3, 'EXIT_RANK': 6, 'MAX_SLOTS': 7,
+            'MOM_PERIOD': '6m',
+            'ENTRY_RANK': 3, 'EXIT_RANK': 4, 'MAX_SLOTS': 5,
             'STOP_LOSS': -0.10,
             'TRAILING_STOP': -0.15,
             'CORR_THRESHOLD': None,
             'USE_REV_ACCEL': False,
-            'label': '방어 모드 (Momentum 55%)',
+            'label': '방어 모드 (Balanced)',
             'icon': '📉',
         }
 
