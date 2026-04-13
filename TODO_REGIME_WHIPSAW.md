@@ -86,15 +86,32 @@ MA200 5일 + 추가 지표도 동일 방향이어야 전환
 
 ---
 
+## DART 데이터 범위 (2026-04-14 확인)
+
+DART OpenAPI에 **2012년부터 분기보고서가 전부 존재**함을 직접 확인:
+- 2012: 분기/반기 3건 + 사업보고서 1건
+- 2013: 분기/반기 3건 + 사업보고서 1건
+- 2014: 분기/반기 3건 + 사업보고서 1건
+- 2015: 분기/반기 3건 + 사업보고서 1건
+
+회사 PC에 "2015년 연간보고서만 있다"는 것은 **수집을 안 했을 뿐**, DART에 없는 게 아님.
+
+BT 가능 범위 (DART 분기보고서 수집 시):
+- 2014년부터 수집 → TTM YoY 가능 → **BT 2016년 시작 (약 10년)**
+- 2012년부터 수집 → **BT 2014년 시작 (약 12년)**
+
+10~12년 BT면 whipsaw 보완 테스트의 통계적 신뢰도가 훨씬 높아짐.
+
 ## 회사 PC에서 할 일
 
-### Step 0: 2018~2019 BT 데이터 생성
-1. DART 2016-2017 데이터 확인 (이미 수집됨)
-2. pykrx OHLCV/MC/Fund 2018-2019 보강 (이미 수집됨)
-3. `fast_generate_rankings_v2.py`로 2018~2019 ranking 생성
+### Step 0: DART 2012~2017 분기보고서 수집 + BT 데이터 생성
+1. `dart_collector.py` 또는 `refresh_dart_cache.py`로 2012~2017 분기보고서 수집
+   - pykrx 1초 sleep 준수, 순차 실행
+2. pykrx OHLCV/MC/Fund 2014~2017 보강
+3. `fast_generate_rankings_v2.py`로 2014~2019 (또는 가능한 범위) ranking 생성
    - v77 파라미터(V5Q0G65M30, 12m-1m)로 boost + defense 양쪽
-   - `state/bt_2018/`, `state/bt_2019/` 에 저장
-4. 검증: 2018년 ranking 파일에 개별 z-score(rev_z, oca_z, gp_growth_z, mom_12m1m_s 등) 포함 확인
+   - `state/bt_2014/` ~ `state/bt_2019/` 에 저장
+4. 검증: ranking 파일에 개별 z-score(rev_z, oca_z, gp_growth_z, mom_12m1m_s 등) 포함 확인
 
 ### Step 1: v77 Baseline (7.8년)
 1. `TurboSimulator`로 v77 원본 7.8년(2018~2026) BT
