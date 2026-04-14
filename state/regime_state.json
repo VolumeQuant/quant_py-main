@@ -1,8 +1,8 @@
 {
   "mode": "boost",
-  "streak": 2,
+  "streak": 3,
   "streak_mode": "defense",
-  "last_date": "20260413",
+  "last_date": "20260414",
   "version": "v77_final",
   "rule": "KP_MA200_5d",
   "history": [
@@ -47,6 +47,16 @@
       "signal": "defense",
       "mode": "boost",
       "switched": false
+    },
+    {
+      "date": "20260414",
+      "signal": "defense",
+      "mode": "boost",
+      "final_mode": "boost",
+      "switched": false,
+      "crash_active": false,
+      "kospi_ret20": null
     }
-  ]
+  ],
+  "crash_active": false
 }
