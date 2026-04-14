@@ -1,13 +1,18 @@
-"""국면 판단 모듈 — KP_MA200_5d (KOSPI > 200일선, 5일 확인)
+"""국면 판단 모듈 — KP_MA200_5d + Crash Cash (v77.1, 2026-04-14)
 
-v77 확정:
+v77 기본 전략:
   공격: V5Q0G65M30, 3f rev+oca+gp(0.5/0.3/0.2), 12m-1m, E7X8S3, sl-10%, tr-15%
   방어: V30Q5G10M55, 2f raccel+opm(0.5), 6m-1m, E3X6S7, sl-10%, tr-15%
   국면: KOSPI > MA200 5일 확인 → 공격, 미만 → 방어
 
+v77.1 Crash Cash (2026-04-14 추가):
+  방어 모드 중 KOSPI 20일 수익률 < -20% 발동 시 → 전량 청산(현금)
+  조건 해제 시 방어 모드 자동 재진입
+  배경: COVID 급락 구간 방어로도 손실 큼 → BT 7.8년 Cal 1.35→1.50 개선
+
 사용:
     from regime_indicator import get_current_regime
-    regime = get_current_regime(kospi_close=5377, kospi_ma200=5200)
+    regime = get_current_regime(kospi_close=5377, kospi_ma200=5200, kospi_ret20=-0.05)
 """
 import json
 import sys
@@ -34,6 +39,7 @@ def _load_state():
         'streak_mode': 'defense',
         'last_date': None,
         'history': [],
+        'crash_active': False,  # v77.1: 현재 크래시 현금 상태인지
     }
 
 
@@ -54,21 +60,47 @@ def check_regime_signal(kospi_close=None, kospi_ma200=None, **kwargs):
     return 'defense'
 
 
-def get_current_regime(kospi_close=None, kospi_ma200=None, date_str=None, **kwargs):
-    """현재 국면 판단 (KP_MA200_5d: KOSPI > MA200, 5일 확인).
+# v77.1 Crash Cash 파라미터
+CRASH_RET20_THRESHOLD = -0.20  # KOSPI 20일 수익률 < -20% → 현금 전환
+CONFIRM_DAYS = 5                # KP_MA200_5d
+
+
+def check_crash_cash(kospi_ret20):
+    """v77.1: KOSPI 20일 수익률 급락 체크
+
+    Args:
+        kospi_ret20: KOSPI 20일 수익률 (예: -0.25 = -25%)
+
+    Returns:
+        bool: True이면 크래시 현금 전환 신호
+    """
+    if kospi_ret20 is None:
+        return False
+    try:
+        return float(kospi_ret20) < CRASH_RET20_THRESHOLD
+    except (TypeError, ValueError):
+        return False
+
+
+def get_current_regime(kospi_close=None, kospi_ma200=None, date_str=None,
+                       kospi_ret20=None, **kwargs):
+    """현재 국면 판단 (KP_MA200_5d + Crash Cash).
 
     Args:
         kospi_close: KOSPI 종가
         kospi_ma200: KOSPI 200일 이동평균
         date_str: 날짜 (YYYYMMDD)
+        kospi_ret20: KOSPI 20일 수익률 (v77.1 크래시 체크용, None이면 체크 스킵)
 
     Returns:
-        dict: mode, signal, streak, switched, prev_mode
+        dict: mode, signal, streak, switched, prev_mode, crash_active
+        mode는 'boost'/'defense'/'cash' 중 하나.
+        'cash'는 defense 상태 + 크래시 조건 발동 시에만 반환 (state['mode']는 defense로 유지).
     """
     state = _load_state()
-    prev_mode = state['mode']
+    prev_mode_full = 'cash' if state.get('crash_active') else state['mode']
 
-    # 당일 신호
+    # 당일 신호 (boost/defense)
     signal = check_regime_signal(kospi_close=kospi_close, kospi_ma200=kospi_ma200)
 
     # 연속 카운트
@@ -78,13 +110,28 @@ def get_current_regime(kospi_close=None, kospi_ma200=None, date_str=None, **kwar
         state['streak'] = 1
         state['streak_mode'] = signal
 
-    # 확인일수만으로 whipsaw 방지 (cooldown 삭제)
-    CONFIRM_DAYS = 5  # v76: KP_MA200_5d
     switched = False
-
     if state['streak'] >= CONFIRM_DAYS and state['mode'] != signal:
         state['mode'] = signal
         switched = True
+
+    # v77.1 크래시 현금 체크: defense 모드에서만 적용
+    crash_signal = check_crash_cash(kospi_ret20)
+    prev_crash = state.get('crash_active', False)
+    # 공격(boost) 모드에서는 crash_active 자동 해제
+    if state['mode'] == 'boost':
+        state['crash_active'] = False
+    else:  # defense
+        state['crash_active'] = crash_signal
+
+    crash_entered = (not prev_crash) and state['crash_active']
+    crash_exited = prev_crash and (not state['crash_active'])
+
+    # 최종 반환 mode
+    if state['mode'] == 'defense' and state['crash_active']:
+        final_mode = 'cash'
+    else:
+        final_mode = state['mode']
 
     # 히스토리 추가
     if date_str:
@@ -93,7 +140,10 @@ def get_current_regime(kospi_close=None, kospi_ma200=None, date_str=None, **kwar
             'date': date_str,
             'signal': signal,
             'mode': state['mode'],
+            'final_mode': final_mode,
             'switched': switched,
+            'crash_active': state['crash_active'],
+            'kospi_ret20': round(float(kospi_ret20), 4) if kospi_ret20 is not None else None,
         })
         # 최근 30일만 보관
         state['history'] = state['history'][-30:]
@@ -101,20 +151,42 @@ def get_current_regime(kospi_close=None, kospi_ma200=None, date_str=None, **kwar
     _save_state(state)
 
     return {
-        'mode': state['mode'],
+        'mode': final_mode,  # 'boost' / 'defense' / 'cash'
+        'underlying_mode': state['mode'],  # 'boost' / 'defense'
         'signal': signal,
         'streak': state['streak'],
-        'switched': switched,
-        'prev_mode': prev_mode,
+        'switched': switched,  # boost↔defense 전환
+        'crash_active': state['crash_active'],
+        'crash_entered': crash_entered,
+        'crash_exited': crash_exited,
+        'prev_mode': prev_mode_full,
     }
 
 
 def get_regime_params(mode):
     """국면에 따른 전략 파라미터 반환.
 
+    mode: 'boost' / 'defense' / 'cash'
+
     Returns:
         dict: V_W, Q_W, G_W, M_W, G_REV, ENTRY_RANK, EXIT_RANK, MAX_SLOTS, USE_REV_ACCEL
+        cash 모드는 MAX_SLOTS=0 (매수 없음, 전량 청산 상태 유지)
     """
+    if mode == 'cash':
+        return {
+            'V_W': 0.0, 'Q_W': 0.0, 'G_W': 0.0, 'M_W': 0.0,
+            'G_REV': 0.0,
+            'G_SUB1': None, 'G_SUB2': None, 'G_SUB3': None,
+            'G_W1': None, 'G_W2': None, 'G_W3': None,
+            'MOM_PERIOD': '6m-1m',
+            'ENTRY_RANK': 0, 'EXIT_RANK': 0, 'MAX_SLOTS': 0,  # 매수 없음
+            'STOP_LOSS': None,
+            'TRAILING_STOP': None,
+            'CORR_THRESHOLD': None,
+            'USE_REV_ACCEL': False,
+            'label': '현금 도피 (KOSPI 급락)',
+            'icon': '💵',
+        }
     if mode == 'boost':
         return {
             'V_W': 0.05, 'Q_W': 0.00, 'G_W': 0.65, 'M_W': 0.30,

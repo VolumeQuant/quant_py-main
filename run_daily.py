@@ -487,29 +487,43 @@ def main():
             import pandas as pd
             from pathlib import Path
 
-            # KOSPI MA200 계산
-            kospi_close = kospi_ma200 = None
+            # KOSPI MA200 + 20일 수익률 계산 (v77.1: 크래시 현금 체크용)
+            kospi_close = kospi_ma200 = kospi_ret20 = None
             kospi_file = Path('data_cache/kospi_yf.parquet')
             if kospi_file.exists():
-                kp = pd.read_parquet(kospi_file).iloc[:, 0].dropna()
+                _df = pd.read_parquet(kospi_file)
+                kp = _df.iloc[:, 0].fillna(_df['kospi'] if 'kospi' in _df.columns else _df.iloc[:, 0]).dropna()
                 if len(kp) >= 200:
                     kospi_close = float(kp.iloc[-1])
                     kospi_ma200 = float(kp.rolling(200).mean().iloc[-1])
+                if len(kp) >= 21:
+                    kospi_ret20 = float(kp.iloc[-1] / kp.iloc[-21] - 1)
 
             regime = get_current_regime(
                 kospi_close=kospi_close, kospi_ma200=kospi_ma200,
+                kospi_ret20=kospi_ret20,
                 date_str=today
             )
-            params = get_regime_params(regime['mode'])
+            # FG 파이프라인은 underlying_mode(boost/defense)로 ranking 생성
+            # cash 모드에서도 defense ranking을 만들어 두되, 매수 스킵은 send_telegram에서 처리
+            _underlying = regime.get('underlying_mode', regime['mode'])
+            params = get_regime_params(_underlying)
+            # 표시용 라벨은 최종 모드(cash 포함)
+            display_params = get_regime_params(regime['mode'])
             kp_str = f'KOSPI={kospi_close:.0f} MA200={kospi_ma200:.0f}' if kospi_close else '?'
-            log(f"국면: {params['icon']} {params['label']} ({kp_str}, 신호={regime['signal']}, 전환={regime['switched']})", logfile)
+            ret_str = f' ret20={kospi_ret20*100:+.1f}%' if kospi_ret20 is not None else ''
+            log(f"국면: {display_params['icon']} {display_params['label']} ({kp_str}{ret_str}, 신호={regime['signal']}, 전환={regime['switched']}, crash={regime.get('crash_active', False)})", logfile)
         except Exception as e:
             log(f"국면 판단 실패: {e} — 기본 방어 모드", logfile)
             from regime_indicator import get_regime_params
-            regime = {'mode': 'defense', 'switched': False, 'signal': 'defense', 'streak': 0, 'prev_mode': 'defense'}
+            regime = {'mode': 'defense', 'underlying_mode': 'defense', 'switched': False,
+                      'signal': 'defense', 'streak': 0, 'prev_mode': 'defense',
+                      'crash_active': False, 'crash_entered': False, 'crash_exited': False}
             params = get_regime_params('defense')
+            display_params = params
 
         # 1. 포트폴리오 생성 (국면 파라미터 환경변수 주입)
+        # v77.1: cash 모드에서도 defense ranking 생성 (매수 스킵은 send_telegram에서)
         regime_env = {
             'FACTOR_V_W': str(params['V_W']),
             'FACTOR_Q_W': str(params['Q_W']),
@@ -517,14 +531,23 @@ def main():
             'FACTOR_M_W': str(params['M_W']),
             'G_REVENUE_WEIGHT': str(params['G_REV']),
             'USE_REV_ACCEL': '1' if params['USE_REV_ACCEL'] else '0',
-            'REGIME_MODE': regime['mode'],
+            'REGIME_MODE': regime['mode'],  # boost/defense/cash (최종)
+            'REGIME_UNDERLYING_MODE': regime.get('underlying_mode', regime['mode']),
             'REGIME_ENTRY_RANK': str(params['ENTRY_RANK']),
             'REGIME_EXIT_RANK': str(params['EXIT_RANK']),
             'REGIME_MAX_SLOTS': str(params['MAX_SLOTS']),
             'MOM_PERIOD': params['MOM_PERIOD'],
-            'G_SUB1': params['G_SUB1'],
-            'G_SUB2': params['G_SUB2'],
+            'G_SUB1': params['G_SUB1'] or '',
+            'G_SUB2': params['G_SUB2'] or '',
+            'G_SUB3': params['G_SUB3'] or '',
+            'G_W1': str(params['G_W1']) if params['G_W1'] is not None else '',
+            'G_W2': str(params['G_W2']) if params['G_W2'] is not None else '',
+            'G_W3': str(params['G_W3']) if params['G_W3'] is not None else '',
             'REGIME_SWITCHED': '1' if regime.get('switched') else '0',
+            'REGIME_CRASH_ACTIVE': '1' if regime.get('crash_active') else '0',
+            'REGIME_CRASH_ENTERED': '1' if regime.get('crash_entered') else '0',
+            'REGIME_CRASH_EXITED': '1' if regime.get('crash_exited') else '0',
+            'REGIME_PREV_MODE': regime.get('prev_mode', ''),
         }
 
         use_new = os.environ.get('USE_NEW_PIPELINE', '1') == '1'
