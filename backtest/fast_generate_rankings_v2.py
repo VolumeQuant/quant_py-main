@@ -1539,6 +1539,23 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
     # (c) 자산급변 vs 매출괴리 (유상증자 세탁)
     if preloaded.get('asset_dilution') and os.environ.get('FILTER_NO_ASSET_DIL') != '1':
         multifactor_df = multifactor_df[~multifactor_df['종목코드'].isin(preloaded['asset_dilution'])]
+    # (d) DART 분기보고서 8개(2년) 미만 제외 — 신규 상장으로 TTM YoY 계산 부정확
+    #     baseline 부족 → z-score capped → cr=1로 잘못 진입 (예: GS피앤엘 2026-04-14)
+    if os.environ.get('FILTER_NO_NEW_LISTING') != '1':
+        fs_dict = preloaded.get('fs', {})
+        if fs_dict:
+            min_quarters = 8  # TTM YoY 계산: 최근 4 + 이전 4 = 8분기 필요
+            insufficient = []
+            for tk in multifactor_df['종목코드'].tolist():
+                fs_df = fs_dict.get(tk)
+                if fs_df is None or fs_df.empty:
+                    insufficient.append(tk)
+                    continue
+                q_dates = fs_df.loc[fs_df['공시구분'] == 'q', '기준일'].unique() if '공시구분' in fs_df.columns else []
+                if len(q_dates) < min_quarters:
+                    insufficient.append(tk)
+            if insufficient:
+                multifactor_df = multifactor_df[~multifactor_df['종목코드'].isin(insufficient)]
 
     # --- 8. 멀티팩터 계산 (인라인, disk I/O 없음) ---
     mom_period = os.environ.get('MOM_PERIOD', '6m')
