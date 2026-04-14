@@ -489,15 +489,21 @@ def main():
 
             # KOSPI MA200 + 20일 수익률 계산 (v77.1: 크래시 현금 체크용)
             kospi_close = kospi_ma200 = kospi_ret20 = None
-            kospi_file = Path('data_cache/kospi_yf.parquet')
+            kospi_file = SCRIPT_DIR / 'data_cache' / 'kospi_yf.parquet'  # 절대경로
             if kospi_file.exists():
                 _df = pd.read_parquet(kospi_file)
-                kp = _df.iloc[:, 0].fillna(_df['kospi'] if 'kospi' in _df.columns else _df.iloc[:, 0]).dropna()
+                if 'kospi' in _df.columns:
+                    kp = _df.iloc[:, 0].fillna(_df['kospi']).dropna()
+                else:
+                    kp = _df.iloc[:, 0].dropna()
                 if len(kp) >= 200:
                     kospi_close = float(kp.iloc[-1])
                     kospi_ma200 = float(kp.rolling(200).mean().iloc[-1])
                 if len(kp) >= 21:
                     kospi_ret20 = float(kp.iloc[-1] / kp.iloc[-21] - 1)
+                log(f"KOSPI 로드: close={kospi_close} ma200={kospi_ma200} ret20={kospi_ret20}", logfile)
+            else:
+                log(f"KOSPI 파일 없음: {kospi_file}", logfile)
 
             regime = get_current_regime(
                 kospi_close=kospi_close, kospi_ma200=kospi_ma200,
@@ -581,11 +587,34 @@ def main():
             return
 
         # 2. 텔레그램 전송
+        # v77.1: 타임아웃 3분→10분 확장 + Popen 실시간 스트리밍 (멈춘 지점 추적)
         try:
-            ok2 = run_script("send_telegram_auto.py", timeout=180, logfile=logfile, extra_env=regime_env)
-            log(f"텔레그램 전송: {'성공' if ok2 else '실패'}", logfile)
-        except subprocess.TimeoutExpired:
-            log("텔레그램 전송 타임아웃 (3분)", logfile)
+            _script = SCRIPT_DIR / "send_telegram_auto.py"
+            log(f"실행: send_telegram_auto.py (타임아웃 600초, 실시간 로깅)", logfile)
+            _env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+            if regime_env:
+                _env.update(regime_env)
+            _proc = subprocess.Popen(
+                [PYTHON, str(_script)],
+                cwd=str(SCRIPT_DIR),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                env=_env,
+                bufsize=1,
+            )
+            try:
+                for _line in _proc.stdout:
+                    logfile.write(_line)
+                    logfile.flush()
+                _proc.wait(timeout=600)
+                ok2 = _proc.returncode == 0
+                log(f"텔레그램 전송: {'성공' if ok2 else f'실패 (rc={_proc.returncode})'}", logfile)
+            except subprocess.TimeoutExpired:
+                _proc.kill()
+                log("텔레그램 전송 타임아웃 (10분) — 프로세스 강제 종료", logfile)
         except Exception as e:
             log(f"텔레그램 전송 오류: {e}", logfile)
 

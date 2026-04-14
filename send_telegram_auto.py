@@ -1096,15 +1096,13 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         price_str = f'₩{price:,.0f}' if price else ''
         lines.append(f'<b>{i+1}. {name}({ticker}) {sector} · {price_str}</b>')
 
-        # L1: 순위 궤적 + 점수 (wr 정수순위 + wr 기반 점수)
+        # L1: 순위 궤적 + 점수 (v77.1+: 지수감쇠 — 매 등수 10% 감소)
         r0 = pick.get('rank_t0', t0_wr_rank_sig.get(ticker, '?'))
         r1 = t1_wr_rank_sig.get(ticker, '-')
         r2 = t2_wr_rank_sig.get(ticker, '-')
         _pick_wr = pick.get('weighted_rank', 30)
-        _sig_wr_max = max(p.get('weighted_rank', 30) for p in picks) if picks else 30
-        _sig_wr_min = min(p.get('weighted_rank', 1) for p in picks) if picks else 1
-        _sig_range = max(_sig_wr_max - _sig_wr_min, 1)
-        score_100 = 100 - (_pick_wr - _sig_wr_min) / _sig_range * 50
+        # score_100 = 100 × 0.9^(wr-1): wr=1→100, wr=2→90, wr=3→81, wr=10→39, wr=20→14
+        score_100 = max(0.0, min(100.0, 100.0 * (0.9 ** (_pick_wr - 1))))
         lines.append(f'순위 {r2}→{r1}→{r0}위 · {score_100:.1f}점')
 
         # L2: AI 내러티브 (fallback: _get_buy_rationale)
@@ -1264,10 +1262,9 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         '섬유/의류': '의류', '소프트웨어': 'SW', '의료기기': '의료',
     }
 
-    # wr 기반 점수: 1위=100점, 마지막=50점 (역전 불가, 차별화 충분)
-    _wr_max = display_pipeline[-1].get('weighted_rank', 30) if display_pipeline else 30
-    _wr_min = display_pipeline[0].get('weighted_rank', 1) if display_pipeline else 1
-    _wr_range = max(_wr_max - _wr_min, 1)
+    # v77.1+: 지수감쇠 점수 — score_100 = 100 × 0.9^(wr-1)
+    # wr=1→100, wr=2→90, wr=3→81, wr=10→39, wr=20→14
+    # 순위와 점수 항상 일치 (wr 낮을수록 점수 높음) + 매일 wr 값에 따라 점수 변동
 
     exit_line_shown = False
     for idx, s in enumerate(display_pipeline, 1):
@@ -1277,8 +1274,8 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         r0 = idx  # T-0: 리스트 순번 = 표시 순위 (정렬 일치 보장)
         r1 = s.get('_r1', '-')
         r2 = s.get('_r2', '-')
-        _wr_val = s.get('weighted_rank', _wr_max)
-        score_100 = 100 - (_wr_val - _wr_min) / _wr_range * 50  # 1위=100, 마지막=50
+        _wr_val = s.get('weighted_rank', 30)
+        score_100 = max(0.0, min(100.0, 100.0 * (0.9 ** (_wr_val - 1))))
         score_disp = f'{score_100:.1f}'
 
         # 자동매도선 (국면별 exit_rank)
