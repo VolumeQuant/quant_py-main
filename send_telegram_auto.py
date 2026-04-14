@@ -1075,16 +1075,15 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
     lines.append('━━━━━━━━━━━━━━━')
 
     # wr 정렬 후 정수 순위 맵 (Signal용)
-    def _wr_int_rank_map_sig(rankings):
+    # v77.1+: Signal 궤적도 각 날짜 당일 cr 사용 (Watchlist와 일관)
+    def _cr_map_sig(rankings):
         if not rankings:
             return {}
-        rlist = rankings.get('rankings', [])
-        sorted_by_wr = sorted(rlist, key=lambda r: r.get('weighted_rank', 999))
-        return {r['ticker']: i + 1 for i, r in enumerate(sorted_by_wr)}
+        return {r['ticker']: r.get('composite_rank', r.get('rank', '-')) for r in rankings.get('rankings', [])}
 
-    t0_wr_rank_sig = _wr_int_rank_map_sig(rankings_t0)
-    t1_wr_rank_sig = _wr_int_rank_map_sig(rankings_t1)
-    t2_wr_rank_sig = _wr_int_rank_map_sig(rankings_t2)
+    t0_cr_sig = _cr_map_sig(rankings_t0)
+    t1_cr_sig = _cr_map_sig(rankings_t1)
+    t2_cr_sig = _cr_map_sig(rankings_t2)
 
     for i, pick in enumerate(picks):
         ticker = pick['ticker']
@@ -1096,13 +1095,12 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         price_str = f'₩{price:,.0f}' if price else ''
         lines.append(f'<b>{i+1}. {name}({ticker}) {sector} · {price_str}</b>')
 
-        # L1: 순위 궤적 + 점수 (v77.1+: 지수감쇠 — 매 등수 10% 감소)
-        r0 = pick.get('rank_t0', t0_wr_rank_sig.get(ticker, '?'))
-        r1 = t1_wr_rank_sig.get(ticker, '-')
-        r2 = t2_wr_rank_sig.get(ticker, '-')
-        _pick_wr = pick.get('weighted_rank', 30)
-        # score_100 = 100 × 0.9^(wr-1): wr=1→100, wr=2→90, wr=3→81, wr=10→39, wr=20→14
-        score_100 = max(0.0, min(100.0, 100.0 * (0.9 ** (_pick_wr - 1))))
+        # v77.1+: 궤적 = 각 날짜 당일 cr, 점수 = Signal 순번(i+1) 기반 지수감쇠
+        r0 = t0_cr_sig.get(ticker, '-')
+        r1 = t1_cr_sig.get(ticker, '-')
+        r2 = t2_cr_sig.get(ticker, '-')
+        # 1등=100, 2등=90, 3등=81 (동점 불가)
+        score_100 = max(0.0, min(100.0, 100.0 * (0.9 ** (i))))  # i는 0부터 → 0.9^0=100 점
         lines.append(f'순위 {r2}→{r1}→{r0}위 · {score_100:.1f}점')
 
         # L2: AI 내러티브 (fallback: _get_buy_rationale)
@@ -1225,21 +1223,21 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         lines.append('데이터 없음')
         return '\n'.join(lines)
 
-    # wr 정렬 후 정수 순위 맵: {ticker: 1, 2, 3, ...} (연속 정수, 빈 번호 없음)
-    def _wr_int_rank_map(rankings):
+    # v77.1+: 궤적은 각 날짜 당일 cr(composite_rank) 사용 (3일 흐름 시각화)
+    # wr 대신 cr로 표시하면 "오늘 당일 약해짐/강해짐" 변화가 바로 보이고 동점 문제 회피
+    def _cr_map(rankings):
         if not rankings:
             return {}
-        rlist = rankings.get('rankings', [])
-        sorted_by_wr = sorted(rlist, key=lambda r: r.get('weighted_rank', 999))
-        return {r['ticker']: i + 1 for i, r in enumerate(sorted_by_wr)}
+        return {r['ticker']: r.get('composite_rank', r.get('rank', '-')) for r in rankings.get('rankings', [])}
 
-    t0_wr_rank = _wr_int_rank_map(rankings_t0)
-    t1_wr_rank = _wr_int_rank_map(rankings_t1)
-    t2_wr_rank = _wr_int_rank_map(rankings_t2)
+    t0_cr = _cr_map(rankings_t0)
+    t1_cr = _cr_map(rankings_t1)
+    t2_cr = _cr_map(rankings_t2)
 
     for s in pipeline:
-        s['_r1'] = t1_wr_rank.get(s['ticker'], '-')
-        s['_r2'] = t2_wr_rank.get(s['ticker'], '-')
+        s['_r0'] = t0_cr.get(s['ticker'], '-')
+        s['_r1'] = t1_cr.get(s['ticker'], '-')
+        s['_r2'] = t2_cr.get(s['ticker'], '-')
 
     # v70: weighted_rank 순 정렬 (rank 기반 진입/이탈과 일관)
     sorted_pipeline = sorted(pipeline, key=lambda x: (x.get('weighted_rank', x['rank']), -(score_100_map or {}).get(x['ticker'], 0)))
@@ -1271,11 +1269,11 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         name = s['name']
         sector = _SECTOR_SHORT.get(s.get('sector', '기타'), s.get('sector', '기타'))
         status = s['status']
-        r0 = idx  # T-0: 리스트 순번 = 표시 순위 (정렬 일치 보장)
-        r1 = s.get('_r1', '-')
-        r2 = s.get('_r2', '-')
-        _wr_val = s.get('weighted_rank', 30)
-        score_100 = max(0.0, min(100.0, 100.0 * (0.9 ** (_wr_val - 1))))
+        # v77.1+: 궤적 = 각 날짜 당일 cr, 점수 = 표시순번(idx) 기반 지수감쇠
+        r0 = s.get('_r0', '-')  # T-0 당일 cr
+        r1 = s.get('_r1', '-')  # T-1 당일 cr
+        r2 = s.get('_r2', '-')  # T-2 당일 cr
+        score_100 = max(0.0, min(100.0, 100.0 * (0.9 ** (idx - 1))))
         score_disp = f'{score_100:.1f}'
 
         # 자동매도선 (국면별 exit_rank)
