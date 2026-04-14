@@ -1539,20 +1539,33 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
     # (c) 자산급변 vs 매출괴리 (유상증자 세탁)
     if preloaded.get('asset_dilution') and os.environ.get('FILTER_NO_ASSET_DIL') != '1':
         multifactor_df = multifactor_df[~multifactor_df['종목코드'].isin(preloaded['asset_dilution'])]
-    # (d) DART 분기보고서 8개(2년) 미만 제외 — 신규 상장으로 TTM YoY 계산 부정확
-    #     baseline 부족 → z-score capped → cr=1로 잘못 진입 (예: GS피앤엘 2026-04-14)
+    # (d) 시점별 DART 분기보고서 8개(2년) 미만 제외 — 신규 상장/분할 baseline 부족
+    #     base_date 시점까지 공시된 분기 기준 (rcept_dt <= base_date)
+    #     예: 솔루스첨단소재 2021-05 시점엔 5분기 → capped → 제외
     if os.environ.get('FILTER_NO_NEW_LISTING') != '1':
         fs_dict = preloaded.get('fs', {})
         if fs_dict:
-            min_quarters = 8  # TTM YoY 계산: 최근 4 + 이전 4 = 8분기 필요
+            min_quarters = 8
             insufficient = []
+            base_ts_for_filter = base_ts
             for tk in multifactor_df['종목코드'].tolist():
                 fs_df = fs_dict.get(tk)
                 if fs_df is None or fs_df.empty:
-                    insufficient.append(tk)
-                    continue
-                q_dates = fs_df.loc[fs_df['공시구분'] == 'q', '기준일'].unique() if '공시구분' in fs_df.columns else []
-                if len(q_dates) < min_quarters:
+                    insufficient.append(tk); continue
+                if '공시구분' not in fs_df.columns:
+                    insufficient.append(tk); continue
+                q_df = fs_df[fs_df['공시구분'] == 'q']
+                # 시점별: rcept_dt <= base_date (공시 시점까지만)
+                if 'rcept_dt' in q_df.columns:
+                    q_available = q_df[q_df['rcept_dt'].notna() & (q_df['rcept_dt'] <= base_ts_for_filter)]
+                    q_dates_avail = q_available['기준일'].unique()
+                else:
+                    # rcept_dt 없으면 기준일+90일 추정
+                    q_df = q_df.copy()
+                    q_df['_est_avail'] = q_df['기준일'] + pd.Timedelta(days=90)
+                    q_available = q_df[q_df['_est_avail'] <= base_ts_for_filter]
+                    q_dates_avail = q_available['기준일'].unique()
+                if len(q_dates_avail) < min_quarters:
                     insufficient.append(tk)
             if insufficient:
                 multifactor_df = multifactor_df[~multifactor_df['종목코드'].isin(insufficient)]
@@ -1567,6 +1580,25 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
 
     if scored.empty:
         return False, 'scoring failed'
+
+    # (e) 2차 안전망: G 서브팩터 5개 이상 동일값 → capped 신호 → 제외
+    #     (d) 시점별 필터를 통과했어도 rcept_dt 누락 등 엣지 케이스 잡기
+    if os.environ.get('FILTER_NO_CAPPED') != '1':
+        g_sub_cols = ['매출성장률_z', '이익변화량_z', '매출가속도_z', '매출총이익성장_z', '영업이익률변화_z', '현금흐름성장_z']
+        existing = [c for c in g_sub_cols if c in scored.columns]
+        if len(existing) >= 5:
+            def _is_capped(row):
+                vals = [row[c] for c in existing if pd.notna(row[c])]
+                if len(vals) < 5: return False
+                from collections import Counter
+                mc = Counter(vals).most_common(1)[0]
+                return mc[1] >= 5 and abs(mc[0]) > 1.5
+            capped_mask = scored.apply(_is_capped, axis=1)
+            if capped_mask.any():
+                scored = scored[~capped_mask].copy()
+                # 순위 재부여
+                if not scored.empty:
+                    scored['멀티팩터_순위'] = scored['멀티팩터_점수'].rank(ascending=False, method='first', na_option='bottom')
 
     # --- 9. Ranking JSON 저장 ---
     scored_sorted = scored.sort_values('멀티팩터_점수', ascending=False)
