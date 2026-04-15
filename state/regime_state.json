@@ -1,10 +1,10 @@
 {
   "mode": "boost",
-  "streak": 3,
-  "streak_mode": "defense",
-  "last_date": "20260414",
-  "version": "v77_final",
-  "rule": "KP_MA200_5d",
+  "streak": 2,
+  "streak_mode": "boost",
+  "last_date": "20260415",
+  "version": "v79",
+  "rule": "KP_MA200_7d",
   "history": [
     {
       "date": "20260407",
@@ -56,7 +56,18 @@
       "switched": false,
       "crash_active": false,
       "kospi_ret20": null
+    },
+    {
+      "date": "20260414",
+      "signal": "boost",
+      "mode": "boost",
+      "switched": false
+    },
+    {
+      "date": "20260415",
+      "signal": "boost",
+      "mode": "boost",
+      "switched": false
     }
-  ],
-  "crash_active": false
+  ]
 }
