@@ -74,10 +74,10 @@ def load_regime_state():
 
 
 def load_ranking_for_regime(date_str: str, regime_mode: str):
-    """국면에 맞는 랭킹 파일 로드 (v75: boost=state/, defense=state/defense/).
-    v77.1: cash 모드는 defense 랭킹 파일 참조 (정보 표시용)
+    """국면에 맞는 랭킹 파일 로드 (v79: boost=state/, defense=state/defense/).
+    (v77.1의 cash 모드는 v79에서 제거됨)
     """
-    if regime_mode in ('defense', 'cash'):
+    if regime_mode == 'defense':
         def_path = STATE_DIR / 'defense' / f'ranking_{date_str}.json'
         if def_path.exists():
             with open(def_path, 'r', encoding='utf-8') as f:
@@ -335,7 +335,7 @@ def calc_system_returns(regime_info=None):
     # reranking 불필요 — ranking 파일이 이미 현재 버전 파라미터로 재계산됨
     # 버전 변경 시 전체 파일 재계산 필수 (feedback_full_rerank_on_version_change.md)
 
-    # 날짜별 국면 판단 (KP_MA200_5d)
+    # 날짜별 국면 판단 (v79: KP_MA200_7d)
     _kospi_file = Path(__file__).parent / 'data_cache' / 'kospi_yf.parquet'
     _kospi = pd.read_parquet(_kospi_file).iloc[:, 0].dropna() if _kospi_file.exists() else pd.Series()
     _km200 = _kospi.rolling(200).mean() if len(_kospi) >= 200 else pd.Series()
@@ -349,7 +349,7 @@ def calc_system_returns(regime_info=None):
         s = (kv > mv) if kv is not None and mv is not None else _md
         if s == _ss: _stk += 1
         else: _stk = 1; _ss = s
-        if _stk >= 5 and _md != s: _md = s
+        if _stk >= 7 and _md != s: _md = s  # v79: 5d → 7d
         regime_by_date[d] = _md  # True=공격, False=방어
 
     # 날짜별 국면에 맞는 ranking + 파라미터 선택
@@ -799,93 +799,59 @@ def _build_top5_streak(top5_tickers):
 def create_regime_switch_message(regime_mode, prev_mode=None):
     """국면 전환 시 별도 안내 메시지 — Signal 메시지 앞에 전송
 
-    v77.1 (2026-04-14):
-      - 모드 3개: boost / defense / cash(크래시 현금 도피)
+    v79 (2026-04-15):
+      - 모드 2개: boost / defense (cash 모드 제거)
       - prev_mode: 이전 모드 (전환 방향 표시용)
     """
     perf = '\n'.join([
         '━━━━━━━━━━━━━━━',
-        '📊 <b>v77.1 백테스트 성과</b>',
+        '📊 <b>v79 백테스트 성과</b>',
         '━━━━━━━━━━━━━━━',
-        '5.25년(2021~): CAGR +128% · MDD -28% · Calmar 4.58',
-        '7.8년(2018-07~): CAGR +82% · MDD -55% · Calmar 1.50',
+        '5.25년(2021~): CAGR +105% · MDD -33% · Calmar 3.18',
+        '7.8년(2018-07~): CAGR +121% · MDD -38% · Calmar 3.20',
         '같은 기간 코스피: 연 +13%',
         '',
         '※ 종목 선별 기준이며, 비중은 투자자의 판단입니다.',
         '투자 손실의 책임은 본인에게 있습니다.',
     ])
 
-    if regime_mode == 'cash':
-        return '\n'.join([
-            '📡 <b>AI 종목 브리핑 KR — 모드 전환</b>',
-            '',
-            '━━━━━━━━━━━━━━━',
-            '💵 <b>방어 모드 → 현금 도피 전환</b>',
-            '━━━━━━━━━━━━━━━',
-            'KOSPI 20일 수익률이 -20% 아래로 급락했습니다. 급격한 하락장으로 판단해 <b>전량 현금화</b>합니다.',
-            '',
-            '📌 <b>조치 사항</b>',
-            '기존 방어 모드 보유 종목을 <b>전량 매도</b>합니다.',
-            '신규 매수 없이 <b>현금 보유</b>합니다.',
-            '',
-            '━━━━━━━━━━━━━━━',
-            '💵 <b>현금 도피 상세</b>',
-            '━━━━━━━━━━━━━━━',
-            '급락 구간에서는 매수하지 않고 현금 보유로 MDD를 제한합니다.',
-            '',
-            '전환 기준',
-            'KOSPI 20일 수익률 < -20%',
-            '',
-            '해제 기준',
-            '• KOSPI 20일 수익률 ≥ -20% 회복 → 방어 모드 자동 재진입',
-            '• 또는 KOSPI > 200일선 5거래일 연속 → 공격 모드 전환',
-            '',
-            '사례: 2020-03 COVID 급락 구간에 현금 도피, Cal 1.35→1.50 개선',
-            '',
-            perf,
-        ])
-
     if regime_mode == 'boost':
-        from_label = '방어/현금' if prev_mode in ('defense', 'cash') else '이전'
+        from_label = '방어' if prev_mode == 'defense' else '이전'
         return '\n'.join([
             '📡 <b>AI 종목 브리핑 KR — 모드 전환</b>',
             '',
             '━━━━━━━━━━━━━━━',
             f'📈 <b>{from_label} 모드 → 공격 모드 전환</b>',
             '━━━━━━━━━━━━━━━',
-            'KOSPI가 200일 이동평균선 위에서 5거래일 연속 마감했습니다. 시장이 상승 추세로 전환된 것으로 판단합니다.',
+            'KOSPI가 200일 이동평균선 위에서 7거래일 연속 마감했습니다. 시장이 상승 추세로 전환된 것으로 판단합니다.',
             '',
             '📌 <b>조치 사항</b>',
             '기존 보유 종목을 <b>전량 매도</b>합니다.',
             '오늘 브리핑의 ✅ 종목으로 재진입합니다.',
             '',
             '━━━━━━━━━━━━━━━',
-            '📈 <b>공격 모드 상세 (v77.1)</b>',
+            '📈 <b>공격 모드 상세 (v79)</b>',
             '━━━━━━━━━━━━━━━',
             '상승장에서는 성장주에 집중합니다.',
             '',
             '팩터 비중',
-            'Growth(성장) 65% + Momentum(추세) 30%',
-            '+ Value(가치) 5%',
+            'Growth(성장) 50% + Momentum(추세) 30%',
+            '+ Value(가치) 15% + Quality(수익성) 5%',
             '',
             'Growth 세부: 매출성장 50% + 영업이익변화 30% + 매출총이익성장 20%',
-            '모멘텀: 12m-1m (최근 1개월 제외)',
+            '모멘텀: 12m (최근 12개월)',
             '',
-            '매수: 3일 연속 상위 7위 이내 ✅',
+            '매수: 3일 연속 상위 3위 이내 ✅',
             '보유: 최대 3종목 (균등 비중)',
-            '매도: 가중순위 8위 밖 이탈',
+            '매도: 가중순위 6위 밖 이탈',
             '손절: 매수가 -10% | 트레일링: 고점 -15%',
             '',
             perf,
         ])
 
     # defense
-    if prev_mode == 'cash':
-        title = '💵 현금 도피 → 방어 모드 복귀'
-        reason = 'KOSPI 20일 수익률이 -20% 이상으로 회복됐습니다. 방어 모드로 재진입합니다.'
-    else:
-        title = '📉 공격 모드 → 방어 모드 전환'
-        reason = 'KOSPI가 200일 이동평균선 아래에서 5거래일 연속 마감했습니다. 시장이 하락 추세로 전환된 것으로 판단합니다.'
+    title = '📉 공격 모드 → 방어 모드 전환'
+    reason = 'KOSPI가 200일 이동평균선 아래에서 7거래일 연속 마감했습니다. 시장이 하락 추세로 전환된 것으로 판단합니다.'
     return '\n'.join([
         '📡 <b>AI 종목 브리핑 KR — 모드 전환</b>',
         '',
@@ -899,23 +865,21 @@ def create_regime_switch_message(regime_mode, prev_mode=None):
         '오늘 브리핑의 ✅ 종목으로 재진입합니다.',
         '',
         '━━━━━━━━━━━━━━━',
-        '📉 <b>방어 모드 상세 (v77.1)</b>',
+        '📉 <b>방어 모드 상세 (v79)</b>',
         '━━━━━━━━━━━━━━━',
         '하락장에서는 추세가 살아있는 종목에 분산합니다.',
         '',
         '팩터 비중',
-        'Momentum(추세) 55% + Value(가치) 30%',
-        '+ Growth(성장) 10% + Quality(수익성) 5%',
+        'Momentum(추세) 40% + Value(가치) 30%',
+        '+ Growth(성장) 15% + Quality(수익성) 15%',
         '',
-        'Growth 세부: 매출가속도 50% + 영업이익률변화 50%',
+        'Growth 세부: 매출성장 70% + 영업이익변화 30%',
         '모멘텀: 6m-1m (최근 1개월 제외)',
         '',
         '매수: 3일 연속 상위 3위 이내 ✅',
         '보유: 최대 7종목 (균등 비중)',
         '매도: 가중순위 6위 밖 이탈',
         '손절: 매수가 -10% | 트레일링: 고점 -15%',
-        '',
-        '※ 20일 수익률 -20% 급락 시 자동 현금 도피',
         '',
         perf,
     ])
@@ -933,16 +897,13 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
     wd = WEEKDAY_KR[biz_day.weekday()]
     date_str = f"{biz_day.year}.{biz_day.month}.{biz_day.day}({wd})"
 
-    # 국면 모드 표시 — regime_state.json 기반 우선
+    # 국면 모드 표시 — regime_state.json 기반 우선 (v79: cash 모드 제거)
     if regime_info:
         r_mode = regime_info.get('mode', 'defense')
         r_breadth = regime_info.get('breadth')
         if r_mode == 'boost':
             regime_icon = '⚔️'
             regime_text = '공격 모드 (Growth 중심)'
-        elif r_mode == 'cash':
-            regime_icon = '💵'
-            regime_text = '현금 도피 (KOSPI 20일 -20%)'
         else:
             regime_icon = '🛡️'
             regime_text = '방어 모드 (Momentum 중심)'
@@ -952,8 +913,6 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         regime_mode = os.environ.get('REGIME_MODE', 'defense')
         if regime_mode == 'boost':
             regime_label = '⚔️ <b>공격 모드</b>'
-        elif regime_mode == 'cash':
-            regime_label = '💵 <b>현금 도피</b>'
         else:
             regime_label = '🛡️ <b>방어 모드</b>'
 
@@ -967,29 +926,7 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         '종합 점수 상위 종목입니다.',
     ]
 
-    # ── v77.1: cash 모드 (KOSPI 급락 → 전량 현금) ──
-    cur_mode = regime_info.get('mode') if regime_info else os.environ.get('REGIME_MODE', 'defense')
-    if cur_mode == 'cash':
-        lines.append('')
-        lines.append('━━━━━━━━━━━━━━━')
-        lines.append('💵 <b>현금 도피 구간</b>')
-        lines.append('━━━━━━━━━━━━━━━')
-        lines.append('KOSPI 20일 수익률이 -20% 아래로 급락했습니다.')
-        lines.append('급격한 하락장으로 판단해 <b>전량 현금화</b>합니다.')
-        lines.append('')
-        lines.append('📌 <b>오늘 조치</b>')
-        lines.append('• 신규 매수 없음')
-        lines.append('• 기존 보유 종목 전량 매도')
-        lines.append('• 현금 보유')
-        lines.append('')
-        lines.append('📌 <b>해제 조건</b>')
-        lines.append('• KOSPI 20일 수익률 ≥ -20% 회복 → 방어 모드 복귀')
-        lines.append('• 또는 KOSPI > 200일선 5거래일 → 공격 모드 전환')
-        lines.append('')
-        lines.append('━━━━━━━━━━━━━━━')
-        lines.append('⚖️ 본 전략은 국면 규칙 기반이며,')
-        lines.append('투자 판단과 손실 책임은 투자자 본인에게 있습니다.')
-        return '\n'.join(lines)
+    # v79: cash 모드 제거 (Crash Cash 삭제됨)
 
     # ── stop 모드 (시장 경고) ──
     if market_max_picks == 0 and pick_level and pick_level.get('warning'):
@@ -1264,7 +1201,7 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         '섬유/의류': '의류', '소프트웨어': 'SW', '의료기기': '의료',
     }
 
-    # v77.1+: 지수감쇠 점수 — score_100 = 100 × 0.9^(wr-1)
+    # v79: 지수감쇠 점수 — score_100 = 100 × 0.9^(표시순번-1)
     # wr=1→100, wr=2→90, wr=3→81, wr=10→39, wr=20→14
     # 순위와 점수 항상 일치 (wr 낮을수록 점수 높음) + 매일 wr 값에 따라 점수 변동
 
@@ -1383,7 +1320,7 @@ def main():
         regime_mode = os.environ['REGIME_MODE']
         regime_info['mode'] = regime_mode
     regime_switched = os.environ.get('REGIME_SWITCHED') == '1'
-    # v77.1: 크래시 현금 전환/해제도 switch 메시지 트리거
+    # v79: Crash Cash 제거. 환경변수는 항상 '0'이지만 호환 위해 읽기 유지 (무해)
     regime_crash_entered = os.environ.get('REGIME_CRASH_ENTERED') == '1'
     regime_crash_exited = os.environ.get('REGIME_CRASH_EXITED') == '1'
     regime_prev_mode = os.environ.get('REGIME_PREV_MODE', '')
@@ -1791,7 +1728,7 @@ def main():
     )
 
     messages = []
-    # 국면 전환 시 전환 안내 메시지를 먼저 전송 (v77.1: cash 진입/탈출 포함)
+    # 국면 전환 시 전환 안내 메시지를 먼저 전송 (v79: boost ↔ defense만)
     if mode_transition:
         msg_switch = create_regime_switch_message(regime_mode, prev_mode=regime_prev_mode)
         messages.append(msg_switch)

@@ -835,30 +835,50 @@ def preload_all_data(start_str, end_str, trading_dates=None, use_rev_accel=False
         data['avg_volume_sub'] = {}
         print(f'    {len(data["avg_volume"])}일 ({time.time()-t_vol:.1f}초)')
 
-    # 9. 3년 연속 적자 종목 사전계산
-    chronic_3yr = set()
+    # 9. 3년 연속 적자 — 종목별 연간 NI 시계열 캐싱 (PIT 적용)
+    ni_yearly = {}
     for ticker, fs_df in data['fs'].items():
         ni = fs_df[(fs_df['계정'] == '당기순이익') & (fs_df['공시구분'] == 'y')].sort_values('기준일')
-        if len(ni) >= 3 and all(v < 0 for v in ni.tail(3)['값']):
-            chronic_3yr.add(ticker)
-    data['chronic_loss_3yr'] = chronic_3yr
-    print(f'  3년 연속 적자: {len(chronic_3yr)}종목')
+        if 'rcept_dt' in ni.columns:
+            ni_yearly[ticker] = [(r['기준일'], r['rcept_dt'], r['값']) for _, r in ni.iterrows()]
+        else:
+            # rcept_dt 없으면 기준일+90일 추정
+            ni_yearly[ticker] = [(r['기준일'], r['기준일'] + pd.Timedelta(days=90), r['값']) for _, r in ni.iterrows()]
+    data['ni_yearly'] = ni_yearly
+    # 이전 전역 chronic_3yr은 하위호환용 유지 (BT 날짜별 체크는 generate_ranking_for_date에서)
+    chronic_3yr_current = set()
+    for ticker, history in ni_yearly.items():
+        vals = [v for _, _, v in history[-3:]]
+        if len(vals) >= 3 and all(v < 0 for v in vals):
+            chronic_3yr_current.add(ticker)
+    data['chronic_loss_3yr'] = chronic_3yr_current  # 현재 시점 기준 (하위호환)
+    print(f'  3년 연속 적자(현재): {len(chronic_3yr_current)}, ni_yearly 캐시: {len(ni_yearly)}종목')
 
-    # 10. 자산급변 vs 매출괴리 (유상증자 세탁 감지)
-    asset_dilution = set()
+    # 10. 자산급변 — 종목별 연간 자산/매출 시계열 캐싱 (PIT 적용)
+    asset_rev_yearly = {}
     for ticker, fs_df in data['fs'].items():
-        assets = fs_df[(fs_df['계정'] == '자산') & (fs_df['공시구분'] == 'y')].sort_values('기준일')
-        rev = fs_df[(fs_df['계정'] == '매출액') & (fs_df['공시구분'] == 'y')].sort_values('기준일')
-        if len(assets) >= 2 and len(rev) >= 2:
-            a_prev, a_curr = assets.iloc[-2]['값'], assets.iloc[-1]['값']
-            r_prev, r_curr = rev.iloc[-2]['값'], rev.iloc[-1]['값']
+        a_df = fs_df[(fs_df['계정'] == '자산') & (fs_df['공시구분'] == 'y')].sort_values('기준일')
+        r_df = fs_df[(fs_df['계정'] == '매출액') & (fs_df['공시구분'] == 'y')].sort_values('기준일')
+        if len(a_df) >= 2 and len(r_df) >= 2:
+            a_list = [(r['기준일'], r.get('rcept_dt', r['기준일'] + pd.Timedelta(days=90)), r['값']) for _, r in a_df.iterrows()]
+            rv_list = [(r['기준일'], r.get('rcept_dt', r['기준일'] + pd.Timedelta(days=90)), r['값']) for _, r in r_df.iterrows()]
+            asset_rev_yearly[ticker] = {'assets': a_list, 'revenue': rv_list}
+    data['asset_rev_yearly'] = asset_rev_yearly
+    # 현재 시점 기준 asset_dilution (하위호환)
+    asset_dilution_current = set()
+    for ticker, hist in asset_rev_yearly.items():
+        a_last = hist['assets'][-2:]
+        r_last = hist['revenue'][-2:]
+        if len(a_last) == 2 and len(r_last) == 2:
+            a_prev, a_curr = a_last[0][2], a_last[1][2]
+            r_prev, r_curr = r_last[0][2], r_last[1][2]
             if a_prev > 0 and r_prev > 0:
                 a_growth = (a_curr / a_prev - 1) * 100
                 r_growth = (r_curr / r_prev - 1) * 100
                 if a_growth > 100 and r_growth < a_growth * 0.5:
-                    asset_dilution.add(ticker)
-    data['asset_dilution'] = asset_dilution
-    print(f'  자산급변(유상증자 의심): {len(asset_dilution)}종목')
+                    asset_dilution_current.add(ticker)
+    data['asset_dilution'] = asset_dilution_current
+    print(f'  자산급변(현재): {len(asset_dilution_current)}, asset_rev_yearly 캐시: {len(asset_rev_yearly)}종목')
 
     elapsed = time.time() - t0
     print(f'  프리로드 완료: {elapsed:.1f}초')
@@ -906,7 +926,12 @@ def precompute_avg_volume(market_cap_dict, window=20):
 def vectorized_ma120_filter(price_df, universe_tickers, base_ts):
     """MA120 필터 — 벡터화 (per-ticker 루프 제거)
 
-    126일(6M) 미만 종목은 제외 (모멘텀 계산 불가, IPO 노이즈).
+    2가지 조건 동시 적용 (v77 설계):
+    1. 126일(6M) 이상 OHLCV 데이터 — 모멘텀 계산 가능, IPO 노이즈 회피
+    2. 현재가 >= 120일 이동평균 — 하락 추세 종목 사전 배제 (모멘텀 전략 일관성)
+
+    → 하락장 직후엔 이 필터로 유니버스가 크게 축소됨 (2023-01: 580→~280).
+    → 이는 v77이 "모멘텀 기반" 전략이라 의도된 동작.
     """
     valid = [t for t in universe_tickers if t in price_df.columns]
     if not valid:
@@ -1335,14 +1360,17 @@ def calculate_multifactor_fast(multifactor_df, price_df, sector_map, base_date,
             data[score_col] = 0.0
         data[score_col] = data[score_col].fillna(0.0)
 
-    # ROE 하드게이트: ROE <= 0 제거 (적자 기업)
+    # ROE 하드게이트: ROE <= 0 제거 (적자 기업 배제 — v77 설계)
     # ROE NaN(pykrx+DART 모두 산출 불가)은 스킵 — GPA/CFO로 Quality 평가
     if 'ROE' in data.columns:
         roe_neg_mask = data['ROE'] <= 0
         if roe_neg_mask.any():
             data = data[~roe_neg_mask].copy()
 
-    # 단일팩터 바닥
+    # 단일팩터 바닥 (v77 설계 — 심각히 부진한 종목 사전 배제)
+    # V/Q/G/M 4개 점수 중 하나라도 -1.5σ 미만이면 제외
+    # 예: 하이닉스 2024-01-02 같이 Growth 점수가 -1.5 미만이면 제외됨
+    # 이는 "모든 팩터가 균형 있게 좋은 종목" 선호하는 v77 철학 반영
     EXTREME_THRESHOLD = -1.5
     cat_cols_4 = ['밸류_점수', '퀄리티_점수', '성장_점수', '모멘텀_점수']
     extreme_mask = (data[cat_cols_4] < EXTREME_THRESHOLD).any(axis=1)
@@ -1532,13 +1560,37 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
                     (multifactor_df['pykrx_EPS'].fillna(0) == 0) &
                     (multifactor_df['pykrx_BPS'].fillna(0) == 0))
         multifactor_df = multifactor_df[~all_zero]
-    # (b) 3년 연속 적자 제거 (만성 적자 = 구조적 문제, 백테스트 검증: CAGR+5%p)
-    if preloaded.get('chronic_loss_3yr') and os.environ.get('FILTER_NO_CHRONIC') != '1':
-        chronic = preloaded['chronic_loss_3yr']
-        multifactor_df = multifactor_df[~multifactor_df['종목코드'].isin(chronic)]
-    # (c) 자산급변 vs 매출괴리 (유상증자 세탁)
-    if preloaded.get('asset_dilution') and os.environ.get('FILTER_NO_ASSET_DIL') != '1':
-        multifactor_df = multifactor_df[~multifactor_df['종목코드'].isin(preloaded['asset_dilution'])]
+    # (b) 3년 연속 적자 제거 — PIT: base_date 시점까지 공시된 연간 NI로 판정
+    if os.environ.get('FILTER_NO_CHRONIC') != '1':
+        ni_yearly = preloaded.get('ni_yearly', {})
+        if ni_yearly:
+            chronic_at_date = set()
+            for tk, history in ni_yearly.items():
+                avail = [(d, v) for d, rcpt, v in history if rcpt is not None and rcpt <= base_ts]
+                if len(avail) >= 3 and all(v < 0 for _, v in avail[-3:]):
+                    chronic_at_date.add(tk)
+            multifactor_df = multifactor_df[~multifactor_df['종목코드'].isin(chronic_at_date)]
+        elif preloaded.get('chronic_loss_3yr'):  # 폴백 (구버전)
+            multifactor_df = multifactor_df[~multifactor_df['종목코드'].isin(preloaded['chronic_loss_3yr'])]
+    # (c) 자산급변 — PIT: base_date 시점까지 공시된 자산/매출로 판정
+    if os.environ.get('FILTER_NO_ASSET_DIL') != '1':
+        ar_yearly = preloaded.get('asset_rev_yearly', {})
+        if ar_yearly:
+            asset_dil_at_date = set()
+            for tk, hist in ar_yearly.items():
+                a_avail = [(d, v) for d, rcpt, v in hist['assets'] if rcpt is not None and rcpt <= base_ts]
+                r_avail = [(d, v) for d, rcpt, v in hist['revenue'] if rcpt is not None and rcpt <= base_ts]
+                if len(a_avail) >= 2 and len(r_avail) >= 2:
+                    a_prev, a_curr = a_avail[-2][1], a_avail[-1][1]
+                    r_prev, r_curr = r_avail[-2][1], r_avail[-1][1]
+                    if a_prev > 0 and r_prev > 0:
+                        a_g = (a_curr / a_prev - 1) * 100
+                        r_g = (r_curr / r_prev - 1) * 100
+                        if a_g > 100 and r_g < a_g * 0.5:
+                            asset_dil_at_date.add(tk)
+            multifactor_df = multifactor_df[~multifactor_df['종목코드'].isin(asset_dil_at_date)]
+        elif preloaded.get('asset_dilution'):  # 폴백 (구버전)
+            multifactor_df = multifactor_df[~multifactor_df['종목코드'].isin(preloaded['asset_dilution'])]
     # (d) 시점별 DART 분기보고서 8개(2년) 미만 제외 — 신규 상장/분할 baseline 부족
     #     base_date 시점까지 공시된 분기 기준 (rcept_dt <= base_date)
     #     예: 솔루스첨단소재 2021-05 시점엔 5분기 → capped → 제외
@@ -1631,10 +1683,13 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
             val = row.get(col)
             if val is not None and pd.notna(val):
                 item[f'mom_{mp}_s'] = round(float(val), 4)
-        if ticker in price_df.columns and base_ts in price_df.index:
-            p = price_df.loc[base_ts, ticker]
-            if pd.notna(p) and p > 0:
-                item['price'] = int(p)
+        # v77.2: price NaN이면 가장 최근 유효 가격 사용 (ffill) — 거래정지 종목도 랭킹 포함
+        if ticker in price_df.columns:
+            ser = price_df[ticker]
+            # base_ts 이하의 마지막 유효 가격
+            valid = ser[(ser.index <= base_ts) & ser.notna() & (ser > 0)]
+            if len(valid) > 0:
+                item['price'] = int(valid.iloc[-1])
         if 'price' not in item:
             continue
         rankings_list.append(item)
@@ -1648,8 +1703,10 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
         'generated_at': pd.Timestamp.now(tz='Asia/Seoul').isoformat(),
         'rankings': rankings_list,
         'metadata': {
-            'universe_count': len(universe_tickers),
-            'scored_count': len(scored),
+            'universe_count': len(universe_tickers),  # 시총+거래대금+금융제외 후 (MA120 전)
+            'scored_count': len(scored),  # 모든 필터(+MA120+d'+e+스코어링) 통과
+            'ma120_passed': len(ma120_pass) if 'ma120_pass' in dir() else None,  # MA120 통과 후
+            'final_count': len(rankings_list),  # price 조건 통과 후 최종
             'generator': 'fast_generate_rankings_v2',
             'correlation_60d': corr_60d,
             'ma120_failed': ma120_fail,

@@ -479,15 +479,15 @@ def main():
         except Exception as e:
             log(f"OHLCV 증분 수집 오류: {e} — 기존 데이터로 진행", logfile)
 
-        # 0.5. 국면 판단 (v76: KP_MA200_5d — KOSPI > 200일선, 5일 확인)
-        log("국면 판단 (KP_MA200_5d)", logfile)
+        # 0.5. 국면 판단 (v79: KP_MA200_7d — KOSPI > 200일선, 7일 확인)
+        log("국면 판단 (KP_MA200_7d)", logfile)
         try:
             sys.path.insert(0, str(SCRIPT_DIR))
             from regime_indicator import get_current_regime, get_regime_params
             import pandas as pd
             from pathlib import Path
 
-            # KOSPI MA200 + 20일 수익률 계산 (v77.1: 크래시 현금 체크용)
+            # KOSPI MA200 계산 (v79: Crash Cash 제거, ret20 불필요하나 호환 위해 유지)
             kospi_close = kospi_ma200 = kospi_ret20 = None
             kospi_file = SCRIPT_DIR / 'data_cache' / 'kospi_yf.parquet'  # 절대경로
             if kospi_file.exists():
