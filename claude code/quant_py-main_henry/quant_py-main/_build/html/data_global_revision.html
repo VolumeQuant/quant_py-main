@@ -1,0 +1,2272 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="./" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>11. 전 세계 주식 데이터 수집하기 &#8212; 파이썬을 이용한 퀀트 투자 포트폴리오 만들기</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "light";
+  </script>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="_static/styles/theme.css?digest=8d27b9dea8ad943066ae" rel="stylesheet" />
+<link href="_static/styles/bootstrap.css?digest=8d27b9dea8ad943066ae" rel="stylesheet" />
+<link href="_static/styles/pydata-sphinx-theme.css?digest=8d27b9dea8ad943066ae" rel="stylesheet" />
+
+  
+  <link href="_static/vendor/fontawesome/6.5.1/css/all.min.css?digest=8d27b9dea8ad943066ae" rel="stylesheet" />
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.5.1/webfonts/fa-solid-900.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.5.1/webfonts/fa-brands-400.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.5.1/webfonts/fa-regular-400.woff2" />
+
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b76e3c8a" />
+    <link rel="stylesheet" type="text/css" href="_static/styles/sphinx-book-theme.css?v=384b581d" />
+    <link rel="stylesheet" type="text/css" href="_static/togglebutton.css?v=13237357" />
+    <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="_static/mystnb.4510f1fc1dee50b3e5859aac5469c37c29e427902b24a333a5f9fcb2f0b3ac41.css" />
+    <link rel="stylesheet" type="text/css" href="_static/sphinx-thebe.css?v=4fa983c6" />
+    <link rel="stylesheet" type="text/css" href="_static/design-style.1e8bd061cd6da7fc9cf755528e8ffc24.min.css?v=0a3b3ea7" />
+  
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="_static/scripts/bootstrap.js?digest=8d27b9dea8ad943066ae" />
+<link rel="preload" as="script" href="_static/scripts/pydata-sphinx-theme.js?digest=8d27b9dea8ad943066ae" />
+  <script src="_static/vendor/fontawesome/6.5.1/js/all.min.js?digest=8d27b9dea8ad943066ae"></script>
+
+    <script src="_static/documentation_options.js?v=9eb32ce0"></script>
+    <script src="_static/doctools.js?v=888ff710"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="_static/copybutton.js?v=f281be69"></script>
+    <script src="_static/scripts/sphinx-book-theme.js?v=efea14e4"></script>
+    <script>let toggleHintShow = 'Click to show';</script>
+    <script>let toggleHintHide = 'Click to hide';</script>
+    <script>let toggleOpenOnPrint = 'true';</script>
+    <script src="_static/togglebutton.js?v=4a39c7ea"></script>
+    <script kind="utterances">
+
+    var commentsRunWhenDOMLoaded = cb => {
+    if (document.readyState != 'loading') {
+        cb()
+    } else if (document.addEventListener) {
+        document.addEventListener('DOMContentLoaded', cb)
+    } else {
+        document.attachEvent('onreadystatechange', function() {
+        if (document.readyState == 'complete') cb()
+        })
+    }
+}
+
+var addUtterances = () => {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src = "https://utteranc.es/client.js";
+    script.async = "async";
+
+    script.setAttribute("repo", "hyunyulhenry/quant_py");
+    script.setAttribute("issue-term", "pathname");
+    script.setAttribute("theme", "github-light");
+    script.setAttribute("label", "💬 comment");
+    script.setAttribute("crossorigin", "anonymous");
+
+    sections = document.querySelectorAll("div.section");
+    if (sections !== null) {
+        section = sections[sections.length-1];
+        section.appendChild(script);
+    }
+}
+commentsRunWhenDOMLoaded(addUtterances);
+</script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script src="_static/design-tabs.js?v=36754332"></script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script async="async" src="_static/sphinx-thebe.js?v=c100c467"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'data_global_revision';</script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="12. 투자 참고용 데이터 수집" href="data_ref.html" />
+    <link rel="prev" title="10. 국내 주식 데이터 수집" href="data_korea.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <a id="pst-skip-link" class="skip-link" href="#main-content">Skip to main content</a>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>
+    Back to top
+  </button>
+
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          name="__primary"
+          id="__primary"/>
+  <label class="overlay overlay-primary" for="__primary"></label>
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          name="__secondary"
+          id="__secondary"/>
+  <label class="overlay overlay-secondary" for="__secondary"></label>
+  
+  <div class="search-button__wrapper">
+    <div class="search-button__overlay"></div>
+    <div class="search-button__search-container">
+<form class="bd-search d-flex align-items-center"
+      action="search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search this book..."
+         aria-label="Search this book..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form></div>
+  </div>
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar">
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <div class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+  
+
+<a class="navbar-brand logo" href="index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="_static/logo.png" class="logo__image only-light" alt="파이썬을 이용한 퀀트 투자 포트폴리오 만들기 - Home"/>
+    <script>document.write(`<img src="_static/logo.png" class="logo__image only-dark" alt="파이썬을 이용한 퀀트 투자 포트폴리오 만들기 - Home"/>`);</script>
+  
+  
+</a></div>
+        <div class="sidebar-primary-item">
+
+ <script>
+ document.write(`
+   <button class="btn navbar-btn search-button-field search-button__button" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass"></i>
+    <span class="search-button__default-text">Search</span>
+    <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+   </button>
+ `);
+ </script></div>
+        <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item navbar-nav active">
+        
+        <ul class="nav bd-sidenav bd-sidenav__home-link">
+            <li class="toctree-l1">
+                <a class="reference internal" href="index.html">
+                    파이썬을 이용한 퀀트 투자 포트폴리오 만들기
+                </a>
+            </li>
+        </ul>
+        <p aria-level="2" class="caption" role="heading"><span class="caption-text">퀀트와 프로그래밍 기초 배워보기</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="quant_intro.html">1. 퀀트에 대해 알아보기</a></li>
+<li class="toctree-l1"><a class="reference internal" href="python.html">2. 파이썬 기초 배워보기</a></li>
+<li class="toctree-l1"><a class="reference internal" href="eda.html">3. 데이터 분석 배워보기</a></li>
+<li class="toctree-l1"><a class="reference internal" href="plot.html">4. 데이터 시각화 배워보기</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sql.html">5. SQL 기초 배워보기</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sql_in_python.html">6. 파이썬에서 SQL 연결하기</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">크롤링을 이용한 데이터 수집</span></p>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="web.html">7. 크롤링을 위한 웹 기본지식</a></li>
+<li class="toctree-l1"><a class="reference internal" href="crawl_basic.html">8. 정적 크롤링 실습하기</a></li>
+<li class="toctree-l1"><a class="reference internal" href="selenium.html">9. 동적 크롤링과 정규 표현식</a></li>
+<li class="toctree-l1"><a class="reference internal" href="data_korea.html">10. 국내 주식 데이터 수집</a></li>
+<li class="toctree-l1 current active"><a class="current reference internal" href="#">11. 전 세계 주식 데이터 수집하기</a></li>
+<li class="toctree-l1"><a class="reference internal" href="data_ref.html">12. 투자 참고용 데이터 수집</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">포트폴리오 구성, 백테스트 및 매매하기</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="factor.html">13. 퀀트 전략을 이용한 종목선정</a></li>
+<li class="toctree-l1"><a class="reference internal" href="portfolio.html">14. 포트폴리오 구성 전략</a></li>
+<li class="toctree-l1"><a class="reference internal" href="technical.html">15. 트레이딩을 위한 기술적 지표</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backtest.html">16. 백테스팅 시뮬레이션</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api_trading.html">17. 증권사 API 연결과 매매하기</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">부록</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="install_python.html">파이썬 다운로드 및 설치하기</a></li>
+<li class="toctree-l1"><a class="reference internal" href="install_sql.html">SQL 다운로드 및 설치하기</a></li>
+</ul>
+
+    </div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+  
+  <div id="rtd-footer-container"></div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main">
+        
+        
+
+<div class="sbt-scroll-pixel-helper"></div>
+
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item"><label class="sidebar-toggle primary-toggle btn btn-sm" for="__primary" title="Toggle primary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <span class="fa-solid fa-bars"></span>
+</label></div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+
+<div class="article-header-buttons">
+
+
+
+
+
+<div class="dropdown dropdown-download-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Download this page">
+    <i class="fas fa-download"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="_sources/data_global_revision.ipynb" target="_blank"
+   class="btn btn-sm btn-download-source-button dropdown-item"
+   title="Download source file"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file"></i>
+  </span>
+<span class="btn__text-container">.ipynb</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li>
+<button onclick="window.print()"
+  class="btn btn-sm btn-download-pdf-button dropdown-item"
+  title="Print to PDF"
+  data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file-pdf"></i>
+  </span>
+<span class="btn__text-container">.pdf</span>
+</button>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+<button onclick="toggleFullScreen()"
+  class="btn btn-sm btn-fullscreen-button"
+  title="Fullscreen mode"
+  data-bs-placement="bottom" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+
+
+<script>
+document.write(`
+  <button class="btn btn-sm navbar-btn theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <span class="theme-switch nav-link" data-mode="light"><i class="fa-solid fa-sun fa-lg"></i></span>
+    <span class="theme-switch nav-link" data-mode="dark"><i class="fa-solid fa-moon fa-lg"></i></span>
+    <span class="theme-switch nav-link" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg"></i></span>
+  </button>
+`);
+</script>
+
+
+<script>
+document.write(`
+  <button class="btn btn-sm navbar-btn search-button search-button__button" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+  </button>
+`);
+</script>
+<label class="sidebar-toggle secondary-toggle btn btn-sm" for="__secondary"title="Toggle secondary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <span class="fa-solid fa-list"></span>
+</label>
+</div></div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+
+<div id="jb-print-docs-body" class="onlyprint">
+    <h1>전 세계 주식 데이터 수집하기</h1>
+    <!-- Table of contents -->
+    <div id="print-main-content">
+        <div id="jb-print-toc">
+            
+            <div>
+                <h2> Contents </h2>
+            </div>
+            <nav aria-label="Page">
+                <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#id2">11.1. 유료 데이터 벤더 이용하기</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#api-token">11.1.1. 가입 및 API token 받기</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id3">11.1.2. 데이터 다운로드</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#id4">11.2. 티커 수집하기</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id5">11.2.1. 전 종목 티커 크롤링</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#id6">11.3. 주가 다운로드</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id7">11.3.1. 전 종목 주가 다운로드</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#id8">11.4. 재무제표 다운로드</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id9">11.4.1. 전 종목 재무제표 다운로드</a></li>
+</ul>
+</li>
+</ul>
+            </nav>
+        </div>
+    </div>
+</div>
+
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section class="tex2jax_ignore mathjax_ignore" id="id1">
+<h1><span class="section-number">11. </span>전 세계 주식 데이터 수집하기<a class="headerlink" href="#id1" title="Link to this heading">#</a></h1>
+<p>퀀트 투자의 장점은 데이터만 있다면 동일한 투자 전략을 전 세계 모든 국가에 적용할 수 있다는 점이다. 이번 장에서는 전 세계 종목의 티커 수집 및 주가, 재무제표, 가치지표를 다운로드 하는 방법에 대해 알아보겠다.</p>
+<section id="id2">
+<h2><span class="section-number">11.1. </span>유료 데이터 벤더 이용하기<a class="headerlink" href="#id2" title="Link to this heading">#</a></h2>
+<p>미국 시장의 데이터만 필요할 경우 유료 데이터 벤더를 이용하는 것도 좋은 방법이다. 미국에는 금융 데이터를 API로 제공하는 수많은 업체가 있으며, tiingo의 경우는 월 $10만 지불하면 미국과 중국의 4만여개 종목에 대한 데이터를 API 형태로 받을 수 있다. 이는 상장폐지된 종목을 커버할 뿐만 아니라, API를 이용하므로 크롤링과는 비교할 수 없는 속도로 데이터를 받을 수 있다는 장점이 있다. 이 외에도 Alpha Vantage, Quandl, Polygon 등 수많은 데이터 벤더가 존재한다.</p>
+<figure class="align-default" id="tiingo">
+<a class="reference internal image-reference" href="_images/tiingo.png"><img alt="_images/tiingo.png" src="_images/tiingo.png" style="width: 564.1999999999999px; height: 579.5999999999999px;" /></a>
+<figcaption>
+<p><span class="caption-number">Fig. 11.1 </span><span class="caption-text">tiingo의 유/무료 서비스 비교</span><a class="headerlink" href="#tiingo" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
+<p>tiingo는 무료 계정도 하루 1,000회까지 API 요청을 할 수 있으며, 파이썬에서 사용할 수 있는 패키지도 있으므로 이를 사용해 데이터를 수집해보도록 하겠다.</p>
+<section id="api-token">
+<h3><span class="section-number">11.1.1. </span>가입 및 API token 받기<a class="headerlink" href="#api-token" title="Link to this heading">#</a></h3>
+<p>먼저 <a class="reference external" href="https://api.tiingo.com/">https://api.tiingo.com/</a> 사이트에 접속하여 우측 상단의 [Sign-up]을 클릭해 회원가입을 한다. 그 후 로그인을 한 후 우측 상단에서 본인의 ID를 클릭한 후 [Account]를 선택, 좌측 메뉴의 [API] 부분에서 [Token]을 클릭하면 본인의 API token을 확인할 수 있다.</p>
+<figure class="align-default" id="token">
+<img alt="_images/token1.png" src="_images/token1.png" />
+<figcaption>
+<p><span class="caption-number">Fig. 11.2 </span><span class="caption-text">API token 확인</span><a class="headerlink" href="#token" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
+<p>발급받은 토큰을 PC에 저장할 경우, keyring 패키지를 이용하면 안전하게 저장할 수 있다. 패키지를 이용해 암호나 키 값을 저장하는 법은 다음과 같다.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">keyring</span>
+
+<span class="n">keyring</span><span class="o">.</span><span class="n">set_password</span><span class="p">(</span><span class="s1">&#39;System&#39;</span><span class="p">,</span> <span class="s1">&#39;User Name&#39;</span><span class="p">,</span> <span class="s1">&#39;Password&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+</div>
+<p>[System]에는 시스템 종류, [User Name]에는 본인의 이름, [Password]에는 발급받은 API Key를 입력한다. 한번 입력된 값은 계속 저장되어 있다. 저장한 키를 불러오는 법은 다음과 같다.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">api_key</span> <span class="o">=</span> <span class="n">keyring</span><span class="o">.</span><span class="n">get_password</span><span class="p">(</span><span class="s1">&#39;System&#39;</span><span class="p">,</span> <span class="s1">&#39;User Name&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+</div>
+<p>이제 ‘Sysyem’에는 ‘tiingo’, ‘User Name’에는 본인의 이름, ‘Password’에는 위에서 발급받은 API Token을 입력해 토큰을 저장하자.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">keyring</span>
+
+<span class="n">keyring</span><span class="o">.</span><span class="n">set_password</span><span class="p">(</span><span class="s1">&#39;tiingo&#39;</span><span class="p">,</span> <span class="s1">&#39;User Name&#39;</span><span class="p">,</span> <span class="s1">&#39;Your API Token&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+</div>
+</section>
+<section id="id3">
+<h3><span class="section-number">11.1.2. </span>데이터 다운로드<a class="headerlink" href="#id3" title="Link to this heading">#</a></h3>
+<p>tiingo 패키지를 이용해 데이터를 받아보도록 하겠다. 데이터를 받기위해 API 접속환경을 셋팅한다.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">tiingo</span> <span class="kn">import</span> <span class="n">TiingoClient</span>
+<span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
+<span class="kn">import</span> <span class="nn">keyring</span>
+
+<span class="n">api_key</span> <span class="o">=</span> <span class="n">keyring</span><span class="o">.</span><span class="n">get_password</span><span class="p">(</span><span class="s1">&#39;tiingo&#39;</span><span class="p">,</span> <span class="s1">&#39;Henry&#39;</span><span class="p">)</span>
+<span class="n">config</span> <span class="o">=</span> <span class="p">{}</span>
+<span class="n">config</span><span class="p">[</span><span class="s1">&#39;session&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
+<span class="n">config</span><span class="p">[</span><span class="s1">&#39;api_key&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">api_key</span>
+<span class="n">client</span> <span class="o">=</span> <span class="n">TiingoClient</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+</div>
+<p>API token을 불러온 후, 접속환경에 해당하는 config에 이를 입력한다.</p>
+<p>먼저 tiingo에서 제공하는 종목은 어떠한 것이 있는지 티커 정보들을 확인해보도록 하자.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">tickers</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">list_stock_tickers</span><span class="p">()</span>
+<span class="n">tickers_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="o">.</span><span class="n">from_records</span><span class="p">(</span><span class="n">tickers</span><span class="p">)</span>
+
+<span class="n">tickers_df</span><span class="o">.</span><span class="n">head</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">list_stock_tickers()</span></code> 메서드를 통해 티커 정보를 받아올 수 있다. ticker(티커), exchange(거래소), assetType(주식 종류), priceCurrency(거래 통화), startDate(시작일), endDate(마감일) 정보가 표시된다. 거래소와 통화 별 종목이 몇개가 있는지 확인해보도록 하자.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">tickers_df</span><span class="o">.</span><span class="n">groupby</span><span class="p">([</span><span class="s1">&#39;exchange&#39;</span><span class="p">,</span> <span class="s1">&#39;priceCurrency&#39;</span><span class="p">])[</span><span class="s1">&#39;ticker&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">count</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+</div>
+<p>이 중 마이너 거래소나 장외 거래소의 경우 정보를 받아도 우리나라의 증권사를 통해서는 실제로 거래를 할 수 없을수도 있다. 따라서 실제 거래가 가능한 거래소 데이터만 필터링한 후 해당 종목들을 받는 것이 효율적이다.</p>
+<p>각 종목의 상세 정보를 확인해보도록 하며, 예로써 애플(AAPL)을 이용한다.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">ticker_metadata</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">get_ticker_metadata</span><span class="p">(</span><span class="s2">&quot;AAPL&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">ticker_metadata</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">get_ticker_metadata()</span></code> 메서드 내에 티커를 입력하면 티커, 종목명, 사업내역 등 대략적인 정보를 받아올 수 있다.</p>
+<p>이제 주가를 받아보도록 하자.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">historical_prices</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">get_dataframe</span><span class="p">(</span><span class="s2">&quot;AAPL&quot;</span><span class="p">,</span>
+                                         <span class="n">startDate</span><span class="o">=</span><span class="s1">&#39;2017-08-01&#39;</span><span class="p">,</span>
+                                         <span class="n">frequency</span><span class="o">=</span><span class="s1">&#39;daily&#39;</span><span class="p">)</span>
+
+<span class="n">historical_prices</span><span class="o">.</span><span class="n">head</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">get_dataframe()</span></code> 메서드 내에 티커를 입력하면 close(종가), high(고가), low(저가), open(시가), volumne(거래량) 및 수정주가와 divCash(현금 배당), splitFactor(주식분할 조정계수)까지 데이터를 받을 수 있다.</p>
+<p>이번에는 일별 가치지표를 받아보도록 하자. (무료 계정의 경우 다우존스 30 지수에 포함되는 종목 정보만 제공한다.)</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">fundamentals_daily</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">get_fundamentals_daily</span><span class="p">(</span><span class="s1">&#39;AAPL&#39;</span><span class="p">)</span>
+<span class="n">fundamentals_daily_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="o">.</span><span class="n">from_records</span><span class="p">(</span><span class="n">fundamentals_daily</span><span class="p">)</span>
+
+<span class="n">fundamentals_daily_df</span><span class="o">.</span><span class="n">head</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">get_fundamentals_daily()</span></code> 메서드 내에 티커를 입력하면 일간 시가총액, 기업가치, PER, PBR, PEG 정보가 JSON 형태로 받아지며, <code class="docutils literal notranslate"><span class="pre">from_records()</span></code> 메서드를 통해 데이터프레임 형태로 변경해준다.</p>
+<p>마지막으로 재무제표를 받아보도록 하자.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">fundamentals_stmnts</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">get_fundamentals_statements</span><span class="p">(</span>
+    <span class="s1">&#39;AAPL&#39;</span><span class="p">,</span> <span class="n">startDate</span><span class="o">=</span><span class="s1">&#39;2019-01-01&#39;</span><span class="p">,</span> <span class="n">asReported</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">fmt</span><span class="o">=</span><span class="s1">&#39;csv&#39;</span><span class="p">)</span>
+
+<span class="n">df_fs</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">([</span><span class="n">x</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;,&#39;</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">fundamentals_stmnts</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;</span><span class="se">\n</span><span class="s1">&#39;</span><span class="p">)])</span>
+<span class="n">df_fs</span><span class="o">.</span><span class="n">columns</span> <span class="o">=</span> <span class="n">df_fs</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+<span class="n">df_fs</span> <span class="o">=</span> <span class="n">df_fs</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
+<span class="n">df_fs</span><span class="o">.</span><span class="n">set_index</span><span class="p">(</span><span class="s1">&#39;date&#39;</span><span class="p">,</span> <span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">inplace</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">df_fs</span> <span class="o">=</span> <span class="n">df_fs</span><span class="p">[</span><span class="n">df_fs</span><span class="o">.</span><span class="n">index</span> <span class="o">!=</span> <span class="s1">&#39;&#39;</span><span class="p">]</span>
+
+<span class="n">df_fs</span><span class="o">.</span><span class="n">head</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+</div>
+<ol class="arabic simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">get_fundamentals_statements()</span></code> 메서드 내에 티커를 입력하면 재무제표의 세부항목을 받을 수 있다. 또한 <code class="docutils literal notranslate"><span class="pre">fmt</span></code>은 포맷 형태를 의미하며, JSON으로 받을 경우 형태가 지나치게 복잡하므로 CSV로 받는 것이 좋다.</p></li>
+<li><p>텍스트 형태로 데이터가 들어오므로, 클렌징을 통해 데이터프레임 형태로 변경한다.</p></li>
+<li><p>첫번째 행을 열 이름으로 지정한 후, 해당 행은 삭제한다.</p></li>
+<li><p>‘date’ 열을 인덱스로 지정한다.</p></li>
+<li><p>‘date’가 비어있는 부분이 있으므로 이를 제거한다.</p></li>
+</ol>
+<p>결과를 확인해보면 연간 재무제표와 분기 재무제표의 상세 정보가 다운로드 될 뿐만 아니라 발표 날짜 또한 제공된다. 이처럼 유료 벤더를 이용하면 티커 및 주가, 재무제표, 가치지표를 매우 쉽고 빠르게 받을 수 있다.</p>
+<p>tiingo의 API 사용법 및 파이썬 패키지 사용법은 아래 페이지에 나와있다.</p>
+<ul class="simple">
+<li><p>tiingo API: <a class="reference external" href="https://api.tiingo.com/documentation/general/overview">https://api.tiingo.com/documentation/general/overview</a></p></li>
+<li><p>파이썬 패키지: <a class="github reference external" href="https://github.com/hydrosquall/tiingo-python">hydrosquall/tiingo-python</a></p></li>
+</ul>
+</section>
+</section>
+<section id="id4">
+<h2><span class="section-number">11.2. </span>티커 수집하기<a class="headerlink" href="#id4" title="Link to this heading">#</a></h2>
+<p>이번에는 크롤링을 통해 데이터를 수집하는 방법에 대해 알아보겠다. 우리나라는 한국거래소를 통해 티커를 손쉽게 수집할 수 있지만 해외의 경우는 그렇지 않다. 먼저 우리나라와 달리 국가 별로 거래소가 여러개인 경우도 있으며, 홈페이지에 상장 종목 리스트를 제공하지 않는 경우도 많기 때문이다.</p>
+<p>다행히 투자자들이 많이 참조하는 사이트인 인베스팅닷컴(<a class="reference external" href="https://www.investing.com/">https://www.investing.com/</a>)에서는 전 세계 주식 및 각종 금융 데이터를 제공하고 있다. 이 중 스크리닝 기능을 활용하면 각 국가별 티커 리스트를 수집할 수 있다. 먼저 인베스팅닷컴에 접속한 후 [Markets → Stocks → Stock Screener]에 접속한다.</p>
+<figure class="align-default" id="screen">
+<img alt="_images/screen.png" src="_images/screen.png" />
+<figcaption>
+<p><span class="caption-number">Fig. 11.3 </span><span class="caption-text">인베스팅닷컴의 주식 스크리너</span><a class="headerlink" href="#screen" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
+<p>페이지를 접속하면 미국 종목들이 나타나며, URL은 다음과 같다.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>https://www.investing.com/stock-screener/?sp=country::5|sector::a|industry::a|equityType::a%3Ceq_market_cap;1
+</pre></div>
+</div>
+<p>하단에 표로 나타는 정보 중 Symbol이 티커에 해당하며, 이를 통해 티커를 손쉽게 수집할 수 있다. 다음으로 국가를 Japan(일본)으로 선택하고, Equity Type은 ORD(보통주)를 선택하자.</p>
+<figure class="align-default" id="japan">
+<img alt="_images/japan.png" src="_images/japan.png" />
+<figcaption>
+<p><span class="caption-number">Fig. 11.4 </span><span class="caption-text">일본 국가 선택</span><a class="headerlink" href="#japan" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
+<p>하단의 테이블이 일본 종목들로 바뀌며 URL 역시 다음과 같이 바뀐다.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>https://www.investing.com/stock-screener/?sp=country::35|sector::a|industry::a|equityType::ORD%3Ceq_market_cap;1
+</pre></div>
+</div>
+<p>즉 기존 URL 중 국가에 해당하는 ‘country’ 부분이 5에서 35로, 주식 종류에 해당하는 ‘equityType’ 부분이 a에서 ORD로 변경되었다. 해당 페이지는 동적으로 페이지가 바뀌므로 셀레니움을 통해 크롤링을 해야한다. 예제로 미국의 보통주 전종목 정보를 크롤링 해보도록 하자.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">selenium</span> <span class="kn">import</span> <span class="n">webdriver</span>
+<span class="kn">from</span> <span class="nn">selenium.webdriver.chrome.service</span> <span class="kn">import</span> <span class="n">Service</span>
+<span class="kn">from</span> <span class="nn">webdriver_manager.chrome</span> <span class="kn">import</span> <span class="n">ChromeDriverManager</span>
+<span class="kn">from</span> <span class="nn">selenium.webdriver.common.by</span> <span class="kn">import</span> <span class="n">By</span>
+<span class="kn">from</span> <span class="nn">bs4</span> <span class="kn">import</span> <span class="n">BeautifulSoup</span>
+<span class="kn">import</span> <span class="nn">math</span>
+<span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
+
+<span class="n">driver</span> <span class="o">=</span> <span class="n">webdriver</span><span class="o">.</span><span class="n">Chrome</span><span class="p">(</span><span class="n">service</span><span class="o">=</span><span class="n">Service</span><span class="p">(</span><span class="n">ChromeDriverManager</span><span class="p">()</span><span class="o">.</span><span class="n">install</span><span class="p">()))</span>
+<span class="n">url</span> <span class="o">=</span> <span class="s1">&#39;https://www.investing.com/stock-screener/?sp=country::5|sector::a|industry::a|equityType::ORD|exchange::a%3Ceq_market_cap;1&#39;</span>
+<span class="n">driver</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">url</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+</div>
+<ol class="arabic simple">
+<li><p>먼저 크롬 드라이버를 설정한다.</p></li>
+<li><p>미국 보통주에 해당하는 URL을 입력한다.</p></li>
+<li><p>해당 페이지를 연다.</p></li>
+</ol>
+<figure class="align-default" id="selenium-open">
+<img alt="_images/selenium_open.png" src="_images/selenium_open.png" />
+<figcaption>
+<p><span class="caption-number">Fig. 11.5 </span><span class="caption-text">셀레니움을 이용한 스크리너 접속</span><a class="headerlink" href="#selenium-open" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
+<p>다음으로 HTML 정보를 가져오도록 한다.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">html</span> <span class="o">=</span> <span class="n">BeautifulSoup</span><span class="p">(</span><span class="n">driver</span><span class="o">.</span><span class="n">page_source</span><span class="p">,</span> <span class="s1">&#39;lxml&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+</div>
+<p>HTML 정보에 해당하는 <code class="docutils literal notranslate"><span class="pre">driver.page_source</span></code>를 BeautifulSoup 객체로 만들어준다. 이제 우리가 찾고자 하는 데이터를 하나씩 살펴보도록 한다. 먼저 각 국가별 코드를 살펴보도록 하자. 개발자도구 화면에서 ‘newBtnDropdown noHover’ 클래스 하단의 ‘li 태그의 ‘data-value’ 속성을 살펴보면 국가별 코드와 국가명이 적혀있다.</p>
+<figure class="align-default" id="country-ticker">
+<img alt="_images/country_ticker.png" src="_images/country_ticker.png" />
+<figcaption>
+<p><span class="caption-number">Fig. 11.6 </span><span class="caption-text">국가별 코드</span><a class="headerlink" href="#country-ticker" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
+<p>이번에는 위젯에서 선택되어 있는 국가명을 확인해보도록 하자. ‘newBtnDropdown noHover’ 클래스 하단의 ‘input’ 태그의 ‘value’ 속성의 속성명에는 국가명이 적혀 있다. 이를 코드를 통해 찾아보도록 하자.</p>
+<figure class="align-default" id="country-name">
+<img alt="_images/country_name.png" src="_images/country_name.png" />
+<figcaption>
+<p><span class="caption-number">Fig. 11.7 </span><span class="caption-text">국가명 확인</span><a class="headerlink" href="#country-name" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">html</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="n">class_</span><span class="o">=</span><span class="s1">&#39;js-search-input inputDropDown&#39;</span><span class="p">)[</span><span class="s1">&#39;value&#39;</span><span class="p">]</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output text_plain highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>&#39;United States&#39;
+</pre></div>
+</div>
+</div>
+</div>
+<p>이번에는 종목들의 정보가 있는 테이블을 확인해보도록 하자. 클래스 명이 ‘genTbl openTbl resultsStockScreenerTbl elpTbl’ 인 테이블 중 ‘tbody’ 부분에 해당 데이터가 위치하고 있다. 이 정보를 이용해 해당 테이블 데이터를 선택하자.</p>
+<figure class="align-default" id="screen-table">
+<img alt="_images/screen_table.png" src="_images/screen_table.png" />
+<figcaption>
+<p><span class="caption-number">Fig. 11.8 </span><span class="caption-text">종목 테이블</span><a class="headerlink" href="#screen-table" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">html_table</span> <span class="o">=</span> <span class="n">html</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="s1">&#39;table.genTbl.openTbl.resultsStockScreenerTbl.elpTbl&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+</div>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="n">html_table</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+</pre></div>
+</div>
+</div>
+</div>
+<figure class="align-default" id="selenium-1">
+<img alt="_images/selenium_1.png" src="_images/selenium_1.png" />
+</figure>
+<p><code class="docutils literal notranslate"><span class="pre">select</span></code> 함수를 이용해 table 태그 중 해당 클래스명을 찾은 후 출력하면, 종목 정보들이 담긴 테이블의 HTML 정보가 출력된다. 이제 이를 데이터프레임 형태로 변환해보도록 하자.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">df_table</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_html</span><span class="p">(</span><span class="n">html_table</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">prettify</span><span class="p">())</span>
+<span class="n">df_table_result</span> <span class="o">=</span> <span class="n">df_table</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+</pre></div>
+</div>
+</div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">prettify()</span></code> 메서드를 이용해 BeautifulSoup 에서 파싱한 파서 트리를 유니코드 형태로 다시 돌려준 후, <code class="docutils literal notranslate"><span class="pre">read_html()</span></code> 함수를 통해 테이블을 읽어온다. Variable Explorer 창에서 df_table_result 변수를 확인해보자.</p>
+<figure class="align-default" id="selenium-2">
+<img alt="_images/selenium_2.png" src="_images/selenium_2.png" />
+<figcaption>
+<p><span class="caption-number">Fig. 11.9 </span><span class="caption-text">크롤링 결과 확인</span><a class="headerlink" href="#selenium-2" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
+<p>결과를 살펴보면 웹페이지에 있는 내역 외에도 Exchange(거래소), Sector, Industy 등 추가적인 정보를 확인할 수 있다. 이 중 필요한 열만 선택하자.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">df_table_select</span> <span class="o">=</span> <span class="n">df_table</span><span class="p">[</span><span class="mi">0</span><span class="p">][[</span><span class="s1">&#39;Name&#39;</span><span class="p">,</span> <span class="s1">&#39;Symbol&#39;</span><span class="p">,</span> <span class="s1">&#39;Exchange&#39;</span><span class="p">,</span>  <span class="s1">&#39;Sector&#39;</span><span class="p">,</span> <span class="s1">&#39;Market Cap&#39;</span><span class="p">]]</span>
+<span class="n">df_table_select</span><span class="o">.</span><span class="n">head</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+</div>
+<p>마지막으로 종목 정보가 몇페이지까지 있는지 확인해야 한다. 웹페이지의 ‘Screener Results’ 글자 뒤에는 해당 국가에 총 몇 종목이 있는지 출력된다. 한 페이지에는 총 50 종목이 출력되므로 해당 숫자를 50으로 나눈 후 올림을 하면 총 페이지 수를 계산할 수 있다. 해당 정보는 ‘js-total-results’ 클래스에 위치하고 있으며, 이를 이용해 페이지 수를 계산해보도록 하자.</p>
+<figure class="align-default" id="country-page">
+<img alt="_images/country_page.png" src="_images/country_page.png" />
+<figcaption>
+<p><span class="caption-number">Fig. 11.10 </span><span class="caption-text">종목 수 확인</span><a class="headerlink" href="#country-page" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">end_num</span> <span class="o">=</span> <span class="n">driver</span><span class="o">.</span><span class="n">find_element</span><span class="p">(</span><span class="n">By</span><span class="o">.</span><span class="n">CLASS_NAME</span><span class="p">,</span> <span class="n">value</span> <span class="o">=</span> <span class="s1">&#39;js-total-results&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">text</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">math</span><span class="o">.</span><span class="n">ceil</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">end_num</span><span class="p">)</span> <span class="o">/</span> <span class="mi">50</span><span class="p">))</span>
+</pre></div>
+</div>
+</div>
+</div>
+<p>마지막으로 드라이브롤 종료해준다.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">driver</span><span class="o">.</span><span class="n">quit</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+</div>
+<section id="id5">
+<h3><span class="section-number">11.2.1. </span>전 종목 티커 크롤링<a class="headerlink" href="#id5" title="Link to this heading">#</a></h3>
+<p>위 과정을 통해 국가별 전 종목의 티커 및 관련 정보를 수집하는 방법과, 페이지 수를 계산할 수 있었다. 이제 for문을 이용해 미국의 전 종목 티커를 크롤링해보도록 하겠다.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">selenium</span> <span class="kn">import</span> <span class="n">webdriver</span>
+<span class="kn">from</span> <span class="nn">selenium.webdriver.chrome.service</span> <span class="kn">import</span> <span class="n">Service</span>
+<span class="kn">from</span> <span class="nn">webdriver_manager.chrome</span> <span class="kn">import</span> <span class="n">ChromeDriverManager</span>
+<span class="kn">from</span> <span class="nn">selenium.webdriver.common.by</span> <span class="kn">import</span> <span class="n">By</span>
+<span class="kn">from</span> <span class="nn">selenium.webdriver.support</span> <span class="kn">import</span> <span class="n">expected_conditions</span> <span class="k">as</span> <span class="n">EC</span>
+<span class="kn">from</span> <span class="nn">selenium.webdriver.support.ui</span> <span class="kn">import</span> <span class="n">WebDriverWait</span>
+<span class="kn">from</span> <span class="nn">bs4</span> <span class="kn">import</span> <span class="n">BeautifulSoup</span>
+<span class="kn">from</span> <span class="nn">datetime</span> <span class="kn">import</span> <span class="n">datetime</span>
+<span class="kn">import</span> <span class="nn">math</span>
+<span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">from</span> <span class="nn">tqdm</span> <span class="kn">import</span> <span class="n">tqdm</span>
+<span class="kn">import</span> <span class="nn">time</span>
+
+<span class="n">driver</span> <span class="o">=</span> <span class="n">webdriver</span><span class="o">.</span><span class="n">Chrome</span><span class="p">(</span><span class="n">service</span><span class="o">=</span><span class="n">Service</span><span class="p">(</span><span class="n">ChromeDriverManager</span><span class="p">()</span><span class="o">.</span><span class="n">install</span><span class="p">()))</span>
+<span class="n">nationcode</span> <span class="o">=</span> <span class="s1">&#39;5&#39;</span>
+<span class="n">url</span> <span class="o">=</span> <span class="sa">f</span><span class="s1">&#39;&#39;&#39;https://investing.com/stock-screener/?sp=country::</span>
+<span class="si">{</span><span class="n">nationcode</span><span class="si">}</span><span class="s1">|sector::a|industry::a|equityType::ORD%3Ceq_market_cap;1&#39;&#39;&#39;</span>
+<span class="n">driver</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">url</span><span class="p">)</span>
+
+<span class="n">WebDriverWait</span><span class="p">(</span><span class="n">driver</span><span class="p">,</span> <span class="mi">10</span><span class="p">)</span><span class="o">.</span><span class="n">until</span><span class="p">(</span><span class="n">EC</span><span class="o">.</span><span class="n">visibility_of_element_located</span><span class="p">(</span>
+    <span class="p">(</span><span class="n">By</span><span class="o">.</span><span class="n">XPATH</span><span class="p">,</span> <span class="s1">&#39;//*[@id=&quot;resultsTable&quot;]/tbody&#39;</span><span class="p">)))</span>
+
+<span class="n">end_num</span> <span class="o">=</span> <span class="n">driver</span><span class="o">.</span><span class="n">find_element</span><span class="p">(</span><span class="n">By</span><span class="o">.</span><span class="n">CLASS_NAME</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="s1">&#39;js-total-results&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">text</span>
+<span class="n">end_num</span> <span class="o">=</span> <span class="n">math</span><span class="o">.</span><span class="n">ceil</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">end_num</span><span class="p">)</span> <span class="o">/</span> <span class="mi">50</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+</div>
+<ol class="arabic simple">
+<li><p>크롬 드라이브를 불러온다.</p></li>
+<li><p>국가 코드는 미국에 해당하는 ‘5’를 입력한다.</p></li>
+<li><p>먼저 첫페이지에 해당하는 URL을 생성한다.</p></li>
+<li><p>셀레니움으로 해당 페이지를 연다</p></li>
+<li><p>‘Screener Results’에 해당하는 부분은 종목이 들어있는 테이블이 로딩된 이후 나타난다. 따라서 <code class="docutils literal notranslate"><span class="pre">WebDriverWait()</span></code> 함수를 통해 해당 테이블이 로딩될 때까지 기다리며, 테이블의 XPATH는 ‘//*[&#64;id=”resultsTable”]/tbody’ 이다.</p></li>
+<li><p>종목수에 해당하는 부분을 크롤링한 후, 이를 통해 페이지 수를 계산한다.</p></li>
+</ol>
+<p>이제 for문을 통해 모든 페이지의 데이터를 크롤링해보도록 하자.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">all_data_df</span> <span class="o">=</span> <span class="p">[]</span>
+
+<span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">tqdm</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">end_num</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)):</span>
+
+    <span class="n">url</span> <span class="o">=</span> <span class="sa">f</span><span class="s1">&#39;&#39;&#39;https://investing.com/stock-screener/?sp=country::</span>
+<span class="s1">        </span><span class="si">{</span><span class="n">nationcode</span><span class="si">}</span><span class="s1">|sector::a|industry::a|equityType::ORD%3Ceq_market_cap;</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s1">&#39;&#39;&#39;</span>
+    <span class="n">driver</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">url</span><span class="p">)</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">WebDriverWait</span><span class="p">(</span><span class="n">driver</span><span class="p">,</span> <span class="mi">10</span><span class="p">)</span><span class="o">.</span><span class="n">until</span><span class="p">(</span><span class="n">EC</span><span class="o">.</span><span class="n">visibility_of_element_located</span><span class="p">(</span>
+            <span class="p">(</span><span class="n">By</span><span class="o">.</span><span class="n">XPATH</span><span class="p">,</span> <span class="s1">&#39;//*[@id=&quot;resultsTable&quot;]/tbody&#39;</span><span class="p">)))</span>
+    <span class="k">except</span><span class="p">:</span>
+        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">driver</span><span class="o">.</span><span class="n">refresh</span><span class="p">()</span>
+        <span class="n">WebDriverWait</span><span class="p">(</span><span class="n">driver</span><span class="p">,</span> <span class="mi">10</span><span class="p">)</span><span class="o">.</span><span class="n">until</span><span class="p">(</span><span class="n">EC</span><span class="o">.</span><span class="n">visibility_of_element_located</span><span class="p">(</span>
+            <span class="p">(</span><span class="n">By</span><span class="o">.</span><span class="n">XPATH</span><span class="p">,</span> <span class="s1">&#39;//*[@id=&quot;resultsTable&quot;]/tbody&#39;</span><span class="p">)))</span>
+
+    <span class="n">html</span> <span class="o">=</span> <span class="n">BeautifulSoup</span><span class="p">(</span><span class="n">driver</span><span class="o">.</span><span class="n">page_source</span><span class="p">,</span> <span class="s1">&#39;lxml&#39;</span><span class="p">)</span>
+
+    <span class="n">html_table</span> <span class="o">=</span> <span class="n">html</span><span class="o">.</span><span class="n">select</span><span class="p">(</span>
+        <span class="s1">&#39;table.genTbl.openTbl.resultsStockScreenerTbl.elpTbl&#39;</span><span class="p">)</span>
+    <span class="n">df_table</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_html</span><span class="p">(</span><span class="n">html_table</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">prettify</span><span class="p">())</span>
+    <span class="n">df_table_select</span> <span class="o">=</span> <span class="n">df_table</span><span class="p">[</span><span class="mi">0</span><span class="p">][[</span><span class="s1">&#39;Name&#39;</span><span class="p">,</span> <span class="s1">&#39;Symbol&#39;</span><span class="p">,</span>
+                                   <span class="s1">&#39;Exchange&#39;</span><span class="p">,</span>  <span class="s1">&#39;Sector&#39;</span><span class="p">,</span> <span class="s1">&#39;Market Cap&#39;</span><span class="p">]]</span>
+
+    <span class="n">all_data_df</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">df_table_select</span><span class="p">)</span>
+
+    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+
+<span class="n">all_data_df_bind</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">(</span><span class="n">all_data_df</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+<span class="n">data_country</span> <span class="o">=</span> <span class="n">html</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="n">class_</span><span class="o">=</span><span class="s1">&#39;js-search-input inputDropDown&#39;</span><span class="p">)[</span><span class="s1">&#39;value&#39;</span><span class="p">]</span>
+<span class="n">all_data_df_bind</span><span class="p">[</span><span class="s1">&#39;country&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">data_country</span>
+<span class="n">all_data_df_bind</span><span class="p">[</span><span class="s1">&#39;date&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">today</span><span class="p">()</span><span class="o">.</span><span class="n">strftime</span><span class="p">(</span><span class="s1">&#39;%Y-%m-</span><span class="si">%d</span><span class="s1">&#39;</span><span class="p">)</span>
+<span class="n">all_data_df_bind</span> <span class="o">=</span> <span class="n">all_data_df_bind</span><span class="p">[</span><span class="o">~</span><span class="n">all_data_df_bind</span><span class="p">[</span><span class="s1">&#39;Name&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">isnull</span><span class="p">()]</span>
+<span class="n">all_data_df_bind</span> <span class="o">=</span> <span class="n">all_data_df_bind</span><span class="p">[</span><span class="n">all_data_df_bind</span><span class="p">[</span><span class="s1">&#39;Exchange&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">isin</span><span class="p">(</span>
+    <span class="p">[</span><span class="s1">&#39;NASDAQ&#39;</span><span class="p">,</span> <span class="s1">&#39;NYSE&#39;</span><span class="p">,</span> <span class="s1">&#39;NYSE Amex&#39;</span><span class="p">])]</span>
+<span class="n">all_data_df_bind</span> <span class="o">=</span> <span class="n">all_data_df_bind</span><span class="o">.</span><span class="n">drop_duplicates</span><span class="p">([</span><span class="s1">&#39;Symbol&#39;</span><span class="p">])</span>
+<span class="n">all_data_df_bind</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">inplace</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">all_data_df_bind</span> <span class="o">=</span> <span class="n">all_data_df_bind</span><span class="o">.</span><span class="n">replace</span><span class="p">({</span><span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">:</span> <span class="kc">None</span><span class="p">})</span>
+
+<span class="n">driver</span><span class="o">.</span><span class="n">quit</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+</div>
+<ol class="arabic simple">
+<li><p>빈 리스트(all_data_df)를 생성한다.</p></li>
+<li><p>for문을 통해 전체 페이지에서 종목명과 티커 등의 정보를 크롤링한다.</p></li>
+<li><p>f-string을 통해 각 페이지에 해당하는 URL을 생성한 후 페이지를 연다.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">WebDriverWait()</span></code> 함수를 통해 테이블이 로딩될때 까지 기다린다. 또한 간혹 페이지 오류가 발생할 때가 있으므로, try except문을 이용해 오류 발생 시 1초간 기다린 후 <code class="docutils literal notranslate"><span class="pre">refresh()</span></code>를 통해 새로고침을 하여 다시 테이블이 로딩되길 기다린다.</p></li>
+<li><p>HTML 정보를 불러온 후, 테이블에 해당하는 부분을 선택한다.</p></li>
+<li><p>원하는 열만 선택한다.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">append()</span></code> 메서드를 통해 해당 테이블을 리스트에 추가한다.</p></li>
+<li><p>2초가 일시정지를 한다.</p></li>
+<li><p>for문이 끝나면 <code class="docutils literal notranslate"><span class="pre">concat()</span></code> 함수를 통해 리스트 내 모든 데이터프레임을 행으로 묶어준다.</p></li>
+<li><p>국가명에 해당하는 부분을 추출한 뒤, ‘country’ 열에 입력한다.</p></li>
+<li><p>‘date’ 열에 오늘 날짜를 입력한다.</p></li>
+<li><p>일부 종목의 경우 종목명이 빈칸으로 들어오므로 이를 제거한다.</p></li>
+<li><p>‘Exchange’ 열에서 거래가 가능한 거래소만 선택한다.</p></li>
+<li><p>일부 종목의 경우 중복된 결과가 들어오기도 하므로 <code class="docutils literal notranslate"><span class="pre">drop_duplicates()</span></code> 메서드를 통해 Symbol이 겹치는 경우 한개만 남겨준다.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">reset_index()</span></code> 메서드를 통해 인덱스를 초기화한다.</p></li>
+<li><p>nan을 None으로 변경한다.</p></li>
+<li><p>드라이브롤 종료한다.</p></li>
+</ol>
+<p>마지막으로 위 데이터프레임을 SQL에 저장해주도록 한다. 먼저 SQL에서 다음의 쿼리를 통해 테이블(global_ticker)을 만든다.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">use</span> <span class="n">stock_db</span><span class="p">;</span>
+
+<span class="n">create</span> <span class="n">table</span> <span class="n">global_ticker</span>
+<span class="p">(</span>
+    <span class="n">Name</span> <span class="n">varchar</span><span class="p">(</span><span class="mi">50</span><span class="p">)</span> <span class="ow">not</span> <span class="n">null</span><span class="p">,</span>
+    <span class="n">Symbol</span> <span class="n">varchar</span><span class="p">(</span><span class="mi">30</span><span class="p">),</span>
+    <span class="n">Exchange</span> <span class="n">varchar</span><span class="p">(</span><span class="mi">30</span><span class="p">),</span>
+    <span class="n">Sector</span> <span class="n">varchar</span><span class="p">(</span><span class="mi">40</span><span class="p">),</span>
+    <span class="err">`</span><span class="n">Market</span> <span class="n">Cap</span><span class="err">`</span> <span class="n">varchar</span><span class="p">(</span><span class="mi">10</span><span class="p">),</span>
+    <span class="n">country</span> <span class="n">varchar</span><span class="p">(</span><span class="mi">20</span><span class="p">),</span>    
+    <span class="n">date</span> <span class="n">date</span><span class="p">,</span>
+    <span class="n">primary</span> <span class="n">key</span><span class="p">(</span><span class="n">Symbol</span><span class="p">,</span> <span class="n">country</span><span class="p">,</span> <span class="n">date</span><span class="p">)</span>
+<span class="p">);</span>
+</pre></div>
+</div>
+</div>
+</div>
+<p>위에서 구한 티커 데이터를 해당 테이블에 저장한다.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">pymysql</span>
+
+<span class="n">con</span> <span class="o">=</span> <span class="n">pymysql</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">user</span><span class="o">=</span><span class="s1">&#39;root&#39;</span><span class="p">,</span>
+                      <span class="n">passwd</span><span class="o">=</span><span class="s1">&#39;1234&#39;</span><span class="p">,</span>
+                      <span class="n">host</span><span class="o">=</span><span class="s1">&#39;127.0.0.1&#39;</span><span class="p">,</span>
+                      <span class="n">db</span><span class="o">=</span><span class="s1">&#39;stock_db&#39;</span><span class="p">,</span>
+                      <span class="n">charset</span><span class="o">=</span><span class="s1">&#39;utf8&#39;</span><span class="p">)</span>
+
+<span class="n">mycursor</span> <span class="o">=</span> <span class="n">con</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+<span class="n">query</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">    insert into global_ticker (Name, Symbol, Exchange, Sector, `Market Cap`, country, date)</span>
+<span class="s2">    values (</span><span class="si">%s</span><span class="s2">,</span><span class="si">%s</span><span class="s2">,</span><span class="si">%s</span><span class="s2">,</span><span class="si">%s</span><span class="s2">,</span><span class="si">%s</span><span class="s2">,</span><span class="si">%s</span><span class="s2">,</span><span class="si">%s</span><span class="s2">) as new</span>
+<span class="s2">    on duplicate key update</span>
+<span class="s2">    name=new.name,Exchange=new.Exchange,Sector=new.Sector,</span>
+<span class="s2">    `Market Cap`=new.`Market Cap`; </span>
+<span class="s2">&quot;&quot;&quot;</span>
+
+<span class="n">args</span> <span class="o">=</span> <span class="n">all_data_df_bind</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+
+<span class="n">mycursor</span><span class="o">.</span><span class="n">executemany</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">args</span><span class="p">)</span>
+<span class="n">con</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+
+<span class="n">con</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+</div>
+<figure class="align-default" id="ticker-sql">
+<img alt="_images/ticker_sql.png" src="_images/ticker_sql.png" />
+<figcaption>
+<p><span class="caption-number">Fig. 11.11 </span><span class="caption-text">글로벌 티커 테이블</span><a class="headerlink" href="#ticker-sql" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<ul class="simple">
+<li><p>nationcode 부분만 변경하면 모든 국가의 티커 리스트 역시 동일한 방법으로 다운로드 받을 수 있다.</p></li>
+</ul>
+</div>
+</section>
+</section>
+<section id="id6">
+<h2><span class="section-number">11.3. </span>주가 다운로드<a class="headerlink" href="#id6" title="Link to this heading">#</a></h2>
+<p>야후 파이낸스에서는 전 세계 주가(한국 포함)를 제공하고 있다.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">finance</span><span class="o">.</span><span class="n">yahoo</span><span class="o">.</span><span class="n">com</span><span class="o">/</span>
+</pre></div>
+</div>
+<p>사이트에서 종목 티커를 검색한 후 [Historical Data] 탭을 선택하면 확인 및 다운로드가 가능하다. 또한 야후 API를 통해 해당 데이터를 손쉽게 다운로드 받을 수 있는 패키지들이 있으므로, 이를 이용해 먼저 애플(AAPL)의 주가를 다운로드 받아보도록 하자.</p>
+<figure class="align-default" id="yahoo-price">
+<img alt="_images/yahoo_price.png" src="_images/yahoo_price.png" />
+<figcaption>
+<p><span class="caption-number">Fig. 11.12 </span><span class="caption-text">야후에서 제공하는 주가 데이터</span><a class="headerlink" href="#yahoo-price" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">yfinance</span> <span class="k">as</span> <span class="nn">yf</span>
+
+<span class="n">price</span> <span class="o">=</span>  <span class="n">yf</span><span class="o">.</span><span class="n">download</span><span class="p">(</span><span class="s1">&#39;AAPL&#39;</span><span class="p">)</span>
+<span class="n">price</span><span class="o">.</span><span class="n">head</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>[*********************100%%**********************]  1 of 1 completed
+</pre></div>
+</div>
+<div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>Open</th>
+      <th>High</th>
+      <th>Low</th>
+      <th>Close</th>
+      <th>Adj Close</th>
+      <th>Volume</th>
+    </tr>
+    <tr>
+      <th>Date</th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>1980-12-12</th>
+      <td>0.128348</td>
+      <td>0.128906</td>
+      <td>0.128348</td>
+      <td>0.128348</td>
+      <td>0.099192</td>
+      <td>469033600</td>
+    </tr>
+    <tr>
+      <th>1980-12-15</th>
+      <td>0.122210</td>
+      <td>0.122210</td>
+      <td>0.121652</td>
+      <td>0.121652</td>
+      <td>0.094017</td>
+      <td>175884800</td>
+    </tr>
+    <tr>
+      <th>1980-12-16</th>
+      <td>0.113281</td>
+      <td>0.113281</td>
+      <td>0.112723</td>
+      <td>0.112723</td>
+      <td>0.087117</td>
+      <td>105728000</td>
+    </tr>
+    <tr>
+      <th>1980-12-17</th>
+      <td>0.115513</td>
+      <td>0.116071</td>
+      <td>0.115513</td>
+      <td>0.115513</td>
+      <td>0.089273</td>
+      <td>86441600</td>
+    </tr>
+    <tr>
+      <th>1980-12-18</th>
+      <td>0.118862</td>
+      <td>0.119420</td>
+      <td>0.118862</td>
+      <td>0.118862</td>
+      <td>0.091861</td>
+      <td>73449600</td>
+    </tr>
+  </tbody>
+</table>
+</div></div></div>
+</div>
+<p>yfinance 패키지의 <code class="docutils literal notranslate"><span class="pre">download()</span></code> 함수 내에 티커를 입력하면 주가 정보를 매우 손쉽게 받을 수 있다. [1 of 1 completed] 부분에 해당하는 진행과정을 출력하고 싶지 않을 시, <code class="docutils literal notranslate"><span class="pre">progress=False</span></code> 인자를 추가하면 된다.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">price</span> <span class="o">=</span> <span class="n">yf</span><span class="o">.</span><span class="n">download</span><span class="p">(</span><span class="s1">&#39;AAPL&#39;</span><span class="p">,</span> <span class="n">progress</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">start</span></code> 인자를 추가하면 데이터 다운로드 기간을 변경할 수도 있다. 2000년 1월 1일부터 데이터를 받는법은 다음가 같다.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">price</span> <span class="o">=</span> <span class="n">yf</span><span class="o">.</span><span class="n">download</span><span class="p">(</span><span class="s1">&#39;AAPL&#39;</span><span class="p">,</span> <span class="n">start</span> <span class="o">=</span> <span class="s1">&#39;2000-01-01&#39;</span><span class="p">,</span> <span class="n">progress</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+<span class="n">price</span><span class="o">.</span><span class="n">head</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>Open</th>
+      <th>High</th>
+      <th>Low</th>
+      <th>Close</th>
+      <th>Adj Close</th>
+      <th>Volume</th>
+    </tr>
+    <tr>
+      <th>Date</th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>2000-01-03</th>
+      <td>0.936384</td>
+      <td>1.004464</td>
+      <td>0.907924</td>
+      <td>0.999442</td>
+      <td>0.846127</td>
+      <td>535796800</td>
+    </tr>
+    <tr>
+      <th>2000-01-04</th>
+      <td>0.966518</td>
+      <td>0.987723</td>
+      <td>0.903460</td>
+      <td>0.915179</td>
+      <td>0.774790</td>
+      <td>512377600</td>
+    </tr>
+    <tr>
+      <th>2000-01-05</th>
+      <td>0.926339</td>
+      <td>0.987165</td>
+      <td>0.919643</td>
+      <td>0.928571</td>
+      <td>0.786128</td>
+      <td>778321600</td>
+    </tr>
+    <tr>
+      <th>2000-01-06</th>
+      <td>0.947545</td>
+      <td>0.955357</td>
+      <td>0.848214</td>
+      <td>0.848214</td>
+      <td>0.718098</td>
+      <td>767972800</td>
+    </tr>
+    <tr>
+      <th>2000-01-07</th>
+      <td>0.861607</td>
+      <td>0.901786</td>
+      <td>0.852679</td>
+      <td>0.888393</td>
+      <td>0.752113</td>
+      <td>460734400</td>
+    </tr>
+  </tbody>
+</table>
+</div></div></div>
+</div>
+<p>미국이 아닌 국가의 경우 단순히 티커만 입력할 경우 데이터를 받을 수 없다. 예를 들어 일본의 ‘도쿄 일렉트론’은 일본 내에서 티커가 ‘8035’이며, 야후 파이낸스에서 이를 검색해보자.</p>
+<figure class="align-default" id="same-ticker">
+<img alt="_images/same_ticker.png" src="_images/same_ticker.png" />
+<figcaption>
+<p><span class="caption-number">Fig. 11.13 </span><span class="caption-text">중복 티커</span><a class="headerlink" href="#same-ticker" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
+<p>우리가 원하는 도쿄 일렉트론 뿐만 아니라 홍콩에 상장된 ‘Janco Holdings Limited’라는 주식 역시 티커가 8035 이다. 이처럼 각기 다른 국가에서 중복된 티커가 사용되는 경우가 종종 발생되므로, 야후 파이낸스 혹은 여러 벤더의 경우 ‘티커.국가코드’ 형태를 통해 이들을 구분한다. 야후 파이낸스에서 일본의 국가코드는 ‘T’ 이다. 이를 이용해 도쿄 일렉트론의 주가를 받는 법은 다음과 같다.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">price</span> <span class="o">=</span> <span class="n">yf</span><span class="o">.</span><span class="n">download</span><span class="p">(</span><span class="s2">&quot;8035.T&quot;</span><span class="p">,</span> <span class="n">progress</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+<span class="n">price</span><span class="o">.</span><span class="n">head</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>Open</th>
+      <th>High</th>
+      <th>Low</th>
+      <th>Close</th>
+      <th>Adj Close</th>
+      <th>Volume</th>
+    </tr>
+    <tr>
+      <th>Date</th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>2000-01-04</th>
+      <td>4600.000000</td>
+      <td>4666.666504</td>
+      <td>4296.666504</td>
+      <td>4336.666504</td>
+      <td>2920.333984</td>
+      <td>693000</td>
+    </tr>
+    <tr>
+      <th>2000-01-05</th>
+      <td>3836.666748</td>
+      <td>4046.666748</td>
+      <td>3673.333252</td>
+      <td>3983.333252</td>
+      <td>2682.397949</td>
+      <td>2016000</td>
+    </tr>
+    <tr>
+      <th>2000-01-06</th>
+      <td>4000.000000</td>
+      <td>4200.000000</td>
+      <td>3666.666748</td>
+      <td>3673.333252</td>
+      <td>2473.642822</td>
+      <td>2064000</td>
+    </tr>
+    <tr>
+      <th>2000-01-07</th>
+      <td>3600.000000</td>
+      <td>3843.333252</td>
+      <td>3510.000000</td>
+      <td>3640.000000</td>
+      <td>2451.196289</td>
+      <td>3609000</td>
+    </tr>
+    <tr>
+      <th>2000-01-10</th>
+      <td>3640.000000</td>
+      <td>3640.000000</td>
+      <td>3640.000000</td>
+      <td>3640.000000</td>
+      <td>2451.196289</td>
+      <td>0</td>
+    </tr>
+  </tbody>
+</table>
+</div></div></div>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<ul class="simple">
+<li><p>미국의 경우는 국가코드가 필요없이 단순히 티커만 입력하면 된다.</p></li>
+<li><p>국내 주가 역시 야후 파이낸스를 통해 다운로드 받을 수 있다. 그러나 일부 중소형주의 경우 데이터가 존재하지 않는 문제가 있어 국내 사이트를 이용해 수집하는 것을 권장한다.</p></li>
+</ul>
+</div>
+<section id="id7">
+<h3><span class="section-number">11.3.1. </span>전 종목 주가 다운로드<a class="headerlink" href="#id7" title="Link to this heading">#</a></h3>
+<p>미국 데이터 역시 국내 전종목 주가를 다운로드 받고 DB에 저장했던것과 동일하게 for문을 이용하면 된다. 먼저 SQL에서 주가 데이터에 해당하는 테이블(global_price)를 만든다.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">use</span> <span class="n">stock_db</span><span class="p">;</span>
+
+<span class="n">create</span> <span class="n">table</span> <span class="n">global_price</span>
+<span class="p">(</span>
+    <span class="n">Date</span> <span class="n">date</span><span class="p">,</span>
+    <span class="n">High</span> <span class="n">double</span><span class="p">,</span>
+    <span class="n">Low</span> <span class="n">double</span><span class="p">,</span>
+    <span class="n">Open</span> <span class="n">double</span><span class="p">,</span>
+    <span class="n">Close</span> <span class="n">double</span><span class="p">,</span>
+    <span class="n">Volume</span> <span class="n">double</span><span class="p">,</span>
+    <span class="err">`</span><span class="n">Adj</span> <span class="n">Close</span><span class="err">`</span> <span class="n">double</span><span class="p">,</span>
+    <span class="n">ticker</span> <span class="n">varchar</span><span class="p">(</span><span class="mi">20</span><span class="p">),</span>
+    <span class="n">primary</span> <span class="n">key</span><span class="p">(</span><span class="n">Date</span><span class="p">,</span> <span class="n">ticker</span><span class="p">)</span>
+<span class="p">);</span>
+</pre></div>
+</div>
+</div>
+</div>
+<p>파이썬에서 아래 코드를 실행하면 for문을 통해 전종목 주가가 DB에 저장된다.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># 패키지 불러오기</span>
+<span class="kn">import</span> <span class="nn">pymysql</span>
+<span class="kn">from</span> <span class="nn">sqlalchemy</span> <span class="kn">import</span> <span class="n">create_engine</span>
+<span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
+<span class="kn">import</span> <span class="nn">yfinance</span> <span class="k">as</span> <span class="nn">yf</span>
+<span class="kn">import</span> <span class="nn">time</span>
+<span class="kn">from</span> <span class="nn">tqdm</span> <span class="kn">import</span> <span class="n">tqdm</span>
+
+<span class="c1"># DB 연결</span>
+<span class="n">engine</span> <span class="o">=</span> <span class="n">create_engine</span><span class="p">(</span><span class="s1">&#39;mysql+pymysql://root:1234@127.0.0.1:3306/stock_db&#39;</span><span class="p">)</span>
+<span class="n">con</span> <span class="o">=</span> <span class="n">pymysql</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">user</span><span class="o">=</span><span class="s1">&#39;root&#39;</span><span class="p">,</span>
+                      <span class="n">passwd</span><span class="o">=</span><span class="s1">&#39;1234&#39;</span><span class="p">,</span>
+                      <span class="n">host</span><span class="o">=</span><span class="s1">&#39;127.0.0.1&#39;</span><span class="p">,</span>
+                      <span class="n">db</span><span class="o">=</span><span class="s1">&#39;stock_db&#39;</span><span class="p">,</span>
+                      <span class="n">charset</span><span class="o">=</span><span class="s1">&#39;utf8&#39;</span><span class="p">)</span>
+
+<span class="n">mycursor</span> <span class="o">=</span> <span class="n">con</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+
+<span class="c1"># 티커리스트 불러오기</span>
+<span class="n">ticker_list</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_sql</span><span class="p">(</span><span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">select * from global_ticker</span>
+<span class="s2">where date = (select max(date) from global_ticker)</span>
+<span class="s2">and country = &#39;United States&#39;;</span>
+<span class="s2">&quot;&quot;&quot;</span><span class="p">,</span> <span class="n">con</span><span class="o">=</span><span class="n">engine</span><span class="p">)</span>
+
+<span class="c1"># DB 저장 쿼리</span>
+<span class="n">query</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">    insert into global_price (Date, High, Low, Open, Close, Volume, `Adj Close`, ticker)</span>
+<span class="s2">    values (</span><span class="si">%s</span><span class="s2">, </span><span class="si">%s</span><span class="s2">,</span><span class="si">%s</span><span class="s2">,</span><span class="si">%s</span><span class="s2">,</span><span class="si">%s</span><span class="s2">,</span><span class="si">%s</span><span class="s2">,</span><span class="si">%s</span><span class="s2">,</span><span class="si">%s</span><span class="s2">) as new</span>
+<span class="s2">    on duplicate key update</span>
+<span class="s2">    High = new.High, Low = new.Low, Open = new.Open, Close = new.Close,</span>
+<span class="s2">    Volume = new.Volume, `Adj Close` = new.`Adj Close`;</span>
+<span class="s2">&quot;&quot;&quot;</span>
+
+<span class="c1"># 오류 발생시 저장할 리스트 생성</span>
+<span class="n">error_list</span> <span class="o">=</span> <span class="p">[]</span>
+
+<span class="c1"># 전종목 주가 다운로드 및 저장</span>
+<span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">tqdm</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">ticker_list</span><span class="p">))):</span>
+
+    <span class="c1"># 티커 선택</span>
+    <span class="n">ticker</span> <span class="o">=</span> <span class="n">ticker_list</span><span class="p">[</span><span class="s1">&#39;Symbol&#39;</span><span class="p">][</span><span class="n">i</span><span class="p">]</span>
+
+    <span class="c1"># 오류 발생 시 이를 무시하고 다음 루프로 진행</span>
+    <span class="k">try</span><span class="p">:</span>
+
+        <span class="c1"># 주가 다운로드</span>
+        <span class="n">price</span> <span class="o">=</span> <span class="n">yf</span><span class="o">.</span><span class="n">download</span><span class="p">(</span><span class="n">ticker</span><span class="p">,</span> <span class="n">progress</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+        <span class="c1"># 데이터 클렌징</span>
+        <span class="n">price</span> <span class="o">=</span> <span class="n">price</span><span class="o">.</span><span class="n">reset_index</span><span class="p">()</span>
+        <span class="n">price</span><span class="p">[</span><span class="s1">&#39;ticker&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">ticker</span>
+
+        <span class="c1"># 주가 데이터를 DB에 저장</span>
+        <span class="n">args</span> <span class="o">=</span> <span class="n">price</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+        <span class="n">mycursor</span><span class="o">.</span><span class="n">executemany</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">args</span><span class="p">)</span>
+        <span class="n">con</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+
+    <span class="k">except</span><span class="p">:</span>
+
+        <span class="c1"># 오류 발생시 error_list에 티커 저장하고 넘어가기</span>
+        <span class="nb">print</span><span class="p">(</span><span class="n">ticker</span><span class="p">)</span>
+        <span class="n">error_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ticker</span><span class="p">)</span>
+
+    <span class="c1"># 타임슬립 적용</span>
+    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+
+<span class="c1"># DB 연결 종료</span>
+<span class="n">engine</span><span class="o">.</span><span class="n">dispose</span><span class="p">()</span>
+<span class="n">con</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+</div>
+<ol class="arabic simple">
+<li><p>DB에 연결한다.</p></li>
+<li><p>기준일이 최대, 즉 최근일 기준 보통주에 해당하며, 미국 종목의 리스트(ticker_list)만 불러온다.</p></li>
+<li><p>DB에 저장할 쿼리(query)를 입력한다.</p></li>
+<li><p>페이지 오류, 통신 오류 등 오류가 발생한 티커명을 저장할 리스트(error_list)를 만든다.</p></li>
+<li><p>for문을 통해 전종목 주가를 다운로드 받으며, 진행상황을 알기위해 <code class="docutils literal notranslate"><span class="pre">tqdm()</span></code> 함수를 이용한다.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">download()</span></code> 함수를 통해 야후 파이낸스에서 주가를 받은 후 클렌징 처리한다. 그 후 주가 데이터를 DB에 저장한다.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">try</span> <span class="pre">except</span></code>문을 통해 오류가 발생시 ‘error_list’에 티커를 저장한다.</p></li>
+<li><p>무한 크롤링을 방지하기 위해 한 번의 루프가 끝날 때마다 타임슬립을 적용한다.</p></li>
+<li><p>모든 작업이 끝나면 DB와의 연결을 종료한다.</p></li>
+</ol>
+<figure class="align-default" id="sql-price">
+<img alt="_images/sql_price.png" src="_images/sql_price.png" />
+<figcaption>
+<p><span class="caption-number">Fig. 11.14 </span><span class="caption-text">글로벌 주가 테이블</span><a class="headerlink" href="#sql-price" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
+<p>작업이 종료된 후 ‘error_list’에는 오류가 발생해 다운로드 받지 못한 종목들이 입력되어 있다. 이는 페이지 오류나 통신 오류 때문일 수도 있으며, 인베스팅닷컴에는 존재하지만 야후 파이낸스에는 존재하지 않는 종목일 수도 있다.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>미국이 아닌 타 국가의 경우 티커의 중복 방지를 위해 ticker 열에 국가코드도 함께 입력한 후 DB에 저장하는 것을 추천한다.</p>
+</div>
+</section>
+</section>
+<section id="id8">
+<h2><span class="section-number">11.4. </span>재무제표 다운로드<a class="headerlink" href="#id8" title="Link to this heading">#</a></h2>
+<p>재무제표 역시 야후 파이낸스에서 구할 수 있으며, [Financials] 탭을 클릭하면 연간 및 분기 기준 재무제표를 제공하고 있다. 해당 데이터를 다운로드 받을 수 있는 여러 패키지가 존재하며, 본 책에서는 그 중에서 yahooquery 패키지를 사용하도록 하겠다. 해당 패키지의 자세한 설명은 아래 사이트에서 확인할 수 있다. 예시로 애플(AAPL)의 종목정보 및 재무제표를 받아보도록 하겠다.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">yahooquery</span><span class="o">.</span><span class="n">dpguthrie</span><span class="o">.</span><span class="n">com</span><span class="o">/</span>
+</pre></div>
+</div>
+<figure class="align-default" id="yahoo-fs">
+<img alt="_images/yahoo_fs.png" src="_images/yahoo_fs.png" />
+<figcaption>
+<p><span class="caption-number">Fig. 11.15 </span><span class="caption-text">야후에서 제공하는 재무제표 데이터</span><a class="headerlink" href="#yahoo-fs" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">yahooquery</span> <span class="kn">import</span> <span class="n">Ticker</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+
+<span class="n">data</span> <span class="o">=</span> <span class="n">Ticker</span><span class="p">(</span><span class="s1">&#39;AAPL&#39;</span><span class="p">)</span>
+<span class="n">data</span><span class="o">.</span><span class="n">asset_profile</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output text_plain highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>{&#39;AAPL&#39;: {&#39;address1&#39;: &#39;One Apple Park Way&#39;,
+  &#39;city&#39;: &#39;Cupertino&#39;,
+  &#39;state&#39;: &#39;CA&#39;,
+  &#39;zip&#39;: &#39;95014&#39;,
+  &#39;country&#39;: &#39;United States&#39;,
+  &#39;phone&#39;: &#39;408 996 1010&#39;,
+  &#39;website&#39;: &#39;https://www.apple.com&#39;,
+  &#39;industry&#39;: &#39;Consumer Electronics&#39;,
+  &#39;industryKey&#39;: &#39;consumer-electronics&#39;,
+  &#39;industryDisp&#39;: &#39;Consumer Electronics&#39;,
+  &#39;sector&#39;: &#39;Technology&#39;,
+  &#39;sectorKey&#39;: &#39;technology&#39;,
+  &#39;sectorDisp&#39;: &#39;Technology&#39;,
+  &#39;longBusinessSummary&#39;: &#39;Apple Inc. designs, manufactures, and markets smartphones, personal computers, tablets, wearables, and accessories worldwide. The company offers iPhone, a line of smartphones; Mac, a line of personal computers; iPad, a line of multi-purpose tablets; and wearables, home, and accessories comprising AirPods, Apple TV, Apple Watch, Beats products, and HomePod. It also provides AppleCare support and cloud services; and operates various platforms, including the App Store that allow customers to discover and download applications and digital content, such as books, music, video, games, and podcasts. In addition, the company offers various services, such as Apple Arcade, a game subscription service; Apple Fitness+, a personalized fitness service; Apple Music, which offers users a curated listening experience with on-demand radio stations; Apple News+, a subscription news and magazine service; Apple TV+, which offers exclusive original content; Apple Card, a co-branded credit card; and Apple Pay, a cashless payment service, as well as licenses its intellectual property. The company serves consumers, and small and mid-sized businesses; and the education, enterprise, and government markets. It distributes third-party applications for its products through the App Store. The company also sells its products through its retail and online stores, and direct sales force; and third-party cellular network carriers, wholesalers, retailers, and resellers. Apple Inc. was founded in 1976 and is headquartered in Cupertino, California.&#39;,
+  &#39;fullTimeEmployees&#39;: 161000,
+  &#39;companyOfficers&#39;: [{&#39;maxAge&#39;: 1,
+    &#39;name&#39;: &#39;Mr. Timothy D. Cook&#39;,
+    &#39;age&#39;: 62,
+    &#39;title&#39;: &#39;CEO &amp; Director&#39;,
+    &#39;yearBorn&#39;: 1961,
+    &#39;fiscalYear&#39;: 2023,
+    &#39;totalPay&#39;: 16239562,
+    &#39;exercisedValue&#39;: 0,
+    &#39;unexercisedValue&#39;: 0},
+   {&#39;maxAge&#39;: 1,
+    &#39;name&#39;: &#39;Mr. Luca  Maestri&#39;,
+    &#39;age&#39;: 60,
+    &#39;title&#39;: &#39;CFO &amp; Senior VP&#39;,
+    &#39;yearBorn&#39;: 1963,
+    &#39;fiscalYear&#39;: 2023,
+    &#39;totalPay&#39;: 4612242,
+    &#39;exercisedValue&#39;: 0,
+    &#39;unexercisedValue&#39;: 0},
+   {&#39;maxAge&#39;: 1,
+    &#39;name&#39;: &#39;Mr. Jeffrey E. Williams&#39;,
+    &#39;age&#39;: 59,
+    &#39;title&#39;: &#39;Chief Operating Officer&#39;,
+    &#39;yearBorn&#39;: 1964,
+    &#39;fiscalYear&#39;: 2023,
+    &#39;totalPay&#39;: 4637585,
+    &#39;exercisedValue&#39;: 0,
+    &#39;unexercisedValue&#39;: 0},
+   {&#39;maxAge&#39;: 1,
+    &#39;name&#39;: &#39;Ms. Katherine L. Adams&#39;,
+    &#39;age&#39;: 59,
+    &#39;title&#39;: &#39;Senior VP, General Counsel &amp; Secretary&#39;,
+    &#39;yearBorn&#39;: 1964,
+    &#39;fiscalYear&#39;: 2023,
+    &#39;totalPay&#39;: 4618064,
+    &#39;exercisedValue&#39;: 0,
+    &#39;unexercisedValue&#39;: 0},
+   {&#39;maxAge&#39;: 1,
+    &#39;name&#39;: &quot;Ms. Deirdre  O&#39;Brien&quot;,
+    &#39;age&#39;: 56,
+    &#39;title&#39;: &#39;Senior Vice President of Retail&#39;,
+    &#39;yearBorn&#39;: 1967,
+    &#39;fiscalYear&#39;: 2023,
+    &#39;totalPay&#39;: 4613369,
+    &#39;exercisedValue&#39;: 0,
+    &#39;unexercisedValue&#39;: 0},
+   {&#39;maxAge&#39;: 1,
+    &#39;name&#39;: &#39;Mr. Chris  Kondo&#39;,
+    &#39;title&#39;: &#39;Senior Director of Corporate Accounting&#39;,
+    &#39;fiscalYear&#39;: 2023,
+    &#39;exercisedValue&#39;: 0,
+    &#39;unexercisedValue&#39;: 0},
+   {&#39;maxAge&#39;: 1,
+    &#39;name&#39;: &#39;Mr. James  Wilson&#39;,
+    &#39;title&#39;: &#39;Chief Technology Officer&#39;,
+    &#39;fiscalYear&#39;: 2023,
+    &#39;exercisedValue&#39;: 0,
+    &#39;unexercisedValue&#39;: 0},
+   {&#39;maxAge&#39;: 1,
+    &#39;name&#39;: &#39;Suhasini  Chandramouli&#39;,
+    &#39;title&#39;: &#39;Director of Investor Relations&#39;,
+    &#39;fiscalYear&#39;: 2023,
+    &#39;exercisedValue&#39;: 0,
+    &#39;unexercisedValue&#39;: 0},
+   {&#39;maxAge&#39;: 1,
+    &#39;name&#39;: &#39;Mr. Greg  Joswiak&#39;,
+    &#39;title&#39;: &#39;Senior Vice President of Worldwide Marketing&#39;,
+    &#39;fiscalYear&#39;: 2023,
+    &#39;exercisedValue&#39;: 0,
+    &#39;unexercisedValue&#39;: 0},
+   {&#39;maxAge&#39;: 1,
+    &#39;name&#39;: &#39;Mr. Adrian  Perica&#39;,
+    &#39;age&#39;: 49,
+    &#39;title&#39;: &#39;Head of Corporate Development&#39;,
+    &#39;yearBorn&#39;: 1974,
+    &#39;fiscalYear&#39;: 2023,
+    &#39;exercisedValue&#39;: 0,
+    &#39;unexercisedValue&#39;: 0}],
+  &#39;auditRisk&#39;: 4,
+  &#39;boardRisk&#39;: 1,
+  &#39;compensationRisk&#39;: 6,
+  &#39;shareHolderRightsRisk&#39;: 1,
+  &#39;overallRisk&#39;: 1,
+  &#39;governanceEpochDate&#39;: &#39;2024-02-01 09:00:00&#39;,
+  &#39;compensationAsOfEpochDate&#39;: &#39;2023-12-31 09:00:00&#39;,
+  &#39;maxAge&#39;: 86400}}
+</pre></div>
+</div>
+</div>
+</div>
+<p>yahooquery 패키지의 <code class="docutils literal notranslate"><span class="pre">Ticker()</span></code> 함수내에 티커를 입력하면, 해당 종목에 대한 각종 정보를 받을 수 있다. 먼저 <code class="docutils literal notranslate"><span class="pre">asset_profile</span></code> 부분에는 기업에 대한 정보가 나타난다.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">data</span><span class="o">.</span><span class="n">summary_detail</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output text_plain highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>{&#39;AAPL&#39;: {&#39;maxAge&#39;: 1,
+  &#39;priceHint&#39;: 2,
+  &#39;previousClose&#39;: 188.08,
+  &#39;open&#39;: 188.65,
+  &#39;dayLow&#39;: 188.0,
+  &#39;dayHigh&#39;: 189.99,
+  &#39;regularMarketPreviousClose&#39;: 188.08,
+  &#39;regularMarketOpen&#39;: 188.65,
+  &#39;regularMarketDayLow&#39;: 188.0,
+  &#39;regularMarketDayHigh&#39;: 189.99,
+  &#39;dividendRate&#39;: 0.96,
+  &#39;dividendYield&#39;: 0.0050999997,
+  &#39;exDividendDate&#39;: &#39;2024-02-09 09:00:00&#39;,
+  &#39;payoutRatio&#39;: 0.14770001,
+  &#39;fiveYearAvgDividendYield&#39;: 0.78,
+  &#39;beta&#39;: 1.312,
+  &#39;trailingPE&#39;: 29.324535,
+  &#39;forwardPE&#39;: 26.3757,
+  &#39;volume&#39;: 45155216,
+  &#39;regularMarketVolume&#39;: 45155216,
+  &#39;averageVolume&#39;: 53311511,
+  &#39;averageVolume10days&#39;: 57853670,
+  &#39;averageDailyVolume10Day&#39;: 57853670,
+  &#39;bid&#39;: 0.0,
+  &#39;ask&#39;: 0.0,
+  &#39;bidSize&#39;: 3000,
+  &#39;askSize&#39;: 1100,
+  &#39;marketCap&#39;: 2916202840064,
+  &#39;fiftyTwoWeekLow&#39;: 143.9,
+  &#39;fiftyTwoWeekHigh&#39;: 199.62,
+  &#39;priceToSalesTrailing12Months&#39;: 7.5606885,
+  &#39;fiftyDayAverage&#39;: 190.4794,
+  &#39;twoHundredDayAverage&#39;: 183.0677,
+  &#39;trailingAnnualDividendRate&#39;: 0.95,
+  &#39;trailingAnnualDividendYield&#39;: 0.005051042,
+  &#39;currency&#39;: &#39;USD&#39;,
+  &#39;fromCurrency&#39;: None,
+  &#39;toCurrency&#39;: None,
+  &#39;lastMarket&#39;: None,
+  &#39;coinMarketCapLink&#39;: None,
+  &#39;algorithm&#39;: None,
+  &#39;tradeable&#39;: False}}
+</pre></div>
+</div>
+</div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">summary_detail</span></code> 부분에는 가격, 배당, 밸류에이션 등 주요 지표가 나타난다.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">data</span><span class="o">.</span><span class="n">history</span><span class="p">()</span><span class="o">.</span><span class="n">head</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th></th>
+      <th>open</th>
+      <th>high</th>
+      <th>low</th>
+      <th>close</th>
+      <th>volume</th>
+      <th>adjclose</th>
+      <th>dividends</th>
+    </tr>
+    <tr>
+      <th>symbol</th>
+      <th>date</th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th rowspan="5" valign="top">AAPL</th>
+      <th>2024-01-02</th>
+      <td>187.149994</td>
+      <td>188.440002</td>
+      <td>183.889999</td>
+      <td>185.639999</td>
+      <td>82488700</td>
+      <td>185.403412</td>
+      <td>0.0</td>
+    </tr>
+    <tr>
+      <th>2024-01-03</th>
+      <td>184.220001</td>
+      <td>185.880005</td>
+      <td>183.429993</td>
+      <td>184.250000</td>
+      <td>58414500</td>
+      <td>184.015198</td>
+      <td>0.0</td>
+    </tr>
+    <tr>
+      <th>2024-01-04</th>
+      <td>182.149994</td>
+      <td>183.089996</td>
+      <td>180.880005</td>
+      <td>181.910004</td>
+      <td>71983600</td>
+      <td>181.678177</td>
+      <td>0.0</td>
+    </tr>
+    <tr>
+      <th>2024-01-05</th>
+      <td>181.990005</td>
+      <td>182.759995</td>
+      <td>180.169998</td>
+      <td>181.179993</td>
+      <td>62303300</td>
+      <td>180.949097</td>
+      <td>0.0</td>
+    </tr>
+    <tr>
+      <th>2024-01-08</th>
+      <td>182.089996</td>
+      <td>185.600006</td>
+      <td>181.500000</td>
+      <td>185.559998</td>
+      <td>59144500</td>
+      <td>185.323517</td>
+      <td>0.0</td>
+    </tr>
+  </tbody>
+</table>
+</div></div></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">history()</span></code> 부분을 통해 주가를 받을 수도 있다.</p>
+<p>재무제표 데이터의 경우 <code class="docutils literal notranslate"><span class="pre">data.balance_sheet()</span></code>, <code class="docutils literal notranslate"><span class="pre">data.cash_flow()</span></code>, <code class="docutils literal notranslate"><span class="pre">data.income_statement()</span></code> 을 통해 재무상태표, 현금흐름표, 손익계산서를 각각 받을 수도 있지만, <code class="docutils literal notranslate"><span class="pre">data.all_financial_data()</span></code>을 통해 세 개의 테이블을 한 번에 받을 수도 있다.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">data_y</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">all_financial_data</span><span class="p">(</span><span class="n">frequency</span> <span class="o">=</span> <span class="s1">&#39;a&#39;</span><span class="p">)</span>
+<span class="n">data_y</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>asOfDate</th>
+      <th>periodType</th>
+      <th>currencyCode</th>
+      <th>AccountsPayable</th>
+      <th>AccountsReceivable</th>
+      <th>AccumulatedDepreciation</th>
+      <th>AvailableForSaleSecurities</th>
+      <th>BasicAverageShares</th>
+      <th>BasicEPS</th>
+      <th>BeginningCashPosition</th>
+      <th>...</th>
+      <th>TotalEquityGrossMinorityInterest</th>
+      <th>TotalExpenses</th>
+      <th>TotalLiabilitiesNetMinorityInterest</th>
+      <th>TotalNonCurrentAssets</th>
+      <th>TotalNonCurrentLiabilitiesNetMinorityInterest</th>
+      <th>TotalOperatingIncomeAsReported</th>
+      <th>TotalRevenue</th>
+      <th>TradeandOtherPayablesNonCurrent</th>
+      <th>TreasurySharesNumber</th>
+      <th>WorkingCapital</th>
+    </tr>
+    <tr>
+      <th>symbol</th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>AAPL</th>
+      <td>2020-09-30</td>
+      <td>12M</td>
+      <td>USD</td>
+      <td>4.229600e+10</td>
+      <td>1.612000e+10</td>
+      <td>-6.676000e+10</td>
+      <td>1.008870e+11</td>
+      <td>1.735212e+10</td>
+      <td>3.31</td>
+      <td>5.022400e+10</td>
+      <td>...</td>
+      <td>6.533900e+10</td>
+      <td>2.082270e+11</td>
+      <td>2.585490e+11</td>
+      <td>1.801750e+11</td>
+      <td>1.531570e+11</td>
+      <td>6.628800e+10</td>
+      <td>2.745150e+11</td>
+      <td>2.817000e+10</td>
+      <td>NaN</td>
+      <td>3.832100e+10</td>
+    </tr>
+    <tr>
+      <th>AAPL</th>
+      <td>2021-09-30</td>
+      <td>12M</td>
+      <td>USD</td>
+      <td>5.476300e+10</td>
+      <td>2.627800e+10</td>
+      <td>-7.028300e+10</td>
+      <td>1.278770e+11</td>
+      <td>1.670127e+10</td>
+      <td>5.67</td>
+      <td>3.978900e+10</td>
+      <td>...</td>
+      <td>6.309000e+10</td>
+      <td>2.568680e+11</td>
+      <td>2.879120e+11</td>
+      <td>2.161660e+11</td>
+      <td>1.624310e+11</td>
+      <td>1.089490e+11</td>
+      <td>3.658170e+11</td>
+      <td>2.468900e+10</td>
+      <td>NaN</td>
+      <td>9.355000e+09</td>
+    </tr>
+    <tr>
+      <th>AAPL</th>
+      <td>2022-09-30</td>
+      <td>12M</td>
+      <td>USD</td>
+      <td>6.411500e+10</td>
+      <td>2.818400e+10</td>
+      <td>-7.234000e+10</td>
+      <td>1.208050e+11</td>
+      <td>1.621596e+10</td>
+      <td>6.15</td>
+      <td>3.592900e+10</td>
+      <td>...</td>
+      <td>5.067200e+10</td>
+      <td>2.748910e+11</td>
+      <td>3.020830e+11</td>
+      <td>2.173500e+11</td>
+      <td>1.481010e+11</td>
+      <td>1.194370e+11</td>
+      <td>3.943280e+11</td>
+      <td>1.665700e+10</td>
+      <td>NaN</td>
+      <td>-1.857700e+10</td>
+    </tr>
+    <tr>
+      <th>AAPL</th>
+      <td>2023-09-30</td>
+      <td>12M</td>
+      <td>USD</td>
+      <td>6.261100e+10</td>
+      <td>2.950800e+10</td>
+      <td>-7.088400e+10</td>
+      <td>1.005440e+11</td>
+      <td>1.574423e+10</td>
+      <td>6.16</td>
+      <td>2.497700e+10</td>
+      <td>...</td>
+      <td>6.214600e+10</td>
+      <td>2.689840e+11</td>
+      <td>2.904370e+11</td>
+      <td>2.090170e+11</td>
+      <td>1.451290e+11</td>
+      <td>1.143010e+11</td>
+      <td>3.832850e+11</td>
+      <td>1.545700e+10</td>
+      <td>0.0</td>
+      <td>-1.742000e+09</td>
+    </tr>
+  </tbody>
+</table>
+<p>4 rows × 158 columns</p>
+</div></div></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">all_financial_data()</span></code>를 입력하면 세 개의 재무제표를 한 번에 받을 수 있으며, 인자에 <code class="docutils literal notranslate"><span class="pre">frequency</span> <span class="pre">=</span> <span class="pre">'a'</span></code>를 입력하면 연간(annual) 재무제표를 받는다. 이는 가로로 긴 형태이므로 클렌징처리를 해주도록 한다.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">data_y</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">inplace</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+<span class="n">data_y</span> <span class="o">=</span> <span class="n">data_y</span><span class="o">.</span><span class="n">loc</span><span class="p">[:,</span> <span class="o">~</span><span class="n">data_y</span><span class="o">.</span><span class="n">columns</span><span class="o">.</span><span class="n">isin</span><span class="p">([</span><span class="s1">&#39;periodType&#39;</span><span class="p">,</span> <span class="s1">&#39;currencyCode&#39;</span><span class="p">])]</span>
+<span class="n">data_y</span> <span class="o">=</span> <span class="n">data_y</span><span class="o">.</span><span class="n">melt</span><span class="p">(</span><span class="n">id_vars</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;symbol&#39;</span><span class="p">,</span> <span class="s1">&#39;asOfDate&#39;</span><span class="p">])</span>
+<span class="n">data_y</span> <span class="o">=</span> <span class="n">data_y</span><span class="o">.</span><span class="n">replace</span><span class="p">([</span><span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">],</span> <span class="kc">None</span><span class="p">)</span>
+<span class="n">data_y</span><span class="p">[</span><span class="s1">&#39;freq&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s1">&#39;y&#39;</span>
+<span class="n">data_y</span><span class="o">.</span><span class="n">columns</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;ticker&#39;</span><span class="p">,</span> <span class="s1">&#39;date&#39;</span><span class="p">,</span> <span class="s1">&#39;account&#39;</span><span class="p">,</span> <span class="s1">&#39;value&#39;</span><span class="p">,</span> <span class="s1">&#39;freq&#39;</span><span class="p">]</span>
+
+<span class="n">data_y</span><span class="o">.</span><span class="n">head</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>ticker</th>
+      <th>date</th>
+      <th>account</th>
+      <th>value</th>
+      <th>freq</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>0</th>
+      <td>AAPL</td>
+      <td>2020-09-30</td>
+      <td>AccountsPayable</td>
+      <td>42296000000.0</td>
+      <td>y</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <td>AAPL</td>
+      <td>2021-09-30</td>
+      <td>AccountsPayable</td>
+      <td>54763000000.0</td>
+      <td>y</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <td>AAPL</td>
+      <td>2022-09-30</td>
+      <td>AccountsPayable</td>
+      <td>64115000000.0</td>
+      <td>y</td>
+    </tr>
+    <tr>
+      <th>3</th>
+      <td>AAPL</td>
+      <td>2023-09-30</td>
+      <td>AccountsPayable</td>
+      <td>62611000000.0</td>
+      <td>y</td>
+    </tr>
+    <tr>
+      <th>4</th>
+      <td>AAPL</td>
+      <td>2020-09-30</td>
+      <td>AccountsReceivable</td>
+      <td>16120000000.0</td>
+      <td>y</td>
+    </tr>
+  </tbody>
+</table>
+</div></div></div>
+</div>
+<ol class="arabic simple">
+<li><p>인덱스를 초기화한다.</p></li>
+<li><p>불필요한 열을 제외한다.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">melt()</span></code> 함수를 통해 세로로 긴 형태로 만든다.</p></li>
+<li><p>nan을 None으로 변경한다.</p></li>
+<li><p>freq 열에 연간에 해당하는 ‘y’를 입력한다.</p></li>
+<li><p>열 이름을 변경한다.</p></li>
+</ol>
+<p>이처럼 해외 종목의 재무제표 데이터도 매우 쉽게 다운로드 받을 수 있다. 분기별 재무제표를 받는법도 위와 같으며, 인자만 <code class="docutils literal notranslate"><span class="pre">frequency</span> <span class="pre">=</span> <span class="pre">'q'</span></code>로 변경하면 된다.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">data_q</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">all_financial_data</span><span class="p">(</span><span class="n">frequency</span> <span class="o">=</span> <span class="s1">&#39;q&#39;</span><span class="p">)</span>
+<span class="n">data_q</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">inplace</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+<span class="n">data_q</span> <span class="o">=</span> <span class="n">data_q</span><span class="o">.</span><span class="n">loc</span><span class="p">[:,</span> <span class="o">~</span><span class="n">data_q</span><span class="o">.</span><span class="n">columns</span><span class="o">.</span><span class="n">isin</span><span class="p">([</span><span class="s1">&#39;periodType&#39;</span><span class="p">,</span> <span class="s1">&#39;currencyCode&#39;</span><span class="p">])]</span>
+<span class="n">data_q</span> <span class="o">=</span> <span class="n">data_q</span><span class="o">.</span><span class="n">melt</span><span class="p">(</span><span class="n">id_vars</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;symbol&#39;</span><span class="p">,</span> <span class="s1">&#39;asOfDate&#39;</span><span class="p">])</span>
+<span class="n">data_q</span> <span class="o">=</span> <span class="n">data_q</span><span class="o">.</span><span class="n">replace</span><span class="p">([</span><span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">],</span> <span class="kc">None</span><span class="p">)</span>
+<span class="n">data_q</span><span class="p">[</span><span class="s1">&#39;freq&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s1">&#39;q&#39;</span>
+<span class="n">data_q</span><span class="o">.</span><span class="n">columns</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;ticker&#39;</span><span class="p">,</span> <span class="s1">&#39;date&#39;</span><span class="p">,</span> <span class="s1">&#39;account&#39;</span><span class="p">,</span> <span class="s1">&#39;value&#39;</span><span class="p">,</span> <span class="s1">&#39;freq&#39;</span><span class="p">]</span>
+
+<span class="n">data_q</span><span class="o">.</span><span class="n">head</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>ticker</th>
+      <th>date</th>
+      <th>account</th>
+      <th>value</th>
+      <th>freq</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>0</th>
+      <td>AAPL</td>
+      <td>2022-12-31</td>
+      <td>AccountsPayable</td>
+      <td>57918000000.0</td>
+      <td>q</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <td>AAPL</td>
+      <td>2023-03-31</td>
+      <td>AccountsPayable</td>
+      <td>42945000000.0</td>
+      <td>q</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <td>AAPL</td>
+      <td>2023-06-30</td>
+      <td>AccountsPayable</td>
+      <td>46699000000.0</td>
+      <td>q</td>
+    </tr>
+    <tr>
+      <th>3</th>
+      <td>AAPL</td>
+      <td>2023-09-30</td>
+      <td>AccountsPayable</td>
+      <td>62611000000.0</td>
+      <td>q</td>
+    </tr>
+    <tr>
+      <th>4</th>
+      <td>AAPL</td>
+      <td>2023-12-31</td>
+      <td>AccountsPayable</td>
+      <td>58146000000.0</td>
+      <td>q</td>
+    </tr>
+  </tbody>
+</table>
+</div></div></div>
+</div>
+<section id="id9">
+<h3><span class="section-number">11.4.1. </span>전 종목 재무제표 다운로드<a class="headerlink" href="#id9" title="Link to this heading">#</a></h3>
+<p>for문을 이용하여 전 종목 재무제표를 다운로드 받도록 하겠다. 먼저 SQL에서 재무제표 데이터에 해당하는 테이블(global_fs)를 만든다.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">use</span> <span class="n">stock_db</span><span class="p">;</span>
+
+<span class="n">create</span> <span class="n">table</span> <span class="n">global_fs</span>
+<span class="p">(</span>
+    <span class="n">ticker</span> <span class="n">varchar</span><span class="p">(</span><span class="mi">20</span><span class="p">),</span>        
+    <span class="n">date</span> <span class="n">date</span><span class="p">,</span>
+    <span class="n">account</span> <span class="n">varchar</span><span class="p">(</span><span class="mi">100</span><span class="p">),</span>
+    <span class="n">value</span> <span class="n">double</span><span class="p">,</span>
+    <span class="n">freq</span> <span class="n">varchar</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span>
+    
+    <span class="n">primary</span> <span class="n">key</span><span class="p">(</span><span class="n">ticker</span><span class="p">,</span> <span class="n">date</span><span class="p">,</span> <span class="n">account</span><span class="p">,</span> <span class="n">freq</span><span class="p">)</span>
+<span class="p">);</span>
+</pre></div>
+</div>
+</div>
+</div>
+<p>이제 파이썬에서 아래 코드를 실행하면 for문을 통해 전 종목 재무제표가 DB에 저장된다.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># 패키지 불러오기</span>
+<span class="kn">from</span> <span class="nn">sqlalchemy</span> <span class="kn">import</span> <span class="n">create_engine</span>
+<span class="kn">import</span> <span class="nn">pymysql</span>
+<span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
+<span class="kn">from</span> <span class="nn">yahooquery</span> <span class="kn">import</span> <span class="n">Ticker</span>
+<span class="kn">import</span> <span class="nn">time</span>
+<span class="kn">from</span> <span class="nn">tqdm</span> <span class="kn">import</span> <span class="n">tqdm</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+
+<span class="c1"># DB 연결</span>
+<span class="n">engine</span> <span class="o">=</span> <span class="n">create_engine</span><span class="p">(</span><span class="s1">&#39;mysql+pymysql://root:1234@127.0.0.1:3306/stock_db&#39;</span><span class="p">)</span>
+<span class="n">con</span> <span class="o">=</span> <span class="n">pymysql</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">user</span><span class="o">=</span><span class="s1">&#39;root&#39;</span><span class="p">,</span>
+                      <span class="n">passwd</span><span class="o">=</span><span class="s1">&#39;1234&#39;</span><span class="p">,</span>
+                      <span class="n">host</span><span class="o">=</span><span class="s1">&#39;127.0.0.1&#39;</span><span class="p">,</span>
+                      <span class="n">db</span><span class="o">=</span><span class="s1">&#39;stock_db&#39;</span><span class="p">,</span>
+                      <span class="n">charset</span><span class="o">=</span><span class="s1">&#39;utf8&#39;</span><span class="p">)</span>
+
+<span class="n">mycursor</span> <span class="o">=</span> <span class="n">con</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+
+<span class="c1"># 티커리스트 불러오기</span>
+<span class="n">ticker_list</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_sql</span><span class="p">(</span><span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">select * from global_ticker</span>
+<span class="s2">where date = (select max(date) from global_ticker)</span>
+<span class="s2">and country = &#39;United States&#39;;</span>
+<span class="s2">&quot;&quot;&quot;</span><span class="p">,</span> <span class="n">con</span><span class="o">=</span><span class="n">engine</span><span class="p">)</span>
+
+<span class="c1"># DB 저장 쿼리</span>
+<span class="n">query_fs</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">    insert into global_fs (ticker, date, account, value, freq)</span>
+<span class="s2">    values (</span><span class="si">%s</span><span class="s2">,</span><span class="si">%s</span><span class="s2">,</span><span class="si">%s</span><span class="s2">,</span><span class="si">%s</span><span class="s2">,</span><span class="si">%s</span><span class="s2">) as new</span>
+<span class="s2">    on duplicate key update</span>
+<span class="s2">    value = new.value;</span>
+<span class="s2">&quot;&quot;&quot;</span>
+
+<span class="c1"># 오류 발생시 저장할 리스트 생성</span>
+<span class="n">error_list</span> <span class="o">=</span> <span class="p">[]</span>
+
+<span class="c1"># 전종목 재무제표 다운로드 및 저장</span>
+<span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">tqdm</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">ticker_list</span><span class="p">))):</span>
+
+    <span class="c1"># 티커 선택</span>
+    <span class="n">ticker</span> <span class="o">=</span> <span class="n">ticker_list</span><span class="p">[</span><span class="s1">&#39;Symbol&#39;</span><span class="p">][</span><span class="n">i</span><span class="p">]</span>
+
+    <span class="c1"># 오류 발생 시 이를 무시하고 다음 루프로 진행</span>
+    <span class="k">try</span><span class="p">:</span>
+
+        <span class="c1">#  정보 다운로드</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">Ticker</span><span class="p">(</span><span class="n">ticker</span><span class="p">)</span>
+        
+        <span class="c1"># 연간 재무제표</span>
+        <span class="n">data_y</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">all_financial_data</span><span class="p">(</span><span class="n">frequency</span> <span class="o">=</span> <span class="s1">&#39;a&#39;</span><span class="p">)</span>
+        <span class="n">data_y</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">inplace</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+        <span class="n">data_y</span> <span class="o">=</span> <span class="n">data_y</span><span class="o">.</span><span class="n">loc</span><span class="p">[:,</span> <span class="o">~</span><span class="n">data_y</span><span class="o">.</span><span class="n">columns</span><span class="o">.</span><span class="n">isin</span><span class="p">([</span><span class="s1">&#39;periodType&#39;</span><span class="p">,</span> <span class="s1">&#39;currencyCode&#39;</span><span class="p">])]</span>
+        <span class="n">data_y</span> <span class="o">=</span> <span class="n">data_y</span><span class="o">.</span><span class="n">melt</span><span class="p">(</span><span class="n">id_vars</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;symbol&#39;</span><span class="p">,</span> <span class="s1">&#39;asOfDate&#39;</span><span class="p">])</span>
+        <span class="n">data_y</span> <span class="o">=</span> <span class="n">data_y</span><span class="o">.</span><span class="n">replace</span><span class="p">([</span><span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">],</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">data_y</span><span class="p">[</span><span class="s1">&#39;freq&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s1">&#39;y&#39;</span>
+        <span class="n">data_y</span><span class="o">.</span><span class="n">columns</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;ticker&#39;</span><span class="p">,</span> <span class="s1">&#39;date&#39;</span><span class="p">,</span> <span class="s1">&#39;account&#39;</span><span class="p">,</span> <span class="s1">&#39;value&#39;</span><span class="p">,</span> <span class="s1">&#39;freq&#39;</span><span class="p">]</span>
+        
+        
+        <span class="c1"># 분기 재무제표</span>
+        <span class="n">data_q</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">all_financial_data</span><span class="p">(</span><span class="n">frequency</span> <span class="o">=</span> <span class="s1">&#39;q&#39;</span><span class="p">)</span>
+        <span class="n">data_q</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">inplace</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+        <span class="n">data_q</span> <span class="o">=</span> <span class="n">data_q</span><span class="o">.</span><span class="n">loc</span><span class="p">[:,</span> <span class="o">~</span><span class="n">data_q</span><span class="o">.</span><span class="n">columns</span><span class="o">.</span><span class="n">isin</span><span class="p">([</span><span class="s1">&#39;periodType&#39;</span><span class="p">,</span> <span class="s1">&#39;currencyCode&#39;</span><span class="p">])]</span>
+        <span class="n">data_q</span> <span class="o">=</span> <span class="n">data_q</span><span class="o">.</span><span class="n">melt</span><span class="p">(</span><span class="n">id_vars</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;symbol&#39;</span><span class="p">,</span> <span class="s1">&#39;asOfDate&#39;</span><span class="p">])</span>
+        <span class="n">data_q</span> <span class="o">=</span> <span class="n">data_q</span><span class="o">.</span><span class="n">replace</span><span class="p">([</span><span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">],</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">data_q</span><span class="p">[</span><span class="s1">&#39;freq&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s1">&#39;q&#39;</span>
+        <span class="n">data_q</span><span class="o">.</span><span class="n">columns</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;ticker&#39;</span><span class="p">,</span> <span class="s1">&#39;date&#39;</span><span class="p">,</span> <span class="s1">&#39;account&#39;</span><span class="p">,</span> <span class="s1">&#39;value&#39;</span><span class="p">,</span> <span class="s1">&#39;freq&#39;</span><span class="p">]</span>
+        
+        <span class="c1"># 데이터 합치기</span>
+        <span class="n">data_fs</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">([</span><span class="n">data_y</span><span class="p">,</span> <span class="n">data_q</span><span class="p">],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="c1"># 재무제표 데이터를 DB에 저장</span>
+        <span class="n">args</span> <span class="o">=</span> <span class="n">data_fs</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+        <span class="n">mycursor</span><span class="o">.</span><span class="n">executemany</span><span class="p">(</span><span class="n">query_fs</span><span class="p">,</span> <span class="n">args</span><span class="p">)</span>
+        <span class="n">con</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+
+    <span class="k">except</span><span class="p">:</span>
+
+        <span class="c1"># 오류 발생시 error_list에 티커 저장하고 넘어가기</span>
+        <span class="nb">print</span><span class="p">(</span><span class="n">ticker</span><span class="p">)</span>
+        <span class="n">error_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ticker</span><span class="p">)</span>
+
+    <span class="c1"># 타임슬립 적용</span>
+    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+
+<span class="c1"># DB 연결 종료</span>
+<span class="n">engine</span><span class="o">.</span><span class="n">dispose</span><span class="p">()</span>
+<span class="n">con</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+</div>
+<ol class="arabic simple">
+<li><p>DB에 연결한다.</p></li>
+<li><p>기준일이 최대, 즉 최근일 기준 보통주에 해당하며, 미국 종목의 리스트(ticker_list)만 불러온다.</p></li>
+<li><p>DB에 저장할 쿼리(query)를 입력한다.</p></li>
+<li><p>페이지 오류, 통신 오류 등 오류가 발생한 티커명을 저장할 리스트(error_list)를 만든다.</p></li>
+<li><p>for문을 통해 전종목 재무제표를 다운로드 받으며, 진행상황을 알기위해 tqdm() 함수를 이용한다.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">Ticker()</span></code> 함수를 이용해 종목 데이터를 받은 후 연간 및 분기 재무제표를 구한다.</p></li>
+<li><p>이후, 두 테이블을 concat() 함수를 통해 행으로 묶어준다.</p></li>
+<li><p>재무제표 데이터를 DB에 저장한다.</p></li>
+<li><p>무한 크롤링을 방지하기 위해 한 번의 루프가 끝날 때마다 타임슬립을 적용한다.</p></li>
+<li><p>모든 작업이 끝나면 DB와의 연결을 종료한다.</p></li>
+</ol>
+<figure class="align-default" id="sql-fs">
+<img alt="_images/sql_fs.png" src="_images/sql_fs.png" />
+<figcaption>
+<p><span class="caption-number">Fig. 11.16 </span><span class="caption-text">글로벌 재무제표 테이블</span><a class="headerlink" href="#sql-fs" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>미국 종목들의 가치지표는 국내 재무제표 데이터를 이용해 가치지표를 계산했던 것과 동일한 방법으로 계산할 수 있으므로, 이는 생략하도록 한다.</p>
+</div>
+</section>
+</section>
+</section>
+
+    <script type="text/x-thebe-config">
+    {
+        requestKernel: true,
+        binderOptions: {
+            repo: "binder-examples/jupyter-stacks-datascience",
+            ref: "master",
+        },
+        codeMirrorConfig: {
+            theme: "abcdef",
+            mode: "python"
+        },
+        kernelOptions: {
+            name: "python3",
+            path: "./."
+        },
+        predefinedOutput: true
+    }
+    </script>
+    <script>kernelName = 'python3'</script>
+
+                </article>
+              
+
+              
+              
+              
+              
+                <footer class="prev-next-footer">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="data_korea.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title"><span class="section-number">10. </span>국내 주식 데이터 수집</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="data_ref.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title"><span class="section-number">12. </span>투자 참고용 데이터 수집</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+                <div class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item">
+  <div class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> Contents
+  </div>
+  <nav class="bd-toc-nav page-toc">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#id2">11.1. 유료 데이터 벤더 이용하기</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#api-token">11.1.1. 가입 및 API token 받기</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id3">11.1.2. 데이터 다운로드</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#id4">11.2. 티커 수집하기</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id5">11.2.1. 전 종목 티커 크롤링</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#id6">11.3. 주가 다운로드</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id7">11.3.1. 전 종목 주가 다운로드</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#id8">11.4. 재무제표 다운로드</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id9">11.4.1. 전 종목 재무제표 다운로드</a></li>
+</ul>
+</li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+<div class="bd-footer-content__inner container">
+  
+  <div class="footer-item">
+    
+<p class="component-author">
+By 이현열
+</p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+
+  <p class="copyright">
+    
+      © Copyright 2023.
+      <br/>
+    
+  </p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+</div>
+          </footer>
+        
+
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script src="_static/scripts/bootstrap.js?digest=8d27b9dea8ad943066ae"></script>
+<script src="_static/scripts/pydata-sphinx-theme.js?digest=8d27b9dea8ad943066ae"></script>
+
+  <footer class="bd-footer">
+  </footer>
+  </body>
+</html>

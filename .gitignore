@@ -36,3 +36,14 @@ backtest_cache/
 
 # Windows artifacts
 nul
+# 백테스트 대용량 캐시
+backtest/*.pkl
+backtest/all_mom_cache*.pkl
+backtest/tv_avg_cache.pkl
+backtest/kr_full_cache.pkl
+backtest/mom_raw_cache.pkl
+claude code/quant_py-main*.zip
+# 임시 파일
+temp_*.json
+temp_*.b64
+temp_*.yml

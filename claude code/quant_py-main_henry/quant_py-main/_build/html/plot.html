@@ -1,0 +1,1377 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="./" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>4. 데이터 시각화 배워보기 &#8212; 파이썬을 이용한 퀀트 투자 포트폴리오 만들기</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "light";
+  </script>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="_static/styles/theme.css?digest=8d27b9dea8ad943066ae" rel="stylesheet" />
+<link href="_static/styles/bootstrap.css?digest=8d27b9dea8ad943066ae" rel="stylesheet" />
+<link href="_static/styles/pydata-sphinx-theme.css?digest=8d27b9dea8ad943066ae" rel="stylesheet" />
+
+  
+  <link href="_static/vendor/fontawesome/6.5.1/css/all.min.css?digest=8d27b9dea8ad943066ae" rel="stylesheet" />
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.5.1/webfonts/fa-solid-900.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.5.1/webfonts/fa-brands-400.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.5.1/webfonts/fa-regular-400.woff2" />
+
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b76e3c8a" />
+    <link rel="stylesheet" type="text/css" href="_static/styles/sphinx-book-theme.css?v=384b581d" />
+    <link rel="stylesheet" type="text/css" href="_static/togglebutton.css?v=13237357" />
+    <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="_static/mystnb.4510f1fc1dee50b3e5859aac5469c37c29e427902b24a333a5f9fcb2f0b3ac41.css" />
+    <link rel="stylesheet" type="text/css" href="_static/sphinx-thebe.css?v=4fa983c6" />
+    <link rel="stylesheet" type="text/css" href="_static/design-style.1e8bd061cd6da7fc9cf755528e8ffc24.min.css?v=0a3b3ea7" />
+  
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="_static/scripts/bootstrap.js?digest=8d27b9dea8ad943066ae" />
+<link rel="preload" as="script" href="_static/scripts/pydata-sphinx-theme.js?digest=8d27b9dea8ad943066ae" />
+  <script src="_static/vendor/fontawesome/6.5.1/js/all.min.js?digest=8d27b9dea8ad943066ae"></script>
+
+    <script src="_static/documentation_options.js?v=9eb32ce0"></script>
+    <script src="_static/doctools.js?v=888ff710"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="_static/copybutton.js?v=f281be69"></script>
+    <script src="_static/scripts/sphinx-book-theme.js?v=efea14e4"></script>
+    <script>let toggleHintShow = 'Click to show';</script>
+    <script>let toggleHintHide = 'Click to hide';</script>
+    <script>let toggleOpenOnPrint = 'true';</script>
+    <script src="_static/togglebutton.js?v=4a39c7ea"></script>
+    <script kind="utterances">
+
+    var commentsRunWhenDOMLoaded = cb => {
+    if (document.readyState != 'loading') {
+        cb()
+    } else if (document.addEventListener) {
+        document.addEventListener('DOMContentLoaded', cb)
+    } else {
+        document.attachEvent('onreadystatechange', function() {
+        if (document.readyState == 'complete') cb()
+        })
+    }
+}
+
+var addUtterances = () => {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src = "https://utteranc.es/client.js";
+    script.async = "async";
+
+    script.setAttribute("repo", "hyunyulhenry/quant_py");
+    script.setAttribute("issue-term", "pathname");
+    script.setAttribute("theme", "github-light");
+    script.setAttribute("label", "💬 comment");
+    script.setAttribute("crossorigin", "anonymous");
+
+    sections = document.querySelectorAll("div.section");
+    if (sections !== null) {
+        section = sections[sections.length-1];
+        section.appendChild(script);
+    }
+}
+commentsRunWhenDOMLoaded(addUtterances);
+</script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script src="_static/design-tabs.js?v=36754332"></script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script async="async" src="_static/sphinx-thebe.js?v=c100c467"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script>window.MathJax = {"options": {"processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+    <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'plot';</script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="5. SQL 기초 배워보기" href="sql.html" />
+    <link rel="prev" title="3. 데이터 분석 배워보기" href="eda.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <a id="pst-skip-link" class="skip-link" href="#main-content">Skip to main content</a>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>
+    Back to top
+  </button>
+
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          name="__primary"
+          id="__primary"/>
+  <label class="overlay overlay-primary" for="__primary"></label>
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          name="__secondary"
+          id="__secondary"/>
+  <label class="overlay overlay-secondary" for="__secondary"></label>
+  
+  <div class="search-button__wrapper">
+    <div class="search-button__overlay"></div>
+    <div class="search-button__search-container">
+<form class="bd-search d-flex align-items-center"
+      action="search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search this book..."
+         aria-label="Search this book..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form></div>
+  </div>
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar">
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <div class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+  
+
+<a class="navbar-brand logo" href="index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="_static/logo.png" class="logo__image only-light" alt="파이썬을 이용한 퀀트 투자 포트폴리오 만들기 - Home"/>
+    <script>document.write(`<img src="_static/logo.png" class="logo__image only-dark" alt="파이썬을 이용한 퀀트 투자 포트폴리오 만들기 - Home"/>`);</script>
+  
+  
+</a></div>
+        <div class="sidebar-primary-item">
+
+ <script>
+ document.write(`
+   <button class="btn navbar-btn search-button-field search-button__button" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass"></i>
+    <span class="search-button__default-text">Search</span>
+    <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+   </button>
+ `);
+ </script></div>
+        <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item navbar-nav active">
+        
+        <ul class="nav bd-sidenav bd-sidenav__home-link">
+            <li class="toctree-l1">
+                <a class="reference internal" href="index.html">
+                    파이썬을 이용한 퀀트 투자 포트폴리오 만들기
+                </a>
+            </li>
+        </ul>
+        <p aria-level="2" class="caption" role="heading"><span class="caption-text">퀀트와 프로그래밍 기초 배워보기</span></p>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="quant_intro.html">1. 퀀트에 대해 알아보기</a></li>
+<li class="toctree-l1"><a class="reference internal" href="python.html">2. 파이썬 기초 배워보기</a></li>
+<li class="toctree-l1"><a class="reference internal" href="eda.html">3. 데이터 분석 배워보기</a></li>
+<li class="toctree-l1 current active"><a class="current reference internal" href="#">4. 데이터 시각화 배워보기</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sql.html">5. SQL 기초 배워보기</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sql_in_python.html">6. 파이썬에서 SQL 연결하기</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">크롤링을 이용한 데이터 수집</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="web.html">7. 크롤링을 위한 웹 기본지식</a></li>
+<li class="toctree-l1"><a class="reference internal" href="crawl_basic.html">8. 정적 크롤링 실습하기</a></li>
+<li class="toctree-l1"><a class="reference internal" href="selenium.html">9. 동적 크롤링과 정규 표현식</a></li>
+<li class="toctree-l1"><a class="reference internal" href="data_korea.html">10. 국내 주식 데이터 수집</a></li>
+<li class="toctree-l1"><a class="reference internal" href="data_global_revision.html">11. 전 세계 주식 데이터 수집하기</a></li>
+<li class="toctree-l1"><a class="reference internal" href="data_ref.html">12. 투자 참고용 데이터 수집</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">포트폴리오 구성, 백테스트 및 매매하기</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="factor.html">13. 퀀트 전략을 이용한 종목선정</a></li>
+<li class="toctree-l1"><a class="reference internal" href="portfolio.html">14. 포트폴리오 구성 전략</a></li>
+<li class="toctree-l1"><a class="reference internal" href="technical.html">15. 트레이딩을 위한 기술적 지표</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backtest.html">16. 백테스팅 시뮬레이션</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api_trading.html">17. 증권사 API 연결과 매매하기</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">부록</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="install_python.html">파이썬 다운로드 및 설치하기</a></li>
+<li class="toctree-l1"><a class="reference internal" href="install_sql.html">SQL 다운로드 및 설치하기</a></li>
+</ul>
+
+    </div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+  
+  <div id="rtd-footer-container"></div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main">
+        
+        
+
+<div class="sbt-scroll-pixel-helper"></div>
+
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item"><label class="sidebar-toggle primary-toggle btn btn-sm" for="__primary" title="Toggle primary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <span class="fa-solid fa-bars"></span>
+</label></div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+
+<div class="article-header-buttons">
+
+
+
+
+
+<div class="dropdown dropdown-download-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Download this page">
+    <i class="fas fa-download"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="_sources/plot.ipynb" target="_blank"
+   class="btn btn-sm btn-download-source-button dropdown-item"
+   title="Download source file"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file"></i>
+  </span>
+<span class="btn__text-container">.ipynb</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li>
+<button onclick="window.print()"
+  class="btn btn-sm btn-download-pdf-button dropdown-item"
+  title="Print to PDF"
+  data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file-pdf"></i>
+  </span>
+<span class="btn__text-container">.pdf</span>
+</button>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+<button onclick="toggleFullScreen()"
+  class="btn btn-sm btn-fullscreen-button"
+  title="Fullscreen mode"
+  data-bs-placement="bottom" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+
+
+<script>
+document.write(`
+  <button class="btn btn-sm navbar-btn theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <span class="theme-switch nav-link" data-mode="light"><i class="fa-solid fa-sun fa-lg"></i></span>
+    <span class="theme-switch nav-link" data-mode="dark"><i class="fa-solid fa-moon fa-lg"></i></span>
+    <span class="theme-switch nav-link" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg"></i></span>
+  </button>
+`);
+</script>
+
+
+<script>
+document.write(`
+  <button class="btn btn-sm navbar-btn search-button search-button__button" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+  </button>
+`);
+</script>
+<label class="sidebar-toggle secondary-toggle btn btn-sm" for="__secondary"title="Toggle secondary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <span class="fa-solid fa-list"></span>
+</label>
+</div></div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+
+<div id="jb-print-docs-body" class="onlyprint">
+    <h1>데이터 시각화 배워보기</h1>
+    <!-- Table of contents -->
+    <div id="print-main-content">
+        <div id="jb-print-toc">
+            
+            <div>
+                <h2> Contents </h2>
+            </div>
+            <nav aria-label="Page">
+                <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#id2">4.1. 그래프의 구성요소</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#id3">4.2. matplotlib 패키지를 이용한 시각화</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id4">4.2.1. 한 번에 여러개의 그래프 나타내기</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#pandas">4.3. pandas 패키지를 이용한 시각화</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#seaborn">4.4. seaborn 패키지를 이용한 시각화</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id5">4.4.1. 한 번에 여러개의 그래프 나타내기</a></li>
+</ul>
+</li>
+</ul>
+            </nav>
+        </div>
+    </div>
+</div>
+
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section class="tex2jax_ignore mathjax_ignore" id="id1">
+<h1><span class="section-number">4. </span>데이터 시각화 배워보기<a class="headerlink" href="#id1" title="Link to this heading">#</a></h1>
+<p>이전 장에서는 데이터를 분석하는 법에 대해 배웠으며, 이번 장에서는 데이터 및 분석된 자료를 시각화 하는법에 대해 배워보겠다. 데이터를 글자나 표가 아닌 그림으로 나타낼 경우 훨씬 직관적으로 이해가 가능하다. 파이썬에서는 데이터 시각화에 matplotlib 혹은 pandas 패키지를 사용하며, 고급 시각화에는 seaborn 패키지를 사용한다.</p>
+<section id="id2">
+<h2><span class="section-number">4.1. </span>그래프의 구성요소<a class="headerlink" href="#id2" title="Link to this heading">#</a></h2>
+<p>그래프를 그리기에 앞서, 그래프는 어떠한 요소들로 이루어져있는지 알아보도록 하자.</p>
+<figure class="align-default" id="matplotlib">
+<a class="reference internal image-reference" href="_images/matplotlib.png"><img alt="_images/matplotlib.png" src="_images/matplotlib.png" style="width: 568.4px; height: 590.8px;" /></a>
+<figcaption>
+<p><span class="caption-number">Fig. 4.1 </span><span class="caption-text">그래프 구성요소 (출처: <a class="reference external" href="https://matplotlib.org">https://matplotlib.org</a>)</span><a class="headerlink" href="#matplotlib" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
+<ul class="simple">
+<li><p>Figure: 그림 전체</p></li>
+<li><p>Axes: 그림 내부의 좌표축을 의미하며, 개별 그림을 의미</p></li>
+<li><p>Line: 선 그래프에서 선</p></li>
+<li><p>Markers: 점 그래프에서 마커</p></li>
+<li><p>Legend: 범례</p></li>
+<li><p>Title: 제목</p></li>
+<li><p>Grid: 격자</p></li>
+<li><p>Spines: 윤곽선</p></li>
+<li><p>X axis label: x축 레이블</p></li>
+<li><p>Y axis label: y축 레이블</p></li>
+<li><p>Major tick: 메인 눈금</p></li>
+<li><p>Major tick label: 메인 눈금 레이블</p></li>
+<li><p>Minor tick: 서브 눈금</p></li>
+<li><p>Minor tick label: 서브 눈금 레이블</p></li>
+</ul>
+<p>패키지의 함수들을 이용해 각각의 요소를 섬세하게 꾸밀수도 있다. 또한 하나의 figure 내에는 여러 개의 axes가 그려질 수도 있다.</p>
+<figure class="align-default" id="figure-axes">
+<img alt="_images/figure_axes.png" src="_images/figure_axes.png" />
+<figcaption>
+<p><span class="caption-number">Fig. 4.2 </span><span class="caption-text">다중 axes</span><a class="headerlink" href="#figure-axes" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
+</section>
+<section id="id3">
+<h2><span class="section-number">4.2. </span>matplotlib 패키지를 이용한 시각화<a class="headerlink" href="#id3" title="Link to this heading">#</a></h2>
+<p>matplotlib 패키지는 파이썬 표준 시각화 도구라도 불릴 정도로 널리 활용되고 있다. 그래프 요소를 세세하게 꾸밀 수 있을 뿐만 아니라 배우는것도 그리 어렵지 않다. 먼저 해당 패키지의 기본적인 사용법에 대해 알아보도록 하자.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">seaborn</span> <span class="k">as</span> <span class="nn">sns</span>
+<span class="kn">import</span> <span class="nn">matplotlib.pyplot</span> <span class="k">as</span> <span class="nn">plt</span>
+
+<span class="n">df</span> <span class="o">=</span> <span class="n">sns</span><span class="o">.</span><span class="n">load_dataset</span><span class="p">(</span><span class="s1">&#39;penguins&#39;</span><span class="p">)</span>
+
+<span class="n">plt</span><span class="o">.</span><span class="n">scatter</span><span class="p">(</span><span class="n">df</span><span class="p">[</span><span class="s1">&#39;flipper_length_mm&#39;</span><span class="p">],</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;body_mass_g&#39;</span><span class="p">])</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<img alt="_images/cd52d2f91aa40891b24d2bb02e7259d02efb71fc84f30cd2a90ee463e4871005.png" src="_images/cd52d2f91aa40891b24d2bb02e7259d02efb71fc84f30cd2a90ee463e4871005.png" />
+</div>
+</div>
+<ol class="arabic simple">
+<li><p>matplotlib 패키지 중에서 pyplot 모듈을 plt로 불러온다.</p></li>
+<li><p>팔머 펭귄 데이터셋(penguins)을 불러온다.</p></li>
+<li><p>산점도를 나타내는 <code class="docutils literal notranslate"><span class="pre">scatter()</span></code> 함수 내에 <span class="math notranslate nohighlight">\(x\)</span>축과 <span class="math notranslate nohighlight">\(y\)</span>축 정보를 입력한다.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">plt.show()</span></code>를 통해 그래프를 출력한다.</p></li>
+</ol>
+<p>매우 쉽게 그래프를 그릴 수 있으며, 결과를 통해 날개의 길이와 뭄무게가 비례한다는 것을 직관적으로 확인할 수 있다.</p>
+<p>다른 종류의 그래프 역시 쉽게 표현할 수 있다. 이번에는 각 펭귄의 종 별 몸무게의 차이를 그래프로 나타내보자.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">df_group</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="s1">&#39;species&#39;</span><span class="p">)[</span><span class="s1">&#39;body_mass_g&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="o">.</span><span class="n">reset_index</span><span class="p">()</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">bar</span><span class="p">(</span><span class="n">x</span><span class="o">=</span><span class="n">df_group</span><span class="p">[</span><span class="s1">&#39;species&#39;</span><span class="p">],</span> <span class="n">height</span><span class="o">=</span><span class="n">df_group</span><span class="p">[</span><span class="s1">&#39;body_mass_g&#39;</span><span class="p">])</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<img alt="_images/1f12ecf64823a714829396bd269aea75fd4a8f84d79486d0b38b57070cdaaf8f.png" src="_images/1f12ecf64823a714829396bd269aea75fd4a8f84d79486d0b38b57070cdaaf8f.png" />
+</div>
+</div>
+<ol class="arabic simple">
+<li><p>‘species’ 별로 그룹을 묶은 후, ‘body_mass_g’ 열의 평균을 구한다. 그 후 <code class="docutils literal notranslate"><span class="pre">reset_index()</span></code> 메서드를 통해 데이터프레임 형태로 나타낸다.</p></li>
+<li><p>막대그래프를 나타내는 <code class="docutils literal notranslate"><span class="pre">bar()</span></code> 함수 내에 <span class="math notranslate nohighlight">\(x\)</span>축과 높이 정보(height)를 입력한다.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">plt.show()</span></code>를 통해 그래프를 출력한다.</p></li>
+</ol>
+<p>결과를 통해 Gentoo 종의 몸무게가 다른 종에 비해 많이 나간다는 점을 알 수 있다. 이번에는 몸무게의 분포를 히스토그램으로 나타내보자.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">plt</span><span class="o">.</span><span class="n">rc</span><span class="p">(</span><span class="s1">&#39;font&#39;</span><span class="p">,</span> <span class="n">family</span><span class="o">=</span><span class="s1">&#39;Malgun Gothic&#39;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">hist</span><span class="p">(</span><span class="n">df</span><span class="p">[</span><span class="s1">&#39;body_mass_g&#39;</span><span class="p">],</span> <span class="n">bins</span><span class="o">=</span><span class="mi">30</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">xlabel</span><span class="p">(</span><span class="s1">&#39;Body Mass&#39;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">ylabel</span><span class="p">(</span><span class="s1">&#39;Count&#39;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="s1">&#39;펭귄의 몸무게 분포&#39;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<img alt="_images/0c62a51c14c4d1f154b3ac3a6b1a06cd9574ee761367e0c4ff2ea3091188b338.png" src="_images/0c62a51c14c4d1f154b3ac3a6b1a06cd9574ee761367e0c4ff2ea3091188b338.png" />
+</div>
+</div>
+<ol class="arabic simple">
+<li><p>Matplotlib은 한글 폰트를 지원하지 않아 한글이 깨지는 현상이 발생하므로, 한글을 나타낼 수 있는 ‘Malgun Gothic’으로 폰트를 지정한다.</p></li>
+<li><p>히스토그램을 나타내는 <code class="docutils literal notranslate"><span class="pre">hist()</span></code> 함수 내에 나타내고자 하는 열을 입력한다. <code class="docutils literal notranslate"><span class="pre">bins</span></code> 인자에는 히스토그램을 몇개의 구간으로 나눌지를 입력한다.</p></li>
+<li><p><span class="math notranslate nohighlight">\(x\)</span>축과 <span class="math notranslate nohighlight">\(y\)</span>축 레이블, 제목에 원하는 글자를 입력한다.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">plt.show()</span></code>를 통해 그래프를 출력한다.</p></li>
+</ol>
+<p>펭귄의 몸무게 분포를 히스토그램 형태로 표현할 수 있다. 이번에는 선 그래프를 나타내보도록 하자.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
+
+<span class="n">df_unrate</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span>
+    <span class="s1">&#39;https://research.stlouisfed.org/fred2/series/UNRATE/downloaddata/UNRATE.csv&#39;</span>
+<span class="p">)</span>
+<span class="n">df_unrate</span><span class="o">.</span><span class="n">head</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>DATE</th>
+      <th>VALUE</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>0</th>
+      <td>1948-01-01</td>
+      <td>3.4</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <td>1948-02-01</td>
+      <td>3.8</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <td>1948-03-01</td>
+      <td>4.0</td>
+    </tr>
+    <tr>
+      <th>3</th>
+      <td>1948-04-01</td>
+      <td>3.9</td>
+    </tr>
+    <tr>
+      <th>4</th>
+      <td>1948-05-01</td>
+      <td>3.5</td>
+    </tr>
+  </tbody>
+</table>
+</div></div></div>
+</div>
+<p>먼저 <code class="docutils literal notranslate"><span class="pre">read_csv()</span></code> 함수를 통해 세인트루이스 연방준비위원회에서 제공하는 미국 실업자 데이터를 받아온다.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">df_unrate</span><span class="p">[</span><span class="s1">&#39;DATE&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_datetime</span><span class="p">(</span><span class="n">df_unrate</span><span class="p">[</span><span class="s1">&#39;DATE&#39;</span><span class="p">])</span>
+
+<span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">df_unrate</span><span class="p">[</span><span class="s1">&#39;DATE&#39;</span><span class="p">],</span> <span class="n">df_unrate</span><span class="p">[</span><span class="s1">&#39;VALUE&#39;</span><span class="p">])</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<img alt="_images/4afe8f70d03370aefca5f5e61d7e3cbec8128ac99b7b77b744523088f23c45d6.png" src="_images/4afe8f70d03370aefca5f5e61d7e3cbec8128ac99b7b77b744523088f23c45d6.png" />
+</div>
+</div>
+<ol class="arabic simple">
+<li><p>‘DATE’ 열을  datetime 객체로 변환한다.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">plot()</span></code> 함수는 선 그래프를 나타내며, <span class="math notranslate nohighlight">\(x\)</span>축과 <span class="math notranslate nohighlight">\(y\)</span>축 정보를 각각 입력한다.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">plt.show()</span></code>를 통해 그래프를 출력한다.</p></li>
+</ol>
+<p>코로나 이후 실업률이 급증했음을 확인할 수 있다.</p>
+<section id="id4">
+<h3><span class="section-number">4.2.1. </span>한 번에 여러개의 그래프 나타내기<a class="headerlink" href="#id4" title="Link to this heading">#</a></h3>
+<p>하나의 figure 내에는 여러 개의 axes를 그릴수도 있다. 이를 실행하는 코드는 책이나 설명하는 사람 마다 약간씩 다르며, 그 이유에 대해 간략하게 설명하겠다. matplotlib 패키지는 크게 두 가지 방법으로 사용할 수 있다.</p>
+<ul class="simple">
+<li><p>stateless API (objected-based): 내가 지정한 figure, 내가 지정한 axes에 그림을 그리는 방법</p></li>
+<li><p>stateful API (state-based): 현재의 figure, 현재의 axes에 그림을 그리는 방법</p></li>
+</ul>
+<p>stateless 방법은 figure와 axes를 직접 만들어야 하고, 이는 객체지향적 특징을 가지고 있다고 볼 수 있다. 반면 stateful 방법은 현재의 figure와 axes를 자동으로 찾아 그곳에 그래프를 나타내는 방식이다. 처음에는 stateless 방법만 존재했으나 더 편리한 사용을 위해 wrapper 모듈인 pyplot이 개발되었고 이를 통해 stateful 방법을 사용할 수 있다. 그래프를 간단하게 표현할 때는 stateful 방법으로도 충분하지만, 보다 정교한 작업을 할 때는 stateless 방법을 사용해야 한다.</p>
+<p>먼저 stateless 방법을 사용해 그래프를 나타내보도록 하자.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">fig</span><span class="p">,</span> <span class="n">axes</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">6</span><span class="p">))</span>
+
+<span class="c1"># 첫번째 그림</span>
+<span class="n">axes</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">scatter</span><span class="p">(</span><span class="n">df</span><span class="p">[</span><span class="s1">&#39;flipper_length_mm&#39;</span><span class="p">],</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;body_mass_g&#39;</span><span class="p">])</span>
+<span class="n">axes</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s1">&#39;날개 길이(mm)&#39;</span><span class="p">)</span>
+<span class="n">axes</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s1">&#39;몸무게(g)&#39;</span><span class="p">)</span>
+<span class="n">axes</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s1">&#39;날개와 몸무게간의 관계&#39;</span><span class="p">)</span>
+
+<span class="c1"># 두번째 그림</span>
+<span class="n">axes</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">hist</span><span class="p">(</span><span class="n">df</span><span class="p">[</span><span class="s1">&#39;body_mass_g&#39;</span><span class="p">],</span> <span class="n">bins</span><span class="o">=</span><span class="mi">30</span><span class="p">)</span>
+<span class="n">axes</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s1">&#39;Body Mass&#39;</span><span class="p">)</span>
+<span class="n">axes</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s1">&#39;Count&#39;</span><span class="p">)</span>
+<span class="n">axes</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s1">&#39;펭귄의 몸무게 분포&#39;</span><span class="p">)</span>
+
+<span class="c1"># 간격 조정</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">subplots_adjust</span><span class="p">(</span><span class="n">left</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span>
+                    <span class="n">right</span><span class="o">=</span><span class="mf">0.95</span><span class="p">,</span>
+                    <span class="n">bottom</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span>
+                    <span class="n">top</span><span class="o">=</span><span class="mf">0.95</span><span class="p">,</span>
+                    <span class="n">wspace</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span>
+                    <span class="n">hspace</span><span class="o">=</span><span class="mf">0.5</span><span class="p">)</span>
+
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<img alt="_images/6f708689dab7302260d1f185e111f597eec7c90cf10499d781810730ebad97ab.png" src="_images/6f708689dab7302260d1f185e111f597eec7c90cf10499d781810730ebad97ab.png" />
+</div>
+</div>
+<ol class="arabic simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">plt.subplots(2,</span> <span class="pre">1)</span></code>을 통해 figure 내에 2행 1열로 2개의 axes 객체를 만든다. 또한 <code class="docutils literal notranslate"><span class="pre">figsize=(10,</span> <span class="pre">6)</span></code>을 통해 figure의 가로 세로 길이는 각각 10과 6으로 정한다.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">axes[0]</span></code> 즉 첫번째 axes에 <code class="docutils literal notranslate"><span class="pre">scatter()</span></code> 함수를 통해 산점도를 그린다. 그 후 <code class="docutils literal notranslate"><span class="pre">set_xlabel()</span></code>, <code class="docutils literal notranslate"><span class="pre">set_ylabel()</span></code>, <code class="docutils literal notranslate"><span class="pre">set_title()</span></code> 함수를 통해 해당 axes의 x 레이블, y 레이블, 제목을 추가한다.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">axes[1]</span></code> 즉 두번째 axes에도 <code class="docutils literal notranslate"><span class="pre">hist()</span></code> 함수를 통한 그래프 그리기 및 기타 요소를 추가한다.</p></li>
+<li><p>두 그림이 겹쳐 보이므로 <code class="docutils literal notranslate"><span class="pre">subplots_adjust()</span></code> 함수를 통해 여백을 조정한다.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">plt.show()</span></code>를 통해 그래프를 출력한다.</p></li>
+</ol>
+<p>하나의 그림(figure) 내에 두개의 그래프(axes)가 동시에 출력되었다. 즉 stateless 방법은 figure 내에 원하는 만큼 axes 객체를 나눈 후, axes를 지정하여 그래프를 표현하였다. 이번에는 stateful 방법을 사용해 그래프를 나타내보도록 하자.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">6</span><span class="p">))</span>
+
+<span class="c1"># 첫번째 그림</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">subplot</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">scatter</span><span class="p">(</span><span class="n">df</span><span class="p">[</span><span class="s1">&#39;flipper_length_mm&#39;</span><span class="p">],</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;body_mass_g&#39;</span><span class="p">])</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">xlabel</span><span class="p">(</span><span class="s1">&#39;날개 길이(mm)&#39;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">ylabel</span><span class="p">(</span><span class="s1">&#39;몸무게(g)&#39;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="s1">&#39;날개와 몸무게간의 관계&#39;</span><span class="p">)</span>
+
+<span class="c1"># 두번째 그림</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">subplot</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">hist</span><span class="p">(</span><span class="n">df</span><span class="p">[</span><span class="s1">&#39;body_mass_g&#39;</span><span class="p">],</span> <span class="n">bins</span><span class="o">=</span><span class="mi">30</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">xlabel</span><span class="p">(</span><span class="s1">&#39;Body Mass&#39;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">ylabel</span><span class="p">(</span><span class="s1">&#39;Count&#39;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="s1">&#39;펭귄의 몸무게 분포&#39;</span><span class="p">)</span>
+
+<span class="c1"># 간격 조정</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">subplots_adjust</span><span class="p">(</span><span class="n">left</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span>
+                    <span class="n">right</span><span class="o">=</span><span class="mf">0.95</span><span class="p">,</span>
+                    <span class="n">bottom</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span>
+                    <span class="n">top</span><span class="o">=</span><span class="mf">0.95</span><span class="p">,</span>
+                    <span class="n">wspace</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span>
+                    <span class="n">hspace</span><span class="o">=</span><span class="mf">0.5</span><span class="p">)</span>
+
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<img alt="_images/6f708689dab7302260d1f185e111f597eec7c90cf10499d781810730ebad97ab.png" src="_images/6f708689dab7302260d1f185e111f597eec7c90cf10499d781810730ebad97ab.png" />
+</div>
+</div>
+<ol class="arabic simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">plt.figure(figsize=(10,</span> <span class="pre">6))</span></code>를 통해 figure를 만든다.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">plt.subplot(2,1,1)</span></code>를 입력하면 figure 내에 2행 1열의 axes를 만들며, 그 중 첫번째 axes를 현재 axes로 설정한다.</p></li>
+<li><p>해당 axes에 그래프가 표현된다.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">plt.subplot(2,1,2)</span></code>를 입력하면 두번째 axes를 현재 axes로 설정한다. 이후 해당 axes에 그래프가 표현된다.</p></li>
+<li><p>여백을 조정한 후 그래프를 출력한다.</p></li>
+</ol>
+<p>이처럼 stateful 방식은 <code class="docutils literal notranslate"><span class="pre">subplot()</span></code>을 통해 현재 axes를 설정하면 해당 부분에 그림을 그리게 된다.</p>
+<p>이 외에도 matplotlib 패키지를 이용하여 표현할 수 있는 그래프 및 방법은 아래 사이트에 자세히 나와있다.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">matplotlib</span><span class="o">.</span><span class="n">org</span><span class="o">/</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="pandas">
+<h2><span class="section-number">4.3. </span>pandas 패키지를 이용한 시각화<a class="headerlink" href="#pandas" title="Link to this heading">#</a></h2>
+<p>pandas 패키지는 matplotlib 패키지의 기능을 일부 내장하고 있어 시리즈 또는 데이터프레임 객체를 바로 그래프로 표현할 수 있으며, 그래프 종류는 다음과 같다.</p>
+<ul class="simple">
+<li><p>line: 선 그래프</p></li>
+<li><p>bar: 수직 막대 그래프</p></li>
+<li><p>barh: 수평 막대 그래프</p></li>
+<li><p>hist: 히스토그램</p></li>
+<li><p>box: 박스 플롯</p></li>
+<li><p>kde: 커널 밀도 그래프</p></li>
+<li><p>area: 면적 그래프</p></li>
+<li><p>pie: 파이 그래프</p></li>
+<li><p>scatter: 산점도 그래프</p></li>
+<li><p>hexbin: 고밀도 산점도 그래프</p></li>
+</ul>
+<p>먼저 예제로 사용할 다이아몬드 데이터셋을 불러오도록 하자.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">seaborn</span> <span class="k">as</span> <span class="nn">sns</span>
+
+<span class="n">df</span> <span class="o">=</span> <span class="n">sns</span><span class="o">.</span><span class="n">load_dataset</span><span class="p">(</span><span class="s1">&#39;diamonds&#39;</span><span class="p">)</span>
+<span class="n">df</span><span class="o">.</span><span class="n">head</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>carat</th>
+      <th>cut</th>
+      <th>color</th>
+      <th>clarity</th>
+      <th>depth</th>
+      <th>table</th>
+      <th>price</th>
+      <th>x</th>
+      <th>y</th>
+      <th>z</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>0</th>
+      <td>0.23</td>
+      <td>Ideal</td>
+      <td>E</td>
+      <td>SI2</td>
+      <td>61.5</td>
+      <td>55.0</td>
+      <td>326</td>
+      <td>3.95</td>
+      <td>3.98</td>
+      <td>2.43</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <td>0.21</td>
+      <td>Premium</td>
+      <td>E</td>
+      <td>SI1</td>
+      <td>59.8</td>
+      <td>61.0</td>
+      <td>326</td>
+      <td>3.89</td>
+      <td>3.84</td>
+      <td>2.31</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <td>0.23</td>
+      <td>Good</td>
+      <td>E</td>
+      <td>VS1</td>
+      <td>56.9</td>
+      <td>65.0</td>
+      <td>327</td>
+      <td>4.05</td>
+      <td>4.07</td>
+      <td>2.31</td>
+    </tr>
+    <tr>
+      <th>3</th>
+      <td>0.29</td>
+      <td>Premium</td>
+      <td>I</td>
+      <td>VS2</td>
+      <td>62.4</td>
+      <td>58.0</td>
+      <td>334</td>
+      <td>4.20</td>
+      <td>4.23</td>
+      <td>2.63</td>
+    </tr>
+    <tr>
+      <th>4</th>
+      <td>0.31</td>
+      <td>Good</td>
+      <td>J</td>
+      <td>SI2</td>
+      <td>63.3</td>
+      <td>58.0</td>
+      <td>335</td>
+      <td>4.34</td>
+      <td>4.35</td>
+      <td>2.75</td>
+    </tr>
+  </tbody>
+</table>
+</div></div></div>
+</div>
+<p>데이터의 각 변수는 다음과 같다.</p>
+<ul class="simple">
+<li><p>carat: 다이아몬드 무게</p></li>
+<li><p>cut: 컷팅의 가치</p></li>
+<li><p>color: 다이아몬드 색상</p></li>
+<li><p>clarity: 깨끗한 정도</p></li>
+<li><p>depth: 깊이 비율, z / mean(x, y)</p></li>
+<li><p>table: 가장 넓은 부분의 너비 대비 다이아몬드 꼭대기의 너비</p></li>
+<li><p>price: 가격</p></li>
+<li><p>x: 길이</p></li>
+<li><p>y: 너비</p></li>
+<li><p>z: 깊이</p></li>
+</ul>
+<p>먼저 carat과 price의 관계를 살펴보자.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">plt</span><span class="o">.</span><span class="n">rc</span><span class="p">(</span><span class="s1">&#39;font&#39;</span><span class="p">,</span> <span class="n">family</span><span class="o">=</span><span class="s1">&#39;Malgun Gothic&#39;</span><span class="p">)</span>
+<span class="n">df</span><span class="o">.</span><span class="n">plot</span><span class="o">.</span><span class="n">scatter</span><span class="p">(</span><span class="n">x</span><span class="o">=</span><span class="s1">&#39;carat&#39;</span><span class="p">,</span> <span class="n">y</span><span class="o">=</span><span class="s1">&#39;price&#39;</span><span class="p">,</span> <span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">6</span><span class="p">),</span> <span class="n">title</span><span class="o">=</span><span class="s1">&#39;캐럿과 가격 간의 관계&#39;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<img alt="_images/cdd21b8ec8d991c85f89ff043df61696a78dd4de7a63be58330b1735a86b57df.png" src="_images/cdd21b8ec8d991c85f89ff043df61696a78dd4de7a63be58330b1735a86b57df.png" />
+</div>
+</div>
+<p>데이터프레임에 <code class="docutils literal notranslate"><span class="pre">plot()</span></code> 메서드를 입력하고, 그 후 산점도에 해당하는 <code class="docutils literal notranslate"><span class="pre">scatter()</span></code>를 추가로 입력한다. <span class="math notranslate nohighlight">\(x\)</span>축과 <span class="math notranslate nohighlight">\(y\)</span>축 정보를 입력하고 figure 사이즈 및 제목을 입력하면 이에 해당하는 그래프가 출력된다. 이번에는 추가로 cut 별로 색을 다르게 표현해보도록 하자.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">df</span><span class="o">.</span><span class="n">plot</span><span class="o">.</span><span class="n">scatter</span><span class="p">(</span><span class="n">x</span><span class="o">=</span><span class="s1">&#39;carat&#39;</span><span class="p">,</span> <span class="n">y</span><span class="o">=</span><span class="s1">&#39;price&#39;</span><span class="p">,</span> <span class="n">c</span><span class="o">=</span><span class="s1">&#39;cut&#39;</span><span class="p">,</span> <span class="n">cmap</span><span class="o">=</span><span class="s1">&#39;Set2&#39;</span><span class="p">,</span> <span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">6</span><span class="p">))</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<img alt="_images/1918bf7374cbf15e44a5ee052dcd354c715ebcfc87b7d56440812c27627c2a90.png" src="_images/1918bf7374cbf15e44a5ee052dcd354c715ebcfc87b7d56440812c27627c2a90.png" />
+</div>
+</div>
+<p>c 인자에 색을 구분하고 싶은 열을 입력하며, cmap에는 파레트를 지정한다. 결과를 확인해보면 cut 별로 색이 다르게 표현되었다.</p>
+<p>이번에는 price 열의 데이터를 히스토그램으로 표현해보도록 하자.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">df</span><span class="p">[</span><span class="s1">&#39;price&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">plot</span><span class="o">.</span><span class="n">hist</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">6</span><span class="p">),</span> <span class="n">bins</span><span class="o">=</span><span class="mi">20</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<img alt="_images/ee6fca29edce6a78d851c88bcb14af671440c6a4669a560a4498dcbd698621ca.png" src="_images/ee6fca29edce6a78d851c88bcb14af671440c6a4669a560a4498dcbd698621ca.png" />
+</div>
+</div>
+<p>히스토그램으로 표현하고 싶은 열만 선택한 후, <code class="docutils literal notranslate"><span class="pre">plot.hist()</span></code> 메서드를 적용하면 히스토그램이 표현된다. matplotlib 패키지를 사용했을 때와 동일하게 bins 인자를 통해 몇개의 구간으로 나눌지도 선택할 수 있다.</p>
+<p>이번에는 데이터 분석과 시각화를 동시에 진행해보도록 하자. color에 따른 carat의 평균을 막대 그래프로 나타내보도록 하겠다.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">df</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="s1">&#39;color&#39;</span><span class="p">)[</span><span class="s1">&#39;carat&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="o">.</span><span class="n">plot</span><span class="o">.</span><span class="n">bar</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">6</span><span class="p">))</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<img alt="_images/c78102d59937f41de8b28bc5c4f018caf18a5babc2e056d5cdefa23bf3ea651b.png" src="_images/c78102d59937f41de8b28bc5c4f018caf18a5babc2e056d5cdefa23bf3ea651b.png" />
+</div>
+</div>
+<ol class="arabic simple">
+<li><p>‘color’ 별로 그룹을 묶은 후 ‘carat’의 평균을 구한다.</p></li>
+<li><p>구해진 값에 바로 <code class="docutils literal notranslate"><span class="pre">plot.bar()</span></code> 메서드를 적용해 막대 그래프로 표현한다.</p></li>
+</ol>
+<p>이처럼 pandas 패키지를 사용하면 데이터 분석 및 시각화를 한 줄의 코드로 작성할 수 있다.</p>
+</section>
+<section id="seaborn">
+<h2><span class="section-number">4.4. </span>seaborn 패키지를 이용한 시각화<a class="headerlink" href="#seaborn" title="Link to this heading">#</a></h2>
+<p>seaborn 패키지는 matplotlib 패키지 보다 좀 더 화려하고 복잡한 그래프를 표현할 수 있다. 이번에는 예제로써 타이타닉 데이터셋을 이용한다.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">seaborn</span> <span class="k">as</span> <span class="nn">sns</span>
+
+<span class="n">df</span> <span class="o">=</span> <span class="n">sns</span><span class="o">.</span><span class="n">load_dataset</span><span class="p">(</span><span class="s1">&#39;titanic&#39;</span><span class="p">)</span>
+<span class="n">df</span><span class="o">.</span><span class="n">head</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>survived</th>
+      <th>pclass</th>
+      <th>sex</th>
+      <th>age</th>
+      <th>sibsp</th>
+      <th>parch</th>
+      <th>fare</th>
+      <th>embarked</th>
+      <th>class</th>
+      <th>who</th>
+      <th>adult_male</th>
+      <th>deck</th>
+      <th>embark_town</th>
+      <th>alive</th>
+      <th>alone</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>0</th>
+      <td>0</td>
+      <td>3</td>
+      <td>male</td>
+      <td>22.0</td>
+      <td>1</td>
+      <td>0</td>
+      <td>7.2500</td>
+      <td>S</td>
+      <td>Third</td>
+      <td>man</td>
+      <td>True</td>
+      <td>NaN</td>
+      <td>Southampton</td>
+      <td>no</td>
+      <td>False</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <td>1</td>
+      <td>1</td>
+      <td>female</td>
+      <td>38.0</td>
+      <td>1</td>
+      <td>0</td>
+      <td>71.2833</td>
+      <td>C</td>
+      <td>First</td>
+      <td>woman</td>
+      <td>False</td>
+      <td>C</td>
+      <td>Cherbourg</td>
+      <td>yes</td>
+      <td>False</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <td>1</td>
+      <td>3</td>
+      <td>female</td>
+      <td>26.0</td>
+      <td>0</td>
+      <td>0</td>
+      <td>7.9250</td>
+      <td>S</td>
+      <td>Third</td>
+      <td>woman</td>
+      <td>False</td>
+      <td>NaN</td>
+      <td>Southampton</td>
+      <td>yes</td>
+      <td>True</td>
+    </tr>
+    <tr>
+      <th>3</th>
+      <td>1</td>
+      <td>1</td>
+      <td>female</td>
+      <td>35.0</td>
+      <td>1</td>
+      <td>0</td>
+      <td>53.1000</td>
+      <td>S</td>
+      <td>First</td>
+      <td>woman</td>
+      <td>False</td>
+      <td>C</td>
+      <td>Southampton</td>
+      <td>yes</td>
+      <td>False</td>
+    </tr>
+    <tr>
+      <th>4</th>
+      <td>0</td>
+      <td>3</td>
+      <td>male</td>
+      <td>35.0</td>
+      <td>0</td>
+      <td>0</td>
+      <td>8.0500</td>
+      <td>S</td>
+      <td>Third</td>
+      <td>man</td>
+      <td>True</td>
+      <td>NaN</td>
+      <td>Southampton</td>
+      <td>no</td>
+      <td>True</td>
+    </tr>
+  </tbody>
+</table>
+</div></div></div>
+</div>
+<p>먼저 나이와 운임의 관계를 살펴보도록 하자.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">sns</span><span class="o">.</span><span class="n">scatterplot</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="n">df</span><span class="p">,</span> <span class="n">x</span><span class="o">=</span><span class="s1">&#39;age&#39;</span><span class="p">,</span> <span class="n">y</span><span class="o">=</span><span class="s1">&#39;fare&#39;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<img alt="_images/db3ec962eacedc8353944f90e710681bd23ddd6c6965f197bee056bd5436bf09.png" src="_images/db3ec962eacedc8353944f90e710681bd23ddd6c6965f197bee056bd5436bf09.png" />
+</div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">scatterplot()</span></code> 함수를 통해 산점도를 그릴 수 있다. data에는 사용하고자 하는 데이터를, x와 y에는 각각의 축 정보를 입력한다. 이번에는 각 그룹 별로 점의 색과 모양을 다르게 표현해보도록 하자.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">sns</span><span class="o">.</span><span class="n">scatterplot</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="n">df</span><span class="p">,</span> <span class="n">x</span><span class="o">=</span><span class="s1">&#39;age&#39;</span><span class="p">,</span> <span class="n">y</span><span class="o">=</span><span class="s1">&#39;fare&#39;</span><span class="p">,</span> <span class="n">hue</span><span class="o">=</span><span class="s1">&#39;class&#39;</span><span class="p">,</span> <span class="n">style</span><span class="o">=</span><span class="s1">&#39;class&#39;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<img alt="_images/b9ac7c6fa6f40a15414c6ad9f6597d52be9c6e6740592593c39181ba03c52305.png" src="_images/b9ac7c6fa6f40a15414c6ad9f6597d52be9c6e6740592593c39181ba03c52305.png" />
+</div>
+</div>
+<p>hue는 그룹 별 색을, style은 그룹 별 모양을 의미한다. class 별로 점의 색과 모양이 다르며, ‘First’ 클래스의 운임이 타 클래스 대비 훨씬 높음을 알 수 있다.</p>
+<p>matplotlib이나 pandas로 표현하기 어려운 히트맵과 같은 복잡한 그림도 seaborn 패키지를 이용하면 매우 쉽게 나타낼 수 있다. 먼저 각 클래스와 성별에 따른 생존율을 계산해보도록 하자.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">df_pivot</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">pivot_table</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="s1">&#39;class&#39;</span><span class="p">,</span>
+                          <span class="n">columns</span><span class="o">=</span><span class="s1">&#39;sex&#39;</span><span class="p">,</span>
+                          <span class="n">values</span><span class="o">=</span><span class="s1">&#39;survived&#39;</span><span class="p">,</span>
+                          <span class="n">aggfunc</span><span class="o">=</span><span class="s1">&#39;mean&#39;</span><span class="p">)</span>
+<span class="n">df_pivot</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th>sex</th>
+      <th>female</th>
+      <th>male</th>
+    </tr>
+    <tr>
+      <th>class</th>
+      <th></th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>First</th>
+      <td>0.968085</td>
+      <td>0.368852</td>
+    </tr>
+    <tr>
+      <th>Second</th>
+      <td>0.921053</td>
+      <td>0.157407</td>
+    </tr>
+    <tr>
+      <th>Third</th>
+      <td>0.500000</td>
+      <td>0.135447</td>
+    </tr>
+  </tbody>
+</table>
+</div></div></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">pivot_table()</span></code> 함수를 통해 행 인덱스는 class, 열 인덱스는 sex, 값은 survived, 집계 함수는 평균을 사용한다. ‘survived’ 열 에서 1은 생존, 0은 사망을 의미하므로, 평균은 생존율을 의미한다. 위 결과를 히트맵으로 나타내보자.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">sns</span><span class="o">.</span><span class="n">heatmap</span><span class="p">(</span><span class="n">df_pivot</span><span class="p">,</span> <span class="n">annot</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">cmap</span><span class="o">=</span><span class="s1">&#39;coolwarm&#39;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<img alt="_images/04ae3010c5d78effc1217d9c73976e4099b7f9d5bc8e55bfebe552fb308da85e.png" src="_images/04ae3010c5d78effc1217d9c73976e4099b7f9d5bc8e55bfebe552fb308da85e.png" />
+</div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">heatmap()</span></code> 함수를 통해 히트맵을 나타낼 수 있으며, annot은 데이터의 값을 표시할 지 여부를 의미한다. 또한 cmap은 팔레트 종류로써 coolwarm은 값이 높을 수록 붉은색, 낮을 수록 푸른색을 표현한다. class가 높을 수록 생존율이 높고, 남성에 비해 여성의 생존율이 높다는 것을 한 눈에 확인할 수 있다.</p>
+<section id="id5">
+<h3><span class="section-number">4.4.1. </span>한 번에 여러개의 그래프 나타내기<a class="headerlink" href="#id5" title="Link to this heading">#</a></h3>
+<p>seaborn 패키지 역시 한번에 여러개의 그래프를 나타내는 것이 가능하지만, 표현 방법에 따라 사용하는 함수가 다르다. seaborn 패키지의 함수들은 크게 ‘figure-level’과 ‘axes-level’ 함수로 나누어져 있다.</p>
+<ul class="simple">
+<li><p>figure-level: matplotlib와 별개로 seaborn의 figure를 만들어 그곳에 그래프를 나타낸다. 따라서 figure-level 함수를 사용할 경우 facetgrid(seaborn의 figure)를 통해 레이아웃을 변경하고, 여러개의 그래프를 나타낼 수 있다.</p></li>
+<li><p>axes-level: matplotlib의 axes에 그래프를 나타낸다.</p></li>
+</ul>
+<p>아래 그림에서 위에 큰 박스 세 개(replot, displot, catplot)가 figure-level 함수이며, 각각 아래에 있는 작은 박스들이 axes-level 함수다.</p>
+<figure class="align-default" id="id6">
+<img alt="_images/seaborn.png" src="_images/seaborn.png" />
+<figcaption>
+<p><span class="caption-number">Fig. 4.3 </span><span class="caption-text">seaborn 패키지의 함수 차이</span><a class="headerlink" href="#id6" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
+<p>먼저 figure-level의 예제로 class 별 나이의 분포를 나타내보자.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">sns</span><span class="o">.</span><span class="n">displot</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="n">df</span><span class="p">,</span> <span class="n">x</span><span class="o">=</span><span class="s1">&#39;age&#39;</span><span class="p">,</span> <span class="n">hue</span><span class="o">=</span><span class="s1">&#39;class&#39;</span><span class="p">,</span> <span class="n">kind</span><span class="o">=</span><span class="s1">&#39;hist&#39;</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.3</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>C:\Users\leebi\anaconda3\Lib\site-packages\seaborn\axisgrid.py:118: UserWarning: The figure layout has changed to tight
+  self._figure.tight_layout(*args, **kwargs)
+</pre></div>
+</div>
+<img alt="_images/2d358e6051c7c9449d3be5d6ed5a7b70d6ef157959e622049639575e8a032fbc.png" src="_images/2d358e6051c7c9449d3be5d6ed5a7b70d6ef157959e622049639575e8a032fbc.png" />
+</div>
+</div>
+<p>figure-level 함수에 해당하는 <code class="docutils literal notranslate"><span class="pre">displot()</span></code> 함수를 통해 분포를 나타내는 그래프를 그릴 수 있으며, 그래프 종류에 해당하는 kind에 ‘hist’를 입력하면 히스토그램을 나타낸다. hue 인자를 통해 ‘class’ 별로 색을 구분했으며, alpha 인자를 통해 투명도를 조절할 수 있다.</p>
+<p>이번에는 하나의 그래프에 모든 데이터를 표현하는 것이 아닌 class 별로 각각 개별 그래프로 표현해보도록 하자.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">sns</span><span class="o">.</span><span class="n">displot</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="n">df</span><span class="p">,</span> <span class="n">x</span><span class="o">=</span><span class="s1">&#39;age&#39;</span><span class="p">,</span> <span class="n">col</span><span class="o">=</span><span class="s1">&#39;class&#39;</span><span class="p">,</span> <span class="n">kind</span><span class="o">=</span><span class="s1">&#39;hist&#39;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>C:\Users\leebi\anaconda3\Lib\site-packages\seaborn\axisgrid.py:118: UserWarning: The figure layout has changed to tight
+  self._figure.tight_layout(*args, **kwargs)
+</pre></div>
+</div>
+<img alt="_images/a04142f335c87e2d101774d207e38faba062747304999e68ebfad5c4fc6d4eb6.png" src="_images/a04142f335c87e2d101774d207e38faba062747304999e68ebfad5c4fc6d4eb6.png" />
+</div>
+</div>
+<p>col 인자에 특정 열을 입력하면 해당 열을 기준으로 그래프가 열 방향으로 각각 분할되어 표현되며, 이는 화면을 분할하는 facetgrid 가 적용되었기 때문이다. 세로 뿐만 아니라 가로로도 그래프를 분할할 수 있다.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">sns</span><span class="o">.</span><span class="n">displot</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="n">df</span><span class="p">,</span> <span class="n">x</span><span class="o">=</span><span class="s1">&#39;age&#39;</span><span class="p">,</span> <span class="n">col</span><span class="o">=</span><span class="s1">&#39;class&#39;</span><span class="p">,</span> <span class="n">row</span><span class="o">=</span><span class="s1">&#39;sex&#39;</span><span class="p">,</span> <span class="n">kind</span><span class="o">=</span><span class="s1">&#39;hist&#39;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>C:\Users\leebi\anaconda3\Lib\site-packages\seaborn\axisgrid.py:118: UserWarning: The figure layout has changed to tight
+  self._figure.tight_layout(*args, **kwargs)
+</pre></div>
+</div>
+<img alt="_images/fa25e4e09d91e3e7f5c7e7bad59b725e75be817e181325c974e16c51a2bc5069.png" src="_images/fa25e4e09d91e3e7f5c7e7bad59b725e75be817e181325c974e16c51a2bc5069.png" />
+</div>
+</div>
+<p>행으로는 sex, 열로는 class 별로 구분이 되었다. 즉, 위의 행은 sex = male, 아래 행은 sex = female에 해당하는 데이터이며, 첫번째 열은 class = First, 두번째 열은 class = Second, 세번째 열은 class = Third에 해당한다.</p>
+<p>만일 히스토그램을 나타내는 <code class="docutils literal notranslate"><span class="pre">histplot()</span></code> 함수를 통해 그래프를 분할하면 어떻게 될까?</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">sns</span><span class="o">.</span><span class="n">histplot</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="n">df</span><span class="p">,</span> <span class="n">x</span><span class="o">=</span><span class="s1">&#39;age&#39;</span><span class="p">,</span> <span class="n">col</span><span class="o">=</span><span class="s1">&#39;class&#39;</span><span class="p">,</span> <span class="n">row</span><span class="o">=</span><span class="s1">&#39;sex&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+</div>
+<figure class="align-default" id="seaborn-error">
+<img alt="_images/seaborn_error.png" src="_images/seaborn_error.png" />
+</figure>
+<p>위의 코드를 실행하면 오류가 발생한다. 즉, axes-level 함수인 <code class="docutils literal notranslate"><span class="pre">histplot()</span></code>로는 facetgrid를 할 수 없기 때문이다.</p>
+<p>이번에는 axes-level로 그래프를 표현하는 방법에 대해 알아보자. 이는 기존에 살펴본 matplotlib 패키지를 이용하는 방법과 거의 비슷하다.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">plt</span><span class="o">.</span><span class="n">rc</span><span class="p">(</span><span class="s1">&#39;font&#39;</span><span class="p">,</span> <span class="n">family</span><span class="o">=</span><span class="s1">&#39;Malgun Gothic&#39;</span><span class="p">)</span>
+
+<span class="n">g</span><span class="p">,</span> <span class="n">axes</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">6</span><span class="p">))</span>
+
+<span class="n">sns</span><span class="o">.</span><span class="n">histplot</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="n">df</span><span class="p">,</span> <span class="n">x</span><span class="o">=</span><span class="s1">&#39;age&#39;</span><span class="p">,</span> <span class="n">hue</span><span class="o">=</span><span class="s1">&#39;class&#39;</span><span class="p">,</span> <span class="n">ax</span><span class="o">=</span><span class="n">axes</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+<span class="n">sns</span><span class="o">.</span><span class="n">barplot</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="n">df</span><span class="p">,</span> <span class="n">x</span><span class="o">=</span><span class="s1">&#39;class&#39;</span><span class="p">,</span> <span class="n">y</span><span class="o">=</span><span class="s1">&#39;age&#39;</span><span class="p">,</span> <span class="n">ax</span><span class="o">=</span><span class="n">axes</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+
+<span class="n">axes</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s1">&#39;클래스 별 나이 분포도&#39;</span><span class="p">)</span>
+<span class="n">axes</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s1">&#39;클래스 별 평균 나이&#39;</span><span class="p">)</span>
+
+<span class="n">g</span><span class="o">.</span><span class="n">tight_layout</span><span class="p">()</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<img alt="_images/78083adb85a290b3d6e959be518dce4c50a23adaf30cedbb98de2fc9e54939b1.png" src="_images/78083adb85a290b3d6e959be518dce4c50a23adaf30cedbb98de2fc9e54939b1.png" />
+</div>
+</div>
+<ol class="arabic simple">
+<li><p>한글 폰트를 지정한다.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">subplots()</span></code> 함수를 통해 2개의 axes를 생성한다.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">histplot()</span></code> 함수를 통해 히스토그램을 그린 후, <code class="docutils literal notranslate"><span class="pre">ax=axes[0]</span></code>을 입력하면 첫번째 axes에 해당 그래프가 출력된다.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">barplot()</span></code> 함수를 통해 막대그래프를 그린후, <code class="docutils literal notranslate"><span class="pre">ax=axes[1]</span></code>을 입력하면 두번째 axes에 해당 그래프가 출력된다.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">axes[0]</span></code>과 <code class="docutils literal notranslate"><span class="pre">axes[1]</span></code>을 통해 axes의 레이블이나 제목 등을 변경할 수 있다.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">tight_layout()</span></code> 함수를 입력하면 여백이 조정된다.</p></li>
+<li><p>그래프를 출력한다.</p></li>
+</ol>
+<p>seaborn 패키지에 대한 자세한 설명은 아래 페이지에 나와있다.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">seaborn</span><span class="o">.</span><span class="n">pydata</span><span class="o">.</span><span class="n">org</span><span class="o">/</span><span class="n">index</span><span class="o">.</span><span class="n">html</span>
+</pre></div>
+</div>
+</section>
+</section>
+</section>
+
+    <script type="text/x-thebe-config">
+    {
+        requestKernel: true,
+        binderOptions: {
+            repo: "binder-examples/jupyter-stacks-datascience",
+            ref: "master",
+        },
+        codeMirrorConfig: {
+            theme: "abcdef",
+            mode: "python"
+        },
+        kernelOptions: {
+            name: "python3",
+            path: "./."
+        },
+        predefinedOutput: true
+    }
+    </script>
+    <script>kernelName = 'python3'</script>
+
+                </article>
+              
+
+              
+              
+              
+              
+                <footer class="prev-next-footer">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="eda.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title"><span class="section-number">3. </span>데이터 분석 배워보기</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="sql.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title"><span class="section-number">5. </span>SQL 기초 배워보기</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+                <div class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item">
+  <div class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> Contents
+  </div>
+  <nav class="bd-toc-nav page-toc">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#id2">4.1. 그래프의 구성요소</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#id3">4.2. matplotlib 패키지를 이용한 시각화</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id4">4.2.1. 한 번에 여러개의 그래프 나타내기</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#pandas">4.3. pandas 패키지를 이용한 시각화</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#seaborn">4.4. seaborn 패키지를 이용한 시각화</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id5">4.4.1. 한 번에 여러개의 그래프 나타내기</a></li>
+</ul>
+</li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+<div class="bd-footer-content__inner container">
+  
+  <div class="footer-item">
+    
+<p class="component-author">
+By 이현열
+</p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+
+  <p class="copyright">
+    
+      © Copyright 2023.
+      <br/>
+    
+  </p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+</div>
+          </footer>
+        
+
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script src="_static/scripts/bootstrap.js?digest=8d27b9dea8ad943066ae"></script>
+<script src="_static/scripts/pydata-sphinx-theme.js?digest=8d27b9dea8ad943066ae"></script>
+
+  <footer class="bd-footer">
+  </footer>
+  </body>
+</html>

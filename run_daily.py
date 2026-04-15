@@ -375,6 +375,16 @@ def main():
         except Exception as e:
             log(f"DART 갱신 오류: {e} — 기존 캐시로 진행", logfile)
 
+        # 0.1. FnGuide 증분 (DART 최근 공시 종목만, rcept_dt 역추적 포함)
+        log("FnGuide 증분 갱신 (DART 최근 공시 종목)", logfile)
+        try:
+            ok_fng = run_script("refresh_fnguide_incremental.py", timeout=900, logfile=logfile)
+            log(f"FnGuide 갱신: {'성공' if ok_fng else '실패(비치명적)'}", logfile)
+        except subprocess.TimeoutExpired:
+            log("FnGuide 갱신 타임아웃 (15분) — 기존 캐시로 진행", logfile)
+        except Exception as e:
+            log(f"FnGuide 갱신 오류: {e} — 기존 캐시로 진행", logfile)
+
         # 0.3. OHLCV 신규 종목 증분 수집
         #   시총 1000억+ 인데 OHLCV에 없는 종목 → 개별 수집 (252거래일)
         log("OHLCV 신규 종목 증분 수집 시작", logfile)

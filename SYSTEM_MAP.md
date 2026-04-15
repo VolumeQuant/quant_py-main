@@ -310,11 +310,43 @@ grep -n "매수:\|매도:\|보유:" send_telegram_auto.py
 
 ---
 
-## 7. 알려진 개선 과제 (v79 적용과 별개, 차후)
+## 7. PIT (Point-in-Time) 보장 체계 (2026-04-15 강화)
+
+### 7.1 데이터 소스별 PIT 상태
+
+| 소스 | PIT 구조 | 구현 |
+|---|---|---|
+| **pykrx** (OHLCV/market_cap/fundamental/sector/index) | A+ 구조적 | 파일명 자체가 날짜. `find_nearest_cache(..., strict=False)`로 `d <= target_date` 필터 |
+| **DART** (fs_dart_*.parquet) | A (rcept_dt 기반) | 파일에 `rcept_dt` 필드. 모든 계산 경로 `rcept_dt <= base_ts` 필터 |
+| **FnGuide** (fs_fnguide_*.parquet) | A (2026-04-15 개선) | DART rcept_dt 역추적으로 `rcept_dt` 이식 완료. 130만 건 매칭. |
+
+### 7.2 FnGuide rcept_dt 역추적 (`postprocess_fnguide_rcept.py`)
+
+**문제**: FnGuide 원본 스키마 `['계정','기준일','값','종목코드','공시구분']` — **rcept_dt 없음**.
+**해결**: DART의 (기준일, 공시구분) → rcept_dt 매핑을 FnGuide에 이식.
+- 매칭 실패 시 기본값: 연간 기준일+90일 / 분기 기준일+45일 (법정 기한)
+- 2,766 종목 전체 49초 (4워커), 1,303,389건 매칭
+- 결과: FnGuide 파일에 `rcept_dt` 필드 추가됨
+
+### 7.3 FnGuide 매일 증분 (`refresh_fnguide_incremental.py`)
+
+run_daily.py Step 0.1에 삽입됨:
+- DART 최근 3일 내 갱신된 종목만 FnGuide 재크롤 (웹 크롤링 부하 최소화)
+- 크롤링 후 자동으로 `postprocess_fnguide_rcept.py` 호출 → 신규 파일에도 rcept_dt 이식
+- ENV: `FNG_INCR_DAYS` (기본 3일)
+
+### 7.4 잠재 PIT 위반 (경미, 남은 과제)
+
+| 이슈 | 위치 | 영향 |
+|---|---|---|
+| 섹터 max_gap 120일 | fast_generate line 1525 | 섹터 변경 드물어 실용적 영향 없음 |
+| FnGuide rcept_dt 기본값 추정 케이스 | 약 0.1% 레코드 | 연간 90일/분기 45일 기본값. 실제보다 늦게 추정하므로 look-ahead 없음 (보수적) |
+
+## 8. 알려진 개선 과제 (v79 이후)
 
 | 이슈 | 위치 | 영향 |
 |---|---|---|
 | kospi_yf 첫 컬럼 NaN fallback 없음 | send_telegram_auto.py line 339 | 과거 시점 KOSPI 부분 누락 가능 |
-| wr 후처리가 활성 모드 파일에만 적용 | run_daily._postprocess_ranking line 309-318 | 비활성 모드 ranking 파일엔 wr 없음 (fallback 있어 치명적이진 않음) |
-| v77 이슈조사 미해결 7개 | fc29095d4 commit | MA120 필터 주석불일치, 지주사 NaN 등 |
-| ranking_manager.py wr 재계산 중복 | line 157, 372 | 수식 동일하므로 무해하지만 일원화 가능 |
+| wr 후처리가 활성 모드 파일에만 적용 | run_daily._postprocess_ranking line 309-318 | 비활성 모드 ranking 파일엔 wr 없음 (fallback 999 있어 치명적 아님) |
+| v77 이슈조사 미해결 6개 (13 중 7개 해결됨) | fc29095d4 commit | MA120 필터 주석불일치, 지주사 NaN 등 |
+| ranking_manager.py wr 재계산 중복 | line 157, 372 | 수식 동일하므로 무해 |

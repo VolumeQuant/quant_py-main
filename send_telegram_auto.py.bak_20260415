@@ -1,0 +1,1937 @@
+"""
+한국주식 퀀트 텔레그램 v41 — Signal + AI Risk + Watchlist
+
+메시지 구조 (v41):
+  📊 Signal — 결론 (뭘 살까)
+  🤖 AI Risk — 맥락 (시장 환경 + 리스크)
+  📋 Watchlist — 데이터 (Top 20 모니터링)
+
+실행: python send_telegram_auto.py
+"""
+import sys
+import io
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+
+import pandas as pd
+import numpy as np
+
+# KRX 인증 (2026-02-27~ 로그인 필수)
+import krx_auth
+krx_auth.login()
+
+from pykrx import stock
+from datetime import datetime, timedelta
+from pathlib import Path
+import requests
+import json
+import os
+import time
+from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+from zoneinfo import ZoneInfo
+from ranking_manager import (
+    load_ranking, load_recent_rankings, save_ranking,
+    get_daily_changes,
+    get_stock_status, cleanup_old_rankings, get_available_ranking_dates,
+    compute_rank_driver, MIN_RANK_CHANGE,
+    weighted_score_100, ENTRY_SCORE_100, EXIT_SCORE_100, ENTRY_RANK, EXIT_RANK, MAX_SLOTS,
+    STATE_DIR as RM_STATE_DIR,
+)
+from credit_monitor import (
+    get_credit_status, format_credit_section, format_credit_compact,
+    get_market_pick_level,
+)
+
+# ============================================================
+# 상수/설정
+# ============================================================
+KST = ZoneInfo('Asia/Seoul')
+STATE_DIR = Path(__file__).parent / 'state'
+CACHE_DIR = Path('data_cache')
+OUTPUT_DIR = Path('output')
+WEIGHT_PER_STOCK = 20  # 종목당 기본 비중 % (picks 없을 때 fallback)
+WATCHLIST_N = 20       # Watchlist 표시 종목 수
+
+WEEKDAY_KR = ['월', '화', '수', '목', '금', '��', '일']
+
+
+# ============================================================
+# 국면(Regime) 상태 로드 + 국면별 랭킹 파일 로드
+# ============================================================
+def load_regime_state():
+    """regime_state.json에서 현재 국면 정보 로드.
+
+    Returns:
+        dict: {mode, breadth, streak, rule, ...} or default defense
+    """
+    regime_path = STATE_DIR / 'regime_state.json'
+    if regime_path.exists():
+        try:
+            with open(regime_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {'mode': 'defense', 'breadth': None, 'streak': 0, 'rule': ''}
+
+
+def load_ranking_for_regime(date_str: str, regime_mode: str):
+    """국면에 맞는 랭킹 파일 로드 (v75: boost=state/, defense=state/defense/).
+    v77.1: cash 모드는 defense 랭킹 파일 참조 (정보 표시용)
+    """
+    if regime_mode in ('defense', 'cash'):
+        def_path = STATE_DIR / 'defense' / f'ranking_{date_str}.json'
+        if def_path.exists():
+            with open(def_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    return load_ranking(date_str)
+
+
+def get_available_regime_dates(regime_mode: str):
+    """랭킹 파일의 날짜 목록 (최신순, v75: 단일 ranking 파일)."""
+    files = sorted(STATE_DIR.glob('ranking_*.json'), reverse=True)
+    dates = []
+    for f in files:
+        date_str = f.stem.replace('ranking_', '')
+        if len(date_str) == 8 and date_str.isdigit():
+            dates.append(date_str)
+    return dates
+
+
+def expand_single_date_to_3days(target_date: str, regime_mode: str):
+    """단일 날짜가 주어졌을 때, 해당 날짜 이하 최근 3거래일 자동 확장.
+
+    target_date 포함, 그 이전의 랭킹 파일이 있는 날짜 2개를 추가.
+    """
+    available = get_available_regime_dates(regime_mode)
+    # target_date 이하만 필터
+    candidates = [d for d in available if d <= target_date]
+    return candidates[:3]
+
+
+# ============================================================
+# v78 재순위: 저장된 z-score로 composite score 재계산
+# ============================================================
+def _rerank_for_regime(ranking_data, mode):
+    """ranking 데이터를 v78 파라미터로 재순위 매김.
+
+    저장된 개별 z-score(rev_z, oca_z, op_margin_z, mom_12m_s 등)로부터
+    v78 가중치 기준 composite score를 재계산하고 composite_rank를 갱신.
+
+    Args:
+        ranking_data: ranking JSON dict (rankings 리스트 포함)
+        mode: 'boost' or 'defense'
+
+    Returns:
+        ranking_data (in-place 수정됨)
+    """
+    if not ranking_data:
+        return ranking_data
+
+    from regime_indicator import get_regime_params
+    rp = get_regime_params(mode)
+
+    rankings = ranking_data.get('rankings', [])
+    if not rankings:
+        return ranking_data
+
+    # 1) Growth raw 재계산
+    for r in rankings:
+        if rp.get('G_SUB3'):
+            # 3팩터: G_W1*SUB1 + G_W2*SUB2 + G_W3*SUB3
+            s1 = r.get(rp['G_SUB1'], 0) or 0
+            s2 = r.get(rp['G_SUB2'], 0) or 0
+            s3 = r.get(rp['G_SUB3'], 0) or 0
+            r['_growth_raw'] = s1 * rp['G_W1'] + s2 * rp['G_W2'] + s3 * rp['G_W3']
+        else:
+            # 2팩터: G_REV * SUB1 + (1-G_REV) * SUB2
+            s1 = r.get(rp['G_SUB1'], 0) or 0
+            s2 = r.get(rp['G_SUB2'], 0) or 0
+            r['_growth_raw'] = s1 * rp['G_REV'] + s2 * (1.0 - rp['G_REV'])
+
+    # 2) Growth raw 재표준화 → growth_s
+    g_vals = [r['_growth_raw'] for r in rankings if r['_growth_raw'] is not None]
+    if g_vals:
+        g_mean = sum(g_vals) / len(g_vals)
+        g_std = (sum((v - g_mean) ** 2 for v in g_vals) / len(g_vals)) ** 0.5
+    else:
+        g_mean, g_std = 0, 0
+
+    for r in rankings:
+        if g_std > 0:
+            r['_growth_s'] = (r['_growth_raw'] - g_mean) / g_std
+        else:
+            r['_growth_s'] = 0.0
+
+    # 3) 모멘텀 선택 (mom_12m_s, mom_6m_s 등 — 이미 재표준화됨)
+    mom_key_map = {'12m': 'mom_12m_s', '12m-1m': 'mom_12m1m_s',
+                   '6m': 'mom_6m_s', '6m-1m': 'mom_6m1m_s'}
+    mom_key = mom_key_map.get(rp['MOM_PERIOD'], 'mom_12m_s')
+
+    # 4) Composite score 재계산
+    v_w, q_w, g_w, m_w = rp['V_W'], rp['Q_W'], rp['G_W'], rp['M_W']
+    for r in rankings:
+        val_s = r.get('value_s', 0) or 0
+        qua_s = r.get('quality_s', 0) or 0
+        gro_s = r['_growth_s']
+        mom_s = r.get(mom_key, 0) or 0
+
+        r['score'] = round(v_w * val_s + q_w * qua_s + g_w * gro_s + m_w * mom_s, 4)
+        # momentum_s도 갱신 (display용)
+        r['momentum_s'] = mom_s
+        r['growth_s'] = round(gro_s, 4)
+
+    # 5) Score 기준 재순위 → composite_rank
+    rankings.sort(key=lambda x: x['score'], reverse=True)
+    for i, r in enumerate(rankings):
+        r['composite_rank'] = i + 1
+        # 임시 필드 제거
+        r.pop('_growth_raw', None)
+        r.pop('_growth_s', None)
+
+    ranking_data['rankings'] = rankings
+    return ranking_data
+
+
+def _rerank_and_wr(ranking_data, prev1_data, prev2_data, mode):
+    """ranking 데이터에 v78 rerank + weighted_rank 재계산.
+
+    T-0, T-1, T-2 모두의 weighted_rank를 v78 기준으로 재계산.
+    T-1의 wr에는 T-3, T-2의 wr에는 T-3,T-4가 필요하므로 추가 로딩.
+
+    Args:
+        ranking_data: T-0 ranking
+        prev1_data: T-1 ranking (or None)
+        prev2_data: T-2 ranking (or None)
+        mode: 'boost' or 'defense'
+
+    Returns:
+        ranking_data with updated weighted_rank and rank (T-1, T-2도 갱신)
+    """
+    # 모든 날짜 rerank (composite_rank 갱신)
+    _rerank_for_regime(ranking_data, mode)
+    if prev1_data:
+        _rerank_for_regime(prev1_data, mode)
+    if prev2_data:
+        _rerank_for_regime(prev2_data, mode)
+
+    if not ranking_data:
+        return ranking_data
+
+    PENALTY = 50
+
+    # T-3, T-4 로딩 (T-1, T-2의 wr 계산용)
+    def _load_extra_dates(mode):
+        """T-0, T-1, T-2 이전 날짜 2개 로딩"""
+        ranking_dir = STATE_DIR if mode == 'boost' else STATE_DIR / 'defense'
+        import glob as _g
+        files = sorted(_g.glob(str(ranking_dir / 'ranking_*.json')))
+        files = [f for f in files if 'boost' not in os.path.basename(f).replace('ranking_', '')
+                 and 'core' not in f and 'backup' not in f]
+        date_map = {}
+        for fp in files:
+            d = os.path.basename(fp).replace('ranking_', '').replace('.json', '')
+            date_map[d] = fp
+        return date_map
+
+    t0_date = ranking_data.get('date', '')
+    t1_date = prev1_data.get('date', '') if prev1_data else ''
+    t2_date = prev2_data.get('date', '') if prev2_data else ''
+
+    date_file_map = _load_extra_dates(mode)
+    all_dates = sorted(date_file_map.keys())
+
+    # T-3, T-4 찾기
+    t3_data = t4_data = None
+    if t2_date:
+        earlier = [d for d in all_dates if d < t2_date]
+        if len(earlier) >= 1:
+            t3_fp = date_file_map[earlier[-1]]
+            with open(t3_fp, 'r', encoding='utf-8') as f:
+                t3_data = json.load(f)
+            _rerank_for_regime(t3_data, mode)
+        if len(earlier) >= 2:
+            t4_fp = date_file_map[earlier[-2]]
+            with open(t4_fp, 'r', encoding='utf-8') as f:
+                t4_data = json.load(f)
+            _rerank_for_regime(t4_data, mode)
+
+    def _cr_map(data):
+        if not data:
+            return {}
+        return {r['ticker']: r['composite_rank'] for r in data.get('rankings', [])}
+
+    t0_cr = _cr_map(ranking_data)
+    t1_cr = _cr_map(prev1_data)
+    t2_cr = _cr_map(prev2_data)
+    t3_cr = _cr_map(t3_data)
+    t4_cr = _cr_map(t4_data)
+
+    def _compute_wr(rankings, cr0_map, cr1_map, cr2_map):
+        """rankings 리스트에 weighted_rank + rank 재계산"""
+        for r in rankings:
+            c0 = cr0_map.get(r['ticker'], PENALTY)
+            c1 = cr1_map.get(r['ticker'], PENALTY)
+            c2 = cr2_map.get(r['ticker'], PENALTY)
+            r['weighted_rank'] = round(c0 * 0.5 + c1 * 0.3 + c2 * 0.2, 1)
+        rankings.sort(key=lambda x: x['weighted_rank'])
+        for i, r in enumerate(rankings):
+            r['rank'] = i + 1
+
+    # T-2 wr: cr_t2 * 0.5 + cr_t3 * 0.3 + cr_t4 * 0.2
+    if prev2_data:
+        _compute_wr(prev2_data.get('rankings', []), t2_cr, t3_cr, t4_cr)
+
+    # T-1 wr: cr_t1 * 0.5 + cr_t2 * 0.3 + cr_t3 * 0.2
+    if prev1_data:
+        _compute_wr(prev1_data.get('rankings', []), t1_cr, t2_cr, t3_cr)
+
+    # T-0 wr: cr_t0 * 0.5 + cr_t1 * 0.3 + cr_t2 * 0.2
+    _compute_wr(ranking_data.get('rankings', []), t0_cr, t1_cr, t2_cr)
+
+    return ranking_data
+
+
+# ============================================================
+# 시스템 수익률 추적
+# ============================================================
+def calc_system_returns(regime_info=None):
+    """프로덕션 ranking 히스토리로 시스템 누적 수익률 계산 (국면 파라미터 반영).
+
+    Returns:
+        dict: {system_pct, kospi_pct, start_date, days, holdings} or None
+    """
+    import glob as _glob
+    from regime_indicator import get_regime_params
+
+    # 국면별 ranking 파일 + regime_state에서 국면 이력 추적
+    regime_state_path = STATE_DIR / 'regime_state.json'
+    regime_mode = 'defense'
+    if regime_state_path.exists():
+        with open(regime_state_path, 'r', encoding='utf-8') as f:
+            rs = json.load(f)
+            regime_mode = rs.get('mode', 'defense')
+
+    # 국면별 파라미터
+    rp_boost = get_regime_params('boost')
+    rp_defense = get_regime_params('defense')
+
+    # 양쪽 ranking 파일 모두 로드
+    today_str = get_korea_now().strftime('%Y%m%d')
+    boost_data = {}
+    defense_data = {}
+    for label, data_dict, ranking_dir in [
+        ('boost', boost_data, STATE_DIR),
+        ('defense', defense_data, STATE_DIR / 'defense'),
+    ]:
+        files = sorted(_glob.glob(str(ranking_dir / 'ranking_*.json')))
+        files = [f for f in files if 'boost' not in os.path.basename(f).replace('ranking_','')
+                 and 'core' not in f and 'backup' not in f]
+        for fp in files:
+            d = os.path.basename(fp).replace('ranking_', '').replace('.json', '')
+            if d > today_str:
+                continue
+            with open(fp, 'r', encoding='utf-8') as fh:
+                data_dict[d] = json.load(fh)
+
+    # reranking 불필요 — ranking 파일이 이미 현재 버전 파라미터로 재계산됨
+    # 버전 변경 시 전체 파일 재계산 필수 (feedback_full_rerank_on_version_change.md)
+
+    # 날짜별 국면 판단 (KP_MA200_5d)
+    _kospi_file = Path(__file__).parent / 'data_cache' / 'kospi_yf.parquet'
+    _kospi = pd.read_parquet(_kospi_file).iloc[:, 0].dropna() if _kospi_file.exists() else pd.Series()
+    _km200 = _kospi.rolling(200).mean() if len(_kospi) >= 200 else pd.Series()
+
+    all_boost_dates = sorted(boost_data.keys())
+    regime_by_date = {}
+    _md = False; _stk = 0; _ss = False
+    for d in all_boost_dates:
+        ts = pd.Timestamp(d)
+        kv = _kospi.get(ts, None); mv = _km200.get(ts, None)
+        s = (kv > mv) if kv is not None and mv is not None else _md
+        if s == _ss: _stk += 1
+        else: _stk = 1; _ss = s
+        if _stk >= 5 and _md != s: _md = s
+        regime_by_date[d] = _md  # True=공격, False=방어
+
+    # 날짜별 국면에 맞는 ranking + 파라미터 선택
+    all_data = {}
+    dates = []
+    for d in all_boost_dates:
+        is_boost = regime_by_date.get(d, True)
+        if is_boost and d in boost_data:
+            all_data[d] = boost_data[d]
+            dates.append(d)
+        elif not is_boost and d in defense_data:
+            all_data[d] = defense_data[d]
+            dates.append(d)
+        elif d in boost_data:  # 방어 파일 없으면 공격으로 대체
+            all_data[d] = boost_data[d]
+            dates.append(d)
+
+    # 가격: OHLCV 기반 — _full 파일 우선 (전종목)
+    import glob as _glob2
+    _ohlcv_files = sorted(_glob2.glob(str(Path(__file__).parent / 'data_cache' / 'all_ohlcv_*.parquet')))
+    _full_files = [f for f in _ohlcv_files if '_full' in f]
+    if _full_files:
+        _ohlcv_files = _full_files
+    if _ohlcv_files:
+        _ohlcv_parts = [pd.read_parquet(f).replace(0, np.nan) for f in _ohlcv_files]
+        _ohlcv = pd.concat(_ohlcv_parts).groupby(level=0).first()
+    else:
+        _ohlcv = pd.DataFrame()
+
+    def _get_price(ticker, date_str):
+        ts = pd.Timestamp(date_str)
+        if not _ohlcv.empty and ts in _ohlcv.index and ticker in _ohlcv.columns:
+            v = _ohlcv.loc[ts, ticker]
+            if pd.notna(v) and v > 0:
+                return v
+        return 0
+
+    # 포트폴리오 시뮬레이션 — 일간 수익률 기반 + 손절 + 트레일링
+    portfolio = {}  # ticker → entry_price
+    peak_prices = {}  # ticker → 보유 중 최고가 (트레일링용)
+    equity = 1.0
+    start_date = None
+    equity_history = {}  # date → equity
+
+    for i in range(len(dates)):
+        d0 = dates[i]
+        d1 = dates[i - 1] if i >= 1 else None
+        d2 = dates[i - 2] if i >= 2 else None
+
+        # 일간 수익률: 어제 보유 → 오늘 가격 변화 (OHLCV 기반)
+        if i >= 1 and portfolio:
+            daily_rets = []
+            for tk in portfolio:
+                pp = _get_price(tk, dates[i - 1])
+                cp = _get_price(tk, d0)
+                if pp > 0 and cp > 0:
+                    daily_rets.append(cp / pp - 1)
+            if daily_rets:
+                avg_ret = sum(daily_rets) / len(daily_rets)
+                equity *= (1 + avg_ret)
+        equity_history[d0] = equity
+
+        if i < 2:
+            continue  # 3일 데이터 필요
+
+        # 국면별 파라미터 선택
+        is_boost = regime_by_date.get(d0, True)
+        rp = rp_boost if is_boost else rp_defense
+        _entry_rank = rp['ENTRY_RANK']
+        _exit_rank = rp['EXIT_RANK']
+        _max_slots = rp['MAX_SLOTS']
+        _stop_loss = rp.get('STOP_LOSS', -0.10)
+
+        # 국면 전환 시 포트폴리오 전량 청산
+        if i >= 1:
+            prev_boost = regime_by_date.get(dates[i-1], True)
+            if is_boost != prev_boost:
+                portfolio.clear()
+                peak_prices.clear()
+
+        # 손절 + 트레일링 체크
+        _trailing_stop = rp.get('TRAILING_STOP', -0.15)
+        for tk in list(portfolio.keys()):
+            cp = _get_price(tk, d0)
+            ep = portfolio[tk]
+            # 최고가 갱신
+            if tk in peak_prices:
+                if cp > peak_prices[tk]:
+                    peak_prices[tk] = cp
+            else:
+                peak_prices[tk] = max(cp, ep) if cp > 0 else ep
+            # 손절: 진입가 대비
+            if cp > 0 and ep > 0 and (cp / ep - 1) <= _stop_loss:
+                del portfolio[tk]
+                peak_prices.pop(tk, None)
+            # 트레일링: 고점 대비
+            elif cp > 0 and peak_prices.get(tk, 0) > 0 and (cp / peak_prices[tk] - 1) <= _trailing_stop:
+                del portfolio[tk]
+                peak_prices.pop(tk, None)
+
+        # pipeline 계산 (3일 교집합)
+        r0 = all_data[d0].get('rankings', [])
+        r1 = all_data[d1].get('rankings', [])
+        r2 = all_data[d2].get('rankings', [])
+
+        top20_t0 = {r['ticker']: r for r in r0 if r.get('composite_rank', r['rank']) <= 20}
+        top20_t1 = {r['ticker']: r for r in r1 if r.get('composite_rank', r['rank']) <= 20}
+        top20_t2 = {r['ticker']: r for r in r2 if r.get('composite_rank', r['rank']) <= 20}
+
+        common = set(top20_t0) & set(top20_t1) & set(top20_t2)
+
+        # 전체 ranking에서 가중순위 계산 (퇴출용)
+        all_t0 = {r['ticker']: r for r in r0}
+        all_t1 = {r['ticker']: r for r in r1}
+        all_t2 = {r['ticker']: r for r in r2}
+
+        def _wr(tk):
+            if tk not in all_t0:
+                return 999
+            cr0 = all_t0[tk].get('composite_rank', all_t0[tk].get('rank', 999))
+            cr1 = all_t1[tk].get('composite_rank', all_t1[tk].get('rank', 999)) if tk in all_t1 else 999
+            cr2 = all_t2[tk].get('composite_rank', all_t2[tk].get('rank', 999)) if tk in all_t2 else 999
+            return cr0 * 0.5 + cr1 * 0.3 + cr2 * 0.2
+
+        # 이탈: 가중순위 > exit_rank (국면별)
+        for tk in list(portfolio.keys()):
+            if _wr(tk) > _exit_rank:
+                del portfolio[tk]
+
+        # 진입용: 3일 교집합 + 가중순위 계산
+        verified = []
+        for tk in common:
+            cr0 = top20_t0[tk].get('composite_rank', top20_t0[tk]['rank'])
+            cr1 = top20_t1[tk].get('composite_rank', top20_t1[tk]['rank'])
+            cr2 = top20_t2[tk].get('composite_rank', top20_t2[tk]['rank'])
+            wr = cr0 * 0.5 + cr1 * 0.3 + cr2 * 0.2
+            verified.append({'ticker': tk, 'weighted_rank': wr,
+                             'price': top20_t0[tk].get('price', 0)})
+        verified.sort(key=lambda x: x['weighted_rank'])
+
+        # 진입: 상위 entry_rank개 (국면별)
+        for v in verified[:_entry_rank]:
+            if v['ticker'] in portfolio:
+                continue
+            if len(portfolio) >= _max_slots:
+                break
+            entry_price = _get_price(v['ticker'], d0)
+            if entry_price > 0:
+                portfolio[v['ticker']] = entry_price
+                peak_prices[v['ticker']] = entry_price
+                if start_date is None:
+                    start_date = d0
+
+    if start_date is None:
+        return None
+
+    system_pct = (equity - 1) * 100
+
+    # KOSPI 수익률 (start_date ~ 최신)
+    kospi_pct = 0
+    try:
+        kospi_start = stock.get_index_ohlcv(start_date, dates[-1], '1001')
+        if not kospi_start.empty and len(kospi_start) >= 2:
+            k_first = kospi_start.iloc[0, 3]  # 종가
+            k_last = kospi_start.iloc[-1, 3]
+            if k_first > 0:
+                kospi_pct = (k_last / k_first - 1) * 100
+    except:
+        pass
+
+    # YTD / 최근 1개월 수익률 (시스템 + 코스피)
+    ytd_pct = month_pct = kospi_ytd = kospi_month = None
+    year_start = dates[-1][:4] + '0101'
+    month_ago = (pd.Timestamp(dates[-1]) - pd.Timedelta(days=30)).strftime('%Y%m%d')
+
+    ytd_dates = [d for d in sorted(equity_history) if d >= year_start]
+    if len(ytd_dates) >= 2:
+        eq_s, eq_e = equity_history[ytd_dates[0]], equity_history[ytd_dates[-1]]
+        if eq_s > 0:
+            ytd_pct = round((eq_e / eq_s - 1) * 100, 1)
+
+    month_dates = [d for d in sorted(equity_history) if d >= month_ago]
+    if len(month_dates) >= 2:
+        eq_s, eq_e = equity_history[month_dates[0]], equity_history[month_dates[-1]]
+        if eq_s > 0:
+            month_pct = round((eq_e / eq_s - 1) * 100, 1)
+
+    # 코스피/코스닥 YTD/1개월
+    kosdaq_ytd = kosdaq_month = None
+    for idx_name, idx_code, ytd_key, month_key in [('kospi', '1001', 'kospi_ytd', 'kospi_month'),
+                                                     ('kosdaq', '2001', 'kosdaq_ytd', 'kosdaq_month')]:
+        try:
+            idx_ohlcv = stock.get_index_ohlcv(year_start, dates[-1], idx_code)
+            if not idx_ohlcv.empty and len(idx_ohlcv) >= 2:
+                i_first = idx_ohlcv.iloc[0, 3]
+                i_last = idx_ohlcv.iloc[-1, 3]
+                if i_first > 0:
+                    if idx_name == 'kospi':
+                        kospi_ytd = round((i_last / i_first - 1) * 100, 1)
+                    else:
+                        kosdaq_ytd = round((i_last / i_first - 1) * 100, 1)
+                i_month = idx_ohlcv[idx_ohlcv.index >= pd.Timestamp(month_ago)]
+                if len(i_month) >= 2:
+                    im_first = i_month.iloc[0, 3]
+                    if im_first > 0:
+                        if idx_name == 'kospi':
+                            kospi_month = round((i_last / im_first - 1) * 100, 1)
+                        else:
+                            kosdaq_month = round((i_last / im_first - 1) * 100, 1)
+        except Exception:
+            pass
+
+    return {
+        'system_pct': round(system_pct, 1),
+        'kospi_pct': round(kospi_pct, 1),
+        'start_date': start_date,
+        'days': len(dates) - 2,
+        'holdings': len(portfolio),
+        'ytd_pct': ytd_pct,
+        'month_pct': month_pct,
+        'kospi_ytd': kospi_ytd,
+        'kospi_month': kospi_month,
+        'kosdaq_ytd': kosdaq_ytd,
+        'kosdaq_month': kosdaq_month,
+    }
+
+
+# ============================================================
+# 유틸리티 함수
+# ============================================================
+def get_korea_now():
+    return datetime.now(KST)
+
+
+def get_recent_trading_dates(n=3):
+    """최근 N개 거래일 찾기 — ranking 파일 우선 (postprocessing과 동일 기준)"""
+    today = get_korea_now()
+    today_str = today.strftime('%Y%m%d')
+    # 1차: ranking 파일 기준 (postprocessing과 동일 날짜 사용 보장)
+    state_dir = Path(__file__).parent / 'state'
+    rk_dates = set()
+    for f in state_dir.glob('ranking_*.json'):
+        d = f.stem.replace('ranking_', '')
+        if len(d) == 8 and d.isdigit() and d <= today_str:
+            rk_dates.add(d)
+    if len(rk_dates) >= n:
+        sorted_dates = sorted(rk_dates, reverse=True)[:n]
+        return sorted_dates
+    # 2차: market_cap 캐시 폴백
+    cache_dir = Path(__file__).parent / 'data_cache'
+    mc_dates = set()
+    for f in cache_dir.glob('market_cap_ALL_*.parquet'):
+        d = f.stem.split('_')[-1]
+        if len(d) == 8 and d.isdigit() and d <= today_str:
+            mc_dates.add(d)
+    if mc_dates:
+        sorted_dates = sorted(mc_dates, reverse=True)[:n]
+        if len(sorted_dates) >= n:
+            return sorted_dates
+    # 2차: KRX API 폴백
+    dates = []
+    for i in range(1, 30):
+        date = (today - timedelta(days=i)).strftime('%Y%m%d')
+        try:
+            df = stock.get_market_cap(date, market='KOSPI')
+            if not df.empty and df.iloc[:, 0].sum() > 0:
+                dates.append(date)
+                if len(dates) >= n:
+                    break
+        except Exception:
+            continue
+    return dates
+
+
+def calc_rsi(prices, period=14):
+    if len(prices) < period + 1:
+        return 50
+    delta = prices.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+    rs = gain / loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi.iloc[-1] if not pd.isna(rsi.iloc[-1]) else 50
+
+
+def get_stock_technical(ticker, base_date):
+    """종목 기술적 지표 계산"""
+    ticker_str = str(ticker).zfill(6)
+    try:
+        start = (datetime.strptime(base_date, '%Y%m%d') - timedelta(days=365)).strftime('%Y%m%d')
+        ohlcv = stock.get_market_ohlcv(start, base_date, ticker_str)
+
+        if ohlcv.empty or len(ohlcv) < 20:
+            return None
+
+        price = ohlcv.iloc[-1]['종가']
+        prev_price = ohlcv.iloc[-2]['종가'] if len(ohlcv) >= 2 else price
+        daily_chg = (price / prev_price - 1) * 100
+        rsi = calc_rsi(ohlcv['종가'])
+        high_52w = ohlcv['고가'].max()
+        w52_pct = (price / high_52w - 1) * 100
+
+        return {
+            'price': price, 'daily_chg': daily_chg,
+            'rsi': rsi, 'w52_pct': w52_pct,
+        }
+    except Exception as e:
+        print(f"  기술지표 실패 {ticker_str}: {e}")
+        return None
+
+
+def _get_buy_rationale(pick) -> str:
+    """한 줄 투자 근거 — 실제 팩터 점수 기반"""
+    factors = [
+        ('V', pick.get('value_s')),
+        ('Q', pick.get('quality_s')),
+        ('G', pick.get('growth_s')),
+        ('M', pick.get('momentum_s')),
+    ]
+
+    strong = []   # z > 1.0
+    weak = []     # z < -1.0
+    for label, z in factors:
+        if z is None:
+            continue
+        if z >= 1.0:
+            strong.append(label)
+        elif z <= -1.0:
+            weak.append(label)
+
+    NAMES = {'V': '밸류', 'Q': '퀄리티', 'G': '성장', 'M': '모멘텀'}
+
+    if not strong and not weak:
+        return '멀티팩터 균형'
+
+    parts = []
+    if strong:
+        parts.append('·'.join(NAMES[s] for s in strong) + ' 상위')
+    if weak:
+        parts.append('·'.join(NAMES[w] for w in weak) + ' 약세')
+
+    return ' | '.join(parts)
+
+
+# ============================================================
+# 시장 이평선 경고
+# ============================================================
+def _calc_market_warnings(kospi_df, kosdaq_df):
+    """KOSPI/KOSDAQ 이평선 돌파/이탈 이벤트만 반환 (매일 표시 X)
+
+    Returns:
+        dict: {'코스피': ['5일선 돌파', ...], '코스닥': ['5일선 이탈', ...]}
+    """
+    warnings = {'코스피': [], '코스닥': []}
+
+    for name, df in [('코스피', kospi_df), ('코스닥', kosdaq_df)]:
+        if df is None or len(df) < 6:
+            continue
+
+        close = df.iloc[:, 3]  # 종가 컬럼
+        today = close.iloc[-1]
+        yesterday = close.iloc[-2]
+
+        for period, label in [(5, '5일선'), (20, '20일선'), (60, '60일선')]:
+            if len(close) < period + 1:
+                continue
+            ma = close.rolling(period).mean()
+            ma_today = ma.iloc[-1]
+            ma_yesterday = ma.iloc[-2]
+
+            was_above = yesterday >= ma_yesterday
+            is_above = today >= ma_today
+
+            if was_above and not is_above:
+                warnings[name].append(f"{label} 이탈")
+            elif not was_above and is_above:
+                warnings[name].append(f"{label} 돌파")
+
+    return warnings
+
+
+# ============================================================
+# 텔레그램 전송 유틸리티
+# ============================================================
+def send_telegram_long(text, bot_token, chat_id):
+    """긴 메시지 자동 분할 전송 (4000자 기준)"""
+    MAX_LEN = 4000
+    url = f'https://api.telegram.org/bot{bot_token}/sendMessage'
+
+    if len(text) <= MAX_LEN:
+        return [requests.post(url, data={'chat_id': chat_id, 'text': text, 'parse_mode': 'HTML'}, timeout=30)]
+
+    lines = text.split('\n')
+    chunks = []
+    current = []
+    current_len = 0
+    for line in lines:
+        if current_len + len(line) + 1 > MAX_LEN and current:
+            chunks.append('\n'.join(current))
+            current = [line]
+            current_len = len(line)
+        else:
+            current.append(line)
+            current_len += len(line) + 1
+    if current:
+        chunks.append('\n'.join(current))
+
+    results = []
+    for chunk in chunks:
+        r = requests.post(url, data={'chat_id': chat_id, 'text': chunk, 'parse_mode': 'HTML'}, timeout=30)
+        results.append(r)
+        time.sleep(0.3)
+    return results
+
+
+# ============================================================
+# v41 메시지 포맷터 — Signal / AI Risk / Watchlist
+# ============================================================
+def _build_top5_streak(top5_tickers):
+    """Top 5 연속 유지 일수 계산.
+    top5_tickers: 현재 실제 Top 5 ticker 리스트 (picks 기준).
+    과거 날짜는 JSON rank <= 5 (가중순위 포지션)로 판단.
+    Returns: {ticker: int(연속 일수, 최소 1)}"""
+    import glob
+    state_dir = Path(__file__).parent / 'state'
+    files = sorted(glob.glob(str(state_dir / 'ranking_*.json')), reverse=True)
+    if not files or not top5_tickers:
+        return {}
+
+    streak = {}
+    for ticker in top5_tickers:
+        # 오늘은 picks에 포함 = 1일째 확정
+        count = 1
+        # 과거 파일 (두 번째부터) 역순 탐색
+        for fp in files[1:]:
+            with open(fp, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            ranks = {r['ticker']: r.get('composite_rank', r.get('rank', 99)) for r in data.get('rankings', [])}
+            if ranks.get(ticker, 99) <= 5:
+                count += 1
+            else:
+                break
+        streak[ticker] = count
+    return streak
+
+
+def create_regime_switch_message(regime_mode, prev_mode=None):
+    """국면 전환 시 별도 안내 메시지 — Signal 메시지 앞에 전송
+
+    v77.1 (2026-04-14):
+      - 모드 3개: boost / defense / cash(크래시 현금 도피)
+      - prev_mode: 이전 모드 (전환 방향 표시용)
+    """
+    perf = '\n'.join([
+        '━━━━━━━━━━━━━━━',
+        '📊 <b>v77.1 백테스트 성과</b>',
+        '━━━━━━━━━━━━━━━',
+        '5.25년(2021~): CAGR +128% · MDD -28% · Calmar 4.58',
+        '7.8년(2018-07~): CAGR +82% · MDD -55% · Calmar 1.50',
+        '같은 기간 코스피: 연 +13%',
+        '',
+        '※ 종목 선별 기준이며, 비중은 투자자의 판단입니다.',
+        '투자 손실의 책임은 본인에게 있습니다.',
+    ])
+
+    if regime_mode == 'cash':
+        return '\n'.join([
+            '📡 <b>AI 종목 브리핑 KR — 모드 전환</b>',
+            '',
+            '━━━━━━━━━━━━━━━',
+            '💵 <b>방어 모드 → 현금 도피 전환</b>',
+            '━━━━━━━━━━━━━━━',
+            'KOSPI 20일 수익률이 -20% 아래로 급락했습니다. 급격한 하락장으로 판단해 <b>전량 현금화</b>합니다.',
+            '',
+            '📌 <b>조치 사항</b>',
+            '기존 방어 모드 보유 종목을 <b>전량 매도</b>합니다.',
+            '신규 매수 없이 <b>현금 보유</b>합니다.',
+            '',
+            '━━━━━━━━━━━━━━━',
+            '💵 <b>현금 도피 상세</b>',
+            '━━━━━━━━━━━━━━━',
+            '급락 구간에서는 매수하지 않고 현금 보유로 MDD를 제한합니다.',
+            '',
+            '전환 기준',
+            'KOSPI 20일 수익률 < -20%',
+            '',
+            '해제 기준',
+            '• KOSPI 20일 수익률 ≥ -20% 회복 → 방어 모드 자동 재진입',
+            '• 또는 KOSPI > 200일선 5거래일 연속 → 공격 모드 전환',
+            '',
+            '사례: 2020-03 COVID 급락 구간에 현금 도피, Cal 1.35→1.50 개선',
+            '',
+            perf,
+        ])
+
+    if regime_mode == 'boost':
+        from_label = '방어/현금' if prev_mode in ('defense', 'cash') else '이전'
+        return '\n'.join([
+            '📡 <b>AI 종목 브리핑 KR — 모드 전환</b>',
+            '',
+            '━━━━━━━━━━━━━━━',
+            f'📈 <b>{from_label} 모드 → 공격 모드 전환</b>',
+            '━━━━━━━━━━━━━━━',
+            'KOSPI가 200일 이동평균선 위에서 5거래일 연속 마감했습니다. 시장이 상승 추세로 전환된 것으로 판단합니다.',
+            '',
+            '📌 <b>조치 사항</b>',
+            '기존 보유 종목을 <b>전량 매도</b>합니다.',
+            '오늘 브리핑의 ✅ 종목으로 재진입합니다.',
+            '',
+            '━━━━━━━━━━━━━━━',
+            '📈 <b>공격 모드 상세 (v77.1)</b>',
+            '━━━━━━━━━━━━━━━',
+            '상승장에서는 성장주에 집중합니다.',
+            '',
+            '팩터 비중',
+            'Growth(성장) 65% + Momentum(추세) 30%',
+            '+ Value(가치) 5%',
+            '',
+            'Growth 세부: 매출성장 50% + 영업이익변화 30% + 매출총이익성장 20%',
+            '모멘텀: 12m-1m (최근 1개월 제외)',
+            '',
+            '매수: 3일 연속 상위 7위 이내 ✅',
+            '보유: 최대 3종목 (균등 비중)',
+            '매도: 가중순위 8위 밖 이탈',
+            '손절: 매수가 -10% | 트레일링: 고점 -15%',
+            '',
+            perf,
+        ])
+
+    # defense
+    if prev_mode == 'cash':
+        title = '💵 현금 도피 → 방어 모드 복귀'
+        reason = 'KOSPI 20일 수익률이 -20% 이상으로 회복됐습니다. 방어 모드로 재진입합니다.'
+    else:
+        title = '📉 공격 모드 → 방어 모드 전환'
+        reason = 'KOSPI가 200일 이동평균선 아래에서 5거래일 연속 마감했습니다. 시장이 하락 추세로 전환된 것으로 판단합니다.'
+    return '\n'.join([
+        '📡 <b>AI 종목 브리핑 KR — 모드 전환</b>',
+        '',
+        '━━━━━━━━━━━━━━━',
+        f'<b>{title}</b>',
+        '━━━━━━━━━━━━━━━',
+        reason,
+        '',
+        '📌 <b>조치 사항</b>',
+        '기존 보유 종목을 <b>전량 매도</b>합니다.',
+        '오늘 브리핑의 ✅ 종목으로 재진입합니다.',
+        '',
+        '━━━━━━━━━━━━━━━',
+        '📉 <b>방어 모드 상세 (v77.1)</b>',
+        '━━━━━━━━━━━━━━━',
+        '하락장에서는 추세가 살아있는 종목에 분산합니다.',
+        '',
+        '팩터 비중',
+        'Momentum(추세) 55% + Value(가치) 30%',
+        '+ Growth(성장) 10% + Quality(수익성) 5%',
+        '',
+        'Growth 세부: 매출가속도 50% + 영업이익률변화 50%',
+        '모멘텀: 6m-1m (최근 1개월 제외)',
+        '',
+        '매수: 3일 연속 상위 3위 이내 ✅',
+        '보유: 최대 7종목 (균등 비중)',
+        '매도: 가중순위 6위 밖 이탈',
+        '손절: 매수가 -10% | 트레일링: 고점 -15%',
+        '',
+        '※ 20일 수익률 -20% 급락 시 자동 현금 도피',
+        '',
+        perf,
+    ])
+
+
+def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
+                          market_max_picks, stock_weight, rankings_t0,
+                          rankings_t1, rankings_t2, cold_start,
+                          final_action, pick_level, system_returns=None,
+                          regime_info=None):
+    """Message 1: Signal — 결론 (뭘 살까)
+
+    종목당 3줄: 이름·업종·가격 / 순위 / AI 내러티브
+    """
+    wd = WEEKDAY_KR[biz_day.weekday()]
+    date_str = f"{biz_day.year}.{biz_day.month}.{biz_day.day}({wd})"
+
+    # 국면 모드 표시 — regime_state.json 기반 우선
+    if regime_info:
+        r_mode = regime_info.get('mode', 'defense')
+        r_breadth = regime_info.get('breadth')
+        if r_mode == 'boost':
+            regime_icon = '⚔️'
+            regime_text = '공격 모드 (Growth 중심)'
+        elif r_mode == 'cash':
+            regime_icon = '💵'
+            regime_text = '현금 도피 (KOSPI 20일 -20%)'
+        else:
+            regime_icon = '🛡️'
+            regime_text = '방어 모드 (Momentum 중심)'
+        breadth_str = f' · 브레스 {r_breadth:.1%}' if r_breadth is not None else ''
+        regime_label = f'{regime_icon} <b>{regime_text}</b>{breadth_str}'
+    else:
+        regime_mode = os.environ.get('REGIME_MODE', 'defense')
+        if regime_mode == 'boost':
+            regime_label = '⚔️ <b>공격 모드</b>'
+        elif regime_mode == 'cash':
+            regime_label = '💵 <b>현금 도피</b>'
+        else:
+            regime_label = '🛡️ <b>방어 모드</b>'
+
+    lines = [
+        f'📡 AI 종목 브리핑 KR · {date_str}',
+        regime_label,
+    ]
+
+    lines += [
+        '국내 전 종목을 매일 자동 분석한',
+        '종합 점수 상위 종목입니다.',
+    ]
+
+    # ── v77.1: cash 모드 (KOSPI 급락 → 전량 현금) ──
+    cur_mode = regime_info.get('mode') if regime_info else os.environ.get('REGIME_MODE', 'defense')
+    if cur_mode == 'cash':
+        lines.append('')
+        lines.append('━━━━━━━━━━━━━━━')
+        lines.append('💵 <b>현금 도피 구간</b>')
+        lines.append('━━━━━━━━━━━━━━━')
+        lines.append('KOSPI 20일 수익률이 -20% 아래로 급락했습니다.')
+        lines.append('급격한 하락장으로 판단해 <b>전량 현금화</b>합니다.')
+        lines.append('')
+        lines.append('📌 <b>오늘 조치</b>')
+        lines.append('• 신규 매수 없음')
+        lines.append('• 기존 보유 종목 전량 매도')
+        lines.append('• 현금 보유')
+        lines.append('')
+        lines.append('📌 <b>해제 조건</b>')
+        lines.append('• KOSPI 20일 수익률 ≥ -20% 회복 → 방어 모드 복귀')
+        lines.append('• 또는 KOSPI > 200일선 5거래일 → 공격 모드 전환')
+        lines.append('')
+        lines.append('━━━━━━━━━━━━━━━')
+        lines.append('⚖️ 본 전략은 국면 규칙 기반이며,')
+        lines.append('투자 판단과 손실 책임은 투자자 본인에게 있습니다.')
+        return '\n'.join(lines)
+
+    # ── stop 모드 (시장 경고) ──
+    if market_max_picks == 0 and pick_level and pick_level.get('warning'):
+        lines.append('')
+        lines.append('━━━━━━━━━━━━━━━')
+        lines.append('🚫 시장 경고 — 스크리닝 일시 중단')
+        lines.append('━━━━━━━━━━━━━━━')
+        lines.append(pick_level['warning'])
+        lines.append('')
+        lines.append('━━━━━━━━━━━━━━━')
+        lines.append('💡 분할매수 권장')
+        lines.append('한 번에 전량 매수보다 2~3회 나눠서')
+        lines.append('조정 시 진입이 유리합니다.')
+        lines.append('')
+        lines.append('⚖️ 멀티팩터 순위는 종목 선별 기준이며,')
+        lines.append('포트폴리오 비중은 투자자의 판단입니다.')
+        lines.append('투자 손실에 대한 책임은 투자자 본인에게 있습니다.')
+        return '\n'.join(lines)
+
+    # ── 결론 섹션 ──
+    if not picks:
+        lines.append('')
+        lines.append('━━━━━━━━━━━━━━━')
+        lines.append('오늘은 기준점수를 충족하는 종목이 없습니다.')
+        lines.append('시장이 안정되면 다시 안내드리겠습니다.')
+        lines.append('')
+        lines.append('━━━━━━━━━━━━━━━')
+        lines.append('💡 분할매수 권장')
+        lines.append('한 번에 전량 매수보다 2~3회 나눠서')
+        lines.append('조정 시 진입이 유리합니다.')
+        lines.append('')
+        lines.append('⚖️ 멀티팩터 순위는 종목 선별 기준이며,')
+        lines.append('포트폴리오 비중은 투자자의 판단입니다.')
+        lines.append('투자 손실에 대한 책임은 투자자 본인에게 있습니다.')
+        return '\n'.join(lines)
+
+    # ── 시스템 수익률 ──
+    if system_returns and system_returns.get('days', 0) >= 5:
+        sr = system_returns
+        lines.append('')
+        lines.append('📈 <b>시스템 수익률</b>')
+        if sr.get('ytd_pct') is not None:
+            ky = sr.get('kospi_ytd')
+            kd = sr.get('kosdaq_ytd')
+            idx = f' (코스피 {ky:+.1f}% 코스닥 {kd:+.1f}%)' if ky is not None and kd is not None else (f' (코스피 {ky:+.1f}%)' if ky is not None else '')
+            lines.append(f'    올해 {sr["ytd_pct"]:+.1f}%{idx}')
+        if sr.get('month_pct') is not None:
+            km = sr.get('kospi_month')
+            kmd = sr.get('kosdaq_month')
+            idx = f' (코스피 {km:+.1f}% 코스닥 {kmd:+.1f}%)' if km is not None and kmd is not None else (f' (코스피 {km:+.1f}%)' if km is not None else '')
+            lines.append(f'    1개월 {sr["month_pct"]:+.1f}%{idx}')
+        if sr.get('ytd_pct') is None and sr.get('month_pct') is None:
+            lines.append(f'    누적 {sr["system_pct"]:+.1f}% (코스피 {sr["kospi_pct"]:+.1f}%)')
+
+    n = len(picks)
+    lines.append('')
+    lines.append('━━━━━━━━━━━━━━━')
+    lines.append('🛒 <b>매수 후보 종목</b>')
+    lines.append('━━━━━━━━━━━━━━━')
+    for i, pick in enumerate(picks):
+        sector = pick.get('sector', '기타')
+        lines.append(f'<b>{i+1}. {pick["name"]}({pick["ticker"]}) · {sector}</b>')
+
+    # v74: 상관관계 경고 제거 (전략에서 corr 필터 미사용)
+    meta = rankings_t0.get('metadata') or {}
+
+    # ── 선정 과정 (퍼널) ──
+    universe_count = meta.get('total_universe', 0)
+    prefilter_count = meta.get('prefilter_passed', 0)
+    scored_count = meta.get('scored_count', 0)
+    v_count = sum(1 for s in pipeline if s['status'] == '✅')
+    lines.append('')
+    lines.append('📋 <b>선정 과정</b>')
+    lines.append('국내 상장 전 종목 대상')
+    lines.append('→ 재무·성장·수익성·추세 종합 채점')
+    lines.append('→ 상위 20종목 매일 모니터링')
+    lines.append(f'→ 3일 연속 상위 유지 {n}종목 선정')
+
+    # ── 종목별 근거 ──
+    lines.append('')
+    lines.append('━━━━━━━━━━━━━━━')
+    lines.append('📌 <b>종목 선정 근거</b>')
+    lines.append('━━━━━━━━━━━━━━━')
+
+    # wr 정렬 후 정수 순위 맵 (Signal용) — wr 기반 환원 (매매 로직과 일치)
+    # 동점은 tie-breaker(cr 작은 쪽) 자동 해결
+    def _wr_int_rank_map_sig(rankings):
+        if not rankings:
+            return {}
+        rlist = rankings.get('rankings', [])
+        sorted_by_wr = sorted(rlist, key=lambda r: (r.get('weighted_rank', 999), r.get('composite_rank', 999)))
+        return {r['ticker']: i + 1 for i, r in enumerate(sorted_by_wr)}
+
+    t0_cr_sig = _wr_int_rank_map_sig(rankings_t0)
+    t1_cr_sig = _wr_int_rank_map_sig(rankings_t1)
+    t2_cr_sig = _wr_int_rank_map_sig(rankings_t2)
+
+    for i, pick in enumerate(picks):
+        ticker = pick['ticker']
+        name = pick['name']
+        sector = pick.get('sector', '기타')
+        price = (pick.get('_tech') or {}).get('price', 0)
+
+        # L0: 이름·업종·가격 (볼드)
+        price_str = f'₩{price:,.0f}' if price else ''
+        lines.append(f'<b>{i+1}. {name}({ticker}) {sector} · {price_str}</b>')
+
+        # 궤적 = 각 날짜 wr 정수순위 (매매 로직과 일치). 점수 = Signal 순번 기반 지수감쇠
+        r0 = t0_cr_sig.get(ticker, '-')
+        r1 = t1_cr_sig.get(ticker, '-')
+        r2 = t2_cr_sig.get(ticker, '-')
+        # 1등=100, 2등=90, 3등=81 (동점 불가)
+        score_100 = max(0.0, min(100.0, 100.0 * (0.9 ** (i))))  # i는 0부터 → 0.9^0=100 점
+        lines.append(f'순위 {r2}→{r1}→{r0}위 · {score_100:.1f}점')
+
+        # L2: AI 내러티브 (fallback: _get_buy_rationale)
+        narrative = ''
+        if ai_narratives and ticker in ai_narratives:
+            narrative = ai_narratives[ticker]
+        if not narrative:
+            narrative = _get_buy_rationale(pick)
+        lines.append(f'💬 {narrative}')
+
+        if i < n - 1:
+            lines.append('─ ─ ─ ─ ─ ─ ─ ─')
+
+    # ── 이탈 알림 (사유별 묶기) ──
+    if exited:
+        from collections import defaultdict
+        reason_groups = defaultdict(list)
+        for e in exited:
+            reason = e.get('exit_reason', '순위밀림') or '순위밀림'
+            reason_groups[reason].append(e['name'])
+        parts = []
+        for reason, names in reason_groups.items():
+            names_str = '·'.join(names[:4])
+            if len(names) > 4:
+                names_str += f' 외 {len(names)-4}'
+            parts.append(f'{names_str}({reason})')
+        lines.append('')
+        lines.append('📉 순위 이탈: ' + parts[0])
+        for p in parts[1:]:
+            lines.append(p)
+
+    # ── 범례 + 면책 (Signal) ──
+    lines.append('')
+    lines.append('━━━━━━━━━━━━━━━')
+    lines.append('순위: 3일 가중순위 (2일전→1일전→오늘)')
+    lines.append('종목 선별 기준이며, 비중은 투자자의 판단입니다.')
+    lines.append('투자 손실의 책임은 본인에게 있습니다.')
+
+    return '\n'.join(lines)
+
+
+def create_ai_risk_message(credit, kospi_data, kosdaq_data, market_warnings,
+                           ai_msg, biz_day, picks, final_action):
+    """Message 2: AI Risk — 맥락 (시장 환경 + 리스크)
+
+    시장 데이터(코스피/코스닥/HY/BBB-/VIX) + AI 해석 + 매수 주의
+    """
+    kospi_close, kospi_chg, kospi_color = kospi_data
+    kosdaq_close, kosdaq_chg, kosdaq_color = kosdaq_data
+
+    lines = [
+        '━━━━━━━━━━━━━━━━━━━',
+        '  🤖 AI 리스크 필터',
+        '━━━━━━━━━━━━━━━━━━━',
+        '상위 종목의 리스크 요소를 AI가 분석했습니다.',
+        '',
+        '📊 <b>시장 지수</b>',
+    ]
+
+    # 코스피/코스닥 + 이평선 이벤트 인라인
+    def _fmt_warn(events):
+        """['5일선 돌파', '20일선 돌파'] → '5일선, 20일선 돌파'"""
+        if not events:
+            return ''
+        from collections import defaultdict
+        by_action = defaultdict(list)
+        for e in events:
+            parts = e.split()  # '5일선', '돌파'
+            by_action[parts[1]].append(parts[0])
+        groups = [', '.join(labels) + ' ' + action for action, labels in by_action.items()]
+        return ' · ' + ', '.join(groups)
+
+    kospi_warn = market_warnings.get('코스피', []) if isinstance(market_warnings, dict) else []
+    kosdaq_warn = market_warnings.get('코스닥', []) if isinstance(market_warnings, dict) else []
+    kospi_suffix = _fmt_warn(kospi_warn)
+    kosdaq_suffix = _fmt_warn(kosdaq_warn)
+    lines.append(f'{kospi_color} 코스피 {kospi_close:,.0f}({kospi_chg:+.2f}%){kospi_suffix}')
+    lines.append(f'{kosdaq_color} 코스닥 {kosdaq_close:,.0f}({kosdaq_chg:+.2f}%){kosdaq_suffix}')
+
+    lines.append('')
+    lines.append('🏦 <b>신용·변동성</b>')
+
+    # 신용시장 종합 판정 + 개별 근거
+    credit_lines = format_credit_compact(credit)
+    for cl in credit_lines:
+        lines.append(cl)
+
+    # AI 해석 (통째 삽입 + 헤더 볼드 후처리)
+    if ai_msg:
+        processed = ai_msg
+        # 📰/⚠️ 헤더 볼드 처리
+        processed = processed.replace('📰 시장 동향', '📰 <b>시장 동향</b>')
+        processed = processed.replace('⚠️ 매수 주의 종목', '⚠️ <b>매수 주의 종목</b>')
+        # 헤더 직후 불필요한 빈줄 제거
+        processed = processed.replace('📰 <b>시장 동향</b>\n\n', '📰 <b>시장 동향</b>\n')
+        processed = processed.replace('⚠️ <b>매수 주의 종목</b>\n\n', '⚠️ <b>매수 주의 종목</b>\n')
+        lines.append('')
+        lines.append(processed)
+
+    return '\n'.join(lines)
+
+
+def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
+                             rankings_t2, cold_start=False, credit=None,
+                             score_100_map=None, system_returns=None,
+                             rp_current=None):
+    """Message 3: Watchlist — 데이터 (Top 20 모니터링)
+
+    종목당 1줄: 상태+순위+이름(업종)+순위궤적
+    rank 순 정렬 (✅/⏳/🆕 인라인 마커)
+    """
+    lines = [
+        '📋 <b>Top 20 종목 현황</b>',
+        '상위 20종목과 순위 변동 현황입니다.',
+        (f'✅ 3일 검증 ⏳ 2일 관찰 🆕 신규 진입 | 손절 {int(rp_current["STOP_LOSS"]*100)}%' if rp_current and rp_current.get("STOP_LOSS") else '✅ 3일 검증 ⏳ 2일 관찰 🆕 신규 진입') if rp_current else '✅ 3일 검증 ⏳ 2일 관찰 🆕 신규 진입 | 손절 -10%',
+    ]
+
+    if not pipeline:
+        lines.append('━━━━━━━━━━━━━━━')
+        lines.append('데이터 없음')
+        return '\n'.join(lines)
+
+    # 궤적 = wr 정렬 후 정수 순위 (매매 로직 wr과 일치)
+    # 동점은 tie-breaker(cr 작은 쪽) 자동 해결
+    def _wr_int_rank_map(rankings):
+        if not rankings:
+            return {}
+        rlist = rankings.get('rankings', [])
+        sorted_by_wr = sorted(rlist, key=lambda r: (r.get('weighted_rank', 999), r.get('composite_rank', 999)))
+        return {r['ticker']: i + 1 for i, r in enumerate(sorted_by_wr)}
+
+    t0_cr = _wr_int_rank_map(rankings_t0)
+    t1_cr = _wr_int_rank_map(rankings_t1)
+    t2_cr = _wr_int_rank_map(rankings_t2)
+
+    for s in pipeline:
+        s['_r0'] = t0_cr.get(s['ticker'], '-')
+        s['_r1'] = t1_cr.get(s['ticker'], '-')
+        s['_r2'] = t2_cr.get(s['ticker'], '-')
+
+    # v70: weighted_rank 순 정렬 (rank 기반 진입/이탈과 일관)
+    sorted_pipeline = sorted(pipeline, key=lambda x: (x.get('weighted_rank', x['rank']), -(score_100_map or {}).get(x['ticker'], 0)))
+
+    # 상위 WATCHLIST_N개만 표시
+    display_pipeline = sorted_pipeline[:WATCHLIST_N]
+
+    # 섹터 분포 (표시 대상만)
+    from collections import Counter
+    sec_counter = Counter(s.get('sector', '기타') for s in display_pipeline)
+    sec_parts = [f'{sec} {cnt}' for sec, cnt in sec_counter.most_common(4)]
+    others = sum(cnt for sec, cnt in sec_counter.most_common() if sec not in dict(sec_counter.most_common(4)))
+    if others > 0:
+        sec_parts.append(f'기타 {others}')
+    lines.append(' | '.join(sec_parts))
+    lines.append('━━━━━━━━━━━━━━━')
+
+    _SECTOR_SHORT = {
+        '전기전자': '전자', '바이오/제약': '바이오', 'IT서비스': 'IT',
+        '섬유/의류': '의류', '소프트웨어': 'SW', '의료기기': '의료',
+    }
+
+    # v77.1+: 지수감쇠 점수 — score_100 = 100 × 0.9^(wr-1)
+    # wr=1→100, wr=2→90, wr=3→81, wr=10→39, wr=20→14
+    # 순위와 점수 항상 일치 (wr 낮을수록 점수 높음) + 매일 wr 값에 따라 점수 변동
+
+    exit_line_shown = False
+    for idx, s in enumerate(display_pipeline, 1):
+        name = s['name']
+        sector = _SECTOR_SHORT.get(s.get('sector', '기타'), s.get('sector', '기타'))
+        status = s['status']
+        # 궤적 = 각 날짜 wr 정수순위 (매매 로직과 일치). T-0은 표시순번 = wr순번
+        r0 = idx  # T-0: 리스트 순번 = wr 순위 (정렬 일치 보장)
+        r1 = s.get('_r1', '-')  # T-1 당일 cr
+        r2 = s.get('_r2', '-')  # T-2 당일 cr
+        score_100 = max(0.0, min(100.0, 100.0 * (0.9 ** (idx - 1))))
+        score_disp = f'{score_100:.1f}'
+
+        # 자동매도선 (국면별 exit_rank)
+        _cur_exit = rp_current.get('EXIT_RANK', EXIT_RANK) if rp_current else EXIT_RANK
+        w_rank = s.get('weighted_rank', 999)
+        if not exit_line_shown and w_rank > _cur_exit:
+            lines.append('── 매도 기준선 ──')
+            exit_line_shown = True
+
+        if status == '✅':
+            lines.append(f'{status} {idx}. {name}({sector}) {r2}→{r1}→{r0}위 · {score_disp}점')
+        elif status == '⏳':
+            lines.append(f'{status} {idx}. {name}({sector}) -→{r1}→{r0}위 · {score_disp}점')
+        else:
+            lines.append(f'{status} {idx}. {name}({sector}) -→-→{r0}위 · {score_disp}점')
+
+    # ── 이탈 섹션 (사유별 묶기) ──
+    if exited:
+        lines.append('')
+        lines.append('━━━━━━━━━━━━━━━')
+        lines.append('📉 <b>순위 이탈</b>')
+        from collections import defaultdict
+        reason_groups = defaultdict(list)
+        for e in exited:
+            reason = e.get('exit_reason', '순위밀림') or '순위밀림'
+            reason_groups[reason].append(e['name'])
+        for reason, names in reason_groups.items():
+            names_str = '·'.join(names[:4])
+            if len(names) > 4:
+                names_str += f' 외 {len(names)-4}'
+            lines.append(f'{names_str}({reason})')
+
+    # ── cold start ──
+    if cold_start:
+        lines.append('')
+        lines.append('━━━━━━━━━━━━━━━')
+        lines.append('📊 데이터 축적 중 — 3일 완료 시 상위 종목이 표시됩니다.')
+
+    # ── 매매 조건 + 범례 ──
+    lines.append('')
+    lines.append('━━━━━━━━━━━━━━━')
+    if rp_current:
+        _e = rp_current['ENTRY_RANK']
+        _x = rp_current['EXIT_RANK']
+        _s = rp_current['MAX_SLOTS']
+        _sl = rp_current.get('STOP_LOSS')
+        _tr = rp_current.get('TRAILING_STOP')
+        _corr = rp_current.get('CORR_THRESHOLD')
+        sl_s = f'{int(_sl*100)}% 손절' if _sl else ''
+        tr_s = f'트레일링 {int(_tr*100)}%' if _tr else ''
+        corr_s = f' · 상관{_corr}' if _corr else ''
+        exit_parts = [f'WR > {_x}']
+        if sl_s: exit_parts.append(sl_s)
+        if tr_s: exit_parts.append(tr_s)
+        lines.append(f'매수: 3일 검증 상위 {_e}종목 중 {_s}종목{corr_s}')
+        lines.append(f'매도: {" 또는 ".join(exit_parts)}')
+    else:
+        lines.append(f'매수: 3일 검증 상위 {ENTRY_RANK}종목 중 {MAX_SLOTS}종목')
+        lines.append(f'매도: 3일 가중순위 > {EXIT_RANK}.0 또는 -10% 손절')
+
+    return '\n'.join(lines)
+
+
+# ============================================================
+# 메인 함수
+# ============================================================
+def main():
+    # ============================================================
+    # TEST_MODE / --dates 인수 처리
+    # ============================================================
+    TEST_MODE = os.environ.get('TEST_MODE') == '1' or '--private-only' in sys.argv
+    if TEST_MODE:
+        print("⚠️  TEST_MODE — 개인봇으로만 전송합니다.")
+
+    # --dates 20260310 20260309 20260306 또는 --dates=20260310,20260309,20260306
+    manual_dates = None
+    for i, arg in enumerate(sys.argv):
+        if arg == '--dates':
+            # 공백 구분: --dates 20260310 20260309 20260306
+            remaining = []
+            for a in sys.argv[i + 1:]:
+                if a.startswith('--'):
+                    break
+                remaining.append(a)
+            if remaining:
+                # 콤마 구분도 지원: --dates 20260310,20260309,20260306
+                if len(remaining) == 1 and ',' in remaining[0]:
+                    manual_dates = remaining[0].split(',')
+                else:
+                    manual_dates = remaining
+            break
+        elif arg.startswith('--dates='):
+            manual_dates = arg.split('=', 1)[1].split(',')
+            break
+
+    # ============================================================
+    # 국면(Regime) 상태 로드
+    # ============================================================
+    regime_info = load_regime_state()
+    regime_mode = regime_info.get('mode', 'defense')
+    # 환경변수가 있으면 우선 (run_daily.py에서 주입)
+    if os.environ.get('REGIME_MODE'):
+        regime_mode = os.environ['REGIME_MODE']
+        regime_info['mode'] = regime_mode
+    regime_switched = os.environ.get('REGIME_SWITCHED') == '1'
+    # v77.1: 크래시 현금 전환/해제도 switch 메시지 트리거
+    regime_crash_entered = os.environ.get('REGIME_CRASH_ENTERED') == '1'
+    regime_crash_exited = os.environ.get('REGIME_CRASH_EXITED') == '1'
+    regime_prev_mode = os.environ.get('REGIME_PREV_MODE', '')
+    mode_transition = regime_switched or regime_crash_entered or regime_crash_exited
+    print(f"\n[국면 상태] 모드: {regime_mode}, 브레스: {regime_info.get('breadth')}, "
+          f"규칙: {regime_info.get('rule', '')}, 전환: {regime_switched} "
+          f"crash(in/out): {regime_crash_entered}/{regime_crash_exited} prev: {regime_prev_mode}")
+
+    # ============================================================
+    # 날짜 계산 (최근 3거래일)
+    # ============================================================
+    TODAY = get_korea_now().strftime('%Y%m%d')
+
+    if manual_dates:
+        raw_dates = [d.strip() for d in manual_dates if d.strip()]
+        # 단일 날짜 → 국면별 랭킹 파일 기반으로 3거래일 자동 확장
+        if len(raw_dates) == 1:
+            trading_dates = expand_single_date_to_3days(raw_dates[0], regime_mode)
+            print(f"--dates {raw_dates[0]} → 3거래일 자동 확장: {trading_dates}")
+        else:
+            trading_dates = raw_dates
+            print(f"--dates 지정: {trading_dates}")
+    else:
+        trading_dates = get_recent_trading_dates(3)
+
+    if not trading_dates:
+        print("거래일을 찾을 수 없습니다.")
+        sys.exit(1)
+
+    BASE_DATE = trading_dates[0]  # T-0
+    biz_day = datetime.strptime(BASE_DATE, '%Y%m%d')
+    print(f"오늘: {TODAY}")
+    print(f"최근 3거래일: T-0={trading_dates[0]}, ", end="")
+    if len(trading_dates) >= 2:
+        print(f"T-1={trading_dates[1]}, ", end="")
+    if len(trading_dates) >= 3:
+        print(f"T-2={trading_dates[2]}")
+    else:
+        print()
+
+    # ============================================================
+    # 시장 지수 + 이평선 경고
+    # ============================================================
+    idx_start = (datetime.strptime(BASE_DATE, '%Y%m%d') - timedelta(days=120)).strftime('%Y%m%d')
+    try:
+        kospi_idx = stock.get_index_ohlcv(idx_start, BASE_DATE, '1001')
+        kosdaq_idx = stock.get_index_ohlcv(idx_start, BASE_DATE, '2001')
+    except Exception as e:
+        print(f"  지수 OHLCV 수집 실패 (KRX API 차단): {e}")
+        kospi_idx = pd.DataFrame()
+        kosdaq_idx = pd.DataFrame()
+
+    if not kospi_idx.empty and len(kospi_idx) >= 2:
+        kospi_close = kospi_idx.iloc[-1, 3]
+        kospi_prev = kospi_idx.iloc[-2, 3]
+    else:
+        kospi_close = 0
+        kospi_prev = 0
+    kospi_chg = ((kospi_close / kospi_prev) - 1) * 100 if kospi_prev else 0
+
+    if not kosdaq_idx.empty and len(kosdaq_idx) >= 2:
+        kosdaq_close = kosdaq_idx.iloc[-1, 3]
+        kosdaq_prev = kosdaq_idx.iloc[-2, 3]
+    else:
+        kosdaq_close = 0
+        kosdaq_prev = 0
+    kosdaq_chg = ((kosdaq_close / kosdaq_prev) - 1) * 100 if kosdaq_prev else 0
+
+    def _idx_color(chg):
+        if chg > 1: return "🟢"
+        elif chg < -1: return "🔴"
+        else: return "🟡"
+
+    kospi_color = _idx_color(kospi_chg)
+    kosdaq_color = _idx_color(kosdaq_chg)
+
+    # 이평선 경고 계산
+    market_warnings = _calc_market_warnings(kospi_idx, kosdaq_idx)
+    print(f"\n[시장 이평선 경고]")
+    has_any = any(market_warnings.get(k) for k in market_warnings)
+    if has_any:
+        for name, events in market_warnings.items():
+            for evt in events:
+                icon = '📉' if '이탈' in evt else '📈'
+                print(f"  {icon} {name} {evt}")
+    else:
+        print("  경고 없음 — 시장 양호")
+
+    # ============================================================
+    # 시장 위험 지표 모니터링 (US HY Spread + 한국 BBB- + VIX)
+    # ============================================================
+    ecos_key = getattr(__import__('config'), 'ECOS_API_KEY', None)
+    credit = get_credit_status(ecos_api_key=ecos_key)
+
+    pick_level = get_market_pick_level(credit)
+    market_max_picks = pick_level['max_picks']  # _synthesize_action 기반 (0이면 전종목 중단)
+    stock_weight = WEIGHT_PER_STOCK
+    final_action = credit.get('final_action', '')
+    print(f"\n[매수 추천 설정] 행동: {final_action} · 레벨: {pick_level['label']} · 진입: {ENTRY_SCORE_100}점↑ · 퇴출: {EXIT_SCORE_100}점↓")
+
+    # ============================================================
+    # 순위 데이터 로드 (3일) — 국면별 랭킹 파일 사용
+    # ============================================================
+    print(f"\n[순위 데이터 로드] 국면: {regime_mode}")
+    rankings_t0 = load_ranking_for_regime(trading_dates[0], regime_mode)
+    rankings_t1 = load_ranking_for_regime(trading_dates[1], regime_mode) if len(trading_dates) >= 2 else None
+    rankings_t2 = load_ranking_for_regime(trading_dates[2], regime_mode) if len(trading_dates) >= 3 else None
+
+    if rankings_t0 is None:
+        print(f"T-0 ({trading_dates[0]}) 순위 없음! create_current_portfolio.py를 먼저 실행하세요.")
+        sys.exit(1)
+
+    # reranking 불필요 — ranking 파일이 이미 현재 버전 파라미터로 재계산됨
+
+    print(f"  T-0 ({trading_dates[0]}): {len(rankings_t0.get('rankings', []))}개 종목")
+
+    cold_start = False
+    if rankings_t1 is None or rankings_t2 is None:
+        cold_start = True
+        missing = []
+        if rankings_t1 is None and len(trading_dates) >= 2:
+            missing.append(f"T-1 ({trading_dates[1]})")
+        if rankings_t2 is None and len(trading_dates) >= 3:
+            missing.append(f"T-2 ({trading_dates[2]})")
+        print(f"  콜드 스타트: {', '.join(missing)} 순위 없음")
+        print(f"  → 3일 교집합 불가, 관망 메시지 전송")
+    else:
+        print(f"  T-1 ({trading_dates[1]}): {len(rankings_t1.get('rankings', []))}개 종목")
+        print(f"  T-2 ({trading_dates[2]}): {len(rankings_t2.get('rankings', []))}개 종목")
+
+    # ============================================================
+    # 종목 파이프라인 상태 (✅/⏳/🆕)
+    # ============================================================
+    pipeline = get_stock_status(rankings_t0, rankings_t1, rankings_t2)
+    available_days = sum(1 for r in [rankings_t0, rankings_t1, rankings_t2] if r is not None)
+    v_count = sum(1 for s in pipeline if s['status'] == '✅')
+    d_count = sum(1 for s in pipeline if s['status'] == '⏳')
+    n_count = sum(1 for s in pipeline if s['status'] == '🆕')
+    print(f"\n[파이프라인] ✅ {v_count}개, ⏳ {d_count}개, 🆕 {n_count}개 (데이터 {available_days}일)")
+
+    # ============================================================
+    # 일일 변동 (콜드 스타트 시 생략)
+    # ============================================================
+    print("\n[일일 변동]")
+    entered, exited = [], []
+    if cold_start:
+        print("  콜드 스타트 → 일일 변동 생략")
+    elif rankings_t1:
+        entered, exited = get_daily_changes(pipeline, rankings_t0, rankings_t1, threshold=WATCHLIST_N)
+        print(f"  진입: {len(entered)}개, 이탈: {len(exited)}개")
+        for e in entered:
+            print(f"    ↑ {e['name']} ({e['rank']}위)")
+        for e in exited:
+            print(f"    ↓ {e['name']} ({e['rank']}위)")
+
+    # ============================================================
+    # 100점 환산 점수 맵 (정렬 + 표시에 사용)
+    # ============================================================
+    score_100_pre = {}
+    for s in pipeline:
+        score_100_pre[s['ticker']] = weighted_score_100(
+            s['ticker'], rankings_t0, rankings_t1, rankings_t2)
+
+    # ── 시스템 수익률 계산 ──
+    print("\n[시스템 수익률]")
+    system_returns = None
+    try:
+        system_returns = calc_system_returns(regime_info=None)
+        if system_returns:
+            print(f"  시스템: {system_returns['system_pct']:+.1f}% vs KOSPI: {system_returns['kospi_pct']:+.1f}% "
+                  f"(초과: {system_returns['system_pct']-system_returns['kospi_pct']:+.1f}%p, {system_returns['start_date']}~)")
+        else:
+            print("  데이터 부족 (3일 미만)")
+    except Exception as e:
+        print(f"  계산 실패 (무시): {e}")
+
+    # ============================================================
+    # ✅ 검증 종목에서 Top 추천 (점수 순)
+    # ============================================================
+    print("\n[✅ 검증 종목 매수 추천]")
+    all_candidates = []
+    drop_info = []
+    if not cold_start:
+        verified_picks = [s for s in pipeline if s['status'] == '✅']
+        verified_picks.sort(key=lambda x: score_100_pre.get(x['ticker'], 0), reverse=True)
+        print(f"  ✅ 검증 종목: {len(verified_picks)}개")
+
+        # wr 정렬 후 정수 순위 맵 (main용)
+        def _wr_int_rank_map_main(rankings):
+            if not rankings:
+                return {}
+            rlist = rankings.get('rankings', [])
+            sorted_by_wr = sorted(rlist, key=lambda r: r.get('weighted_rank', 999))
+            return {r['ticker']: i + 1 for i, r in enumerate(sorted_by_wr)}
+
+        t0_wr_rank_main = _wr_int_rank_map_main(rankings_t0)
+        t1_wr_rank_main = _wr_int_rank_map_main(rankings_t1)
+        t2_wr_rank_main = _wr_int_rank_map_main(rankings_t2)
+
+        for candidate in verified_picks:
+            tech = get_stock_technical(candidate['ticker'], BASE_DATE)
+            candidate['_tech'] = tech
+            candidate['rank_t0'] = t0_wr_rank_main.get(candidate['ticker'], candidate.get('composite_rank', candidate['rank']))
+            candidate['rank_t1'] = t1_wr_rank_main.get(candidate['ticker'], '-')
+            candidate['rank_t2'] = t2_wr_rank_main.get(candidate['ticker'], '-')
+            daily_chg = (tech or {}).get('daily_chg', 0)
+
+            if daily_chg <= -5:
+                drop_info.append((candidate, daily_chg))
+
+            all_candidates.append(candidate)
+            if tech:
+                print(f"    {candidate['name']}: rank {candidate['rank']}, RSI {tech['rsi']:.0f}, 52주 {tech['w52_pct']:.0f}%")
+            else:
+                print(f"    {candidate['name']}: rank {candidate['rank']} (기술지표 실패)")
+    else:
+        print("  콜드 스타트 → 추천 없음 (관망)")
+
+    print(f"  추천 후보: {len(all_candidates)}개 종목")
+
+    # ============================================================
+    # AI 리스크 필터 생성 (Gemini) — 전체 후보 대상
+    # ============================================================
+    market_ctx = None
+    hy_data = credit.get('hy')
+    if hy_data:
+        market_ctx = {
+            'action': credit.get('final_action', ''),
+        }
+
+    ai_msg = None
+    ai_msg_raw = None  # AI 원본 (create_ai_risk_message에 전달)
+    risk_flagged_tickers = set()
+    if all_candidates:
+        try:
+            from gemini_analysis import run_ai_analysis, compute_risk_flags
+            # 시장 평균 등락률 (KOSPI/KOSDAQ 평균) — 초과 수익률 계산용
+            stock_list = []
+            for pick in all_candidates:
+                tech = pick.get('_tech', {}) or {}
+                tech_missing = not pick.get('_tech')
+                stock_data = {
+                    'ticker': pick['ticker'],
+                    'name': pick['name'],
+                    'rank': pick['rank'],
+                    'per': pick.get('per'),
+                    'pbr': pick.get('pbr'),
+                    'roe': pick.get('roe'),
+                    'fwd_per': pick.get('fwd_per'),
+                    'sector': pick.get('sector', '기타'),
+                    'rsi': tech.get('rsi', 50),
+                    'w52_pct': tech.get('w52_pct', 0),
+                    'daily_chg': tech.get('daily_chg', 0),
+                    'price': tech.get('price', 0),
+                    'tech_missing': tech_missing,
+                }
+                stock_list.append(stock_data)
+                if compute_risk_flags(stock_data):
+                    risk_flagged_tickers.add(pick['ticker'])
+            print(f"\n  AI 리스크 대상: {len(stock_list)}개 (위험 플래그: {len(risk_flagged_tickers)}개)")
+            mkt_idx = {
+                'kospi_close': kospi_close, 'kospi_chg': kospi_chg,
+                'kosdaq_close': kosdaq_close, 'kosdaq_chg': kosdaq_chg,
+            }
+            ai_msg_raw = run_ai_analysis(None, stock_list, base_date=BASE_DATE, market_context=market_ctx, market_index=mkt_idx)
+            if ai_msg_raw:
+                print(f"\n=== AI 리스크 필터 ({len(ai_msg_raw)}자) ===")
+                print(ai_msg_raw[:500] + '...' if len(ai_msg_raw) > 500 else ai_msg_raw)
+            else:
+                print("\nAI 리스크 필터 스킵 (결과 없음)")
+        except Exception as e:
+            print(f"\nAI 리스크 필터 실패 (계속 진행): {e}")
+    else:
+        print("\nAI 리스크 필터 스킵 (추천 종목 없음)")
+
+    # v75: 국면별 진입/이탈/슬롯
+    from ranking_manager import ENTRY_RANK as _DEFAULT_ENTRY, EXIT_RANK as _DEFAULT_EXIT, MAX_SLOTS as _DEFAULT_SLOTS
+    try:
+        from regime_indicator import get_regime_params as _grp2
+        _rs_path2 = STATE_DIR / 'regime_state.json'
+        _mode2 = 'defense'
+        if _rs_path2.exists():
+            with open(_rs_path2, 'r', encoding='utf-8') as _f2:
+                _mode2 = json.load(_f2).get('mode', 'defense')
+        _rp2 = _grp2(_mode2)
+        _ENTRY = _rp2['ENTRY_RANK']
+        _EXIT = _rp2['EXIT_RANK']
+        _SLOTS = _rp2['MAX_SLOTS']
+        _SL = _rp2.get('STOP_LOSS', -0.10)
+    except Exception:
+        _ENTRY, _EXIT, _SLOTS, _SL = _DEFAULT_ENTRY, _DEFAULT_EXIT, _DEFAULT_SLOTS, -0.10
+
+    if market_max_picks == 0:
+        picks = []
+    else:
+        picks = sorted(all_candidates, key=lambda x: x.get('weighted_rank', 999))[:_ENTRY]
+        picks = picks[:_SLOTS]
+    if picks:
+        stock_weight = round(100 / len(picks))
+    _sl_s = f'{int(_SL*100)}%' if _SL else 'X'
+    print(f"\n  최종 picks: {len(picks)}개 (진입: top{_ENTRY} · 이탈: wr>{_EXIT} · 슬롯: {_SLOTS} · 손절: {_sl_s})")
+
+    # ============================================================
+    # AI 종목별 내러티브 (Signal 💬 줄용)
+    # ============================================================
+    ai_narratives = {}
+    ai_picks_text = None
+    if picks and ai_msg_raw:
+        try:
+            from gemini_analysis import run_final_picks_analysis, parse_narratives
+            final_stock_list = []
+            for pick in picks:
+                tech = pick.get('_tech', {}) or {}
+                final_stock_list.append({
+                    'ticker': pick['ticker'],
+                    'name': pick['name'],
+                    'sector': pick.get('sector', '기타'),
+                    'rank_t0': pick.get('rank_t0'),
+                    'rank_t1': pick.get('rank_t1'),
+                    'rank_t2': pick.get('rank_t2'),
+                    'driver': pick.get('_driver', ''),
+                    'per': pick.get('per'),
+                    'fwd_per': pick.get('fwd_per'),
+                    'roe': pick.get('roe'),
+                    'rsi': tech.get('rsi', 50),
+                    'w52_pct': tech.get('w52_pct', 0),
+                })
+            import time as _t
+            for _attempt in range(3):
+                ai_picks_text = run_final_picks_analysis(final_stock_list, stock_weight, BASE_DATE, market_context=market_ctx)
+                if ai_picks_text:
+                    ai_narratives = parse_narratives(ai_picks_text)
+                    if ai_narratives:
+                        print(f"  AI 내러티브: {len(ai_narratives)}종목 추출 (시도 {_attempt+1})")
+                        break
+                print(f"  AI 내러티브 시도 {_attempt+1}/3 실패, 재시도...")
+                _t.sleep(2)
+        except Exception as e:
+            print(f"최종 추천 AI 설명 실패 (fallback 사용): {e}")
+
+    # ============================================================
+    # v41 메시지 구성 — Signal + AI Risk + Watchlist
+    # ============================================================
+    # AI Risk에서 사용할 AI 원본 텍스트: 헤더/포맷은 run_ai_analysis가 이미 생성
+    # create_ai_risk_message에는 시장 데이터만 별도 전달하고 AI 텍스트는 통째 삽입
+
+    # AI Risk용 AI 텍스트 추출 (run_ai_analysis 반환값에서 헤더 제거)
+    ai_risk_ai_text = None
+    if ai_msg_raw:
+        # run_ai_analysis는 이미 ━━━ 🤖 AI 리스크 필터 ━━━ 헤더 포함
+        # create_ai_risk_message에서 자체 헤더를 만드므로, AI 텍스트만 추출
+        # AI 텍스트는 '후보 종목 중 주의할 점을' 이후부터
+        raw_lines = ai_msg_raw.split('\n')
+        ai_text_start = 0
+        for idx, line in enumerate(raw_lines):
+            if '📰' in line or '시장 동향' in line or '⚠️' in line:
+                ai_text_start = idx
+                break
+        if ai_text_start > 0:
+            ai_risk_ai_text = '\n'.join(raw_lines[ai_text_start:])
+        else:
+            # 헤더 4줄(━━━, 🤖, ━━━, 빈줄, 소개문, 빈줄) 건너뛰기
+            for idx, line in enumerate(raw_lines):
+                if idx > 3 and line.strip() and '━━━' not in line and '🤖' not in line and '후보' not in line:
+                    ai_text_start = idx
+                    break
+            ai_risk_ai_text = '\n'.join(raw_lines[ai_text_start:]) if ai_text_start > 0 else ai_msg_raw
+
+    msg_signal = create_signal_message(
+        picks, pipeline, exited, biz_day, ai_narratives,
+        market_max_picks, stock_weight, rankings_t0,
+        rankings_t1, rankings_t2, cold_start,
+        final_action, pick_level,
+        system_returns=system_returns,
+        regime_info=regime_info,
+    )
+
+    msg_ai_risk = create_ai_risk_message(
+        credit,
+        (kospi_close, kospi_chg, kospi_color),
+        (kosdaq_close, kosdaq_chg, kosdaq_color),
+        market_warnings,
+        ai_risk_ai_text,
+        biz_day, picks, final_action,
+    )
+
+    # 현재 국면 파라미터
+    try:
+        from regime_indicator import get_regime_params as _grp
+        _regime_state_path = STATE_DIR / 'regime_state.json'
+        _cur_mode = 'defense'
+        if _regime_state_path.exists():
+            with open(_regime_state_path, 'r', encoding='utf-8') as _f:
+                _cur_mode = json.load(_f).get('mode', 'defense')
+        _rp = _grp(_cur_mode)
+    except Exception:
+        _rp = None
+
+    msg_watchlist = create_watchlist_message(
+        pipeline, exited, rankings_t0, rankings_t1, rankings_t2,
+        cold_start=cold_start, credit=credit,
+        score_100_map=score_100_pre,
+        system_returns=system_returns,
+        rp_current=_rp,
+    )
+
+    messages = []
+    # 국면 전환 시 전환 안내 메시지를 먼저 전송 (v77.1: cash 진입/탈출 포함)
+    if mode_transition:
+        msg_switch = create_regime_switch_message(regime_mode, prev_mode=regime_prev_mode)
+        messages.append(msg_switch)
+        print(f"\n[국면 전환] {regime_prev_mode or '?'} → {regime_mode} 전환 안내 메시지 추가")
+    messages += [msg_signal, msg_ai_risk, msg_watchlist]
+
+    # ============================================================
+    # 웹 대시보드용 데이터 캐시 저장
+    # ============================================================
+    try:
+        import json as _json
+        web_data = {
+            'date': BASE_DATE,
+            'generated_at': get_korea_now().isoformat(),
+            'market': {
+                'kospi': {'close': float(kospi_close), 'change_pct': round(float(kospi_chg), 2)},
+                'kosdaq': {'close': float(kosdaq_close), 'change_pct': round(float(kosdaq_chg), 2)},
+                'warnings': market_warnings,
+            },
+            'credit': {
+                'hy': credit.get('hy'),
+                'kr': credit.get('kr'),
+                'vix': credit.get('vix'),
+                'concordance': credit.get('concordance'),
+                'final_action': credit.get('final_action'),
+                'formatted': format_credit_section(credit),
+            },
+            'pipeline': {
+                'verified': [s for s in pipeline if s['status'] == '✅'],
+                'pending': [s for s in pipeline if s['status'] == '⏳'],
+                'new_entry': [s for s in pipeline if s['status'] == '🆕'],
+            },
+            'picks': [{
+                'ticker': p['ticker'], 'name': p['name'], 'sector': p.get('sector', ''),
+                'rank': p.get('rank'), 'rank_t0': p.get('rank_t0'),
+                'rank_t1': p.get('rank_t1'), 'rank_t2': p.get('rank_t2'),
+                'per': p.get('per'), 'pbr': p.get('pbr'), 'roe': p.get('roe'), 'fwd_per': p.get('fwd_per'),
+                'score': p.get('score'), 'weight': stock_weight,
+                'tech': {k: v for k, v in (p.get('_tech') or {}).items() if k != 'ohlcv'},
+            } for p in picks],
+            'drop_info': [{'name': d[0]['name'], 'ticker': d[0]['ticker'], 'daily_chg': d[1]} for d in drop_info],
+            'exited': [{'ticker': e['ticker'], 'name': e['name'],
+                        'rank': e['rank'], 't0_rank': e.get('t0_rank'),
+                        'exit_reason': e.get('exit_reason', '')}
+                       for e in exited],
+            'sectors': {},
+            'ai': {
+                'risk_filter': ai_msg_raw,
+                'picks_text': ai_picks_text,
+                'flagged_tickers': list(risk_flagged_tickers),
+                'narratives': ai_narratives,
+            },
+        }
+        for s in pipeline:
+            sec = s.get('sector', '기타')
+            web_data['sectors'][sec] = web_data['sectors'].get(sec, 0) + 1
+
+        web_path = STATE_DIR / f'web_data_{BASE_DATE}.json'
+        with open(web_path, 'w', encoding='utf-8') as _f:
+            _json.dump(web_data, _f, ensure_ascii=False, indent=2, default=str)
+        print(f'\n[웹 캐시] {web_path.name} 저장 완료')
+    except Exception as _e:
+        print(f'\n[웹 캐시] 저장 실패 (무시): {_e}')
+
+    # ============================================================
+    # 텔레그램 전송
+    # ============================================================
+    PRIVATE_CHAT_ID = getattr(__import__('config'), 'TELEGRAM_PRIVATE_ID', None)
+    IS_GITHUB_ACTIONS = os.environ.get('GITHUB_ACTIONS') == 'true'
+
+    print("\n=== 메시지 미리보기 ===")
+    msg_labels = (['Regime Switch'] if mode_transition else []) + ['Signal', 'AI Risk', 'Watchlist']
+    for i, msg in enumerate(messages):
+        label = msg_labels[i] if i < len(msg_labels) else f'#{i+1}'
+        print(f"\n--- {label} ({len(msg)}자) ---")
+        print(msg[:500])
+    msg_sizes = ', '.join(f'{len(m)}자' for m in messages)
+    print(f"\n메시지 수: {len(messages)}개 ({msg_sizes})")
+
+    # TEST_MODE: 개인봇으로만 전송 (채널 절대 안 건드림)
+    if TEST_MODE:
+        target = PRIVATE_CHAT_ID or TELEGRAM_CHAT_ID
+        print(f'\n🧪 TEST_MODE — 개인봇으로만 전송 ({target[:6]}...)')
+        for i, msg in enumerate(messages):
+            results = send_telegram_long(msg, TELEGRAM_BOT_TOKEN, target)
+            codes = [str(r.status_code) for r in results]
+            print(f'  {msg_labels[i]}: {", ".join(codes)}')
+    elif IS_GITHUB_ACTIONS:
+        if cold_start:
+            target = PRIVATE_CHAT_ID or TELEGRAM_CHAT_ID
+            print(f'\n콜드 스타트 — 채널 전송 스킵, 개인봇으로 전송 ({target[:6]}...)')
+            for i, msg in enumerate(messages):
+                results = send_telegram_long(msg, TELEGRAM_BOT_TOKEN, target)
+                codes = [str(r.status_code) for r in results]
+                print(f'  {msg_labels[i]}: {", ".join(codes)}')
+        else:
+            print(f'\n채널 전송...')
+            for i, msg in enumerate(messages):
+                results = send_telegram_long(msg, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
+                codes = [str(r.status_code) for r in results]
+                print(f'  {msg_labels[i]}: {", ".join(codes)}')
+
+            if PRIVATE_CHAT_ID and PRIVATE_CHAT_ID != TELEGRAM_CHAT_ID:
+                print(f'개인봇 전송...')
+                for i, msg in enumerate(messages):
+                    results = send_telegram_long(msg, TELEGRAM_BOT_TOKEN, PRIVATE_CHAT_ID)
+                    codes = [str(r.status_code) for r in results]
+                    print(f'  {msg_labels[i]}: {", ".join(codes)}')
+    else:
+        if cold_start:
+            target = PRIVATE_CHAT_ID or TELEGRAM_CHAT_ID
+            print(f'\n콜드 스타트 — 채널 전송 스킵, 개인봇으로 전송')
+            for i, msg in enumerate(messages):
+                results = send_telegram_long(msg, TELEGRAM_BOT_TOKEN, target)
+                codes = [str(r.status_code) for r in results]
+                print(f'  {msg_labels[i]}: {", ".join(codes)}')
+        else:
+            print(f'\n채널 전송 ({TELEGRAM_CHAT_ID})...')
+            for i, msg in enumerate(messages):
+                results = send_telegram_long(msg, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
+                codes = [str(r.status_code) for r in results]
+                print(f'  {msg_labels[i]}: {", ".join(codes)}')
+
+            if PRIVATE_CHAT_ID and PRIVATE_CHAT_ID != TELEGRAM_CHAT_ID:
+                print(f'개인봇 전송...')
+                for i, msg in enumerate(messages):
+                    results = send_telegram_long(msg, TELEGRAM_BOT_TOKEN, PRIVATE_CHAT_ID)
+                    codes = [str(r.status_code) for r in results]
+                    print(f'  {msg_labels[i]}: {", ".join(codes)}')
+
+    # ============================================================
+    # 정리
+    # ============================================================
+    # cleanup_old_rankings(keep_days=30)  # v70: 과거 랭킹 보존 (로그용)
+
+    print(f'\n매수 추천: {len(picks)}개 ({"관망" if not picks else f"종목 {len(picks)*stock_weight}%"})')
+    print(f'파이프라인: ✅ {v_count} · ⏳ {d_count} · 🆕 {n_count}')
+    print(f'일일 변동: 진입 {len(entered)}개 · 이탈 {len(exited)}개')
+    print('\n완료!')
+
+
+if __name__ == '__main__':
+    main()
