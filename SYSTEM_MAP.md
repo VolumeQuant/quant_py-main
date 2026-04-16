@@ -342,7 +342,16 @@ run_daily.py Step 0.1에 삽입됨:
 | 섹터 max_gap 120일 | fast_generate line 1525 | 섹터 변경 드물어 실용적 영향 없음 |
 | FnGuide rcept_dt 기본값 추정 케이스 | 약 0.1% 레코드 | 연간 90일/분기 45일 기본값. 실제보다 늦게 추정하므로 look-ahead 없음 (보수적) |
 
-## 8. 알려진 개선 과제 (v79 이후)
+## 8. -1.5σ 필터 분석 결과 (2026-04-16)
+
+5옵션 BT 비교로 **baseline(-1.5σ 4팩터) 유지 확정**:
+- baseline score=3.36 > B=3.24 > A=D=3.19 > C=2.94
+- 연도별 검증에서도 baseline 평균 Cal 6.45로 최고
+- 대형 전력주(HD현대일렉, 제룡전기) 누락은 아쉽지만 포함 시 성과 하락
+- `EXTREME_MODE` env var로 재실험 가능 (A/B/C/D)
+- 분석 스크립트: `phase8_extreme_compare.py`, `phase8_yearly_compare.py`
+
+## 9. 알려진 개선 과제 (v79 이후)
 
 | 이슈 | 위치 | 영향 |
 |---|---|---|

@@ -29,15 +29,16 @@
 
 ---
 
-# 🇺🇸 US 전략 — eps-momentum-us (v71)
+# 🇺🇸 US 전략 — eps-momentum-us (v78, 2026-04-16)
 
 > 경로: `C:\dev\claude code\eps-momentum-us`
 
 - EPS Revision Momentum, conviction z-score 기반, **균등비중**
 - conviction: adj_gap × (1 + max(up30/N, min(|eps_chg|/100, 1)))
-- 점수: 일별 z-score(30~100) → 3일 가중(T0×0.5+T1×0.3+T2×0.2), 빈 날=30점
-- 진입: 3일 가중 Top 3 + ✅(3일 검증) + min_seg ≥ 0%, 슬롯 5
-- 퇴출: part2_rank > 15 OR min_seg < -2% OR -10% 손절
+- 점수: 일별 z-score(30~100) → **Case 1 보너스(+8점)** → 3일 가중(T0×0.5+T1×0.3+T2×0.2), 빈 날=30점
+- **Case 1 보너스 (v78)**: 30d NTM > +1% AND 가격 < -1% → z-score +8점 (전망↑가격↓ 종목 우대)
+- 진입: 3일 가중 Top **3** + ✅(3일 검증) + min_seg ≥ 0%, 슬롯 **3**
+- 퇴출: part2_rank > **8** OR min_seg < -2%
 - composite_rank=당일 conviction 순위(추이 표시), part2_rank=3일 가중 순위(매매)
 - RETURN_MATRIX: S&P500 기반 (26년 6,593일), VIX는 yfinance 최신 보완
 - 비중 조절 안 함 (알파가 공포 구간에서 발생)
@@ -140,6 +141,18 @@
 - ROE NaN → 필터 스킵 (GPA/CFO로 Quality 평가)
 - 우선주 제거 (티커 끝자리 ≠ 0)
 - 금융 키워드: 생명/화재/IB투자/벤처투자/자산운용/신탁
+
+### -1.5σ 단일팩터 바닥 필터 (2026-04-16 검증, 유지 확정)
+- V/Q/G/M 4팩터 중 하나라도 -1.5σ 미만이면 유니버스에서 제외
+- **효과**: 노이즈 종목 차단. baseline(유지) > A(-2.0완화) > B(V면제) > C(필터없음)
+- **부작용**: HD현대일렉트릭, 제룡전기 등 대형 전력주가 V(가치) -1.5 미만으로 탈락
+  - 주가 급등 → PER/PBR 비쌈 → Value z-score 하락 → 필터 탈락
+  - 5옵션 BT 비교 결과 필터 포함해도 성과 하락 → "포함 불필요" 확정
+- **`EXTREME_MODE` env var**: A/B/C/D 실험용 (`fast_generate_rankings_v2.py`). 미설정=baseline.
+
+### 알려진 유니버스 이슈 (v79 이후 별도 해결)
+- **LS ELECTRIC (010120)**: OHLCV 비거래일 가격 0 + 액면분할 수정주가 미반영 → MA120 오염 → 필터 탈락
+- **산일전기 (062040)**: DART 분기 6개 < 8개 (신규 상장) → (d) 필터 탈락. 시간 경과 시 자동 해결
 
 ### 재생성/배포 절차 (v79 적용 기록)
 - `state/` 1294일 + `state/defense/` 1294일 v79 파라미터로 재계산 (28.6분, 2워커 병렬)

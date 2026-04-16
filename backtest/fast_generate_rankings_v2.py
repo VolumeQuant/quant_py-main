@@ -1371,11 +1371,40 @@ def calculate_multifactor_fast(multifactor_df, price_df, sector_map, base_date,
     # V/Q/G/M 4개 점수 중 하나라도 -1.5σ 미만이면 제외
     # 예: 하이닉스 2024-01-02 같이 Growth 점수가 -1.5 미만이면 제외됨
     # 이는 "모든 팩터가 균형 있게 좋은 종목" 선호하는 v77 철학 반영
-    EXTREME_THRESHOLD = -1.5
+    # 단일팩터 바닥 필터 — env var로 옵션 제어:
+    #   EXTREME_MODE=A: 임계값 -2.0 (완화)
+    #   EXTREME_MODE=B: V(밸류) 제외, Q/G/M만 -1.5 적용
+    #   EXTREME_MODE=C: 필터 비활성 (전부 통과)
+    #   EXTREME_MODE=D: V 낮아도 Q+G+M 평균 > 0이면 유지
+    #   미설정 (기본): 기존 v77 방식 (-1.5σ, 4팩터 전부)
+    _extreme_mode = os.environ.get('EXTREME_MODE', '')
     cat_cols_4 = ['밸류_점수', '퀄리티_점수', '성장_점수', '모멘텀_점수']
-    extreme_mask = (data[cat_cols_4] < EXTREME_THRESHOLD).any(axis=1)
-    if extreme_mask.any():
-        data = data[~extreme_mask].copy()
+
+    if _extreme_mode == 'C':
+        pass  # 필터 없음
+    elif _extreme_mode == 'A':
+        EXTREME_THRESHOLD = -2.0
+        extreme_mask = (data[cat_cols_4] < EXTREME_THRESHOLD).any(axis=1)
+        if extreme_mask.any():
+            data = data[~extreme_mask].copy()
+    elif _extreme_mode == 'B':
+        # V 제외, Q/G/M만 -1.5
+        qgm_cols = ['퀄리티_점수', '성장_점수', '모멘텀_점수']
+        extreme_mask = (data[qgm_cols] < -1.5).any(axis=1)
+        if extreme_mask.any():
+            data = data[~extreme_mask].copy()
+    elif _extreme_mode == 'D':
+        # V 낮아도 Q+G+M 평균 > 0이면 유지
+        qgm_avg = data[['퀄리티_점수', '성장_점수', '모멘텀_점수']].mean(axis=1)
+        extreme_mask = (data[cat_cols_4] < -1.5).any(axis=1) & (qgm_avg <= 0)
+        if extreme_mask.any():
+            data = data[~extreme_mask].copy()
+    else:
+        # 기본 (v77 원본)
+        EXTREME_THRESHOLD = -1.5
+        extreme_mask = (data[cat_cols_4] < EXTREME_THRESHOLD).any(axis=1)
+        if extreme_mask.any():
+            data = data[~extreme_mask].copy()
 
     # 최종 가중합 (환경변수로 동적 설정)
     V_W = float(os.environ.get('FACTOR_V_W', '0.20'))
