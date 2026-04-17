@@ -1051,12 +1051,14 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         price_str = f'₩{price:,.0f}' if price else ''
         lines.append(f'<b>{i+1}. {name}({ticker}) {sector} · {price_str}</b>')
 
-        # 궤적 = 각 날짜 wr 정수순위 (매매 로직과 일치). 점수 = Signal 순번 기반 지수감쇠
+        # 궤적 = 각 날짜 cr (당일 강도 체감). 점수 = min_wr / wr × 100 (실제 격차 반영)
         r0 = t0_cr_sig.get(ticker, '-')
         r1 = t1_cr_sig.get(ticker, '-')
         r2 = t2_cr_sig.get(ticker, '-')
-        # 1등=100, 2등=90, 3등=81 (동점 불가)
-        score_100 = max(0.0, min(100.0, 100.0 * (0.9 ** (i))))  # i는 0부터 → 0.9^0=100 점
+        # min_wr / wr × 100: 1위=100, 나머지는 1위 대비 상대 점수 (격차 반영)
+        wr_val = pick.get('weighted_rank', pick.get('rank', i + 1))
+        min_wr = picks[0].get('weighted_rank', picks[0].get('rank', 1)) if picks else 1
+        score_100 = max(0.0, min(100.0, (min_wr / wr_val) * 100)) if wr_val > 0 else 0
         lines.append(f'순위 {r2}→{r1}→{r0}위 · {score_100:.1f}점')
 
         # L2: AI 내러티브 (fallback: _get_buy_rationale)
@@ -1218,20 +1220,24 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         '섬유/의류': '의류', '소프트웨어': 'SW', '의료기기': '의료',
     }
 
-    # v79: 지수감쇠 점수 — score_100 = 100 × 0.9^(표시순번-1)
-    # wr=1→100, wr=2→90, wr=3→81, wr=10→39, wr=20→14
-    # 순위와 점수 항상 일치 (wr 낮을수록 점수 높음) + 매일 wr 값에 따라 점수 변동
+    # v79: 점수 = min_wr / wr × 100 (1위=100, 실제 격차 반영)
+    # 1위 대비 상대 점수. 격차 클수록 점수 낮음. 역전 가능성 한눈에 파악.
+
+    # min_wr 계산 (display_pipeline에서 wr 최소값)
+    _all_wr = [s.get('weighted_rank', 999) for s in display_pipeline]
+    _min_wr = min(_all_wr) if _all_wr else 1
 
     exit_line_shown = False
     for idx, s in enumerate(display_pipeline, 1):
         name = s['name']
         sector = _SECTOR_SHORT.get(s.get('sector', '기타'), s.get('sector', '기타'))
         status = s['status']
-        # 궤적 = 각 날짜 wr 정수순위 (매매 로직과 일치). T-0은 표시순번 = wr순번
+        # 궤적 = 각 날짜 cr (당일 강도 체감)
         r0 = idx  # T-0: 리스트 순번 = wr 순위 (정렬 일치 보장)
         r1 = s.get('_r1', '-')  # T-1 당일 cr
         r2 = s.get('_r2', '-')  # T-2 당일 cr
-        score_100 = max(0.0, min(100.0, 100.0 * (0.9 ** (idx - 1))))
+        w_rank_val = s.get('weighted_rank', idx)
+        score_100 = max(0.0, min(100.0, (_min_wr / w_rank_val) * 100)) if w_rank_val > 0 else 0
         score_disp = f'{score_100:.1f}'
 
         # 자동매도선 (국면별 exit_rank)
