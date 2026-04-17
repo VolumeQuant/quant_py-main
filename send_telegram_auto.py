@@ -1051,14 +1051,14 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         price_str = f'₩{price:,.0f}' if price else ''
         lines.append(f'<b>{i+1}. {name}({ticker}) {sector} · {price_str}</b>')
 
-        # 궤적 = 각 날짜 cr (당일 강도 체감). 점수 = min_wr / wr × 100 (실제 격차 반영)
+        # 궤적 = 각 날짜 cr (당일 강도 체감). 점수 = 선형 wr 차이 반영
         r0 = t0_cr_sig.get(ticker, '-')
         r1 = t1_cr_sig.get(ticker, '-')
         r2 = t2_cr_sig.get(ticker, '-')
-        # min_wr / wr × 100: 1위=100, 나머지는 1위 대비 상대 점수 (격차 반영)
+        # 100 - (wr - 1위_wr) × 5: wr 차이가 그대로 점수 차이로 (선형, 하한 5점)
         wr_val = pick.get('weighted_rank', pick.get('rank', i + 1))
         min_wr = picks[0].get('weighted_rank', picks[0].get('rank', 1)) if picks else 1
-        score_100 = max(0.0, min(100.0, (min_wr / wr_val) * 100)) if wr_val > 0 else 0
+        score_100 = max(5.0, min(100.0, 100.0 - (wr_val - min_wr) * 5))
         lines.append(f'순위 {r2}→{r1}→{r0}위 · {score_100:.1f}점')
 
         # L2: AI 내러티브 (fallback: _get_buy_rationale)
@@ -1220,10 +1220,9 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         '섬유/의류': '의류', '소프트웨어': 'SW', '의료기기': '의료',
     }
 
-    # v79: 점수 = min_wr / wr × 100 (1위=100, 실제 격차 반영)
-    # 1위 대비 상대 점수. 격차 클수록 점수 낮음. 역전 가능성 한눈에 파악.
+    # v79: 점수 = 100 - (wr - 1위_wr) × 5 (선형, wr 차이가 점수 차이로 직접 반영)
+    # 1위=100, wr 1증가 = 5점 감소. 하한 5점. 순위 역전 가능성 한눈에 파악.
 
-    # min_wr 계산 (display_pipeline에서 wr 최소값)
     _all_wr = [s.get('weighted_rank', 999) for s in display_pipeline]
     _min_wr = min(_all_wr) if _all_wr else 1
 
@@ -1237,7 +1236,7 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         r1 = s.get('_r1', '-')  # T-1 당일 cr
         r2 = s.get('_r2', '-')  # T-2 당일 cr
         w_rank_val = s.get('weighted_rank', idx)
-        score_100 = max(0.0, min(100.0, (_min_wr / w_rank_val) * 100)) if w_rank_val > 0 else 0
+        score_100 = max(5.0, min(100.0, 100.0 - (w_rank_val - _min_wr) * 5))
         score_disp = f'{score_100:.1f}'
 
         # 자동매도선 (국면별 exit_rank)
