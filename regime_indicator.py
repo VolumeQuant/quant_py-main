@@ -178,8 +178,8 @@ if __name__ == '__main__':
     # 테스트
     sys.stdout.reconfigure(encoding='utf-8')
     result = get_current_regime(
-        kospi_close=5967, kospi_ma200=4172,
-        date_str='20260414'
+        kospi_close=5967, kospi_ma=4172,
+        date_str='20260418'
     )
     print(f"모드: {result['mode']}")
     print(f"신호: {result['signal']}")

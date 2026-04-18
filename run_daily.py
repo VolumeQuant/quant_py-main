@@ -489,16 +489,15 @@ def main():
         except Exception as e:
             log(f"OHLCV 증분 수집 오류: {e} — 기존 데이터로 진행", logfile)
 
-        # 0.5. 국면 판단 (v79: KP_MA200_7d — KOSPI > 200일선, 7일 확인)
-        log("국면 판단 (KP_MA200_7d)", logfile)
+        # 0.5. 국면 판단 (v80: KP_MA170_8d)
         try:
             sys.path.insert(0, str(SCRIPT_DIR))
-            from regime_indicator import get_current_regime, get_regime_params
+            from regime_indicator import get_current_regime, get_regime_params, MA_PERIOD, CONFIRM_DAYS
+            log(f"국면 판단 (KP_MA{MA_PERIOD}_{CONFIRM_DAYS}d)", logfile)
             import pandas as pd
             from pathlib import Path
 
-            # KOSPI MA 계산 (v80: MA150 10d)
-            from regime_indicator import MA_PERIOD
+            # KOSPI MA 계산 (v80: MA170 8d)
             kospi_close = kospi_ma = kospi_ma200 = kospi_ret20 = None
             kospi_file = SCRIPT_DIR / 'data_cache' / 'kospi_yf.parquet'
             if kospi_file.exists():
@@ -529,7 +528,7 @@ def main():
             params = get_regime_params(_underlying)
             # 표시용 라벨은 최종 모드(cash 포함)
             display_params = get_regime_params(regime['mode'])
-            kp_str = f'KOSPI={kospi_close:.0f} MA200={kospi_ma200:.0f}' if kospi_close else '?'
+            kp_str = f'KOSPI={kospi_close:.0f} MA{MA_PERIOD}={kospi_ma:.0f}' if kospi_close else '?'
             ret_str = f' ret20={kospi_ret20*100:+.1f}%' if kospi_ret20 is not None else ''
             log(f"국면: {display_params['icon']} {display_params['label']} ({kp_str}{ret_str}, 신호={regime['signal']}, 전환={regime['switched']}, crash={regime.get('crash_active', False)})", logfile)
         except Exception as e:

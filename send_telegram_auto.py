@@ -338,18 +338,19 @@ def calc_system_returns(regime_info=None):
     # 날짜별 국면 판단 (v80: KP_MA170_8d)
     _kospi_file = Path(__file__).parent / 'data_cache' / 'kospi_yf.parquet'
     _kospi = pd.read_parquet(_kospi_file).iloc[:, 0].dropna() if _kospi_file.exists() else pd.Series()
-    _km200 = _kospi.rolling(200).mean() if len(_kospi) >= 200 else pd.Series()
+    from regime_indicator import MA_PERIOD, CONFIRM_DAYS
+    _kma = _kospi.rolling(MA_PERIOD).mean() if len(_kospi) >= MA_PERIOD else pd.Series()
 
     all_boost_dates = sorted(boost_data.keys())
     regime_by_date = {}
     _md = False; _stk = 0; _ss = False
     for d in all_boost_dates:
         ts = pd.Timestamp(d)
-        kv = _kospi.get(ts, None); mv = _km200.get(ts, None)
+        kv = _kospi.get(ts, None); mv = _kma.get(ts, None)
         s = (kv > mv) if kv is not None and mv is not None else _md
         if s == _ss: _stk += 1
         else: _stk = 1; _ss = s
-        if _stk >= 7 and _md != s: _md = s  # v79: 5d → 7d
+        if _stk >= CONFIRM_DAYS and _md != s: _md = s  # v80: MA170 8d (regime_indicator에서 로드)
         regime_by_date[d] = _md  # True=공격, False=방어
 
     # 날짜별 국면에 맞는 ranking + 파라미터 선택
@@ -842,8 +843,8 @@ def create_regime_switch_message(regime_mode, prev_mode=None):
             '',
             '■ 전략 성과 (지난 8년, 2018-07~2026-04)',
             '',
-            '  · 연평균 수익률  +123%  (같은 기간 코스피 +13%)',
-            '  · 최대 손실폭    -38%',
+            '  · 연평균 수익률  +138%  (같은 기간 코스피 +13%)',
+            '  · 최대 손실폭    -36%',
             '',
             '───────────────────────────',
             '본 서비스는 종목 선정을 돕는 참고 자료이며,',
@@ -887,12 +888,12 @@ def create_regime_switch_message(regime_mode, prev_mode=None):
         "  하락장에서는 '더 싸고, 덜 망가진 종목'이",
         '  상대적으로 잘 버티는 경향이 있습니다.',
         '  최근 6개월 주가 추세가 살아있으면서 밸류에이션 부담이 낮은',
-        '  종목 중심으로 7개에 분산합니다.',
+        '  종목 중심으로 5개에 분산합니다.',
         '',
         '■ 전략 성과 (지난 8년, 2018-07~2026-04)',
         '',
-        '  · 연평균 수익률  +123%  (같은 기간 코스피 +13%)',
-        '  · 최대 손실폭    -38%  (이전 버전 -55% 대비 크게 개선)',
+        '  · 연평균 수익률  +138%  (같은 기간 코스피 +13%)',
+        '  · 최대 손실폭    -36%  (이전 버전 대비 개선)',
         '',
         '───────────────────────────',
         '본 서비스는 종목 선정을 돕는 참고 자료이며,',
