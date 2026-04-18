@@ -1,12 +1,12 @@
-"""국면 판단 모듈 — KP_MA150_10d (v80, 2026-04-18)
+"""국면 판단 모듈 — KP_MA170_8d (v80, 2026-04-18)
 
 v80 전략:
   공격: V15Q0G55M30, 2f rev+oca(0.6/0.4), 12m, E3X6S3, sl-10%, tr-15%
   방어: V30Q15G15M40, 2f rev+oca(0.7/0.3), 6m-1m, E3X6S5, sl-10%, tr-15%
-  국면: KOSPI > MA150 10일 확인 → 공격, 미만 → 방어
+  국면: KOSPI > MA170 8일 확인 → 공격, 미만 → 방어
 
 변경사항 (v79 → v80, 2026-04-18):
-  - 국면: MA200 7d → MA150 10d (Phase 3 그리드서치, score 3.85→4.33)
+  - 국면: MA200 7d → MA170 8d (352조합 국면 탐색, 5지표 공정비교+촘촘탐색)
   - 공격 G서브: 3f(rev+oca+gp, 0.5/0.3/0.2) → 2f(rev+oca, 0.6/0.4) — gp_growth 제거
   - 공격 Q: 5→0 (Growth에 집중)
   - 공격 G: 50→55
@@ -51,10 +51,10 @@ def _save_state(state):
         json.dump(state, f, ensure_ascii=False, indent=2)
 
 
-MA_PERIOD = 150                 # v80: MA150 (v79: MA200)
+MA_PERIOD = 170                 # v80: MA170 (v79: MA200)
 
 def check_regime_signal(kospi_close=None, kospi_ma=None, kospi_ma200=None, **kwargs):
-    """KP_MA150: KOSPI > 150일 이동평균 = boost
+    """KP_MA170: KOSPI > 170일 이동평균 = boost
 
     kospi_close: KOSPI 종가
     kospi_ma: KOSPI MA(MA_PERIOD)일 이동평균
@@ -67,7 +67,7 @@ def check_regime_signal(kospi_close=None, kospi_ma=None, kospi_ma200=None, **kwa
 
 
 # v80 파라미터
-CONFIRM_DAYS = 10               # KP_MA150_10d (v79: 7d)
+CONFIRM_DAYS = 8                # KP_MA170_8d (v79: MA200 7d)
 
 
 def get_current_regime(kospi_close=None, kospi_ma200=None, kospi_ma=None, date_str=None, **kwargs):

@@ -71,7 +71,7 @@
   - Phase 4: 교차검증 45조합 × WF 4구간
 
 ### v80 핵심 변경 (v79 대비)
-- **국면: MA200 7d → MA150 10d** (Phase 3 그리드서치, score 3.85→4.33)
+- **국면: MA200 7d → MA170 10d** (Phase 3 그리드서치, score 3.85→4.33)
 - **공격 G서브: 3f(rev+oca+gp) → 2f(rev60+oca40)** — gp_growth 제거 → PIT 깨끗
 - **공격 Q: 5→0** (Quality 제거, Growth 집중)
 - **공격 G: 50→55**
@@ -79,22 +79,22 @@
 - 잠정실적 호환: 2f(매출+영업이익만) → PIT 위반 없이 잠정 통합 가능
 
 ### 2-tier 시스템
-1. **공격 (boost)** — KOSPI > MA150, **10일 확인** → Growth + Value
-2. **방어 (defense)** — KOSPI < MA150, **10일 확인** → Momentum + Value
+1. **공격 (boost)** — KOSPI > MA170, **8일 확인** → Growth + Value
+2. **방어 (defense)** — KOSPI < MA170, **8일 확인** → Momentum + Value
 
-### 국면 규칙 (KP_MA150_10d)
-- **KOSPI > 150일 이동평균** = 공격, 미만 = 방어
+### 국면 규칙 (KP_MA170_10d)
+- **KOSPI > 170일 이동평균** = 공격, 미만 = 방어
 - **10일 연속 확인** 후 boost↔defense 전환
 - 모든 전환 시 기존 포트폴리오 **전량 청산**
 
-### 공격 모드 (Boost) — KOSPI > MA150 (10일 확인)
+### 공격 모드 (Boost) — KOSPI > MA170 (8일 확인)
 - **V15 + Q0 + G55 + M30**
 - G 내부: 2팩터 **rev_z 60% + oca_z 40%**
 - 모멘텀: **12m**
 - 진입: rank ≤ **3**, 퇴출: WR > **6**, 슬롯 **3**
 - 손절: -10%, 트레일링: -15%
 
-### 방어 모드 (Defense) — KOSPI < MA150 (10일 확인)
+### 방어 모드 (Defense) — KOSPI < MA170 (8일 확인)
 - **V30 + Q15 + G15 + M40**
 - G 내부: 2팩터 **rev_z 70% + oca_z 30%**
 - 모멘텀: **6m-1m**
