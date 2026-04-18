@@ -1,16 +1,17 @@
-"""국면 판단 모듈 — KP_MA200_7d (v79, 2026-04-15)
+"""국면 판단 모듈 — KP_MA150_10d (v80, 2026-04-18)
 
-v79 전략:
-  공격: V15Q5G50M30, 3f rev+oca+gp(0.5/0.3/0.2), 12m, E3X6S3, sl-10%, tr-15%
-  방어: V30Q15G15M40, 2f rev+oca(0.7), 6m-1m, E3X6S7, sl-10%, tr-15%
-  국면: KOSPI > MA200 7일 확인 → 공격, 미만 → 방어
+v80 전략:
+  공격: V15Q0G55M30, 2f rev+oca(0.6/0.4), 12m, E3X6S3, sl-10%, tr-15%
+  방어: V30Q15G15M40, 2f rev+oca(0.7/0.3), 6m-1m, E3X6S5, sl-10%, tr-15%
+  국면: KOSPI > MA150 10일 확인 → 공격, 미만 → 방어
 
-변경사항 (v77.1 → v79, 2026-04-15):
-  - CONFIRM_DAYS 5 → 7 (whipsaw 감소)
-  - Crash Cash 제거 (v79 방어가 이미 충분히 견고)
-  - 공격: V5/G65/M30 12m-1m E7X8S3 → V15/G50/M30 12m E3X6S3
-  - 방어: 2f(rev_accel+op_margin, 0.5) → 2f(rev+oca, 0.7)
-  - 방어: V30/G10/M55 → V30/Q15/G15/M40
+변경사항 (v79 → v80, 2026-04-18):
+  - 국면: MA200 7d → MA150 10d (Phase 3 그리드서치, score 3.85→4.33)
+  - 공격 G서브: 3f(rev+oca+gp, 0.5/0.3/0.2) → 2f(rev+oca, 0.6/0.4) — gp_growth 제거
+  - 공격 Q: 5→0 (Growth에 집중)
+  - 공격 G: 50→55
+  - 방어 S: 7→5 (슬롯 축소)
+  - 잠정실적 PIT 호환: 2f(매출+영업이익만) → PIT 위반 없음
 
 사용:
     from regime_indicator import get_current_regime
@@ -50,23 +51,27 @@ def _save_state(state):
         json.dump(state, f, ensure_ascii=False, indent=2)
 
 
-def check_regime_signal(kospi_close=None, kospi_ma200=None, **kwargs):
-    """KP_MA200: KOSPI > 200일 이동평균 = boost
+MA_PERIOD = 150                 # v80: MA150 (v79: MA200)
+
+def check_regime_signal(kospi_close=None, kospi_ma=None, kospi_ma200=None, **kwargs):
+    """KP_MA150: KOSPI > 150일 이동평균 = boost
 
     kospi_close: KOSPI 종가
-    kospi_ma200: KOSPI 200일 이동평균
+    kospi_ma: KOSPI MA(MA_PERIOD)일 이동평균
+    kospi_ma200: 호환용 (v79 이전 코드)
     """
-    if kospi_close is not None and kospi_ma200 is not None:
-        return 'boost' if kospi_close > kospi_ma200 else 'defense'
+    ma_val = kospi_ma if kospi_ma is not None else kospi_ma200
+    if kospi_close is not None and ma_val is not None:
+        return 'boost' if kospi_close > ma_val else 'defense'
     return 'defense'
 
 
-# v79 파라미터
-CONFIRM_DAYS = 7                # KP_MA200_7d (v77.1의 5d에서 변경)
+# v80 파라미터
+CONFIRM_DAYS = 10               # KP_MA150_10d (v79: 7d)
 
 
-def get_current_regime(kospi_close=None, kospi_ma200=None, date_str=None, **kwargs):
-    """현재 국면 판단 (KP_MA200_7d).
+def get_current_regime(kospi_close=None, kospi_ma200=None, kospi_ma=None, date_str=None, **kwargs):
+    """현재 국면 판단 (KP_MA150_10d).
 
     Args:
         kospi_close: KOSPI 종가
@@ -81,7 +86,7 @@ def get_current_regime(kospi_close=None, kospi_ma200=None, date_str=None, **kwar
     prev_mode = state['mode']
 
     # 당일 신호 (boost/defense)
-    signal = check_regime_signal(kospi_close=kospi_close, kospi_ma200=kospi_ma200)
+    signal = check_regime_signal(kospi_close=kospi_close, kospi_ma=kospi_ma, kospi_ma200=kospi_ma200)
 
     # 연속 카운트
     if signal == state['streak_mode']:
@@ -126,41 +131,40 @@ def get_current_regime(kospi_close=None, kospi_ma200=None, date_str=None, **kwar
 
 
 def get_regime_params(mode):
-    """국면에 따른 전략 파라미터 반환 (v79).
+    """국면에 따른 전략 파라미터 반환 (v80).
 
     mode: 'boost' / 'defense'
-    (v79: 'cash' 모드 제거. 호출 시 전달되면 defense로 취급)
 
     Returns:
         dict: V_W, Q_W, G_W, M_W, G_REV, ENTRY_RANK, EXIT_RANK, MAX_SLOTS
     """
     if mode == 'boost':
         return {
-            'V_W': 0.15, 'Q_W': 0.05, 'G_W': 0.50, 'M_W': 0.30,
-            'G_REV': 0.0,  # 3팩터 사용 시 무시됨
+            'V_W': 0.15, 'Q_W': 0.00, 'G_W': 0.55, 'M_W': 0.30,
+            'G_REV': 0.6,                   # 2팩터 rev 비중 60% (v79: 3팩터 → 2팩터)
             'G_SUB1': 'rev_z',
             'G_SUB2': 'oca_z',
-            'G_SUB3': 'gp_growth_z',       # 3팩터: 매출성장+영업이익변화+매출총이익성장
-            'G_W1': 0.5, 'G_W2': 0.3, 'G_W3': 0.2,
-            'MOM_PERIOD': '12m',            # v77.1의 12m-1m → 12m (최근 1개월 포함)
+            'G_SUB3': None,                 # v80: 2팩터 (gp_growth 제거)
+            'G_W1': None, 'G_W2': None, 'G_W3': None,
+            'MOM_PERIOD': '12m',
             'ENTRY_RANK': 3, 'EXIT_RANK': 6, 'MAX_SLOTS': 3,
             'STOP_LOSS': -0.10,
             'TRAILING_STOP': -0.15,
             'CORR_THRESHOLD': None,
             'USE_REV_ACCEL': False,
-            'label': '공격 모드 (Growth 50%)',
+            'label': '공격 모드 (Growth 55%)',
             'icon': '📈',
         }
     else:  # defense
         return {
             'V_W': 0.30, 'Q_W': 0.15, 'G_W': 0.15, 'M_W': 0.40,
-            'G_REV': 0.7,                   # 2팩터 rev 비중 70% (v77.1의 0.5에서 변경)
-            'G_SUB1': 'rev_z',              # v77.1의 rev_accel_z → rev_z
-            'G_SUB2': 'oca_z',              # v77.1의 op_margin_z → oca_z
+            'G_REV': 0.7,                   # 2팩터 rev 비중 70%
+            'G_SUB1': 'rev_z',
+            'G_SUB2': 'oca_z',
             'G_SUB3': None,                 # 2팩터
             'G_W1': None, 'G_W2': None, 'G_W3': None,
             'MOM_PERIOD': '6m-1m',
-            'ENTRY_RANK': 3, 'EXIT_RANK': 6, 'MAX_SLOTS': 7,
+            'ENTRY_RANK': 3, 'EXIT_RANK': 6, 'MAX_SLOTS': 5,  # v80: 7→5
             'STOP_LOSS': -0.10,
             'TRAILING_STOP': -0.15,
             'CORR_THRESHOLD': None,

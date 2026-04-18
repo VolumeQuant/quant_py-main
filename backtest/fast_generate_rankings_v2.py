@@ -216,6 +216,24 @@ def precompute_growth_factors(fs_dict, trading_dates):
     return growth_lookup
 
 
+def _weighted_ttm_sum(vals, quarters, weights=None):
+    """TTM 합산 — 가중/균등 지원. quarters[0]=최신, quarters[-1]=가장 오래된."""
+    if weights is None:
+        return sum(vals[q] for q in quarters)
+    # quarters와 weights 길이 맞춤 (quarters가 짧으면 앞에서부터)
+    n = min(len(quarters), len(weights))
+    raw = sum(vals[quarters[i]] * weights[i] for i in range(n))
+    w_sum = sum(weights[:n])
+    return raw / w_sum if w_sum > 0 else 0  # 가중 합산 후 정규화
+
+
+# TTM 가중치: 환경변수 TTM_WEIGHTS=0.4,0.3,0.2,0.1 (미설정=균등)
+_ttm_weights_env = os.environ.get('TTM_WEIGHTS', '')
+TTM_WEIGHTS = [float(x) for x in _ttm_weights_env.split(',') if x.strip()] if _ttm_weights_env else None
+if TTM_WEIGHTS:
+    print(f'[TTM] 가중 TTM 적용: {TTM_WEIGHTS}')
+
+
 def _compute_ticker_growth_events(ticker, fs_df, rev_account='매출액'):
     """단일 종목의 growth 6-서브팩터 변경 이벤트 — v75 확장
 
@@ -287,8 +305,10 @@ def _compute_ticker_growth_events(ticker, fs_df, rev_account='매출액'):
                 # 갭 체크: 18개월 이상 갭이면 TTM 무효
                 gap_days = (recent_4[-1] - prev_4[0]).days
                 if gap_days <= 450:
-                    r4 = sum(q_vals[(d, rev_account)] for d in recent_4)
-                    p4 = sum(q_vals[(d, rev_account)] for d in prev_4)
+                    _rv = {d: q_vals[(d, rev_account)] for d in recent_4}
+                    _pv = {d: q_vals[(d, rev_account)] for d in prev_4}
+                    r4 = _weighted_ttm_sum(_rv, recent_4, TTM_WEIGHTS)
+                    p4 = _weighted_ttm_sum(_pv, prev_4, TTM_WEIGHTS)
                     if p4 > 0:
                         rev_yoy = (r4 / p4 - 1) * 100
 
@@ -299,8 +319,10 @@ def _compute_ticker_growth_events(ticker, fs_df, rev_account='매출액'):
                 prev_4_op = op_avail[4:8]
                 gap_days_op = (recent_4_op[-1] - prev_4_op[0]).days
                 if gap_days_op <= 550:
-                    op_r = sum(q_vals[(d, '영업이익')] for d in recent_4_op)
-                    op_p = sum(q_vals[(d, '영업이익')] for d in prev_4_op)
+                    _ov_r = {d: q_vals[(d, '영업이익')] for d in recent_4_op}
+                    _ov_p = {d: q_vals[(d, '영업이익')] for d in prev_4_op}
+                    op_r = _weighted_ttm_sum(_ov_r, recent_4_op, TTM_WEIGHTS)
+                    op_p = _weighted_ttm_sum(_ov_p, prev_4_op, TTM_WEIGHTS)
                     prev_asset = None
                     for d in sorted(prev_4_op):
                         a = q_vals.get((d, '자산'))
@@ -323,8 +345,10 @@ def _compute_ticker_growth_events(ticker, fs_df, rev_account='매출액'):
             gp_yoy = None
             gp_avail = sorted([d for d in gp_dates if d <= qd], reverse=True)
             if len(gp_avail) >= 8:
-                r4 = sum(q_vals[(d, '매출총이익')] for d in gp_avail[:4])
-                p4 = sum(q_vals[(d, '매출총이익')] for d in gp_avail[4:8])
+                _gv_r = {d: q_vals[(d, '매출총이익')] for d in gp_avail[:4]}
+                _gv_p = {d: q_vals[(d, '매출총이익')] for d in gp_avail[4:8]}
+                r4 = _weighted_ttm_sum(_gv_r, gp_avail[:4], TTM_WEIGHTS)
+                p4 = _weighted_ttm_sum(_gv_p, gp_avail[4:8], TTM_WEIGHTS)
                 if p4 > 0:
                     gp_yoy = (r4 / p4 - 1) * 100
 
@@ -332,14 +356,18 @@ def _compute_ticker_growth_events(ticker, fs_df, rev_account='매출액'):
             op_margin_chg = None
             if len(op_avail) >= 4 and len(rev_avail) >= 4:
                 # 현재 OPM (TTM)
-                op_r = sum(q_vals[(d, '영업이익')] for d in op_avail[:4])
-                rev_r = sum(q_vals.get((d, rev_account), 0) for d in rev_avail[:4])
+                _om_or = {d: q_vals[(d, '영업이익')] for d in op_avail[:4]}
+                _om_rr = {d: q_vals.get((d, rev_account), 0) for d in rev_avail[:4]}
+                op_r = _weighted_ttm_sum(_om_or, op_avail[:4], TTM_WEIGHTS)
+                rev_r = _weighted_ttm_sum(_om_rr, rev_avail[:4], TTM_WEIGHTS)
                 if rev_r > 0:
                     opm_now = op_r / rev_r
                     # 4분기 전 OPM
                     if len(op_avail) >= 8 and len(rev_avail) >= 8:
-                        op_p = sum(q_vals[(d, '영업이익')] for d in op_avail[4:8])
-                        rev_p = sum(q_vals.get((d, rev_account), 0) for d in rev_avail[4:8])
+                        _om_op = {d: q_vals[(d, '영업이익')] for d in op_avail[4:8]}
+                        _om_rp = {d: q_vals.get((d, rev_account), 0) for d in rev_avail[4:8]}
+                        op_p = _weighted_ttm_sum(_om_op, op_avail[4:8], TTM_WEIGHTS)
+                        rev_p = _weighted_ttm_sum(_om_rp, rev_avail[4:8], TTM_WEIGHTS)
                         if rev_p > 0:
                             opm_prev = op_p / rev_p
                             op_margin_chg = (opm_now - opm_prev) * 100  # %p
@@ -348,8 +376,10 @@ def _compute_ticker_growth_events(ticker, fs_df, rev_account='매출액'):
             cfo_yoy = None
             cfo_avail = sorted([d for d in cfo_dates if d <= qd], reverse=True)
             if len(cfo_avail) >= 8:
-                r4 = sum(q_vals[(d, '영업활동으로인한현금흐름')] for d in cfo_avail[:4])
-                p4 = sum(q_vals[(d, '영업활동으로인한현금흐름')] for d in cfo_avail[4:8])
+                _cv_r = {d: q_vals[(d, '영업활동으로인한현금흐름')] for d in cfo_avail[:4]}
+                _cv_p = {d: q_vals[(d, '영업활동으로인한현금흐름')] for d in cfo_avail[4:8]}
+                r4 = _weighted_ttm_sum(_cv_r, cfo_avail[:4], TTM_WEIGHTS)
+                p4 = _weighted_ttm_sum(_cv_p, cfo_avail[4:8], TTM_WEIGHTS)
                 if p4 > 0:
                     cfo_yoy = (r4 / p4 - 1) * 100
 

@@ -497,26 +497,29 @@ def main():
             import pandas as pd
             from pathlib import Path
 
-            # KOSPI MA200 계산 (v79: Crash Cash 제거, ret20 불필요하나 호환 위해 유지)
-            kospi_close = kospi_ma200 = kospi_ret20 = None
-            kospi_file = SCRIPT_DIR / 'data_cache' / 'kospi_yf.parquet'  # 절대경로
+            # KOSPI MA 계산 (v80: MA150 10d)
+            from regime_indicator import MA_PERIOD
+            kospi_close = kospi_ma = kospi_ma200 = kospi_ret20 = None
+            kospi_file = SCRIPT_DIR / 'data_cache' / 'kospi_yf.parquet'
             if kospi_file.exists():
                 _df = pd.read_parquet(kospi_file)
                 if 'kospi' in _df.columns:
                     kp = _df.iloc[:, 0].fillna(_df['kospi']).dropna()
                 else:
                     kp = _df.iloc[:, 0].dropna()
-                if len(kp) >= 200:
+                if len(kp) >= max(MA_PERIOD, 200):
                     kospi_close = float(kp.iloc[-1])
-                    kospi_ma200 = float(kp.rolling(200).mean().iloc[-1])
+                    kospi_ma = float(kp.rolling(MA_PERIOD).mean().iloc[-1])
+                    kospi_ma200 = float(kp.rolling(200).mean().iloc[-1])  # 호환용
                 if len(kp) >= 21:
                     kospi_ret20 = float(kp.iloc[-1] / kp.iloc[-21] - 1)
-                log(f"KOSPI 로드: close={kospi_close} ma200={kospi_ma200} ret20={kospi_ret20}", logfile)
+                log(f"KOSPI 로드: close={kospi_close} ma{MA_PERIOD}={kospi_ma} ret20={kospi_ret20}", logfile)
             else:
                 log(f"KOSPI 파일 없음: {kospi_file}", logfile)
 
             regime = get_current_regime(
-                kospi_close=kospi_close, kospi_ma200=kospi_ma200,
+                kospi_close=kospi_close, kospi_ma=kospi_ma,
+                kospi_ma200=kospi_ma200,
                 kospi_ret20=kospi_ret20,
                 date_str=today
             )
