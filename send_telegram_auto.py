@@ -335,7 +335,7 @@ def calc_system_returns(regime_info=None):
     # reranking 불필요 — ranking 파일이 이미 현재 버전 파라미터로 재계산됨
     # 버전 변경 시 전체 파일 재계산 필수 (feedback_full_rerank_on_version_change.md)
 
-    # 날짜별 국면 판단 (v79: KP_MA200_7d)
+    # 날짜별 국면 판단 (v80: KP_MA170_8d)
     _kospi_file = Path(__file__).parent / 'data_cache' / 'kospi_yf.parquet'
     _kospi = pd.read_parquet(_kospi_file).iloc[:, 0].dropna() if _kospi_file.exists() else pd.Series()
     _km200 = _kospi.rolling(200).mean() if len(_kospi) >= 200 else pd.Series()
@@ -811,8 +811,8 @@ def create_regime_switch_message(regime_mode, prev_mode=None):
             '',
             '■ 오늘의 판단',
             '',
-            '  코스피가 200일 이동평균선 위에서',
-            '  7거래일 연속 마감했습니다.',
+            '  코스피가 170일 이동평균선 위에서',
+            '  8거래일 연속 마감했습니다.',
             "  시장이 단기 반등이 아닌 '상승 추세'에 들어섰다고 봅니다.",
             '',
             '  이에 따라 전략을 방어 모드에서 공격 모드로 전환합니다.',
@@ -858,8 +858,8 @@ def create_regime_switch_message(regime_mode, prev_mode=None):
         '',
         '■ 오늘의 판단',
         '',
-        '  코스피가 200일 이동평균선 아래에서',
-        '  7거래일 연속 마감했습니다.',
+        '  코스피가 170일 이동평균선 아래에서',
+        '  8거래일 연속 마감했습니다.',
         "  일시적 조정이 아닌 '하락 추세'에 들어섰다고 봅니다.",
         '',
         '  이에 따라 전략을 공격 모드에서 방어 모드로 전환합니다.',
