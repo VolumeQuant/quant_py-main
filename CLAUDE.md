@@ -71,7 +71,7 @@
   - Phase 4: 교차검증 45조합 × WF 4구간
 
 ### v80 핵심 변경 (v79 대비)
-- **국면: MA200 7d → MA170 10d** (Phase 3 그리드서치, score 3.85→4.33)
+- **국면: MA200 7d → MA170 8d** (Phase 3 그리드서치, score 3.85→4.33)
 - **공격 G서브: 3f(rev+oca+gp) → 2f(rev60+oca40)** — gp_growth 제거 → PIT 깨끗
 - **공격 Q: 5→0** (Quality 제거, Growth 집중)
 - **공격 G: 50→55**
@@ -82,9 +82,9 @@
 1. **공격 (boost)** — KOSPI > MA170, **8일 확인** → Growth + Value
 2. **방어 (defense)** — KOSPI < MA170, **8일 확인** → Momentum + Value
 
-### 국면 규칙 (KP_MA170_10d)
+### 국면 규칙 (KP_MA170_8d)
 - **KOSPI > 170일 이동평균** = 공격, 미만 = 방어
-- **10일 연속 확인** 후 boost↔defense 전환
+- **8일 연속 확인** 후 boost↔defense 전환
 - 모든 전환 시 기존 포트폴리오 **전량 청산**
 
 ### 공격 모드 (Boost) — KOSPI > MA170 (8일 확인)
