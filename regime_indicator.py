@@ -150,6 +150,7 @@ def get_regime_params(mode):
             'ENTRY_RANK': 3, 'EXIT_RANK': 6, 'MAX_SLOTS': 3,
             'STOP_LOSS': -0.10,
             'TRAILING_STOP': -0.15,
+            'TS_COOLDOWN': 2,               # v80.1: 트레일링 퇴출 후 2거래일 재진입 금지
             'CORR_THRESHOLD': None,
             'USE_REV_ACCEL': False,
             'label': '공격 모드 (Growth 55%)',
@@ -167,6 +168,7 @@ def get_regime_params(mode):
             'ENTRY_RANK': 3, 'EXIT_RANK': 6, 'MAX_SLOTS': 5,  # v80: 7→5
             'STOP_LOSS': -0.10,
             'TRAILING_STOP': -0.15,
+            'TS_COOLDOWN': 2,               # v80.1: 트레일링 퇴출 후 2거래일 재진입 금지
             'CORR_THRESHOLD': None,
             'USE_REV_ACCEL': False,
             'label': '방어 모드 (Momentum 40%)',
