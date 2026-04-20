@@ -1234,10 +1234,10 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         name = s['name']
         sector = _SECTOR_SHORT.get(s.get('sector', '기타'), s.get('sector', '기타'))
         status = s['status']
-        # 궤적 = 각 날짜 cr (당일 강도 체감)
-        r0 = idx  # T-0: 리스트 순번 = wr 순위 (정렬 일치 보장)
-        r1 = s.get('_r1', '-')  # T-1 당일 cr
-        r2 = s.get('_r2', '-')  # T-2 당일 cr
+        # 궤적 = 각 날짜 cr-rank (당일 순수 실력)
+        r0 = s.get('_r0', idx)  # T-0 cr-rank
+        r1 = s.get('_r1', '-')  # T-1 cr-rank
+        r2 = s.get('_r2', '-')  # T-2 cr-rank
         w_rank_val = s.get('weighted_rank', idx)
         score_100 = max(5.0, min(100.0, 100.0 - (w_rank_val - _min_wr) * 5))
         score_disp = f'{score_100:.1f}'
