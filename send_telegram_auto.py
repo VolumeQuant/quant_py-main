@@ -272,7 +272,8 @@ def _rerank_and_wr(ranking_data, prev1_data, prev2_data, mode):
             c1 = cr1_map.get(r['ticker'], PENALTY)
             c2 = cr2_map.get(r['ticker'], PENALTY)
             r['weighted_rank'] = round(c0 * 0.5 + c1 * 0.3 + c2 * 0.2, 1)
-        rankings.sort(key=lambda x: x['weighted_rank'])
+        # 동점 tie-breaker: cr 작은 쪽(오늘 더 강한 종목) 우선 (v80)
+        rankings.sort(key=lambda x: (x['weighted_rank'], x.get('composite_rank', 999)))
         for i, r in enumerate(rankings):
             r['rank'] = i + 1
 
@@ -488,8 +489,10 @@ def calc_system_returns(regime_info=None):
             cr2 = top20_t2[tk].get('composite_rank', top20_t2[tk]['rank'])
             wr = cr0 * 0.5 + cr1 * 0.3 + cr2 * 0.2
             verified.append({'ticker': tk, 'weighted_rank': wr,
+                             'composite_rank': cr0,
                              'price': top20_t0[tk].get('price', 0)})
-        verified.sort(key=lambda x: x['weighted_rank'])
+        # 동점 tie-breaker: cr 작은 쪽(오늘 더 강한 종목) 우선 (v80)
+        verified.sort(key=lambda x: (x['weighted_rank'], x['composite_rank']))
 
         # 진입: 상위 entry_rank개 (국면별)
         for v in verified[:_entry_rank]:
@@ -1201,7 +1204,8 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         s['_r2'] = t2_cr.get(s['ticker'], '-')
 
     # v70: weighted_rank 순 정렬 (rank 기반 진입/이탈과 일관)
-    sorted_pipeline = sorted(pipeline, key=lambda x: (x.get('weighted_rank', x['rank']), -(score_100_map or {}).get(x['ticker'], 0)))
+    # v80: 동점 tie-breaker를 cr 작은 쪽(오늘 더 강한 종목) 우선 — 파일 생성/궤적 맵과 일치
+    sorted_pipeline = sorted(pipeline, key=lambda x: (x.get('weighted_rank', x['rank']), x.get('composite_rank', 999)))
 
     # 상위 WATCHLIST_N개만 표시
     display_pipeline = sorted_pipeline[:WATCHLIST_N]
@@ -1532,11 +1536,12 @@ def main():
         print(f"  ✅ 검증 종목: {len(verified_picks)}개")
 
         # wr 정렬 후 정수 순위 맵 (main용)
+        # v80: 동점 tie-breaker는 cr 작은 쪽 우선 (궤적/Top 20 표시와 일치)
         def _wr_int_rank_map_main(rankings):
             if not rankings:
                 return {}
             rlist = rankings.get('rankings', [])
-            sorted_by_wr = sorted(rlist, key=lambda r: r.get('weighted_rank', 999))
+            sorted_by_wr = sorted(rlist, key=lambda r: (r.get('weighted_rank', 999), r.get('composite_rank', 999)))
             return {r['ticker']: i + 1 for i, r in enumerate(sorted_by_wr)}
 
         t0_wr_rank_main = _wr_int_rank_map_main(rankings_t0)
@@ -1639,7 +1644,8 @@ def main():
     if market_max_picks == 0:
         picks = []
     else:
-        picks = sorted(all_candidates, key=lambda x: x.get('weighted_rank', 999))[:_ENTRY]
+        # v80: 동점 tie-breaker는 cr 작은 쪽 우선 (매매 판단 일관성)
+        picks = sorted(all_candidates, key=lambda x: (x.get('weighted_rank', 999), x.get('composite_rank', 999)))[:_ENTRY]
         picks = picks[:_SLOTS]
     if picks:
         stock_weight = round(100 / len(picks))
