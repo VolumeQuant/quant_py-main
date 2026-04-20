@@ -1249,12 +1249,8 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
             lines.append('── 매도 기준선 ──')
             exit_line_shown = True
 
-        if status == '✅':
-            lines.append(f'{status} {idx}. {name}({sector}) {r2}→{r1}→{r0}위 · {score_disp}점')
-        elif status == '⏳':
-            lines.append(f'{status} {idx}. {name}({sector}) -→{r1}→{r0}위 · {score_disp}점')
-        else:
-            lines.append(f'{status} {idx}. {name}({sector}) -→-→{r0}위 · {score_disp}점')
+        # 궤적: cr-rank 그대로 표시 (없으면 "-")
+        lines.append(f'{status} {idx}. {name}({sector}) {r2}→{r1}→{r0}위 · {score_disp}점')
 
     # ── 이탈 섹션 (사유별 묶기) ──
     if exited:

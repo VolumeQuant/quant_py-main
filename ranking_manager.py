@@ -338,18 +338,23 @@ def get_stock_status(rankings_t0, rankings_t1=None, rankings_t2=None, top_n=20):
     all_t1 = {}
     top_t1_set = set()
     if rankings_t1:
-        for item in rankings_t1.get('rankings', []):
+        rlist_t1 = rankings_t1.get('rankings', [])
+        for item in rlist_t1:
             all_t1[item['ticker']] = item
-            if item['rank'] <= top_n:
-                top_t1_set.add(item['ticker'])
+        # cr 기준 Top N (당일 순수 실력 기준 ✅/⏳/🆕 판별)
+        sorted_t1 = sorted(rlist_t1, key=lambda r: r.get('composite_rank', 999))
+        for item in sorted_t1[:top_n]:
+            top_t1_set.add(item['ticker'])
 
     all_t2 = {}
     top_t2_set = set()
     if rankings_t2:
-        for item in rankings_t2.get('rankings', []):
+        rlist_t2 = rankings_t2.get('rankings', [])
+        for item in rlist_t2:
             all_t2[item['ticker']] = item
-            if item['rank'] <= top_n:
-                top_t2_set.add(item['ticker'])
+        sorted_t2 = sorted(rlist_t2, key=lambda r: r.get('composite_rank', 999))
+        for item in sorted_t2[:top_n]:
+            top_t2_set.add(item['ticker'])
 
     # 모든 T-0 종목에 대해 가중순위 계산
     scored = []
