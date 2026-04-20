@@ -1032,18 +1032,17 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
     lines.append('📌 <b>종목 선정 근거</b>')
     lines.append('━━━━━━━━━━━━━━━')
 
-    # wr 정렬 후 정수 순위 맵 (Signal용) — wr 기반 환원 (매매 로직과 일치)
-    # 동점은 tie-breaker(cr 작은 쪽) 자동 해결
-    def _wr_int_rank_map_sig(rankings):
+    # cr 정렬 후 정수 순위 맵 (Signal 궤적용) — 당일 순수 실력 표시
+    def _cr_int_rank_map_sig(rankings):
         if not rankings:
             return {}
         rlist = rankings.get('rankings', [])
-        sorted_by_wr = sorted(rlist, key=lambda r: (r.get('weighted_rank', 999), r.get('composite_rank', 999)))
-        return {r['ticker']: i + 1 for i, r in enumerate(sorted_by_wr)}
+        sorted_by_cr = sorted(rlist, key=lambda r: r.get('composite_rank', 999))
+        return {r['ticker']: i + 1 for i, r in enumerate(sorted_by_cr)}
 
-    t0_cr_sig = _wr_int_rank_map_sig(rankings_t0)
-    t1_cr_sig = _wr_int_rank_map_sig(rankings_t1)
-    t2_cr_sig = _wr_int_rank_map_sig(rankings_t2)
+    t0_cr_sig = _cr_int_rank_map_sig(rankings_t0)
+    t1_cr_sig = _cr_int_rank_map_sig(rankings_t1)
+    t2_cr_sig = _cr_int_rank_map_sig(rankings_t2)
 
     for i, pick in enumerate(picks):
         ticker = pick['ticker']
@@ -1055,7 +1054,7 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         price_str = f'₩{price:,.0f}' if price else ''
         lines.append(f'<b>{i+1}. {name}({ticker}) {sector} · {price_str}</b>')
 
-        # 궤적 = 각 날짜 cr (당일 강도 체감). 점수 = 선형 wr 차이 반영
+        # 궤적 = 각 날짜 cr-rank (당일 순수 실력). 점수 = 선형 wr 차이 반영
         r0 = t0_cr_sig.get(ticker, '-')
         r1 = t1_cr_sig.get(ticker, '-')
         r2 = t2_cr_sig.get(ticker, '-')
@@ -1185,18 +1184,17 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         lines.append('데이터 없음')
         return '\n'.join(lines)
 
-    # 궤적 = wr 정렬 후 정수 순위 (매매 로직 wr과 일치)
-    # 동점은 tie-breaker(cr 작은 쪽) 자동 해결
-    def _wr_int_rank_map(rankings):
+    # 궤적 = cr 정렬 후 정수 순위 (당일 순수 실력 표시)
+    def _cr_int_rank_map(rankings):
         if not rankings:
             return {}
         rlist = rankings.get('rankings', [])
-        sorted_by_wr = sorted(rlist, key=lambda r: (r.get('weighted_rank', 999), r.get('composite_rank', 999)))
-        return {r['ticker']: i + 1 for i, r in enumerate(sorted_by_wr)}
+        sorted_by_cr = sorted(rlist, key=lambda r: r.get('composite_rank', 999))
+        return {r['ticker']: i + 1 for i, r in enumerate(sorted_by_cr)}
 
-    t0_cr = _wr_int_rank_map(rankings_t0)
-    t1_cr = _wr_int_rank_map(rankings_t1)
-    t2_cr = _wr_int_rank_map(rankings_t2)
+    t0_cr = _cr_int_rank_map(rankings_t0)
+    t1_cr = _cr_int_rank_map(rankings_t1)
+    t2_cr = _cr_int_rank_map(rankings_t2)
 
     for s in pipeline:
         s['_r0'] = t0_cr.get(s['ticker'], '-')
@@ -1535,25 +1533,24 @@ def main():
         verified_picks.sort(key=lambda x: score_100_pre.get(x['ticker'], 0), reverse=True)
         print(f"  ✅ 검증 종목: {len(verified_picks)}개")
 
-        # wr 정렬 후 정수 순위 맵 (main용)
-        # v80: 동점 tie-breaker는 cr 작은 쪽 우선 (궤적/Top 20 표시와 일치)
-        def _wr_int_rank_map_main(rankings):
+        # cr 정렬 후 정수 순위 맵 (main 궤적용) — 당일 순수 실력 표시
+        def _cr_int_rank_map_main(rankings):
             if not rankings:
                 return {}
             rlist = rankings.get('rankings', [])
-            sorted_by_wr = sorted(rlist, key=lambda r: (r.get('weighted_rank', 999), r.get('composite_rank', 999)))
-            return {r['ticker']: i + 1 for i, r in enumerate(sorted_by_wr)}
+            sorted_by_cr = sorted(rlist, key=lambda r: r.get('composite_rank', 999))
+            return {r['ticker']: i + 1 for i, r in enumerate(sorted_by_cr)}
 
-        t0_wr_rank_main = _wr_int_rank_map_main(rankings_t0)
-        t1_wr_rank_main = _wr_int_rank_map_main(rankings_t1)
-        t2_wr_rank_main = _wr_int_rank_map_main(rankings_t2)
+        t0_cr_rank_main = _cr_int_rank_map_main(rankings_t0)
+        t1_cr_rank_main = _cr_int_rank_map_main(rankings_t1)
+        t2_cr_rank_main = _cr_int_rank_map_main(rankings_t2)
 
         for candidate in verified_picks:
             tech = get_stock_technical(candidate['ticker'], BASE_DATE)
             candidate['_tech'] = tech
-            candidate['rank_t0'] = t0_wr_rank_main.get(candidate['ticker'], candidate.get('composite_rank', candidate['rank']))
-            candidate['rank_t1'] = t1_wr_rank_main.get(candidate['ticker'], '-')
-            candidate['rank_t2'] = t2_wr_rank_main.get(candidate['ticker'], '-')
+            candidate['rank_t0'] = t0_cr_rank_main.get(candidate['ticker'], candidate.get('composite_rank', candidate['rank']))
+            candidate['rank_t1'] = t1_cr_rank_main.get(candidate['ticker'], '-')
+            candidate['rank_t2'] = t2_cr_rank_main.get(candidate['ticker'], '-')
             daily_chg = (tech or {}).get('daily_chg', 0)
 
             if daily_chg <= -5:
