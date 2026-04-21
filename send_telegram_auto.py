@@ -993,14 +993,14 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
             ky = sr.get('kospi_ytd')
             kd = sr.get('kosdaq_ytd')
             idx = f' (코스피 {ky:+.1f}% 코스닥 {kd:+.1f}%)' if ky is not None and kd is not None else (f' (코스피 {ky:+.1f}%)' if ky is not None else '')
-            lines.append(f'    올해 {sr["ytd_pct"]:+.1f}%{idx}')
+            lines.append(f'올해 {sr["ytd_pct"]:+.1f}%{idx}')
         if sr.get('month_pct') is not None:
             km = sr.get('kospi_month')
             kmd = sr.get('kosdaq_month')
             idx = f' (코스피 {km:+.1f}% 코스닥 {kmd:+.1f}%)' if km is not None and kmd is not None else (f' (코스피 {km:+.1f}%)' if km is not None else '')
-            lines.append(f'    1개월 {sr["month_pct"]:+.1f}%{idx}')
+            lines.append(f'1개월 {sr["month_pct"]:+.1f}%{idx}')
         if sr.get('ytd_pct') is None and sr.get('month_pct') is None:
-            lines.append(f'    누적 {sr["system_pct"]:+.1f}% (코스피 {sr["kospi_pct"]:+.1f}%)')
+            lines.append(f'누적 {sr["system_pct"]:+.1f}% (코스피 {sr["kospi_pct"]:+.1f}%)')
 
     n = len(picks)
     lines.append('')
