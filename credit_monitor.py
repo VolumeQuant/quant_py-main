@@ -30,6 +30,10 @@ import time
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
+from pathlib import Path
+
+# HY 장기 캐시: FRED가 2026-04부터 BAMLH0A0HYM2를 최근 3년으로 제한 → 로컬 캐시 유지
+_HY_CACHE_PATH = Path(__file__).parent / 'data_cache' / 'hy_spread.parquet'
 
 
 def _fetch_fred_data(series_id: str, start_date: str, end_date: str, retries: int = 3) -> pd.DataFrame:
@@ -79,6 +83,37 @@ def _fetch_fred_data(series_id: str, start_date: str, end_date: str, retries: in
                 raise
 
 
+def _load_merge_save_hy_cache(fred_df: pd.DataFrame) -> pd.DataFrame:
+    """로컬 장기 캐시 + FRED 최근분 병합 후 캐시 갱신
+
+    FRED는 2026-04부터 BAMLH0A0HYM2를 최근 3년으로 제한.
+    1996년부터의 장기 데이터는 로컬 parquet으로 유지하고,
+    매일 FRED 최근분(3년)을 받아 겹치는 구간을 덮어쓰며 꼬리를 연장한다.
+    """
+    try:
+        cache_df = pd.read_parquet(_HY_CACHE_PATH) if _HY_CACHE_PATH.exists() else None
+    except Exception as e:
+        print(f"  [HY] 캐시 로드 실패: {e} — 신규 생성")
+        cache_df = None
+
+    if cache_df is None or cache_df.empty:
+        merged = fred_df.copy()
+    else:
+        # FRED 최근분으로 겹치는 구간 업데이트 + 신규 꼬리 연장
+        merged = cache_df.copy()
+        for ts, val in fred_df['hy_spread'].items():
+            merged.loc[ts, 'hy_spread'] = val
+        merged = merged.sort_index()
+
+    try:
+        _HY_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        merged.to_parquet(_HY_CACHE_PATH)
+    except Exception as e:
+        print(f"  [HY] 캐시 저장 실패 (계속 진행): {e}")
+
+    return merged
+
+
 def fetch_hy_quadrant():
     """US HY Spread Verdad 4분면 + 해빙 신호 (FRED BAMLH0A0HYM2)
 
@@ -88,15 +123,18 @@ def fetch_hy_quadrant():
     try:
         end_date = datetime.now().strftime('%Y-%m-%d')
         start_date = (datetime.now() - timedelta(days=365 * 11)).strftime('%Y-%m-%d')
-        df = _fetch_fred_data('BAMLH0A0HYM2', start_date, end_date)
+        fred_raw = _fetch_fred_data('BAMLH0A0HYM2', start_date, end_date)
 
-        df.columns = ['date', 'hy_spread']
-        df = df.dropna(subset=['hy_spread'])
-        df['hy_spread'] = pd.to_numeric(df['hy_spread'], errors='coerce')
-        df = df.dropna().set_index('date').sort_index()
+        fred_raw.columns = ['date', 'hy_spread']
+        fred_raw = fred_raw.dropna(subset=['hy_spread'])
+        fred_raw['hy_spread'] = pd.to_numeric(fred_raw['hy_spread'], errors='coerce')
+        fred_raw = fred_raw.dropna().set_index('date').sort_index()
+
+        # FRED는 최근 3년만 반환 → 로컬 장기 캐시와 병합
+        df = _load_merge_save_hy_cache(fred_raw)
 
         if len(df) < 1260:
-            print("  [HY] 데이터 부족 (최소 5년 필요)")
+            print(f"  [HY] 데이터 부족 ({len(df)}/1260, 최소 5년 필요)")
             return None
 
         # 10년 롤링 중위수 (min 5년)
