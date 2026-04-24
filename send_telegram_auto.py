@@ -738,13 +738,28 @@ def _calc_market_warnings(kospi_df, kosdaq_df):
 # ============================================================
 # 텔레그램 전송 유틸리티
 # ============================================================
+def _post_telegram_retry(url, data, retries=4, timeout=30):
+    """Telegram API POST with exponential backoff retry (for ConnectTimeout/network blips)."""
+    for i in range(retries):
+        try:
+            return requests.post(url, data=data, timeout=timeout)
+        except requests.exceptions.RequestException as e:
+            wait = 5 * (2 ** i)  # 5, 10, 20, 40s
+            if i < retries - 1:
+                print(f"  [Telegram] 전송 실패 ({type(e).__name__}) — {wait}s 후 재시도 ({i+1}/{retries})")
+                time.sleep(wait)
+            else:
+                print(f"  [Telegram] 전송 실패 — 재시도 소진 ({retries}회)")
+                raise
+
+
 def send_telegram_long(text, bot_token, chat_id):
-    """긴 메시지 자동 분할 전송 (4000자 기준)"""
+    """긴 메시지 자동 분할 전송 (4000자 기준) + 네트워크 재시도"""
     MAX_LEN = 4000
     url = f'https://api.telegram.org/bot{bot_token}/sendMessage'
 
     if len(text) <= MAX_LEN:
-        return [requests.post(url, data={'chat_id': chat_id, 'text': text, 'parse_mode': 'HTML'}, timeout=30)]
+        return [_post_telegram_retry(url, {'chat_id': chat_id, 'text': text, 'parse_mode': 'HTML'})]
 
     lines = text.split('\n')
     chunks = []
@@ -763,7 +778,7 @@ def send_telegram_long(text, bot_token, chat_id):
 
     results = []
     for chunk in chunks:
-        r = requests.post(url, data={'chat_id': chat_id, 'text': chunk, 'parse_mode': 'HTML'}, timeout=30)
+        r = _post_telegram_retry(url, {'chat_id': chat_id, 'text': chunk, 'parse_mode': 'HTML'})
         results.append(r)
         time.sleep(0.3)
     return results
@@ -1860,26 +1875,24 @@ def main():
                     codes = [str(r.status_code) for r in results]
                     print(f'  {msg_labels[i]}: {", ".join(codes)}')
     else:
-        if cold_start:
-            target = PRIVATE_CHAT_ID or TELEGRAM_CHAT_ID
-            print(f'\n콜드 스타트 — 채널 전송 스킵, 개인봇으로 전송')
+        def _send_batch(target_id, label):
+            """한 타깃(채널/개인봇)에 3개 메시지 순차 전송. 개별 실패 시 계속 진행."""
+            print(f'\n{label} ({target_id})...')
             for i, msg in enumerate(messages):
-                results = send_telegram_long(msg, TELEGRAM_BOT_TOKEN, target)
-                codes = [str(r.status_code) for r in results]
-                print(f'  {msg_labels[i]}: {", ".join(codes)}')
-        else:
-            print(f'\n채널 전송 ({TELEGRAM_CHAT_ID})...')
-            for i, msg in enumerate(messages):
-                results = send_telegram_long(msg, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
-                codes = [str(r.status_code) for r in results]
-                print(f'  {msg_labels[i]}: {", ".join(codes)}')
-
-            if PRIVATE_CHAT_ID and PRIVATE_CHAT_ID != TELEGRAM_CHAT_ID:
-                print(f'개인봇 전송...')
-                for i, msg in enumerate(messages):
-                    results = send_telegram_long(msg, TELEGRAM_BOT_TOKEN, PRIVATE_CHAT_ID)
+                try:
+                    results = send_telegram_long(msg, TELEGRAM_BOT_TOKEN, target_id)
                     codes = [str(r.status_code) for r in results]
                     print(f'  {msg_labels[i]}: {", ".join(codes)}')
+                except Exception as e:
+                    print(f'  {msg_labels[i]}: 전송 실패 ({type(e).__name__}: {str(e)[:100]}) — 다음 메시지 계속')
+
+        if cold_start:
+            target = PRIVATE_CHAT_ID or TELEGRAM_CHAT_ID
+            _send_batch(target, '콜드 스타트 — 개인봇 전송')
+        else:
+            _send_batch(TELEGRAM_CHAT_ID, '채널 전송')
+            if PRIVATE_CHAT_ID and PRIVATE_CHAT_ID != TELEGRAM_CHAT_ID:
+                _send_batch(PRIVATE_CHAT_ID, '개인봇 전송')
 
     # ============================================================
     # 정리
