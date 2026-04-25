@@ -319,13 +319,19 @@ def get_daily_changes(
     return entered, exited
 
 
-def get_stock_status(rankings_t0, rankings_t1=None, rankings_t2=None, top_n=20):
+def get_stock_status(rankings_t0, rankings_t1=None, rankings_t2=None, top_n=20, verify_n=30):
     """
     3일 가중순위 기반 Top N 종목 + 연속 진입 상태 판별
 
     가중순위: T-0 × 0.5 + T-1 × 0.3 + T-2 × 0.2
-    Top N 여부와 정렬 모두 가중순위 기반.
-    상태(✅/⏳/🆕)는 각 날의 개별 Top N 포함 여부로 판별.
+    표시(top_n)와 검증(verify_n) 컷오프를 분리한다.
+    - 표시 컷(top_n): 최종 반환되는 Watchlist 크기 (기본 20)
+    - 검증 컷(verify_n): ✅/⏳/🆕 판별용 T-1/T-2 set 크기 (기본 30)
+    상태는 각 날의 개별 Top verify_n 포함 여부로 판별.
+
+    검증 컷이 표시 컷보다 넓은 이유:
+      22→20위처럼 한 날 살짝 밀린 안정 종목이 🆕로 분류되는 모순 해소.
+      backtest_weights.py(TOP_N=30)와 production 정합성 회복.
 
     Returns:
         list of dicts sorted by weighted_rank, each with:
@@ -341,9 +347,9 @@ def get_stock_status(rankings_t0, rankings_t1=None, rankings_t2=None, top_n=20):
         rlist_t1 = rankings_t1.get('rankings', [])
         for item in rlist_t1:
             all_t1[item['ticker']] = item
-        # cr 기준 Top N (당일 순수 실력 기준 ✅/⏳/🆕 판별)
+        # cr 기준 Top verify_n (검증 컷, 당일 순수 실력 기준 ✅/⏳/🆕 판별)
         sorted_t1 = sorted(rlist_t1, key=lambda r: r.get('composite_rank', 999))
-        for item in sorted_t1[:top_n]:
+        for item in sorted_t1[:verify_n]:
             top_t1_set.add(item['ticker'])
 
     all_t2 = {}
@@ -353,7 +359,7 @@ def get_stock_status(rankings_t0, rankings_t1=None, rankings_t2=None, top_n=20):
         for item in rlist_t2:
             all_t2[item['ticker']] = item
         sorted_t2 = sorted(rlist_t2, key=lambda r: r.get('composite_rank', 999))
-        for item in sorted_t2[:top_n]:
+        for item in sorted_t2[:verify_n]:
             top_t2_set.add(item['ticker'])
 
     # 모든 T-0 종목에 대해 가중순위 계산
