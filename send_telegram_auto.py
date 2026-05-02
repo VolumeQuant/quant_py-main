@@ -389,9 +389,10 @@ def calc_system_returns(regime_info=None):
                 return v
         return 0
 
-    # 포트폴리오 시뮬레이션 — 일간 수익률 기반 + 손절 + 트레일링
+    # 포트폴리오 시뮬레이션 — 일간 수익률 기반 + 손절 + 트레일링 + TS cooldown
     portfolio = {}  # ticker → entry_price
     peak_prices = {}  # ticker → 보유 중 최고가 (트레일링용)
+    ts_cooldown = {}  # ticker → 남은 cooldown 일수 (TS 발동 후 1일 재진입 차단)
     equity = 1.0
     start_date = None
     equity_history = {}  # date → equity
@@ -425,12 +426,19 @@ def calc_system_returns(regime_info=None):
         _max_slots = rp['MAX_SLOTS']
         _stop_loss = rp.get('STOP_LOSS', -0.10)
 
-        # 국면 전환 시 포트폴리오 전량 청산
+        # 국면 전환 시 포트폴리오 전량 청산 (cooldown도 리셋)
         if i >= 1:
             prev_boost = regime_by_date.get(dates[i-1], True)
             if is_boost != prev_boost:
                 portfolio.clear()
                 peak_prices.clear()
+                ts_cooldown.clear()
+
+        # TS cooldown 카운트 감소 (만료된 종목 제거)
+        for tk in list(ts_cooldown.keys()):
+            ts_cooldown[tk] -= 1
+            if ts_cooldown[tk] <= 0:
+                del ts_cooldown[tk]
 
         # 손절 + 트레일링 체크
         _trailing_stop = rp.get('TRAILING_STOP', -0.15)
@@ -447,10 +455,11 @@ def calc_system_returns(regime_info=None):
             if cp > 0 and ep > 0 and (cp / ep - 1) <= _stop_loss:
                 del portfolio[tk]
                 peak_prices.pop(tk, None)
-            # 트레일링: 고점 대비
+            # 트레일링: 고점 대비 (TS 발동 시 1일 cooldown 등록)
             elif cp > 0 and peak_prices.get(tk, 0) > 0 and (cp / peak_prices[tk] - 1) <= _trailing_stop:
                 del portfolio[tk]
                 peak_prices.pop(tk, None)
+                ts_cooldown[tk] = 1
 
         # pipeline 계산 (3일 교집합)
         r0 = all_data[d0].get('rankings', [])
@@ -494,9 +503,11 @@ def calc_system_returns(regime_info=None):
         # 동점 tie-breaker: cr 작은 쪽(오늘 더 강한 종목) 우선 (v80)
         verified.sort(key=lambda x: (x['weighted_rank'], x['composite_rank']))
 
-        # 진입: 상위 entry_rank개 (국면별)
+        # 진입: 상위 entry_rank개 (국면별, TS cooldown 종목 제외)
         for v in verified[:_entry_rank]:
             if v['ticker'] in portfolio:
+                continue
+            if v['ticker'] in ts_cooldown:
                 continue
             if len(portfolio) >= _max_slots:
                 break
@@ -578,6 +589,7 @@ def calc_system_returns(regime_info=None):
         'kospi_month': kospi_month,
         'kosdaq_ytd': kosdaq_ytd,
         'kosdaq_month': kosdaq_month,
+        'ts_cooldown': dict(ts_cooldown),
     }
 
 
@@ -1540,7 +1552,11 @@ def main():
     all_candidates = []
     drop_info = []
     if not cold_start:
-        verified_picks = [s for s in pipeline if s['status'] == '✅']
+        # TS cooldown 종목은 매수 후보에서 제외 (전날 TS 발동 → 오늘 1일 차단)
+        ts_cooldown_set = set((system_returns or {}).get('ts_cooldown', {}).keys())
+        if ts_cooldown_set:
+            print(f"  TS cooldown 적용: {len(ts_cooldown_set)}종목 매수 후보 제외 ({sorted(ts_cooldown_set)})")
+        verified_picks = [s for s in pipeline if s['status'] == '✅' and s['ticker'] not in ts_cooldown_set]
         verified_picks.sort(key=lambda x: score_100_pre.get(x['ticker'], 0), reverse=True)
         print(f"  ✅ 검증 종목: {len(verified_picks)}개")
 
