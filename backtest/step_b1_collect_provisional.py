@@ -13,7 +13,7 @@ import pandas as pd
 from pathlib import Path
 from collections import defaultdict
 
-API_KEY = '8e4325768fba382be2bb0d49d7224bd4621124a1'
+from config import DART_API_KEY as API_KEY
 PROJECT = Path(__file__).parent.parent
 CACHE_DIR = PROJECT / 'data_cache'
 

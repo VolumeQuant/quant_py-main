@@ -27,8 +27,7 @@ from itertools import product
 from turbo_simulator import TurboSimulator
 
 # ── 텔레그램 ──
-BOT_TOKEN = '8504167814:AAHC_fSmYslVAnKHIneZZOvb_8zRgUpOA9g'
-PRIVATE_ID = '7580571403'
+from config import TELEGRAM_BOT_TOKEN as BOT_TOKEN, TELEGRAM_PRIVATE_ID as PRIVATE_ID
 def send_tg(msg):
     try:
         requests.post(f'https://api.telegram.org/bot{BOT_TOKEN}/sendMessage',

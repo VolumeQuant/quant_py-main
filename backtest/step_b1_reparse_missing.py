@@ -8,7 +8,8 @@ import requests
 import pandas as pd
 from pathlib import Path
 
-API_KEY = '8e4325768fba382be2bb0d49d7224bd4621124a1'
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config import DART_API_KEY as API_KEY
 CACHE_DIR = Path('data_cache')
 
 

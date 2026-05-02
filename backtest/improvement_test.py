@@ -17,8 +17,7 @@ from pathlib import Path
 from copy import deepcopy
 
 PROJECT = Path(__file__).parent.parent
-BOT = '8504167814:AAHC_fSmYslVAnKHIneZZOvb_8zRgUpOA9g'
-PID = '7580571403'
+from config import TELEGRAM_BOT_TOKEN as BOT, TELEGRAM_PRIVATE_ID as PID
 
 def send_tg(msg):
     if len(msg) > 4096: msg = msg[:4090] + '...'

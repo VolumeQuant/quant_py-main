@@ -8,8 +8,7 @@ from config import DART_API_KEY
 
 PROJECT = Path(__file__).parent.parent
 API_KEY = DART_API_KEY
-BOT = '8504167814:AAHC_fSmYslVAnKHIneZZOvb_8zRgUpOA9g'
-PID = '7580571403'
+from config import TELEGRAM_BOT_TOKEN as BOT, TELEGRAM_PRIVATE_ID as PID
 
 ohlcv = pd.read_parquet(sorted(PROJECT.glob('data_cache/all_ohlcv_2017*.parquet'))[-1])
 ohlcv.index = pd.to_datetime(ohlcv.index)

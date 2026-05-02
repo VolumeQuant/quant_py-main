@@ -23,8 +23,7 @@ from pathlib import Path
 from copy import deepcopy
 
 PROJECT = Path(__file__).parent.parent
-BOT_TOKEN = '8504167814:AAHC_fSmYslVAnKHIneZZOvb_8zRgUpOA9g'
-PRIVATE_ID = '7580571403'
+from config import TELEGRAM_BOT_TOKEN as BOT_TOKEN, TELEGRAM_PRIVATE_ID as PRIVATE_ID
 def send_tg(msg):
     try: requests.post(f'https://api.telegram.org/bot{BOT_TOKEN}/sendMessage',
                        data={'chat_id': PRIVATE_ID, 'text': msg, 'parse_mode': 'HTML'}, timeout=30)
