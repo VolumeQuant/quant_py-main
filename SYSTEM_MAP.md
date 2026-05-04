@@ -373,3 +373,88 @@ run_daily.py Step 0.1에 삽입됨:
 | wr 후처리가 활성 모드 파일에만 적용 | run_daily._postprocess_ranking line 309-318 | 비활성 모드 ranking 파일엔 wr 없음 (fallback 999 있어 치명적 아님) |
 | v77 이슈조사 미해결 6개 (13 중 7개 해결됨) | fc29095d4 commit | MA120 필터 주석불일치, 지주사 NaN 등 |
 | ranking_manager.py wr 재계산 중복 | line 157, 372 | 수식 동일하므로 무해 |
+
+---
+
+## 10. DART SG&A 매핑 버그 사건 (2026-05-04)
+
+### 10.1 사건 요약
+
+5/4 16시 자동 스케줄러 시 **SK하이닉스(140만 돌파, +12% 폭등)**, 코세스, 현대로템, 한화 등 대형주가 ranking에서 일제 이탈. 사용자 채널/개인봇에 "📉 순위 이탈" 잘못된 메시지 발송됨.
+
+원인: `dart_collector.py` line 42에 잘못된 매핑 `'dart_TotalSellingGeneralAdministrativeExpenses': '매출액'` 발현.
+
+### 10.2 진짜 원인
+
+- **commit**: `409dea9d7` (2026-04-04, "fix: DART 데이터 수집/처리 5가지 버그 수정", AI co-author Claude Opus 4.6)
+- **버그**: SG&A(판매비와관리비, 비용) 항목을 매출액으로 매핑 — 회계 원칙 위반
+- **commit 메시지에 명시 안 됨** (의도 미상, AI가 "일부 기업이 매출 보고 시 SG&A 사용" 잘못된 가정으로 추가 추정)
+
+### 10.3 한 달 후 발현 메커니즘
+
+`dart_collector` 처리 로직 (`if val is not None and sys_name not in result`): DART 응답에서 첫 번째 매핑만 저장.
+- 4/4 ~ 5/3: `ifrs-full_Revenue` 우선 등장 → 정상 매출 매핑 (SG&A 무시됨)
+- **5/4 18:50**: 대형주 104개 일제 갱신 시 외부 트리거 (DART 응답 형식 변동/정정공시 추정)로 SG&A가 응답에서 우선 등장 → 잘못된 매출 매핑 발현
+
+이후 흐름:
+- SK 매출 11.5조 (실제 SG&A 값) vs FnGuide 97조 → ratio 0.12 → mismatch 검사 발동
+- DART 폐기 → FN만 사용 (분기 4개) → (d) 분기 8개 미만 필터 → SK 탈락
+
+### 10.4 BT 신뢰성 검증 결과 ✅
+
+영업이익률 > 100% (명백 버그) 78종목 추적:
+- 4/30까지 ranking에 포함된 영향 종목: **0개** (모두 시총 작거나 universe 외)
+- BT 기간 (2018-07~2026-04-30) 모든 데이터 정상
+
+→ **v80 6004조합 그리드, sl_ts_grid, cooldown_grid, exit_rule_full_bt, tiered_ts_finetune, ytd_2026_compare, WF 4구간 모두 신뢰성 유지**.
+
+### 10.5 영구 해결
+
+| 단계 | 조치 | commit |
+|---|---|---|
+| 1 | `dart_collector.py` line 42 매핑 영구 제거 | `0e082d1cc` |
+| 2 | `fs_dart_*.parquet` 정정 (영업이익률 > 80% 'y' 매출 row 제거, 78종목 / 104 row) | `0e082d1cc` |
+| 3 | `fast_generate_rankings_v2.py` ranking JSON에 `growth_s` 출력 추가 (진단용) | `0e082d1cc` |
+| 4 | 5/4 ranking 재생성 + 텔레그램 정정 발송 | `942435bb4` |
+| 5 | B 검증/재시도 안전망 도입 | `ce9fe539b` |
+
+### 10.6 매핑 추가 시 검증 절차 (영구 룰)
+
+- DART/FnGuide **매핑 추가/변경 시 회계 항목 의미 정확히 검증** (특히 비용 vs 수익 항목)
+- AI co-author 작업 시 **commit 메시지에 명시 안 된 변경분 검토 필수**
+- ranking에서 갑자기 대형주가 빠지면 첫 의심 = `fs_dart` 데이터 정합성
+- 검사 명령: 영업이익률 > 80% 가진 'y' 매출 row 있는 종목 식별 → 매핑 버그 의심
+
+---
+
+## 11. B 검증/재시도 안전망 (2026-05-04 도입)
+
+### 11.1 도입 배경
+
+10번 매핑 버그 같은 외부 트리거 사고 재발 방지. 매핑 외에도 DART API 일시 장애, pykrx 데이터 누락 등 알 수 없는 데이터 사고 자동 차단.
+
+### 11.2 동작 (run_daily.py)
+
+```
+ranking 생성 후 _validate_ranking() 호출
+  ├─ ≥ 320 (정상): 정상 채널/개인봇 발송 + git push
+  └─ < 320 (미달):
+      ├─ ❌ 채널 발송 차단 (구독자 보호)
+      ├─ ✅ 개인봇 알림: "ranking X종목 < 320, 30분 후 재시도"
+      ├─ ⏰ 30분 sleep
+      ├─ 🔄 ranking 재생성 (run_fg_pipeline)
+      └─ 🔍 재검증
+          ├─ ≥ 320 (통과): 정상 발송
+          └─ < 320 (실패): 보류 + 개인봇 알림 (push X)
+```
+
+### 11.3 임계값 + 헬퍼 함수
+
+- **임계 종목 수**: 320 (정상 350+ 대비 -10% 마진)
+- **`_git_pull_safe()`**: run_daily 시작 시 origin/main rebase pull (working tree clean 시만) → 다른 PC에서 push한 코드 변경 자동 반영
+- **`_validate_ranking()`**: ranking 종목 수 검증
+- **`_send_personal_warning()`**: 개인봇 DM만 발송 (채널 X)
+
+### 11.4 옵션 A 폐기
+
+스케줄러 16시 → 17시 변경은 **불필요**. 매핑 버그가 진짜 원인이라 시간 변경 무관. 16시 자동 스케줄러 그대로 유지.
