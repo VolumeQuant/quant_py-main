@@ -103,6 +103,72 @@ def git_push_state(logfile):
         log("git: 변경 없음", logfile)
 
 
+def _git_pull_safe(logfile=None):
+    """run_daily 시작 시 origin/main rebase pull (working tree clean 시만, 안전)"""
+    try:
+        st = subprocess.run(
+            ['git', 'status', '--porcelain'],
+            cwd=str(SCRIPT_DIR), capture_output=True, text=True, timeout=30,
+        )
+        if st.stdout.strip():
+            if logfile: log("git pull skip: working tree dirty", logfile)
+            return False
+        result = subprocess.run(
+            ['git', 'pull', '--rebase', 'origin', 'main'],
+            cwd=str(SCRIPT_DIR), capture_output=True, text=True, timeout=60,
+        )
+        if result.returncode == 0:
+            if logfile: log("git pull --rebase: 성공", logfile)
+            return True
+        else:
+            if logfile: log(f"git pull 실패: {(result.stderr or '')[:200]}", logfile)
+            return False
+    except Exception as e:
+        if logfile: log(f"git pull 오류: {e}", logfile)
+        return False
+
+
+def _validate_ranking(base_date, state_dir, threshold=320, logfile=None):
+    """ranking 종목 수 검증 — 임계 미달 시 데이터 정합성 의심
+    Returns: (ok: bool, n_stocks: int)
+    """
+    import json
+    ranking_path = Path(state_dir) / f'ranking_{base_date}.json'
+    if not ranking_path.exists():
+        if logfile: log(f"ranking 파일 없음: {ranking_path}", logfile)
+        return False, 0
+    try:
+        with open(ranking_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        n = len(data.get('rankings', []))
+        ok = n >= threshold
+        if logfile:
+            log(f"ranking 검증: {n}종목 (임계 {threshold}) — {'통과' if ok else '⚠️ 미달'}", logfile)
+        return ok, n
+    except Exception as e:
+        if logfile: log(f"ranking 검증 오류: {e}", logfile)
+        return False, 0
+
+
+def _send_personal_warning(msg, logfile=None):
+    """개인봇 DM만 발송 (채널 X) — 데이터 정합성 사고 알림용"""
+    try:
+        import requests
+        sys.path.insert(0, str(SCRIPT_DIR))
+        from config import TELEGRAM_BOT_TOKEN, TELEGRAM_PRIVATE_ID
+        r = requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+            data={"chat_id": TELEGRAM_PRIVATE_ID, "text": msg, "parse_mode": "HTML"},
+            timeout=30,
+        )
+        if logfile:
+            log(f"개인봇 알림: {'성공' if r.ok else f'실패 ({r.status_code})'}", logfile)
+        return r.ok
+    except Exception as e:
+        if logfile: log(f"개인봇 알림 실패: {e}", logfile)
+        return False
+
+
 def _run_fg_single(base_date, env_vars, state_dir, logfile):
     """FG subprocess 1회 실행 → ranking JSON 생성"""
     fg_script = str(SCRIPT_DIR / 'backtest' / 'fast_generate_rankings_v2.py')
@@ -364,6 +430,10 @@ def main():
         log("퀀트 데일리 파이프라인 시작", logfile)
         log("=" * 50, logfile)
 
+        # 0.0. git pull (origin/main 자동 동기화 — 다른 PC에서 push한 코드 변경 자동 반영)
+        log("git pull 동기화", logfile)
+        _git_pull_safe(logfile)
+
         # 0. DART 증분 갱신 (매일, 비공시 시즌에는 스크립트 내부에서 즉시 종료)
         # 종목명 캐시 — 별도 스케줄러 (매주 월요일 09시)
         log("DART 캐시 증분 갱신", logfile)
@@ -597,6 +667,45 @@ def main():
             log("포트폴리오 실패 -> 에러 알림 전송", logfile)
             send_error_notification()
             return
+
+        # 1.5. ranking 검증 — 데이터 정합성 미달 시 30분 후 재시도 (B 안전망)
+        # 매핑 버그 같은 외부 트리거 사고 방지 (2026-05-04 도입)
+        state_dir = SCRIPT_DIR / 'state'
+        ok_val, n_stocks = _validate_ranking(today, state_dir, threshold=320, logfile=logfile)
+        if not ok_val:
+            log(f"⚠️ ranking 검증 미달: {n_stocks}종목 < 320 — 채널 발송 차단, 30분 후 재시도", logfile)
+            _send_personal_warning(
+                f"⚠️ <b>ranking 검증 미달</b>\n\n"
+                f"종목 수: <b>{n_stocks}</b> (임계: 320, 정상 350+)\n\n"
+                f"채널 발송 보류. 30분 후 재시도 예정.\n"
+                f"데이터 정합성 점검 필요할 수 있음.",
+                logfile=logfile,
+            )
+            import time
+            time.sleep(1800)  # 30분
+            log("재시도: ranking 재생성", logfile)
+            try:
+                ok_retry = run_fg_pipeline(today, regime_env, regime['mode'], logfile)
+            except Exception as e:
+                log(f"재시도 ranking 재생성 오류: {e}", logfile)
+                ok_retry = False
+            if not ok_retry:
+                _send_personal_warning(
+                    f"❌ <b>재시도 ranking 재생성 실패</b>\n\n오늘 채널 발송 보류. 수동 점검 필요.",
+                    logfile=logfile,
+                )
+                return
+            ok_val, n_stocks = _validate_ranking(today, state_dir, threshold=320, logfile=logfile)
+            if not ok_val:
+                log(f"⚠️ 재시도 후에도 미달: {n_stocks}종목 — 발송 보류", logfile)
+                _send_personal_warning(
+                    f"❌ <b>재시도 후에도 검증 미달</b>\n\n"
+                    f"종목 수: <b>{n_stocks}</b> (임계: 320)\n\n"
+                    f"오늘 채널 발송 보류. 수동 점검 필요.",
+                    logfile=logfile,
+                )
+                return
+            log(f"✅ 재시도 검증 통과: {n_stocks}종목 → 정상 발송 진행", logfile)
 
         # 2. 텔레그램 전송
         # v77.1: 타임아웃 3분→10분 확장 + Popen 실시간 스트리밍 (멈춘 지점 추적)
