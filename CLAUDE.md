@@ -171,6 +171,25 @@
 - **LS ELECTRIC (010120)**: OHLCV 비거래일 가격 0 + 액면분할 수정주가 미반영 → MA120 오염 → 필터 탈락
 - **산일전기 (062040)**: DART 분기 6개 < 8개 (신규 상장) → (d) 필터 탈락. 시간 경과 시 자동 해결
 
+### DART SG&A 매핑 버그 사건 (2026-05-04, 영구 해결됨)
+- **문제**: `dart_collector.py` line 42에 잘못된 매핑 `'dart_TotalSellingGeneralAdministrativeExpenses': '매출액'` 존재 (4/4 commit `409dea9d7`에서 추가, AI co-author)
+- **발현**: 5/4 16시 자동 스케줄러 시 SK하이닉스(140만 돌파, +12% 폭등) 등 대형주 ranking 이탈
+  - SK 25Y 매출이 SG&A(11.5조) 값으로 잘못 매핑 → mismatch 검사(DART 11.5조 vs FN 97조 ratio 0.12) → DART 폐기 → FN 4분기만 사용 → (d) 분기 8개 미만 → 탈락
+  - 4/30까지 발현 안 함 (DART 응답에 `ifrs-full_Revenue` 우선 등장) — 5/4 외부 트리거(DART 응답 변동 추정)로 SG&A 우선 등장 → 매핑 발현
+- **해결**: line 42 매핑 영구 제거, 영업이익률 > 80% 가진 'y' 매출 row 78종목 정정 (104 row 제거), 5/4 ranking 재생성 + 텔레그램 정정
+- **BT 신뢰성**: 4/30까지 BT 데이터 사용 종목 0개 영향 → 모든 BT 결과 (v80 그리드 6004조합, sl_ts_grid, cooldown_grid, exit_rule 등) 그대로 유효
+
+### B 검증/재시도 안전망 (2026-05-04 도입, run_daily.py)
+- 매핑 버그 같은 외부 트리거 사고 재발 방지
+- **동작**: ranking 종목 수 < 320 시 채널 발송 차단 + 개인봇 알림 + 30분 sleep + 재시도
+- 재시도 통과 → 정상 발송 / 재시도 실패 → 보류 + 개인봇 알림 + push X
+- 추가: `run_daily.py` 시작 시 `git pull --rebase origin main` 자동 (working tree clean 시) → 다른 PC에서 push한 코드 변경 자동 반영
+
+### 매핑 추가 시 검증 절차 (2026-05-04 도입)
+- DART/FnGuide 매핑 추가/변경 시 **회계 항목 의미 정확히 검증** (특히 비용 vs 수익 항목)
+- AI co-author 작업 시 commit 메시지에 명시 안 된 변경분 검토 필수
+- ranking에서 갑자기 대형주가 빠지면 첫 의심 = `fs_dart` 데이터 정합성 (영업이익률 > 80% 'y' 매출 row 검사)
+
 ### 재생성/배포 절차 (v79 적용 기록)
 - `state/` 1294일 + `state/defense/` 1294일 v79 파라미터로 재계산 (28.6분, 2워커 병렬)
 - wr batch 후처리 (2588파일, 35초, `postprocess_wr_batch.py`)

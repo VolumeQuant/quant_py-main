@@ -39,7 +39,7 @@ CACHE_DIR = PROJECT_ROOT / 'data_cache'
 ACCOUNT_ID_MAP = {
     'ifrs-full_Revenue': '매출액',
     'dart_RevenueFromSaleOfGoodsProduct': '매출액',
-    'dart_TotalSellingGeneralAdministrativeExpenses': '매출액',  # 일부 기업
+    # NOTE: 'dart_TotalSellingGeneralAdministrativeExpenses'는 판매비와관리비(비용)로 매출액 아님 — 매핑 제거 (2026-05-04)
     'ifrs-full_GrossProfit': '매출총이익',
     'dart_OperatingIncomeLoss': '영업이익',
     'ifrs-full_ProfitLossBeforeTax': '세전계속사업이익',
