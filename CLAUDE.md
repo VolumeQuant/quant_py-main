@@ -190,6 +190,14 @@
 - AI co-author 작업 시 commit 메시지에 명시 안 된 변경분 검토 필수
 - ranking에서 갑자기 대형주가 빠지면 첫 의심 = `fs_dart` 데이터 정합성 (영업이익률 > 80% 'y' 매출 row 검사)
 
+### DART 갱신 list API 전환 (2026-05-06 도입, refresh_dart_cache.py)
+- **사고**: 5/1 0시 target Q4→Q1 전환 후 매일 1,585종목 시도 → DART 10분 timeout (마감 5/15 전이라 99% "데이타 없음")
+- **해결**: `OpenDartReader.list(start, end, kind='A')` — 최근 N일 정기공시 종목만 추출 → 그 종목만 fetch_single
+- **유니버스 강화**: 우선주(끝자리≠0) + KRX 특수코드(`0009K0` 등) + 외국기업(900xxx/950xxx) + 키워드(REIT/리얼티/인프라/맥쿼리/금융/지주) 제거 — FG의 EXCLUDE_KEYWORDS와 동일
+- **효과**: 1,585→2종목, 10분 timeout→6초, API 7000+→24
+- **subprocess Popen 스트리밍** (`run_daily.py:run_script`): timeout 시 stdout 손실 막기 위해 `capture_output=True` → `Popen` + readline. timeout 600→1800 (안전 마진)
+- 상세: SYSTEM_MAP §12
+
 ### 재생성/배포 절차 (v79 적용 기록)
 - `state/` 1294일 + `state/defense/` 1294일 v79 파라미터로 재계산 (28.6분, 2워커 병렬)
 - wr batch 후처리 (2588파일, 35초, `postprocess_wr_batch.py`)

@@ -14,7 +14,7 @@ Usage:
 """
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 sys.stdout.reconfigure(encoding='utf-8')
@@ -71,10 +71,58 @@ def get_production_tickers(full=False):
         return []
 
     df = pd.read_parquet(mcap_files[-1])
+    # 우선주 제거: 끝자리 0만 보통주 (CLAUDE.md 정책)
+    df = df[df.index.str[-1] == '0']
+    # 6자리 숫자만 (KRX 특수 코드 제거: 0009K0, 0011T0 등)
+    df = df[df.index.str.match(r'^\d{6}$')]
+    # 외국기업 제거 (900xxx, 950xxx — DART 의무 없음)
+    df = df[~df.index.str.startswith(('900', '950'))]
+    # 종목명 기반 키워드 필터 (FG와 동일: REIT/금융/지주 등 DART 정기보고 없는 업종)
+    name_path = CACHE_DIR / 'ticker_names_cache.json'
+    if name_path.exists():
+        import json
+        with open(name_path, encoding='utf-8') as f:
+            names = json.load(f)
+        exclude_kw = ['금융', '은행', '증권', '보험', '캐피탈', '카드', '저축',
+                      '지주', '홀딩스', 'SPAC', '스팩', '리츠', 'REIT',
+                      '생명', '화재', '손해보험', 'IB투자', '벤처투자',
+                      '자산운용', '신탁', '인프라', '맥쿼리', '리얼티']
+        df['종목명'] = df.index.map(lambda t: names.get(t, ''))
+        mask = df['종목명'].apply(lambda n: any(k in n for k in exclude_kw) if n else False)
+        df = df[~mask].drop(columns=['종목명'])
     if full:
         return df.index.tolist()
     df['시가총액_억'] = df['시가총액'] / 1e8
     return df[df['시가총액_억'] >= 1000].index.tolist()
+
+
+def get_recently_disclosed(dc, days_back=3, universe_set=None):
+    """최근 N일간 분기/반기/사업보고서 공시한 상장종목 (list API 1회 호출).
+
+    당일 발표된 실적을 즉시 캐치하기 위함. days_back은 주말/공휴일 안전마진.
+    실패 시 None 반환 → 호출자가 폴백 로직 사용.
+    """
+    end = datetime.now().date()
+    start = end - timedelta(days=days_back)
+    try:
+        df = dc.dart.list(
+            start=start.strftime('%Y%m%d'),
+            end=end.strftime('%Y%m%d'),
+            kind='A', final=True,
+        )
+        dc._call_count += 1
+    except Exception as e:
+        print(f'list API 실패: {e}')
+        return None
+    if df is None or len(df) == 0:
+        return []
+    pat = '사업보고서|분기보고서|반기보고서'
+    df = df[df['report_nm'].str.contains(pat, na=False)]
+    df = df[df['stock_code'].notna() & (df['stock_code'] != '')]
+    tickers = df['stock_code'].unique().tolist()
+    if universe_set is not None:
+        tickers = [t for t in tickers if t in universe_set]
+    return tickers
 
 
 def needs_refresh(ticker, target_date):
@@ -126,14 +174,29 @@ def main():
         return
     print(f'유니버스: {len(tickers)}종목')
 
-    to_refresh = [t for t in tickers if needs_refresh(t, target_date)]
-    print(f'갱신 필요: {len(to_refresh)}종목 (기존 {len(tickers) - len(to_refresh)}종목 스킵)')
+    dc = DartCollector()
+    universe_set = set(tickers)
+
+    # ▼ 신규 (2026-05-06): 공시 목록 API로 최근 정기공시 종목만 우선 갱신
+    # 1Q/H1/Q3/Y 시즌 폭주 방지 — 매일 그날 공시한 종목만 처리해서 timeout 회피
+    recently_disclosed = get_recently_disclosed(dc, days_back=3, universe_set=universe_set)
+
+    if recently_disclosed is not None:
+        # 신규 공시 + 캐시 없는 종목(신규 상장 등) 합집합
+        no_cache = [t for t in tickers
+                    if not (CACHE_DIR / f'fs_dart_{t}.parquet').exists()]
+        to_refresh = list(set(recently_disclosed) | set(no_cache))
+        print(f'최근 3일 정기공시: {len(recently_disclosed)}종목 · '
+              f'캐시 없음: {len(no_cache)}종목 · 합집합: {len(to_refresh)}종목')
+    else:
+        # list API 실패 → 기존 needs_refresh 폴백 (시즌 폭주 가능성 있음)
+        print('list API 실패 — 기존 needs_refresh 로직 폴백')
+        to_refresh = [t for t in tickers if needs_refresh(t, target_date)]
+        print(f'갱신 필요: {len(to_refresh)}종목 (기존 {len(tickers) - len(to_refresh)}종목 스킵)')
 
     if not to_refresh:
-        print('모든 종목 최신 — 완료')
+        print('갱신 대상 없음 — 완료')
         return
-
-    dc = DartCollector()
     success = 0
     failed = 0
     t0 = time.time()

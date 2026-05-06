@@ -31,28 +31,45 @@ def log(msg: str, f=None):
 
 
 def run_script(name: str, timeout: int, logfile, extra_env=None):
-    """subprocess로 Python 스크립트 실행"""
+    """subprocess로 Python 스크립트 실행 (라인 스트리밍 + timeout 보존).
+
+    이전 capture_output 방식은 timeout 시 stdout 버퍼가 손실됨.
+    Popen + readline으로 진행 로그를 logfile에 즉시 기록 → timeout 시에도 보존.
+    """
+    import time as _time
     script = SCRIPT_DIR / name
     log(f"실행: {name}", logfile)
-    env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+    env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUNBUFFERED": "1"}
     if extra_env:
         env.update(extra_env)
-    result = subprocess.run(
-        [PYTHON, str(script)],
+    proc = subprocess.Popen(
+        [PYTHON, "-u", str(script)],
         cwd=str(SCRIPT_DIR),
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
         text=True,
-        timeout=timeout,
         encoding="utf-8",
         errors="replace",
         env=env,
+        bufsize=1,
     )
-    if result.stdout:
-        logfile.write(result.stdout)
-    if result.stderr:
-        logfile.write(result.stderr)
-    logfile.flush()
-    return result.returncode == 0
+    t_start = _time.time()
+    timed_out = False
+    try:
+        for line in proc.stdout:
+            logfile.write(line)
+            logfile.flush()
+            if _time.time() - t_start > timeout:
+                timed_out = True
+                break
+    finally:
+        if timed_out:
+            proc.kill()
+            try: proc.wait(timeout=5)
+            except subprocess.TimeoutExpired: pass
+            raise subprocess.TimeoutExpired(name, timeout)
+        proc.wait()
+    return proc.returncode == 0
 
 
 def send_error_notification():
@@ -438,10 +455,10 @@ def main():
         # 종목명 캐시 — 별도 스케줄러 (매주 월요일 09시)
         log("DART 캐시 증분 갱신", logfile)
         try:
-            ok_dart = run_script("refresh_dart_cache.py", timeout=600, logfile=logfile)
+            ok_dart = run_script("refresh_dart_cache.py", timeout=1800, logfile=logfile)
             log(f"DART 갱신: {'성공' if ok_dart else '실패'}", logfile)
         except subprocess.TimeoutExpired:
-            log("DART 갱신 타임아웃 (10분) — 기존 캐시로 진행", logfile)
+            log("DART 갱신 타임아웃 (30분) — 기존 캐시로 진행", logfile)
         except Exception as e:
             log(f"DART 갱신 오류: {e} — 기존 캐시로 진행", logfile)
 
