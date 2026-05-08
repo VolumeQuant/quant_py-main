@@ -163,12 +163,14 @@ def main():
     else:
         print(f'DART 증분 갱신: {target_date.strftime("%Y-%m")} 분기')
 
-    # 금요일: 전종목, 그 외: 시총 1000억+
-    is_friday = datetime.now().weekday() == 4
-    full_mode = is_friday or '--full' in sys.argv
+    # 항상 시총 1000억+ (--full 명시 시만 전종목)
+    # 2026-05-08: 금요일 자동 full_mode 제거
+    # 사유: list API + no_cache 로직이 이미 신규 공시/상장 catchup 효과 보장.
+    # 1Q 시즌 + 금요일 full = 30분 timeout 발생 → 제거.
+    full_mode = '--full' in sys.argv
     tickers = get_production_tickers(full=full_mode)
     if full_mode:
-        print(f'전종목 모드 ({"금요일" if is_friday else "--full"})')
+        print('전종목 모드 (--full)')
     if not tickers:
         print('유니버스 비어있음')
         return
