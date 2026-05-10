@@ -531,6 +531,8 @@ class TurboSimulator:
     def run_regime(self, defense_params, offense_params, regime_dict,
                    stop_loss=-0.10, corr_threshold=None, trailing_stop=None,
                    take_profit=None,
+                   stop_loss_o=None, stop_loss_d=None,
+                   trailing_stop_o=None, trailing_stop_d=None,
                    g_sub1_d='rev_z', g_sub2_d='oca_z',
                    g_sub1_o='rev_z', g_sub2_o='oca_z',
                    g_sub3_d=None, g_w1_d=None, g_w2_d=None, g_w3_d=None,
@@ -570,7 +572,9 @@ class TurboSimulator:
             stop_loss,
             self._corr_all if corr_threshold is not None else None,
             corr_threshold, trailing_stop,
-            breakout_hold)
+            breakout_hold, take_profit,
+            stop_loss_o, trailing_stop_o,
+            stop_loss_d, trailing_stop_d)
 
 
 def _run_regime_inner(defense_flat, offense_flat,
@@ -581,8 +585,13 @@ def _run_regime_inner(defense_flat, offense_flat,
                       date_rows, n_dates,
                       stop_loss=-0.10, corr_maps=None,
                       corr_threshold=None, trailing_stop=None,
-                      breakout_hold=None):
-    """국면전환 시뮬레이션 핫루프 — 전환 시 포트폴리오 청산."""
+                      breakout_hold=None, take_profit=None,
+                      stop_loss_o=None, trailing_stop_o=None,
+                      stop_loss_d=None, trailing_stop_d=None):
+    """국면전환 시뮬레이션 핫루프 — 전환 시 포트폴리오 청산.
+    국면별 SL/TS: stop_loss_o/d, trailing_stop_o/d 지정 시 해당값 사용.
+    None이면 단일 stop_loss/trailing_stop 폴백.
+    """
     portfolio = {}
     peak_prices = {}
     grace_days = {}  # breakout hold 유예 일수
@@ -590,8 +599,13 @@ def _run_regime_inner(defense_flat, offense_flat,
     bench_rets = [0.0] * n_dates
     holdings_count = [0] * n_dates
 
-    use_stop_loss = stop_loss is not None
-    use_trailing = trailing_stop is not None
+    # 국면별 fallback
+    sl_o = stop_loss_o if stop_loss_o is not None else stop_loss
+    sl_d = stop_loss_d if stop_loss_d is not None else stop_loss
+    ts_o = trailing_stop_o if trailing_stop_o is not None else trailing_stop
+    ts_d = trailing_stop_d if trailing_stop_d is not None else trailing_stop
+
+    use_take_profit = take_profit is not None
     use_hold = breakout_hold is not None
     if use_hold:
         hold_lookback = breakout_hold.get('lookback', 20)
@@ -618,11 +632,17 @@ def _run_regime_inner(defense_flat, offense_flat,
             entry_param = o_entry
             exit_param = o_exit
             max_slots = o_slots
+            cur_sl = sl_o
+            cur_ts = ts_o
         else:  # 방어
             pipe = defense_flat[i]
             entry_param = d_entry
             exit_param = d_exit
             max_slots = d_slots
+            cur_sl = sl_d
+            cur_ts = ts_d
+        use_stop_loss = cur_sl is not None
+        use_trailing = cur_ts is not None
 
         if pipe is None:
             holdings_count[i] = len(portfolio)
@@ -650,13 +670,18 @@ def _run_regime_inner(defense_flat, offense_flat,
                 if use_stop_loss and cur_row >= 0:
                     cur_p = price_arr[cur_row, col]
                     if cur_p == cur_p and ep > 0:
-                        if (cur_p / ep - 1.0) <= stop_loss:
+                        if (cur_p / ep - 1.0) <= cur_sl:
                             should_exit = True
                 if not should_exit and use_trailing and cur_row >= 0:
                     cur_p = price_arr[cur_row, col]
                     pk = peak_prices.get(col, ep)
                     if cur_p == cur_p and pk > 0:
-                        if (cur_p / pk - 1.0) <= trailing_stop:
+                        if (cur_p / pk - 1.0) <= cur_ts:
+                            should_exit = True
+                if not should_exit and use_take_profit and cur_row >= 0:
+                    cur_p = price_arr[cur_row, col]
+                    if cur_p == cur_p and ep > 0:
+                        if (cur_p / ep - 1.0) >= take_profit:
                             should_exit = True
                 if not should_exit:
                     if wrank_arr[col] > exit_param:
