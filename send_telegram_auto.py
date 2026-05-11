@@ -424,7 +424,7 @@ def calc_system_returns(regime_info=None):
         _entry_rank = rp['ENTRY_RANK']
         _exit_rank = rp['EXIT_RANK']
         _max_slots = rp['MAX_SLOTS']
-        _stop_loss = rp.get('STOP_LOSS', -0.10)
+        _stop_loss = rp.get('STOP_LOSS', -0.07)  # v80.2 (2026-05-11)
 
         # 국면 전환 시 포트폴리오 전량 청산 (cooldown도 리셋)
         if i >= 1:
@@ -441,7 +441,7 @@ def calc_system_returns(regime_info=None):
                 del ts_cooldown[tk]
 
         # 손절 + 트레일링 체크
-        _trailing_stop = rp.get('TRAILING_STOP', -0.15)
+        _trailing_stop = rp.get('TRAILING_STOP', -0.10)  # v80.2 (2026-05-11)
         for tk in list(portfolio.keys()):
             cp = _get_price(tk, d0)
             ep = portfolio[tk]
@@ -1661,9 +1661,9 @@ def main():
         _ENTRY = _rp2['ENTRY_RANK']
         _EXIT = _rp2['EXIT_RANK']
         _SLOTS = _rp2['MAX_SLOTS']
-        _SL = _rp2.get('STOP_LOSS', -0.10)
+        _SL = _rp2.get('STOP_LOSS', -0.07)  # v80.2 (2026-05-11)
     except Exception:
-        _ENTRY, _EXIT, _SLOTS, _SL = _DEFAULT_ENTRY, _DEFAULT_EXIT, _DEFAULT_SLOTS, -0.10
+        _ENTRY, _EXIT, _SLOTS, _SL = _DEFAULT_ENTRY, _DEFAULT_EXIT, _DEFAULT_SLOTS, -0.07
 
     if market_max_picks == 0:
         picks = []
