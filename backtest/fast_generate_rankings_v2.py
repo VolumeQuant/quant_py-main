@@ -1601,7 +1601,9 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
         mid = filtered[(filtered['시가총액_억'] >= 3000) & (filtered['시가총액_억'] < 10000)]
         filtered = pd.concat([large, mid])
 
-    # --- 3. 종목명 + 금융 제외 ---
+    # --- 3. 종목명 + 금융 제외 (이름 키워드 + KRX 섹터 "금융") ---
+    # 종목명 키워드만으로는 SK스퀘어/에코프로 등 산업지주사를 못 잡음 (이름에 "지주" 없음).
+    # 옵션F (2026-05-12)로 CFS/OFS 정정 후 잠재 결함이 드러남 → KRX 분류상 "금융" 섹터 자체 제외 추가.
     filtered['종목명'] = filtered.index.map(lambda t: tnames.get(t, t))
     extra_kw = ['화재', '생명'] if preloaded.get('strict_filter') else []
     all_keywords = list(EXCLUDE_KEYWORDS) + extra_kw
@@ -1609,6 +1611,22 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
         lambda n: any(kw in str(n) for kw in all_keywords)
     )
     filtered = filtered[~exclude_mask]
+
+    # KRX 섹터 "금융" 필터 (지주사 + 금융사 통합 제외)
+    sector_key_pre = find_nearest_cache(preloaded['sectors'], date_str)
+    if sector_key_pre is not None:
+        if sector_key_pre not in preloaded.get('_sector_cache', {}):
+            sec_df_pre = pd.read_parquet(preloaded['sectors'][sector_key_pre])
+            col_code = sec_df_pre.columns[0]
+            col_sector = sec_df_pre.columns[1]
+            sm_pre = dict(zip(sec_df_pre[col_code].astype(str), sec_df_pre[col_sector].astype(str)))
+            if '_sector_cache' not in preloaded:
+                preloaded['_sector_cache'] = {}
+            preloaded['_sector_cache'][sector_key_pre] = sm_pre
+        sm_pre = preloaded['_sector_cache'][sector_key_pre]
+        fin_mask = filtered.index.map(lambda t: sm_pre.get(t, '') == '금융')
+        filtered = filtered[~fin_mask]
+
     universe_tickers = filtered.index.tolist()
 
     if len(universe_tickers) < 10:
