@@ -29,24 +29,29 @@
 
 ---
 
-# 🇺🇸 US 전략 — eps-momentum-us (v79.1, 2026-04-17)
+# 🇺🇸 US 전략 — eps-momentum-us (v80.10c, 2026-05-11)
 
 > 경로: `C:\dev\claude code\eps-momentum-us`
 
 - EPS Revision Momentum, conviction z-score 기반, **균등비중**
-- conviction: adj_gap × (1 + max(up30/N, min(|eps_chg|/100, 1)))
-- 점수: 일별 z-score(**하한30, 상한 무제한**) → **Case 1 보너스(+8점)** → 3일 가중(T0×0.5+T1×0.3+T2×0.2), 빈 날=30점
-- **v79**: z-score 상한 100 clamp 제거 → outlier 변별력 보존 (MU z_raw 130 vs VNOM 100 구분)
-- **Case 1 보너스 (v78)**: 30d NTM > +1% AND 가격 < -1% → z-score +8점 (전망↑가격↓ 종목 우대)
+- conviction: adj_gap × (1 + max(up30/N, min(|eps_chg|/100, 3)) + min(min(rg,0.5)×0.6, 0.3))  ← v80.9 X2: cap 3.0, rev_bonus smooth
+- adj_gap = fwd_pe_chg × (1 + dir_factor) × eps_quality
+- **fwd_pe_chg 가중치 (v80.10)**: **7d 0.30 / 30d 0.10 / 60d 0.10 / 90d 0.50** (90일 누적 PE 압축 강조, long-tail)
+- 점수: 일별 z-score(**하한30, 상한 무제한**) → 3일 가중(T0×0.5+T1×0.3+T2×0.2), 빈 날=30점
+- **v79**: z-score 상한 100 clamp 제거 → outlier 변별력 보존
+- **Case 1 보너스 폐기 (v80.5)**: cr/score_100/part2_rank 정렬 일관성 회복 위해 제거
 - 진입: 3일 가중 Top **3** + ✅(3일 검증) + min_seg ≥ 0%, 슬롯 **3**
-- 퇴출: part2_rank > **8** OR min_seg < -2%
-- **품질 필터 (v79.1)**: FCF < 0 AND ROE < 0 동시 → eligible 제외 (현금·수익 모두 없는 종목)
-- **Signal 진입 (v79.1)**: ✅(3일 검증) 기준 3종목 채움 (⏳/🆕 스킵, 순위 카운트 제외)
-- **D/E 필터 불필요**: TPR(715%)는 자사주 매입 때문 (FCF+1.4B/ROE 55% 건전). 전수 검사 완료 (2026-04-17)
+- **퇴출 (v80.10b)**: part2_rank > **10** OR min_seg < -2%  ← 8→10 변경 (회전 정책 재최적화)
+- **품질 필터 (v79.1)**: FCF < 0 AND ROE < 0 동시 → eligible 제외
+- **rev_up30 ≥ 3 필터 (v80.8)**: 단일 분석가 의존 종목 차단 (WELL 사례)
+- **Signal 진입 (v80.2)**: ✅ but min_seg<0/하향과반/저커버리지 탈락 시 다음 ✅ 후보로 슬라이드
+- **⏸️ 매도 유예 제거 (v80.10c)**: v80.10 장기 가중치 전환으로 ⏸️ 알파(단기 가중 노이즈 완충재) 소멸. BT N=0이 모든 N>0보다 paired 100/100 우월. `check_breakout_hold` 함수는 유지(약세장 재토글용)
 - composite_rank=당일 conviction 순위(추이 표시), part2_rank=3일 가중 순위(매매)
 - RETURN_MATRIX: S&P500 기반 (26년 6,593일), VIX는 yfinance 최신 보완
 - 비중 조절 안 함 (알파가 공포 구간에서 발생)
 - 상관관계: 🔗 유사도% + BFS 그룹핑 + 택1/택1~2 권장
+- **v80.10/10b/10c 종합 성과 (60일 paired)**: v80.9 production +55.89% → v80.10b +104.47%, paired lift **+48.58%p** (100/100 wins). 단계별: 가중치 +40.86%p / exit 8→10 +7.72%p / ⏸️ 제거 +5.37%p. caveat: 60일 sample, 본격 약세장 미검증
+- **롤백 트리거 (v80.10/10b/10c 공통)**: 5거래일 SPY 대비 알파 -3%p 이하 / MDD -8% 초과 / Top3 교체율 50%+ / HY×VIX Q3 진입. backup: `eps_momentum_data.bak_pre_v80_10.db`
 
 ---
 
