@@ -582,3 +582,58 @@ full_mode = '--full' in sys.argv  # is_friday 자동 트리거 제거
 - 작년 동기간(2025): 1조+ **2건** (삼성SDI 등)
 
 **정상 패턴**: 대형주는 마감 직전(5/13~5/15)에 폭주 제출. 5/15에 SK하이닉스/삼성전자 등 1Q 정식 보고서 일제 입수 예상 → ranking에 5/16부터 진짜 1Q 반영.
+
+---
+
+## 13. 옵션 F — 항목별 mismatch 자동 정정 (2026-05-12 도입)
+
+### 배경
+- 2026-05-11 링네트 사건 분석 중 발견: 'q' 분기 매출 row에도 5/4 SG&A 매핑 버그 잔재 (126종목, 5/11 별도 fix)
+- 추가 발견: dart_collector의 CFS/OFS fallback (line 285-288)이 작동 → 75종목이 OFS(별도) 매출 데이터 보유 → FN(항상 CFS)과 mismatch
+- 기존 `check_data_mismatch`는 매출/자산 1건 mismatch만으로 DART 전체 폐기 → 너무 광범위. 정상 항목까지 버려짐
+
+### EDA 결과 (2026-05-12)
+1927종목 fs_dart × FN 비교:
+- y 매출 mismatch (DART/FN < 0.5): **234 row** (183종목)
+- q 매출 mismatch: **698 row** (205종목)
+- q 영업CF mismatch: **1147 row** (1위)
+- y 영업이익 mismatch: 35 row
+- y 자산 mismatch: **6 row만** (자산은 안전)
+- 매출 mismatch 종목 중 다른 항목도 mismatch: 영업이익 1개, 자산/자본 0개
+
+**핵심 인사이트**: mismatch는 **항목별 독립 발생**. CFS/OFS 일괄 폴백이 아님. 매출+영업CF가 핵심, 자산은 거의 안전.
+
+### 본질 해결 — fix_dart_account_mismatch (옵션 F)
+`backtest/fast_generate_rankings_v2.py`에 추가:
+- 항목별 임계값 (매출/자산/자본: ratio 0.5~2.0, 영업이익/순이익/CF: |ratio| 0.2~5.0 + 부호 동일)
+- 매번 ranking 생성 시 preload 단계에서 자동 검증 → mismatch row만 제거
+- `merge_fs_supplement`이 FN으로 자동 보충
+- 광범위 폐기 대신 정밀 정정
+
+### 성능
+- 1927종목 정정 시간: 13.5초 (preload 1회만 호출, BT 부담 미미)
+- 정정 발생 종목: 1100개, 정정 row: 2283개 (baseline)
+
+### 효과 (4/30 표본 비교)
+- universe: 853 → 801 (정정으로 일부 종목 변동)
+- Top 30 교집합: 9/30 (큰 변동 — BT 재생성 필요)
+- 002340 SK스퀘어 매출 2025: 14,115 → 104,556 (OFS → CFS 자동 복구)
+
+### BT 재검증 결과 (2018-07~2026-04 7.8y)
+| 지표 | 기존(state) | 옵션F | Δ |
+|---|---|---|---|
+| Calmar | 3.679 | **4.288** | +0.609 |
+| CAGR | 142.1% | **156.1%** | +14.0%p |
+| MDD | 38.6% | **36.4%** | -2.2%p |
+
+→ 옵션F가 BT 성능 **악화 X + 전 지표 개선**. 데이터 정확성 효과.
+
+### 추가 안전망
+- `monitor_dart_fn_health.py`: baseline (1100/2283) 대비 비정상 변동 감지
+- 임계값: 정정 row > 4000 또는 종목 > 1500 → 종료코드 1 (개인봇 알림 권장)
+
+### How to apply
+- 새 매핑 추가 또는 DART 갱신 후에도 옵션 F가 자동 정정 → 5/4 류 사고 미래 차단
+- 정정 결과는 logfile의 "항목정정 X종목/Yrow" 메시지로 확인
+- BT는 5/12 이후 옵션 F 적용 상태로 생성 (bt_optf_boost/, bt_optf_defense/)
+

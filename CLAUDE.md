@@ -195,6 +195,20 @@
 - AI co-author 작업 시 commit 메시지에 명시 안 된 변경분 검토 필수
 - ranking에서 갑자기 대형주가 빠지면 첫 의심 = `fs_dart` 데이터 정합성 (영업이익률 > 80% 'y' 매출 row 검사)
 
+### 옵션 F — 항목별 mismatch 자동 정정 (2026-05-12 도입, fast_generate_rankings_v2.py)
+- **배경**: 5/4 매핑 버그 + 5/11 'q' 분기 잔재 + dart_collector CFS/OFS fallback 발견 → 광범위 폐기(기존 check_data_mismatch) 대신 정밀 정정 필요
+- **EDA**: 1927종목 분석 결과 mismatch는 **항목별 독립** 발생 (OFS 일괄 폴백 아님). q 영업CF 1147 row > q 매출 698 > y 매출 234. 자산은 6 row만 (안전).
+- **함수 `fix_dart_account_mismatch`**:
+  - 매출/자산/자본: ratio 0.5~2.0 외 → mismatch
+  - 영업이익/순이익/CF: |ratio| 0.2~5.0 + 부호 동일 위반 → mismatch
+  - mismatch row만 제거 → `merge_fs_supplement`이 FN으로 자동 보충
+- **preload_data 흐름**: fs_dart 로드 직후 옵션 F 호출 (벡터화, 1927종목 13.5초 1회만)
+- **baseline (2026-05-12)**: 정정 종목 1100, 정정 row 2283
+- **모니터링**: `monitor_dart_fn_health.py` (row > 4000 or 종목 > 1500 → 종료코드 1)
+- **로그 형식**: "1927종목 (DART X + FnGuide Y, 항목정정 1100종목/2283row)"
+- **BT 영향**: 4/30 표본 Top 30 교집합 9/30 → BT 전체 재생성 (`bt_optf_boost/`, `bt_optf_defense/`)
+- **BT 재검증 (7.8y, 2018-07~2026-04)**: Cal 3.68→**4.29 (+0.61)**, CAGR 142.1→156.1%, MDD 38.6→36.4% — 옵션F가 전 지표 개선
+
 ### DART 갱신 list API 전환 (2026-05-06 도입, refresh_dart_cache.py)
 - **사고**: 5/1 0시 target Q4→Q1 전환 후 매일 1,585종목 시도 → DART 10분 timeout (마감 5/15 전이라 99% "데이타 없음")
 - **해결**: `OpenDartReader.list(start, end, kind='A')` — 최근 N일 정기공시 종목만 추출 → 그 종목만 fetch_single

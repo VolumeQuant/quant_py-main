@@ -89,6 +89,64 @@ def check_data_mismatch(dart_df, fn_df):
         return False
 
 
+_MISMATCH_RATIO_ACCTS = ('매출액', '자산', '자본')
+_MISMATCH_SIGNED_ACCTS = ('영업이익', '당기순이익', '영업활동으로인한현금흐름')
+_MISMATCH_ALL_ACCTS = _MISMATCH_RATIO_ACCTS + _MISMATCH_SIGNED_ACCTS
+
+
+def fix_dart_account_mismatch(dart_df, fn_df):
+    """항목별 DART vs FN mismatch 자동 정정 — mismatch row만 제거. 벡터화.
+
+    기존 check_data_mismatch는 매출/자산 mismatch 1건이라도 있으면 DART 전체 폐기.
+    실측 결과 (2026-05-12 EDA): mismatch는 항목별 독립 발생.
+      - y 매출 mismatch 183개 중 영업이익도 mismatch 1개, 자산 0개, 자본 0개
+    → 광범위 폐기 대신 항목별 정정. merge_fs_supplement이 FN으로 자동 보충.
+
+    Returns:
+        (cleaned_df, removed_keys) — removed_keys: [(공시구분, 계정, 기준일), ...]
+    """
+    if dart_df is None or dart_df.empty or fn_df is None or fn_df.empty:
+        return dart_df, []
+
+    d_sub = dart_df[dart_df['계정'].isin(_MISMATCH_ALL_ACCTS)][['공시구분', '계정', '기준일', '값']]
+    if d_sub.empty:
+        return dart_df, []
+    f_sub = fn_df[fn_df['계정'].isin(_MISMATCH_ALL_ACCTS)][['공시구분', '계정', '기준일', '값']]
+    if f_sub.empty:
+        return dart_df, []
+
+    d_sub = d_sub.drop_duplicates(['공시구분', '계정', '기준일'], keep='first').rename(columns={'값': 'dv'})
+    f_sub = f_sub.drop_duplicates(['공시구분', '계정', '기준일'], keep='first').rename(columns={'값': 'fv'})
+    m = d_sub.merge(f_sub, on=['공시구분', '계정', '기준일'], how='inner')
+    if m.empty:
+        return dart_df, []
+
+    m = m[m['dv'].notna() & m['fv'].notna() & (m['dv'] != 0) & (m['fv'] != 0)]
+    if m.empty:
+        return dart_df, []
+
+    is_ratio = m['계정'].isin(_MISMATCH_RATIO_ACCTS)
+    ratio = m['dv'] / m['fv']
+    abs_ratio = ratio.abs()
+    sign_diff = (m['dv'] > 0) != (m['fv'] > 0)
+
+    ratio_bad = is_ratio & ((ratio < 0.5) | (ratio > 2.0))
+    signed_bad = (~is_ratio) & (sign_diff | (abs_ratio < 0.2) | (abs_ratio > 5.0))
+    bad = ratio_bad | signed_bad
+
+    if not bad.any():
+        return dart_df, []
+
+    bad_rows = m[bad]
+    removed_keys = list(zip(bad_rows['공시구분'], bad_rows['계정'], bad_rows['기준일']))
+    rem_set = set(removed_keys)
+
+    keys = pd.Series(list(zip(dart_df['공시구분'], dart_df['계정'], dart_df['기준일'])), index=dart_df.index)
+    mask = ~keys.isin(rem_set)
+    cleaned = dart_df[mask].reset_index(drop=True)
+    return cleaned, removed_keys
+
+
 def merge_fs_supplement(primary_df, secondary_df):
     """primary에 없는 계정을 secondary에서 보충 — 벡터화 버전"""
     # primary 키셋 (벡터화)
@@ -777,9 +835,17 @@ def preload_all_data(start_str, end_str, trading_dates=None, use_rev_accel=False
             pass
 
     supplement_total = 0
+    fix_total = 0  # 항목별 정정 row 수
+    fix_tickers = 0
     all_tickers = set(dart_map) | set(fn_map)
     for ticker in all_tickers:
         if ticker in dart_map:
+            # 항목별 mismatch 자동 정정 (옵션 F, 2026-05-12 도입)
+            if ticker in fn_map:
+                dart_map[ticker], removed = fix_dart_account_mismatch(dart_map[ticker], fn_map[ticker])
+                if removed:
+                    fix_total += len(removed)
+                    fix_tickers += 1
             if ticker in fn_map and check_data_mismatch(dart_map[ticker], fn_map[ticker]):
                 data['fs'][ticker] = fn_map[ticker]
                 fn_count += 1
@@ -808,7 +874,8 @@ def preload_all_data(start_str, end_str, trading_dates=None, use_rev_accel=False
 
     swap_msg = f', 불일치→FnGuide {mismatch_swap}' if mismatch_swap else ''
     sup_msg = f', FnGuide보충 {supplement_total}건' if supplement_total else ''
-    print(f'    {len(data["fs"])}종목 (DART {dart_count} + FnGuide {fn_count}{swap_msg}{sup_msg})')
+    fix_msg = f', 항목정정 {fix_tickers}종목/{fix_total}row' if fix_total else ''
+    print(f'    {len(data["fs"])}종목 (DART {dart_count} + FnGuide {fn_count}{swap_msg}{sup_msg}{fix_msg})')
 
     # 6. Growth 팩터 사전계산
     fs_for_growth = dict(data['fs'])
