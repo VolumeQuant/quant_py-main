@@ -102,8 +102,9 @@ def main():
     if big_diff_tickers:
         print(f'           표본: {big_diff_tickers}')
 
-    THRESHOLD_BIG_DIFF = 5  # 2026-05-12 사고 후 강화 (이전 50 → 5)
-    # baseline (재수집 완료 후 기대): 0 ~ 3 (정상 지주사 등 false positive)
+    THRESHOLD_BIG_DIFF = 10  # 2026-05-13 baseline 측정 후 조정 (5 → 10)
+    # baseline (215 재수집 후 측정): 7~10 (지주사 + 작은 회사 매출 OFS false positive)
+    # 5는 너무 엄격 → 매일 false alarm. 10이 정상 baseline.
     if big_diff > THRESHOLD_BIG_DIFF:
         print(f'[health] ⚠️ 매출 5배+ 차이 {big_diff} > {THRESHOLD_BIG_DIFF} — SG&A 매핑 또는 캐시 무결성 위반 의심')
         abnormal = True
@@ -135,7 +136,9 @@ def main():
     if opi_sign_tickers:
         print(f'           표본: {opi_sign_tickers}')
 
-    THRESHOLD_OPI_SIGN = 3  # baseline (LG엔솔/LG화학 같은 사례 0~2 정상 후) — 4+ 비정상
+    THRESHOLD_OPI_SIGN = 5  # 2026-05-13 baseline 측정 후 조정 (3 → 5)
+    # baseline: LG엔솔/LG화학/알파칩스 3건 = DART vs FN 영업이익 정의 차이 (재수집 무의미)
+    # 6+ 새 종목 등장 시 진짜 매핑 사고 의심
     if opi_sign_diff > THRESHOLD_OPI_SIGN:
         print(f'[health] ⚠️ 영업이익 부호 다름 {opi_sign_diff} > {THRESHOLD_OPI_SIGN} — 영업이익 매핑 사고 의심')
         abnormal = True

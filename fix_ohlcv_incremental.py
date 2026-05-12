@@ -6,11 +6,18 @@
 
 방식: pykrx 일자별 ALL 호출 (사용자 원칙: 1초 sleep, 순차)
 """
-import sys, time
+import sys, os, time
 from pathlib import Path
 from datetime import datetime, timedelta
 import pandas as pd
 sys.stdout.reconfigure(encoding='utf-8')
+
+# KRX 로그인 (2026-02-27 정책: 로그인 필수)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import krx_auth
+if not krx_auth.login():
+    print('ERROR: KRX 로그인 실패 — 자격증명 확인 (config.KRX_USER_ID/KRX_PASSWORD)')
+    sys.exit(1)
 
 from pykrx import stock as pykrx_stock
 
