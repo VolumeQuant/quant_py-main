@@ -102,45 +102,45 @@ def fix_dart_account_mismatch(dart_df, fn_df):
       - y 매출 mismatch 183개 중 영업이익도 mismatch 1개, 자산 0개, 자본 0개
     → 광범위 폐기 대신 항목별 정정. merge_fs_supplement이 FN으로 자동 보충.
 
+    Part 1 (cross-sectional)만 유지. Part 2 시계열 검증은 폐기 (2026-05-12):
+    - 링네트 사건 진짜 원인 = fs_dart 캐시 자체가 잘못된 값 (1/10 크기)
+    - 전체 재수집으로 캐시 정정 → 시계열 검증 불필요
+
     Returns:
         (cleaned_df, removed_keys) — removed_keys: [(공시구분, 계정, 기준일), ...]
     """
-    if dart_df is None or dart_df.empty or fn_df is None or fn_df.empty:
+    if dart_df is None or dart_df.empty:
         return dart_df, []
 
-    d_sub = dart_df[dart_df['계정'].isin(_MISMATCH_ALL_ACCTS)][['공시구분', '계정', '기준일', '값']]
-    if d_sub.empty:
+    removed_keys = []
+
+    # ========== Part 1: DART vs FN cross-sectional 비교 (기존) ==========
+    if fn_df is not None and not fn_df.empty:
+        d_sub = dart_df[dart_df['계정'].isin(_MISMATCH_ALL_ACCTS)][['공시구분', '계정', '기준일', '값']]
+        if not d_sub.empty:
+            f_sub = fn_df[fn_df['계정'].isin(_MISMATCH_ALL_ACCTS)][['공시구분', '계정', '기준일', '값']]
+            if not f_sub.empty:
+                d_sub = d_sub.drop_duplicates(['공시구분', '계정', '기준일'], keep='first').rename(columns={'값': 'dv'})
+                f_sub = f_sub.drop_duplicates(['공시구분', '계정', '기준일'], keep='first').rename(columns={'값': 'fv'})
+                m = d_sub.merge(f_sub, on=['공시구분', '계정', '기준일'], how='inner')
+                if not m.empty:
+                    m = m[m['dv'].notna() & m['fv'].notna() & (m['dv'] != 0) & (m['fv'] != 0)]
+                    if not m.empty:
+                        is_ratio = m['계정'].isin(_MISMATCH_RATIO_ACCTS)
+                        ratio = m['dv'] / m['fv']
+                        abs_ratio = ratio.abs()
+                        sign_diff = (m['dv'] > 0) != (m['fv'] > 0)
+                        ratio_bad = is_ratio & ((ratio < 0.5) | (ratio > 2.0))
+                        signed_bad = (~is_ratio) & (sign_diff | (abs_ratio < 0.2) | (abs_ratio > 5.0))
+                        bad = ratio_bad | signed_bad
+                        if bad.any():
+                            bad_rows = m[bad]
+                            removed_keys.extend(list(zip(bad_rows['공시구분'], bad_rows['계정'], bad_rows['기준일'])))
+
+    if not removed_keys:
         return dart_df, []
-    f_sub = fn_df[fn_df['계정'].isin(_MISMATCH_ALL_ACCTS)][['공시구분', '계정', '기준일', '값']]
-    if f_sub.empty:
-        return dart_df, []
 
-    d_sub = d_sub.drop_duplicates(['공시구분', '계정', '기준일'], keep='first').rename(columns={'값': 'dv'})
-    f_sub = f_sub.drop_duplicates(['공시구분', '계정', '기준일'], keep='first').rename(columns={'값': 'fv'})
-    m = d_sub.merge(f_sub, on=['공시구분', '계정', '기준일'], how='inner')
-    if m.empty:
-        return dart_df, []
-
-    m = m[m['dv'].notna() & m['fv'].notna() & (m['dv'] != 0) & (m['fv'] != 0)]
-    if m.empty:
-        return dart_df, []
-
-    is_ratio = m['계정'].isin(_MISMATCH_RATIO_ACCTS)
-    ratio = m['dv'] / m['fv']
-    abs_ratio = ratio.abs()
-    sign_diff = (m['dv'] > 0) != (m['fv'] > 0)
-
-    ratio_bad = is_ratio & ((ratio < 0.5) | (ratio > 2.0))
-    signed_bad = (~is_ratio) & (sign_diff | (abs_ratio < 0.2) | (abs_ratio > 5.0))
-    bad = ratio_bad | signed_bad
-
-    if not bad.any():
-        return dart_df, []
-
-    bad_rows = m[bad]
-    removed_keys = list(zip(bad_rows['공시구분'], bad_rows['계정'], bad_rows['기준일']))
     rem_set = set(removed_keys)
-
     keys = pd.Series(list(zip(dart_df['공시구분'], dart_df['계정'], dart_df['기준일'])), index=dart_df.index)
     mask = ~keys.isin(rem_set)
     cleaned = dart_df[mask].reset_index(drop=True)

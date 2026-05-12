@@ -275,17 +275,26 @@ class DartCollector:
         """
         rows = []
 
+        # 분기별 fs_div 추적용 (진단/모니터링용 컬럼 저장)
+        year_fs_divs = {}  # {(year, qname): 'CFS' or 'OFS'}
+
         for year in range(start_year, end_year + 1):
             year_data = {}  # {quarter: {계정: 값}}
             year_rcept = {}  # {quarter: rcept_dt}
             q3_cumulative = {}  # Q3 누적값 (Q4 도출용)
 
             for qname, rcode in REPORT_CODES.items():
+                df = None
+                used_fs_div = None
                 try:
                     df = self._api_call(ticker, year, reprt_code=rcode, fs_div='CFS')
-                    if df is None or (hasattr(df, 'empty') and df.empty):
+                    if df is not None and not (hasattr(df, 'empty') and df.empty):
+                        used_fs_div = 'CFS'
+                    else:
                         # CFS 없으면 OFS 폴백
                         df = self._api_call(ticker, year, reprt_code=rcode, fs_div='OFS')
+                        if df is not None and not (hasattr(df, 'empty') and df.empty):
+                            used_fs_div = 'OFS'
                 except RuntimeError:
                     raise  # API 한도 에러는 상위로 전파
                 except Exception:
@@ -298,6 +307,7 @@ class DartCollector:
                 rcept_dt = self._get_rcept_dt(df)
                 year_data[qname] = accounts
                 year_rcept[qname] = rcept_dt
+                year_fs_divs[(year, qname)] = used_fs_div
 
                 # Q3 보고서에서 누적값 추출
                 if qname == 'Q3':
@@ -338,6 +348,8 @@ class DartCollector:
                     continue
 
                 rcept_dt = year_rcept.get(qname)
+                # fs_div 추적: Q4는 Y에서 도출되므로 Y의 fs_div 사용
+                fs_div_used = year_fs_divs.get((year, qname)) or year_fs_divs.get((year, 'Y'))
                 for acct, val in accounts.items():
                     rows.append({
                         '계정': acct,
@@ -346,10 +358,11 @@ class DartCollector:
                         '종목코드': ticker,
                         '공시구분': disclosure,
                         'rcept_dt': rcept_dt,
+                        'fs_div': fs_div_used,
                     })
 
         if not rows:
-            return pd.DataFrame(columns=['계정', '기준일', '값', '종목코드', '공시구분', 'rcept_dt'])
+            return pd.DataFrame(columns=['계정', '기준일', '값', '종목코드', '공시구분', 'rcept_dt', 'fs_div'])
 
         result = pd.DataFrame(rows)
         # 중복 제거 (같은 계정+기준일+공시구분)
