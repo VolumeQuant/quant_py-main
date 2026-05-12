@@ -1236,6 +1236,36 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
     # v80: 동점 tie-breaker를 cr 작은 쪽(오늘 더 강한 종목) 우선 — 파일 생성/궤적 맵과 일치
     sorted_pipeline = sorted(pipeline, key=lambda x: (x.get('weighted_rank', x['rank']), x.get('composite_rank', 999)))
 
+    # v80.3 안전망 (2026-05-12): 이격도20 > 1.5 종목 완전 제거 (관찰 목록에서도)
+    # 부모님 같은 가입자가 Watchlist 1위 보고 매수하는 위험 차단
+    try:
+        import glob as _glob_w
+        _ohlcv_files = sorted(_glob_w.glob('C:/dev/data_cache/all_ohlcv_*.parquet'))
+        if _ohlcv_files:
+            _ohlcv_w = pd.read_parquet(_ohlcv_files[-1]).replace(0, np.nan).ffill()
+            _base_ts = pd.Timestamp(rankings_t0.get('date', '20260101'))
+            if _base_ts in _ohlcv_w.index:
+                _idx = _ohlcv_w.index.get_loc(_base_ts)
+                if _idx >= 19:
+                    _window = _ohlcv_w.iloc[_idx-19:_idx+1]
+                    _sma20 = _window.mean()
+                    _cur = _ohlcv_w.iloc[_idx]
+                    _disp20_map = (_cur / _sma20.replace(0, np.nan)).to_dict()
+                    blocked_w = []
+                    new_sorted = []
+                    for s in sorted_pipeline:
+                        d = _disp20_map.get(s['ticker'])
+                        if d is not None and pd.notna(d) and d > 1.5:
+                            blocked_w.append((s['name'], d))
+                            continue
+                        new_sorted.append(s)
+                    if blocked_w:
+                        print(f'  Watchlist 이격도20 차단: {len(blocked_w)}종목 — ' +
+                              ', '.join(f'{n}({d:.2f})' for n,d in blocked_w[:5]))
+                    sorted_pipeline = new_sorted
+    except Exception as e:
+        print(f'  Watchlist 이격도20 필터 실패: {e}')
+
     # 상위 WATCHLIST_N개만 표시
     display_pipeline = sorted_pipeline[:WATCHLIST_N]
 
@@ -1644,6 +1674,7 @@ def main():
                     'w52_pct': tech.get('w52_pct', 0),
                     'daily_chg': tech.get('daily_chg', 0),
                     'price': tech.get('price', 0),
+                    'disparity20': tech.get('disparity20'),  # v80.3: BT 검증 안전망 기준
                     'tech_missing': tech_missing,
                 }
                 stock_list.append(stock_data)

@@ -45,9 +45,9 @@ def compute_risk_flags(s):
     if s.get('tech_missing'):
         flags.append("⚠️ 기술지표 확인 불가 (데이터 누락)")
 
-    # 1. 과매수 (RSI >= 80) — 극단적 과열만 경고
-    if rsi >= 80:
-        flags.append(f"🔺 RSI {rsi:.0f}로 과매수 구간")
+    # v80.3 (2026-05-12): 이격도20 안전망 도입 후 "매수 주의" 표시 제거.
+    # 이격도20 > 1.5는 시스템이 이미 Top 20에서 차단함.
+    # → Top 20에 보이는 종목 = 모두 매수 가능 영역. 별도 주의 표시 불필요.
 
     return flags
 
@@ -91,7 +91,10 @@ def build_prompt(stock_list, base_date=None, market_context=None, market_index=N
             data_parts.append(f"PBR {pbr:.1f}")
         if roe and roe == roe:
             data_parts.append(f"ROE {roe:.1f}%")
+        disp20 = s.get('disparity20')
         data_parts.append(f"RSI {rsi:.0f}")
+        if disp20 is not None:
+            data_parts.append(f"이격도20 {disp20:.2f}")
         data_parts.append(f"52주 {w52:+.0f}%")
         data_parts.append(f"전일 {chg:+.1f}%")
         if vol >= 1.5:
@@ -149,8 +152,9 @@ def build_prompt(stock_list, base_date=None, market_context=None, market_index=N
 [종목별 데이터 & 위험 신호 — 시스템이 계산한 팩트]
 {signals_data}
 
-[위험 신호 설명]
-🔺 RSI 과매수 = RSI 80 이상, 극단적 과열 구간 (조정 가능성)
+[참고]
+이격도20 > 1.5 종목은 시스템이 이미 Top 20에서 차단함 (BT 7.8년 검증).
+화면에 표시되는 종목 = 매수 가능 영역. 별도 주의 표시 불필요.
 
 [출력 형식 — 반드시 지켜]
 - 한국어, ~입니다 체. 번역투 금지. 자연스럽게.
@@ -178,14 +182,10 @@ def build_prompt(stock_list, base_date=None, market_context=None, market_index=N
   마감 시점까지 이미 발표된 경제지표(FOMC, CPI, 고용 등)는 "결과"로 써.
   "향후 예정", "발표될 예정" 같은 미래형은 마감 이후 일정에만 써.
 
-⚠️ 매수 주의 종목
-위 위험 신호를 종합해서 매수를 재고할 만한 종목을 골라줘.
-형식: 종목명(티커)를 굵게(**) 쓰고, 1~2줄로 왜 주의해야 하는지 설명.
-위험 신호가 없는 종목은 절대 여기에 넣지 마.
-⚠️ 위험 신호가 있는 종목이 하나도 없으면 이 섹션 전체를 생략해. "해당 없음" 같은 문구도 쓰지 마.
-시스템 데이터에 없는 내용을 추측하거나 지어내지 마.
-"✅ 위험 신호 없음" 섹션은 시스템이 자동 생성하니까 네가 만들지 마.
-종목 사이에 구분선이나 [SEP] 같은 마커 넣지 마. 코드가 알아서 처리해."""
+⚠️ "매수 주의 종목" 섹션을 절대 만들지 마.
+v80.3 이격도20 안전망(BT 검증)이 위험 종목을 시스템에서 이미 거름.
+"✅ 위험 신호 없음" 섹션도 만들지 마. 코드가 자동 생성함.
+시장 동향 섹션만 작성하고 끝내."""
 
     return prompt
 

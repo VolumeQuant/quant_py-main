@@ -1603,9 +1603,10 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
 
     # --- 3. 종목명 키워드 제외 ---
     # 2026-05-12: KRX 섹터 "금융" 필터 제거 (산업지주사 NAV 알파 보존).
-    # 한국 시장 NAV 디스카운트 해소 사이클(2023 자본시장법, 2024 밸류업, 2025 상법개정)을
-    # 시스템이 9년 BT에서 알파로 측정함 (옵션F만 Cal 4.29 vs 옵션F+섹터필터 Cal 3.73).
-    # 자회사-지주 중복 진입 위험은 종목별 점수 차이로 자연 분리됨.
+    # 5/12 link 사건 분석: 섹터필터로 link 차단 안 됨 (link은 IT섹터, 오늘 데이터 기준).
+    # link 차단 실패한 다른 안전망: 이격도20/매출CV/매출점프/RSI 모두 실패.
+    # 결론: link은 시스템적 차단 불가능 (정량적으로 정상 알파 분포 안).
+    # 매수 후보 Top 3엔 link 안 들어감 = 부모님 매수 신호 차단 OK.
     filtered['종목명'] = filtered.index.map(lambda t: tnames.get(t, t))
     extra_kw = ['화재', '생명'] if preloaded.get('strict_filter') else []
     all_keywords = list(EXCLUDE_KEYWORDS) + extra_kw
