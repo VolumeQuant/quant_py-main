@@ -38,9 +38,9 @@ DEFENSE_ENV = {
 
 jobs = [
     ('boost_bt_ext',  '20180702', '20201230', str(PROJECT / 'backtest' / 'bt_extended'),          BOOST_ENV),
-    ('boost_state',   '20210104', '20260418', str(PROJECT / 'state'),                             BOOST_ENV),
+    ('boost_state',   '20210104', '20260511', str(PROJECT / 'state'),                             BOOST_ENV),
     ('def_bt_ext',    '20180702', '20201230', str(PROJECT / 'backtest' / 'bt_extended_defense'),   DEFENSE_ENV),
-    ('def_state',     '20210104', '20260418', str(PROJECT / 'state' / 'defense'),                 DEFENSE_ENV),
+    ('def_state',     '20210104', '20260511', str(PROJECT / 'state' / 'defense'),                 DEFENSE_ENV),
 ]
 
 print(f'v80 전체 재생성 시작 — 4작업 (2병렬 × 2순차)')

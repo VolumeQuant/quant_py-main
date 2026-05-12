@@ -14,13 +14,14 @@
   DRY_RUN=1 python refetch_serial.py         # 실행 전 시뮬레이션
 """
 import sys, os, time, shutil
-sys.path.insert(0, 'C:/dev')
+PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, PROJECT_DIR)
 sys.stdout.reconfigure(encoding='utf-8')
 
 
 def main():
     DRY_RUN = os.environ.get('DRY_RUN') == '1'
-    input_file = os.environ.get('BAD_LIST', 'C:/dev/bad_tickers_v3.txt')
+    input_file = os.environ.get('BAD_LIST', os.path.join(PROJECT_DIR, 'bad_tickers_v3.txt'))
 
     if not os.path.exists(input_file):
         print(f'ERROR: 입력 파일 없음: {input_file}')
@@ -39,7 +40,7 @@ def main():
     if DRY_RUN:
         print(f'\nDRY_RUN=1: 실제 호출 없음, 입력만 검증')
         for tk in tickers:
-            cp = f'C:/dev/data_cache/fs_dart_{tk}.parquet'
+            cp = f'{PROJECT_DIR}/data_cache/fs_dart_{tk}.parquet'
             exists = '있음' if os.path.exists(cp) else '없음'
             print(f'  {tk} (캐시 {exists})')
         return 0
@@ -59,7 +60,7 @@ def main():
     BACKOFF = [60, 180, 600]
 
     for i, tk in enumerate(tickers):
-        cp = f'C:/dev/data_cache/fs_dart_{tk}.parquet'
+        cp = f'{PROJECT_DIR}/data_cache/fs_dart_{tk}.parquet'
         retries = 0
         while retries <= len(BACKOFF):
             try:
@@ -92,7 +93,7 @@ def main():
                 failed.append((tk, f'{type(e).__name__}:{e}'))
                 print(f'  [{i+1}/{len(tickers)}] {tk}: ✗ {type(e).__name__}', flush=True)
                 break
-        time.sleep(5)
+        time.sleep(0.3)  # 종목간 sleep — 사용자 회상 "1초보다 짧음" 반영 (2026-05-12)
 
     elapsed = time.time() - t0
     print(f'\n{"="*60}')
@@ -101,12 +102,12 @@ def main():
     print(f'{"="*60}')
 
     if failed:
-        with open('C:/dev/refetch_failed.txt', 'w') as f:
+        with open(os.path.join(PROJECT_DIR, 'refetch_failed.txt'), 'w') as f:
             for tk, _ in failed:
                 f.write(tk + '\n')
         print(f'저장: refetch_failed.txt ({len(failed)}종목)')
     if empty:
-        with open('C:/dev/refetch_empty.txt', 'w') as f:
+        with open(os.path.join(PROJECT_DIR, 'refetch_empty.txt'), 'w') as f:
             for tk in empty:
                 f.write(tk + '\n')
         print(f'저장: refetch_empty.txt ({len(empty)}종목)')

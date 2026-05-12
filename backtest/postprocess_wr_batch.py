@@ -12,9 +12,12 @@ from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor, as_completed
 sys.stdout.reconfigure(encoding='utf-8')
 
+_PROJECT = Path(__file__).parent.parent
 STATE_DIRS = [
-    Path('C:/dev/state'),
-    Path('C:/dev/state/defense'),
+    _PROJECT / 'state',
+    _PROJECT / 'state' / 'defense',
+    _PROJECT / 'backtest' / 'bt_extended',
+    _PROJECT / 'backtest' / 'bt_extended_defense',
 ]
 
 PENALTY = 50

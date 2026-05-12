@@ -161,7 +161,7 @@ def run_v80(boost_rk, defense_rk, dates, ohlcv, kospi, ma170,
 
 def main():
     print('=== 옵션F BT 비교 ===')
-    ohlcv_files = sorted((PROJECT/'data_cache').glob('all_ohlcv_2017*.parquet'))
+    ohlcv_files = sorted((PROJECT/'data_cache').glob('all_ohlcv_*.parquet'))
     ohlcv = pd.read_parquet(ohlcv_files[-1]).replace(0, np.nan)
     kospi_df = pd.read_parquet(PROJECT/'data_cache'/'kospi_yf.parquet')
     kospi = kospi_df.iloc[:,0].fillna(kospi_df['kospi']).dropna() if 'kospi' in kospi_df.columns else kospi_df.iloc[:,0].dropna()

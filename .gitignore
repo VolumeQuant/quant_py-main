@@ -48,13 +48,14 @@ temp_*.json
 temp_*.b64
 temp_*.yml
 
-# 옵션F BT 검증 데이터 (459MB, 2026-05-12 1회성 검증, 결과는 SYSTEM_MAP §13에 텍스트 보존)
+# 옵션F 사고 산물 (2026-05-12 폐기됨, 재발 방지 차원에서 ignore 유지)
 backtest/bt_optf_boost/
 backtest/bt_optf_defense/
 backtest/state_optf_test/
 backtest/state_optf_test_511/
 backtest/state_finfilter_test/
+state_new/
 
-# 옵션F production 재생성 백업 (2026-05-12, 검증 통과 후 archive 가능)
+# 옵션F 이전 백업 (Step 3 재수집 후 사용 가능, 진행 중 보존)
 state_backup_pre_optf_20260512/
 data_cache/all_ohlcv_*.parquet

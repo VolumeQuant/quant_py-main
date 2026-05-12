@@ -473,11 +473,19 @@ def main():
             log(f"FnGuide 갱신 오류: {e} — 기존 캐시로 진행", logfile)
 
         # 0.2. DART vs FN 캐시 무결성 자동 검사 (2026-05-12 SG&A 사고 후 추가)
+        # 5/15 1Q 폭주 대비 강화 (2026-05-12): 의심 시 개인봇 즉시 알림 (비차단 유지)
         log("DART vs FN 캐시 무결성 검사", logfile)
         try:
             ok_health = run_script("monitor_dart_fn_health.py", timeout=300, logfile=logfile)
             if not ok_health:
-                log("⚠️ 캐시 무결성 의심 — 텔레그램 개인봇 알림 권장 (비차단)", logfile)
+                log("⚠️ 캐시 무결성 의심 — 개인봇 즉시 알림", logfile)
+                _send_personal_warning(
+                    "⚠️ <b>캐시 무결성 의심 감지</b>\n\n"
+                    "DART vs FN baseline 임계값 초과. monitor_dart_fn_health.py 로그 점검 필요.\n"
+                    "5/15 1Q 폭주 시기 — 매핑 사고 재발 가능성 점검 권장.\n\n"
+                    "ranking 발송은 계속 진행 (비차단).",
+                    logfile=logfile,
+                )
         except Exception as e:
             log(f"무결성 검사 오류: {e} — 비차단", logfile)
 

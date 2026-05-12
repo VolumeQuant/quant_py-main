@@ -14,14 +14,15 @@
   2 = 치명적 (재수집 전보다 악화)
 """
 import sys, os, glob, json
-sys.path.insert(0, 'C:/dev')
+PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, PROJECT_DIR)
 sys.stdout.reconfigure(encoding='utf-8')
 import pandas as pd
 
 
 def check_bad_v3_recovery():
     """bad_tickers_v3 179종목이 재수집 후 FN과 매출 일치하는지"""
-    with open('C:/dev/bad_tickers_v3.txt') as f:
+    with open(os.path.join(PROJECT_DIR, 'bad_tickers_v3.txt')) as f:
         v3 = [l.strip() for l in f if l.strip()]
 
     still_bad = []
@@ -29,8 +30,8 @@ def check_bad_v3_recovery():
     missing_fn = 0
 
     for tk in v3:
-        fp = f'C:/dev/data_cache/fs_dart_{tk}.parquet'
-        fn_fp = f'C:/dev/data_cache/fs_fnguide_{tk}.parquet'
+        fp = f'{PROJECT_DIR}/data_cache/fs_dart_{tk}.parquet'
+        fn_fp = f'{PROJECT_DIR}/data_cache/fs_fnguide_{tk}.parquet'
         if not os.path.exists(fp):
             still_bad.append((tk, 'cache_missing'))
             continue
@@ -65,11 +66,11 @@ def check_overall_baseline():
     # 재수집 완료 후 기대치 (정상 지주사 7개 + 산업지주사 SK스퀘어 등 false positive 약 10개)
     # 2026-05-12 tier2 분석: 147종목 중 지주사 키워드 7 + SK스퀘어 같은 산업지주사 약 3
     BASELINE_AFTER_REFETCH = 10
-    all_files = sorted(glob.glob('C:/dev/data_cache/fs_dart_*.parquet'))
+    all_files = sorted(glob.glob(f'{PROJECT_DIR}/data_cache/fs_dart_*.parquet'))
     big_diff = 0
     for fp in all_files:
         tk = os.path.basename(fp).replace('fs_dart_','').replace('.parquet','')
-        fn_fp = f'C:/dev/data_cache/fs_fnguide_{tk}.parquet'
+        fn_fp = f'{PROJECT_DIR}/data_cache/fs_fnguide_{tk}.parquet'
         if not os.path.exists(fn_fp): continue
         try:
             d = pd.read_parquet(fp); f = pd.read_parquet(fn_fp)
@@ -89,7 +90,7 @@ def check_overall_baseline():
 
 def check_opi_over_rev():
     """영업이익 > 매출 비정상 카운트"""
-    all_files = sorted(glob.glob('C:/dev/data_cache/fs_dart_*.parquet'))
+    all_files = sorted(glob.glob(f'{PROJECT_DIR}/data_cache/fs_dart_*.parquet'))
     count = 0
     for fp in all_files:
         try:

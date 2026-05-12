@@ -108,6 +108,38 @@ def main():
         print(f'[health] ⚠️ 매출 5배+ 차이 {big_diff} > {THRESHOLD_BIG_DIFF} — SG&A 매핑 또는 캐시 무결성 위반 의심')
         abnormal = True
 
+    # ── 추가 점검 (2026-05-12 LG엔솔/LG화학 사례 후): 영업이익 부호 다름 검사 ──
+    # DART와 FN의 y 영업이익 부호가 2년+ 다른 종목 = 매핑 사고 강한 신호
+    opi_sign_diff = 0
+    opi_sign_tickers = []
+    for fp in CACHE_DIR.glob('fs_dart_*.parquet'):
+        if 'backup' in fp.name: continue
+        tk = fp.stem.replace('fs_dart_', '')
+        fn_fp = CACHE_DIR / f'fs_fnguide_{tk}.parquet'
+        if not fn_fp.exists(): continue
+        try:
+            d = pd.read_parquet(fp); f = pd.read_parquet(fn_fp)
+            d_y = d[(d['공시구분']=='y') & (d['계정']=='영업이익') & d['값'].notna() & (d['값']!=0)].set_index('기준일')['값']
+            f_y = f[(f['공시구분']=='y') & (f['계정']=='영업이익') & f['값'].notna() & (f['값']!=0)].set_index('기준일')['값']
+            common = d_y.index.intersection(f_y.index)
+            if len(common) == 0: continue
+            sign_diff = sum(1 for ts in common if (float(d_y[ts]) > 0) != (float(f_y[ts]) > 0))
+            if sign_diff >= 2:
+                opi_sign_diff += 1
+                if len(opi_sign_tickers) < 10:
+                    opi_sign_tickers.append(tk)
+        except Exception:
+            pass
+
+    print(f'[health] DART vs FN 영업이익 부호 다름 (2년+) 종목: {opi_sign_diff}')
+    if opi_sign_tickers:
+        print(f'           표본: {opi_sign_tickers}')
+
+    THRESHOLD_OPI_SIGN = 3  # baseline (LG엔솔/LG화학 같은 사례 0~2 정상 후) — 4+ 비정상
+    if opi_sign_diff > THRESHOLD_OPI_SIGN:
+        print(f'[health] ⚠️ 영업이익 부호 다름 {opi_sign_diff} > {THRESHOLD_OPI_SIGN} — 영업이익 매핑 사고 의심')
+        abnormal = True
+
     if abnormal:
         print(f'\n[health] ⚠️ 비정상 변동: rows={fix_total}/{THRESHOLD_ROW}, tickers={fix_tickers}/{THRESHOLD_TICKER}, big_diff={big_diff}/{THRESHOLD_BIG_DIFF}')
         return 1

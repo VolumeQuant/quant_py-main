@@ -8,7 +8,8 @@
 호출 한도: 1954 × 2년 × 4분기 = 약 15,632 (트리플 키 59,700 안전)
 """
 import sys, os, glob, time, json
-sys.path.insert(0, 'C:/dev')
+PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, PROJECT_DIR)
 sys.stdout.reconfigure(encoding='utf-8')
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -18,7 +19,7 @@ from config import DART_API_KEYS
 REPRT_MAP = {3: '11013', 6: '11012', 9: '11014', 12: '11011'}
 DIAG_YEARS = [2024, 2025]  # 매핑 버그 영향 분기
 
-collectors = [DartCollector(api_key=DART_API_KEYS[i]) for i in range(3)]
+collectors = [DartCollector(api_key=DART_API_KEYS[0])]  # 단일 키, 사용자 원칙 "DART 병렬 절대 X"
 
 def get_dart_sga_year(dc, ticker, year):
     out = {}
@@ -39,8 +40,8 @@ def get_dart_sga_year(dc, ticker, year):
     return out
 
 def diagnose_ticker(args):
-    worker_idx, tk = args
-    fp = f'C:/dev/data_cache/fs_dart_{tk}.parquet'
+    _worker_idx, tk = args  # 단일 worker라 사용 안 함
+    fp = f'{PROJECT_DIR}/data_cache/fs_dart_{tk}.parquet'
     try:
         b = pd.read_parquet(fp)
         cache_rev = b[(b['공시구분']=='q') & (b['계정']=='매출액') & b['값'].notna()].sort_values('기준일')
@@ -50,7 +51,7 @@ def diagnose_ticker(args):
         if not cache_qtrs:
             return (tk, [], [], 'no_recent_q_rev')
 
-        dc = collectors[worker_idx]
+        dc = collectors[0]  # 단일 worker
         years = sorted(set(d.year for d in cache_qtrs.keys()))
         bad_qtrs = []
         ok_qtrs = []
@@ -75,7 +76,7 @@ if input_file and os.path.exists(input_file):
         all_tickers = [l.strip() for l in f if l.strip()]
     print(f'입력 파일: {input_file}')
 else:
-    all_files = sorted(glob.glob('C:/dev/data_cache/fs_dart_*.parquet'))
+    all_files = sorted(glob.glob(f'{PROJECT_DIR}/data_cache/fs_dart_*.parquet'))
     all_tickers = [os.path.basename(f).replace('fs_dart_','').replace('.parquet','') for f in all_files]
     print(f'입력: 전종목 (data_cache/fs_dart_*.parquet)')
 print(f'대상: {len(all_tickers)}종목')
@@ -83,25 +84,22 @@ print(f'대상: {len(all_tickers)}종목')
 # 결과 파일 — DIAG_INPUT 사용 시 파일명에 suffix 추가
 if input_file:
     base = os.path.basename(input_file).replace('.txt','')
-    OUTPUT_DETAIL = f'C:/dev/diagnose_{base}_detail.json'
-    OUTPUT_BAD = f'C:/dev/bad_tickers_{base}.txt'
+    OUTPUT_DETAIL = f'{PROJECT_DIR}/diagnose_{base}_detail.json'
+    OUTPUT_BAD = f'{PROJECT_DIR}/bad_tickers_{base}.txt'
 else:
-    OUTPUT_DETAIL = 'C:/dev/diagnose_all_detail.json'
-    OUTPUT_BAD = 'C:/dev/bad_tickers_v2.txt'
+    OUTPUT_DETAIL = os.path.join(PROJECT_DIR, 'diagnose_all_detail.json')
+    OUTPUT_BAD = os.path.join(PROJECT_DIR, 'bad_tickers_v2.txt')
 
 t0 = time.time()
 results = {}
-with ThreadPoolExecutor(max_workers=3) as ex:
-    args_list = [(i % 3, tk) for i, tk in enumerate(all_tickers)]
-    futs = {ex.submit(diagnose_ticker, a): a[1] for a in args_list}
-    n = 0
-    for fut in as_completed(futs):
-        r = fut.result()
-        results[r[0]] = r
-        n += 1
-        if n % 200 == 0:
-            elapsed = time.time() - t0
-            print(f'  {n}/{len(all_tickers)} ({elapsed:.0f}s, ETA {elapsed*(len(all_tickers)-n)/n:.0f}s)')
+# 단일 worker 순차 진행 (사용자 원칙 "DART 병렬 절대 X" — 회사 PC IP 차단 사례 반영)
+for n, tk in enumerate(all_tickers, 1):
+    r = diagnose_ticker((0, tk))
+    results[r[0]] = r
+    if n % 100 == 0:
+        elapsed = time.time() - t0
+        print(f'  {n}/{len(all_tickers)} ({elapsed:.0f}s, ETA {elapsed*(len(all_tickers)-n)/n:.0f}s)', flush=True)
+    time.sleep(0.3)  # 종목간 sleep
 
 # 집계
 bad = []
