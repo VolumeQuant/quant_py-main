@@ -148,8 +148,8 @@ def get_regime_params(mode):
             'G_W1': None, 'G_W2': None, 'G_W3': None,
             'MOM_PERIOD': '12m',
             'ENTRY_RANK': 3, 'EXIT_RANK': 6, 'MAX_SLOTS': 3,
-            'STOP_LOSS': -0.07,             # v80.2 (2026-05-11): -0.10 → -0.07
-            'TRAILING_STOP': -0.10,         # v80.2 (2026-05-11): -0.15 → -0.10
+            'STOP_LOSS': -0.10,             # v80.2 rollback (2026-05-12): 옵션F만 데이터 BT에서 baseline 우위
+            'TRAILING_STOP': -0.15,         # v80.2 rollback (2026-05-12)
             'TS_COOLDOWN': 2,               # v80.1: 트레일링 퇴출 후 2거래일 재진입 금지
             'CORR_THRESHOLD': None,
             'USE_REV_ACCEL': False,
@@ -166,8 +166,8 @@ def get_regime_params(mode):
             'G_W1': None, 'G_W2': None, 'G_W3': None,
             'MOM_PERIOD': '6m-1m',
             'ENTRY_RANK': 3, 'EXIT_RANK': 6, 'MAX_SLOTS': 5,  # v80: 7→5
-            'STOP_LOSS': -0.07,             # v80.2 (2026-05-11): -0.10 → -0.07
-            'TRAILING_STOP': -0.10,         # v80.2 (2026-05-11): -0.15 → -0.10
+            'STOP_LOSS': -0.10,             # v80.2 rollback (2026-05-12)
+            'TRAILING_STOP': -0.15,         # v80.2 rollback (2026-05-12)
             'TS_COOLDOWN': 2,               # v80.1: 트레일링 퇴출 후 2거래일 재진입 금지
             'CORR_THRESHOLD': None,
             'USE_REV_ACCEL': False,
