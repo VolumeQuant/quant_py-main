@@ -667,10 +667,14 @@ def get_stock_technical(ticker, base_date):
         rsi = calc_rsi(ohlcv['종가'])
         high_52w = ohlcv['고가'].max()
         w52_pct = (price / high_52w - 1) * 100
+        # 이격도20 = 현재가 / 20일 평균 (BT 검증 안전망, 2026-05-12)
+        sma20 = ohlcv['종가'].tail(20).mean() if len(ohlcv) >= 20 else None
+        disparity20 = (price / sma20) if (sma20 and sma20 > 0) else None
 
         return {
             'price': price, 'daily_chg': daily_chg,
             'rsi': rsi, 'w52_pct': w52_pct,
+            'sma20': sma20, 'disparity20': disparity20,
         }
     except Exception as e:
         print(f"  기술지표 실패 {ticker_str}: {e}")
@@ -1572,6 +1576,11 @@ def main():
         t1_cr_rank_main = _cr_int_rank_map_main(rankings_t1)
         t2_cr_rank_main = _cr_int_rank_map_main(rankings_t2)
 
+        # 이격도20 안전망 (BT 검증, 2026-05-12)
+        # KBI메탈 같은 폭등 종목 매수 후보 자동 차단 (이격도20 > 1.5)
+        # BT 7.8년: baseline Cal 3.937 → +안전망 Cal 4.117 (+0.18)
+        DISPARITY_THRESHOLD = 1.5
+        overextended_excluded = []
         for candidate in verified_picks:
             tech = get_stock_technical(candidate['ticker'], BASE_DATE)
             candidate['_tech'] = tech
@@ -1583,9 +1592,17 @@ def main():
             if daily_chg <= -5:
                 drop_info.append((candidate, daily_chg))
 
+            # 이격도20 차단 안전망
+            disparity20 = (tech or {}).get('disparity20')
+            if disparity20 is not None and disparity20 > DISPARITY_THRESHOLD:
+                overextended_excluded.append((candidate, disparity20))
+                print(f"  🚫 이격도20 차단: {candidate['name']} (이격도 {disparity20:.2f} > {DISPARITY_THRESHOLD})")
+                continue
+
             all_candidates.append(candidate)
             if tech:
-                print(f"    {candidate['name']}: rank {candidate['rank']}, RSI {tech['rsi']:.0f}, 52주 {tech['w52_pct']:.0f}%")
+                disp_str = f", 이격도20 {tech.get('disparity20', 0):.2f}" if tech.get('disparity20') else ''
+                print(f"    {candidate['name']}: rank {candidate['rank']}, RSI {tech['rsi']:.0f}, 52주 {tech['w52_pct']:.0f}%{disp_str}")
             else:
                 print(f"    {candidate['name']}: rank {candidate['rank']} (기술지표 실패)")
     else:
