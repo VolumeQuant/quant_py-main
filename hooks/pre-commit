@@ -1,69 +1,92 @@
-#!/bin/bash
-# pre-commit hook — fs_dart 캐시 무결성 + ACCOUNT_ID_MAP 무결성 자동 검사
+#!/bin/sh
+# pre-commit hook — dart_collector / fs_dart 변경 시 무결성 자동 검사
 # 2026-05-12 SG&A 매핑 사고 재발 방지
+#
+# Git for Windows 환경에서 자동으로 sh 호출 (mingw64 환경).
+# Linux/Mac도 동일.
 
-PYTHON="/c/Users/user/miniconda3/envs/volumequant/python.exe"
-REPO_ROOT="$(git rev-parse --show-toplevel)"
+REPO="$(git rev-parse --show-toplevel)"
 
-# ── 1. dart_collector ACCOUNT_ID_MAP 변경 검출 시 unit test ──
+# Python 경로 (Windows + miniconda 환경 자동 탐지)
+if [ -f "/c/Users/user/miniconda3/envs/volumequant/python.exe" ]; then
+    PYTHON="/c/Users/user/miniconda3/envs/volumequant/python.exe"
+elif command -v python >/dev/null 2>&1; then
+    PYTHON="python"
+elif command -v python3 >/dev/null 2>&1; then
+    PYTHON="python3"
+else
+    echo "[pre-commit] ⚠️ Python not found in PATH — skip"
+    exit 0
+fi
+
+# UTF-8 출력 강제 (Windows cp949 회피)
+export PYTHONIOENCODING=utf-8
+
+# 1. dart_collector.py 변경 → unit test
 if git diff --cached --name-only | grep -q "dart_collector.py"; then
-    echo "[pre-commit] dart_collector.py 변경 검출 → 매핑 무결성 검사"
-    if [ -f "$REPO_ROOT/test_account_map.py" ]; then
-        "$PYTHON" "$REPO_ROOT/test_account_map.py"
+    echo "[pre-commit] dart_collector.py 변경 검출 -> 매핑 무결성 검사"
+    if [ -f "$REPO/test_account_map.py" ]; then
+        "$PYTHON" "$REPO/test_account_map.py"
         if [ $? -ne 0 ]; then
-            echo "[pre-commit] ❌ 매핑 무결성 검사 실패 — commit 차단"
-            echo "  수정 후 다시 시도하거나 --no-verify 사용 (권장하지 않음)"
+            echo "[pre-commit] FAIL: 매핑 무결성 검사 실패 - commit 차단"
+            echo "  --no-verify 사용 금지 (사고 재발 위험)"
             exit 1
         fi
     fi
 fi
 
-# ── 2. fs_dart 캐시 변경 시 SG&A 일치 패턴 자동 검사 ──
+# 2. fs_dart 캐시 변경 → FN 5배+ 차이 검사 (표본 10)
 CHANGED_FS=$(git diff --cached --name-only | grep "data_cache/fs_dart_" | head -10)
 if [ -n "$CHANGED_FS" ]; then
-    echo "[pre-commit] fs_dart 캐시 변경 검출 → 무결성 검사 (표본 10개)"
-    "$PYTHON" -c "
-import sys, pandas as pd, os
+    NUM_CHANGED=$(echo "$CHANGED_FS" | wc -l)
+    echo "[pre-commit] fs_dart 캐시 변경 검출 -> 무결성 검사 (표본 $NUM_CHANGED)"
+
+    "$PYTHON" - <<PYEOF
+import sys, os
+import pandas as pd
 sys.stdout.reconfigure(encoding='utf-8')
 
-files = '''$CHANGED_FS'''.strip().split('\n')
 suspicious = []
-for fp in files:
-    full = '$REPO_ROOT/' + fp.replace('data_cache/', 'data_cache/')
-    if not os.path.exists(full): continue
+files = """$CHANGED_FS""".strip().split('\n')
+for fp_rel in files:
+    fp = os.path.join("$REPO", fp_rel)
+    if not os.path.exists(fp):
+        continue
     try:
-        b = pd.read_parquet(full)
-        # 24Q1 매출이 비정상적으로 작은지 (SG&A 매핑 흔적 의심)
+        b = pd.read_parquet(fp)
         rev = b[(b['공시구분']=='q') & (b['계정']=='매출액') & (b['기준일']==pd.Timestamp('2024-03-31'))]
-        if rev.empty: continue
+        if rev.empty:
+            continue
         v = float(rev['값'].iloc[0])
-        # FN 매출과 5배+ 차이
-        tk = os.path.basename(full).replace('fs_dart_','').replace('.parquet','')
-        fn_fp = full.replace('fs_dart_','fs_fnguide_')
-        if os.path.exists(fn_fp):
-            f = pd.read_parquet(fn_fp)
-            f_rev = f[(f['공시구분']=='q') & (f['계정']=='매출액') & (f['기준일']==pd.Timestamp('2024-03-31'))]
-            if not f_rev.empty:
-                fv = float(f_rev['값'].iloc[0])
-                if v != 0 and fv != 0 and (fv/v > 5 or v/fv > 5):
-                    suspicious.append((tk, v, fv))
+        tk = os.path.basename(fp).replace('fs_dart_', '').replace('.parquet', '')
+        fn_fp = os.path.join("$REPO", 'data_cache', f'fs_fnguide_{tk}.parquet')
+        if not os.path.exists(fn_fp):
+            continue
+        f = pd.read_parquet(fn_fp)
+        f_rev = f[(f['공시구분']=='q') & (f['계정']=='매출액') & (f['기준일']==pd.Timestamp('2024-03-31'))]
+        if f_rev.empty:
+            continue
+        fv = float(f_rev['값'].iloc[0])
+        if v != 0 and fv != 0 and (fv/v > 5 or v/fv > 5):
+            suspicious.append((tk, v, fv))
     except Exception:
         pass
 
 if suspicious:
-    print('  ⚠️  매출 5배+ 차이 의심 종목:')
+    print('  매출 5배+ 차이 의심 종목:')
     for tk, dv, fv in suspicious:
         print(f'    {tk}: DART {dv:.1f}억 vs FN {fv:.1f}억')
-    print('  → SG&A 매핑 흔적 가능성. 재수집 후 다시 commit 권장')
+    print('  -> SG&A 매핑 흔적 가능성. refetch_serial.py로 재수집 후 다시 commit')
     sys.exit(2)
 else:
-    print('  ✓ 변경된 fs_dart 매출 정상')
-"
+    print('  fs_dart 매출 정상')
+PYEOF
+
     if [ $? -eq 2 ]; then
-        echo "[pre-commit] ❌ fs_dart 무결성 의심 — commit 차단"
-        echo "  refetch_serial.py로 재수집 후 다시 시도"
+        echo "[pre-commit] FAIL: fs_dart 무결성 의심 - commit 차단"
         exit 1
     fi
 fi
 
+echo "[pre-commit] 모든 검사 통과"
 exit 0

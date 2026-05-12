@@ -41,15 +41,22 @@ def test_blacklist():
     """알려진 위험 매핑 블랙리스트 — 2026-05-04 SG&A 사고 등"""
     from dart_collector import ACCOUNT_ID_MAP
 
-    BLACKLIST = {
-        'dart_TotalSellingGeneralAdministrativeExpenses': '매출액',  # 2026-05-04 사고
-        'dart_TotalSellingGeneralAdministrativeExpenses': '매출총이익',
-        'ifrs-full_CostOfSales': '매출액',  # 매출원가
-        'ifrs-full_CurrentTaxLiabilities': '자산',  # 부채를 자산으로
-    }
+    # list of tuples — 같은 account_id에 여러 금지 매핑 등록 가능
+    BLACKLIST = [
+        ('dart_TotalSellingGeneralAdministrativeExpenses', '매출액'),     # 2026-05-04 SG&A 사고
+        ('dart_TotalSellingGeneralAdministrativeExpenses', '매출총이익'),
+        ('dart_TotalSellingGeneralAdministrativeExpenses', '영업이익'),
+        ('ifrs-full_CostOfSales', '매출액'),                              # 매출원가→매출
+        ('ifrs-full_CostOfSales', '영업이익'),
+        ('ifrs-full_CurrentTaxLiabilities', '자산'),                      # 부채→자산
+        ('ifrs-full_Liabilities', '자산'),
+        ('ifrs-full_Liabilities', '자본'),
+        ('ifrs-full_IncomeTaxExpenseContinuingOperations', '매출액'),     # 법인세→매출
+        ('ifrs-full_FinanceCosts', '매출액'),                             # 금융비용→매출
+    ]
 
     violations = []
-    for aid, banned_sys in BLACKLIST.items():
+    for aid, banned_sys in BLACKLIST:
         actual = ACCOUNT_ID_MAP.get(aid)
         if actual == banned_sys:
             violations.append((aid, banned_sys))

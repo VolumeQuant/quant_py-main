@@ -68,9 +68,26 @@ def diagnose_ticker(args):
     except Exception as e:
         return (tk, [], [], f'ERR:{type(e).__name__}')
 
-all_files = sorted(glob.glob('C:/dev/data_cache/fs_dart_*.parquet'))
-all_tickers = [os.path.basename(f).replace('fs_dart_','').replace('.parquet','') for f in all_files]
+# DIAG_INPUT 환경변수로 입력 파일 지정 가능 (집PC 회복 후 incomplete 재진단용)
+input_file = os.environ.get('DIAG_INPUT')
+if input_file and os.path.exists(input_file):
+    with open(input_file, 'r') as f:
+        all_tickers = [l.strip() for l in f if l.strip()]
+    print(f'입력 파일: {input_file}')
+else:
+    all_files = sorted(glob.glob('C:/dev/data_cache/fs_dart_*.parquet'))
+    all_tickers = [os.path.basename(f).replace('fs_dart_','').replace('.parquet','') for f in all_files]
+    print(f'입력: 전종목 (data_cache/fs_dart_*.parquet)')
 print(f'대상: {len(all_tickers)}종목')
+
+# 결과 파일 — DIAG_INPUT 사용 시 파일명에 suffix 추가
+if input_file:
+    base = os.path.basename(input_file).replace('.txt','')
+    OUTPUT_DETAIL = f'C:/dev/diagnose_{base}_detail.json'
+    OUTPUT_BAD = f'C:/dev/bad_tickers_{base}.txt'
+else:
+    OUTPUT_DETAIL = 'C:/dev/diagnose_all_detail.json'
+    OUTPUT_BAD = 'C:/dev/bad_tickers_v2.txt'
 
 t0 = time.time()
 results = {}
@@ -109,17 +126,17 @@ print(f'  no_recent_q_rev : {len(no_data)}')
 print(f'  err             : {len(err)}')
 
 # 저장
-with open('C:/dev/bad_tickers_v2.txt', 'w', encoding='utf-8') as f:
+with open(OUTPUT_BAD, 'w', encoding='utf-8') as f:
     for tk, q in bad:
         f.write(tk + '\n')
 
 # 상세 결과 (JSON)
 detail = {tk: {'bad_qtrs': r[1], 'ok_qtrs': r[2], 'err': r[3]} for tk, r in results.items()}
-with open('C:/dev/diagnose_all_detail.json', 'w', encoding='utf-8') as f:
+with open(OUTPUT_DETAIL, 'w', encoding='utf-8') as f:
     json.dump(detail, f, ensure_ascii=False, indent=1)
 
-print(f'\n저장: bad_tickers_v2.txt ({len(bad)}종목)')
-print(f'저장: diagnose_all_detail.json')
+print(f'\n저장: {OUTPUT_BAD} ({len(bad)}종목)')
+print(f'저장: {OUTPUT_DETAIL}')
 print(f'\nBAD 종목 잘못 분기수 분포:')
 from collections import Counter
 c = Counter(len(q) for _, q in bad)

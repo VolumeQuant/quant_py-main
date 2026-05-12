@@ -62,7 +62,9 @@ def check_bad_v3_recovery():
 
 def check_overall_baseline():
     """전체 fs_dart 5배+ 차이 종목 카운트 (베이스라인 비교)"""
-    BASELINE_AFTER_REFETCH = 5  # 재수집 완료 후 기대치 (정상 지주사 등 false positive 최대치)
+    # 재수집 완료 후 기대치 (정상 지주사 7개 + 산업지주사 SK스퀘어 등 false positive 약 10개)
+    # 2026-05-12 tier2 분석: 147종목 중 지주사 키워드 7 + SK스퀘어 같은 산업지주사 약 3
+    BASELINE_AFTER_REFETCH = 10
     all_files = sorted(glob.glob('C:/dev/data_cache/fs_dart_*.parquet'))
     big_diff = 0
     for fp in all_files:
