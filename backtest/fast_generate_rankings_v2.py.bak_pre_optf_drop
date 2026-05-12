@@ -835,15 +835,17 @@ def preload_all_data(start_str, end_str, trading_dates=None, use_rev_accel=False
             pass
 
     supplement_total = 0
-    fix_total = 0  # 항목별 정정 row 수 (옵션F 폐기 후 0 유지)
+    fix_total = 0  # 항목별 정정 row 수
     fix_tickers = 0
     all_tickers = set(dart_map) | set(fn_map)
     for ticker in all_tickers:
         if ticker in dart_map:
-            # 옵션F (fix_dart_account_mismatch) 폐기 — 2026-05-12 사고
-            # 사유: 같은 종목 24년(잘못)+25년(정상) 매출을 섞어 가짜 YoY 알파 생성
-            #       (KBI메탈 cr 1위 사례). 캐시 정확하면 mismatch 정정 자체 불필요.
-            #       항목별 정정이 필요한 경우 = 캐시 자체 오염 → 재수집이 정공법.
+            # 항목별 mismatch 자동 정정 (옵션 F, 2026-05-12 도입)
+            if ticker in fn_map:
+                dart_map[ticker], removed = fix_dart_account_mismatch(dart_map[ticker], fn_map[ticker])
+                if removed:
+                    fix_total += len(removed)
+                    fix_tickers += 1
             if ticker in fn_map and check_data_mismatch(dart_map[ticker], fn_map[ticker]):
                 data['fs'][ticker] = fn_map[ticker]
                 fn_count += 1

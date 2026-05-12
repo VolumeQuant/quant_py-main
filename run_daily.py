@@ -472,6 +472,15 @@ def main():
         except Exception as e:
             log(f"FnGuide 갱신 오류: {e} — 기존 캐시로 진행", logfile)
 
+        # 0.2. DART vs FN 캐시 무결성 자동 검사 (2026-05-12 SG&A 사고 후 추가)
+        log("DART vs FN 캐시 무결성 검사", logfile)
+        try:
+            ok_health = run_script("monitor_dart_fn_health.py", timeout=300, logfile=logfile)
+            if not ok_health:
+                log("⚠️ 캐시 무결성 의심 — 텔레그램 개인봇 알림 권장 (비차단)", logfile)
+        except Exception as e:
+            log(f"무결성 검사 오류: {e} — 비차단", logfile)
+
         # 0.3. OHLCV 신규 종목 증분 수집
         #   시총 1000억+ 인데 OHLCV에 없는 종목 → 개별 수집 (252거래일)
         log("OHLCV 신규 종목 증분 수집 시작", logfile)

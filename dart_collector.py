@@ -14,6 +14,8 @@ import time
 from pathlib import Path
 
 import pandas as pd
+import requests
+import urllib3
 
 sys.stdout.reconfigure(encoding='utf-8')
 
@@ -297,6 +299,11 @@ class DartCollector:
                             used_fs_div = 'OFS'
                 except RuntimeError:
                     raise  # API 한도 에러는 상위로 전파
+                except (requests.exceptions.ConnectionError,
+                        requests.exceptions.Timeout,
+                        urllib3.exceptions.ProtocolError) as e:
+                    # 네트워크 거부 = silent skip 금지. 상위로 전파해 호출자가 처리하도록
+                    raise ConnectionError(f'DART API 연결 실패 ({ticker} {year} {rcode}): {type(e).__name__}') from e
                 except Exception:
                     continue
 

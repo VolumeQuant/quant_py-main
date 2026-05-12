@@ -72,8 +72,44 @@ def main():
             print(f'           {tk} {kind} {acct} {ts.date() if hasattr(ts, "date") else ts}')
 
     abnormal = fix_total > THRESHOLD_ROW or fix_tickers > THRESHOLD_TICKER
+
+    # ── 추가 점검 (2026-05-12 사고 후): SG&A 매핑 흔적 자동 감지 ──
+    # 1. DART vs FN 매출 5배+ 차이 종목 카운트 (캐시 자체 검사, DART 호출 0)
+    big_diff = 0
+    big_diff_tickers = []
+    for fp in CACHE_DIR.glob('fs_dart_*.parquet'):
+        if 'backup' in fp.name: continue
+        tk = fp.stem.replace('fs_dart_', '')
+        fn_fp = CACHE_DIR / f'fs_fnguide_{tk}.parquet'
+        if not fn_fp.exists(): continue
+        try:
+            d = pd.read_parquet(fp); f = pd.read_parquet(fn_fp)
+            d_q = d[(d['공시구분']=='q') & (d['계정']=='매출액') & d['값'].notna() & (d['값']!=0)]
+            f_q = f[(f['공시구분']=='q') & (f['계정']=='매출액') & f['값'].notna() & (f['값']!=0)]
+            if d_q.empty or f_q.empty: continue
+            m = d_q.merge(f_q, on='기준일', suffixes=('_d', '_f'))
+            m = m[(m['값_d'] != 0) & (m['값_f'] != 0)]
+            if m.empty: continue
+            r = m['값_f'] / m['값_d']
+            if ((r > 5) | (r < 0.2)).any():
+                big_diff += 1
+                if len(big_diff_tickers) < 10:
+                    big_diff_tickers.append(tk)
+        except Exception:
+            pass
+
+    print(f'\n[health] DART vs FN 매출 5배+ 차이 종목: {big_diff}')
+    if big_diff_tickers:
+        print(f'           표본: {big_diff_tickers}')
+
+    THRESHOLD_BIG_DIFF = 5  # 2026-05-12 사고 후 강화 (이전 50 → 5)
+    # baseline (재수집 완료 후 기대): 0 ~ 3 (정상 지주사 등 false positive)
+    if big_diff > THRESHOLD_BIG_DIFF:
+        print(f'[health] ⚠️ 매출 5배+ 차이 {big_diff} > {THRESHOLD_BIG_DIFF} — SG&A 매핑 또는 캐시 무결성 위반 의심')
+        abnormal = True
+
     if abnormal:
-        print(f'\n[health] ⚠️ 비정상 변동: rows={fix_total}/{THRESHOLD_ROW}, tickers={fix_tickers}/{THRESHOLD_TICKER}')
+        print(f'\n[health] ⚠️ 비정상 변동: rows={fix_total}/{THRESHOLD_ROW}, tickers={fix_tickers}/{THRESHOLD_TICKER}, big_diff={big_diff}/{THRESHOLD_BIG_DIFF}')
         return 1
     else:
         print(f'\n[health] ✅ 정상 범위')
