@@ -58,3 +58,30 @@ state_new/
 
 # 옵션F 이전 백업 (Step 3 재수집 후 사용 가능, 진행 중 보존)
 state_backup_pre_optf_20260512/
+
+# v80.6 진행 중 백업/임시 (2026-05-13)
+state_bak_*/
+state_backup_*/
+_preMOVE_*/
+_bt_*.log
+_tier*_*.log
+_tier*_*.csv
+_phase_*.log
+_wf_*.log
+_diagnose_*.log
+_integrity_*.log
+_regen_*.log
+_wr_batch_*.log
+_215_tickers.txt
+_lost_dart_tickers.txt
+_conflict*.txt
+_pull_err.log
+
+# v80.6 production 작업 스크립트 (2026-05-13, 일회용)
+verify_phase_*.py
+verify_5_12_*.py
+verify_a1_*.py
+diagnose_*.py
+check_*.py
+fix_kospi_columns.py
+fix_ohlcv_*.py

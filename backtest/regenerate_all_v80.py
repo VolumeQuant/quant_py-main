@@ -13,6 +13,7 @@ PYTHON = sys.executable
 FG = str(Path(__file__).parent / 'fast_generate_rankings_v2.py')
 PROJECT = Path(__file__).parent.parent
 
+# v80.6 (2026-05-13): MA170→MA250 + boost gr 0.6→0.5 + defense V/Q/G/M V30→V35 M40→M35 gr 0.7→0.8
 BOOST_ENV = {
     'FACTOR_V_W': '0.15',
     'FACTOR_Q_W': '0.00',
@@ -20,41 +21,38 @@ BOOST_ENV = {
     'FACTOR_M_W': '0.30',
     'G_SUB1': 'rev_z',
     'G_SUB2': 'oca_z',
-    'G_REVENUE_WEIGHT': '0.6',
+    'G_REVENUE_WEIGHT': '0.5',  # v80.6: 0.6→0.5 (oca 비중↑)
     'MOM_PERIOD': '12m',
     'PYTHONIOENCODING': 'utf-8',
 }
 DEFENSE_ENV = {
-    'FACTOR_V_W': '0.30',
+    'FACTOR_V_W': '0.35',   # v80.6: 0.30→0.35
     'FACTOR_Q_W': '0.15',
     'FACTOR_G_W': '0.15',
-    'FACTOR_M_W': '0.40',
+    'FACTOR_M_W': '0.35',   # v80.6: 0.40→0.35
     'G_SUB1': 'rev_z',
     'G_SUB2': 'oca_z',
-    'G_REVENUE_WEIGHT': '0.7',
+    'G_REVENUE_WEIGHT': '0.8',  # v80.6: 0.7→0.8 (rev 비중↑)
     'MOM_PERIOD': '6m-1m',
     'PYTHONIOENCODING': 'utf-8',
 }
 
+# 사용자 지시 (2026-05-13): state/ 단일 통합 (bt_extended 분리 폐기)
 jobs = [
-    ('boost_bt_ext',  '20180702', '20201230', str(PROJECT / 'backtest' / 'bt_extended'),          BOOST_ENV),
-    ('boost_state',   '20210104', '20260511', str(PROJECT / 'state'),                             BOOST_ENV),
-    ('def_bt_ext',    '20180702', '20201230', str(PROJECT / 'backtest' / 'bt_extended_defense'),   DEFENSE_ENV),
-    ('def_state',     '20210104', '20260511', str(PROJECT / 'state' / 'defense'),                 DEFENSE_ENV),
+    ('boost_state',   '20180702', '20260512', str(PROJECT / 'state'),                             BOOST_ENV),
+    ('def_state',     '20180702', '20260512', str(PROJECT / 'state' / 'defense'),                 DEFENSE_ENV),
 ]
 
-print(f'v80 전체 재생성 시작 — 4작업 (2병렬 × 2순차)')
-print(f'  공격: V15Q0G55M30 2f(rev60+oca40) 12m')
-print(f'  방어: V30Q15G15M40 2f(rev70+oca30) 6m-1m')
+print(f'v80.6 전체 재생성 시작 — 2작업 병렬 (state/ 단일 통합)')
+print(f'  공격: V15Q0G55M30 2f(rev50+oca50) 12m')
+print(f'  방어: V35Q15G15M35 2f(rev80+oca20) 6m-1m')
 print()
 
-# 2병렬: boost(bt_ext+state) + defense(bt_ext+state)
-# 실제로는 4개를 2그룹으로 나눠서 순차
+# 2병렬: boost + defense (단일 batch)
 t0 = time.time()
 
 for batch_name, batch_jobs in [
-    ('Batch 1 (boost+defense bt_ext)', [jobs[0], jobs[2]]),
-    ('Batch 2 (boost+defense state)', [jobs[1], jobs[3]]),
+    ('Batch 1 (boost+defense state 통합)', jobs),
 ]:
     print(f'\n{batch_name}:', flush=True)
     processes = []
@@ -63,7 +61,7 @@ for batch_name, batch_jobs in [
         log_path = str(PROJECT / 'logs' / f'v80_regen_{label}.log')
         os.makedirs(os.path.dirname(log_path), exist_ok=True)
         logf = open(log_path, 'w', encoding='utf-8')
-        cmd = [PYTHON, '-u', FG, s, e, f'--state-dir={sdir}']
+        cmd = [PYTHON, '-u', FG, s, e, f'--state-dir={sdir}', '--resume']
         p = subprocess.Popen(cmd, cwd=str(PROJECT), env=merged,
                              stdout=logf, stderr=subprocess.STDOUT,
                              text=True, encoding='utf-8', errors='replace')

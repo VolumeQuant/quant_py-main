@@ -52,11 +52,11 @@ def calc_regime(target_dates):
 GS = ('rev_z','oca_z',None,None,None,None)
 
 PERIODS = {
-    '7.8y': ('20180702','20260414'),
-    'WF1': ('20180702','20191231'),
-    'WF2': ('20200102','20211230'),
-    'WF3': ('20220103','20231228'),
-    'WF4': ('20240102','20260414'),
+    '7.4y': ('20190102','20260512'),  # 2018 H2 데이터 부족 제외 (사용자 5/13 결정)
+    'WF1': ('20190102','20191231'),   # 2019 (1년) — 시장 약세
+    'WF2': ('20200102','20211230'),   # 2020-21 (2년) — 코로나 + 회복
+    'WF3': ('20220103','20231228'),   # 2022-23 (2년) — 약세 + 회복
+    'WF4': ('20240102','20260512'),   # 2024-26 (2년 4개월) — 강세
 }
 
 def make_params(entry, exit_r, slots, mom, v, q, g, m, g_rev):
@@ -102,7 +102,7 @@ for name, o_p, d_p, sl, tr in configs:
             g_sub1_d=GS[0],g_sub2_d=GS[1],g_sub3_d=GS[2],
             g_w1_d=GS[3],g_w2_d=GS[4],g_w3_d=GS[5])
         row[pname] = r['calmar']
-        if pname == '7.8y':
+        if pname == '7.4y':
             row['cagr'] = r['cagr']
             row['mdd'] = r['mdd']
     wf = [row.get(f'WF{i}', 0) for i in range(1, 5)]
@@ -110,18 +110,18 @@ for name, o_p, d_p, sl, tr in configs:
     row['wf_mean'] = np.mean(wf)
     row['cv'] = np.std(wf)/np.mean(wf) if np.mean(wf) > 0 else 99
     all_results.append(row)
-    print(f'{name}: Cal={row["7.8y"]:.2f} WF=[{wf[0]:.2f},{wf[1]:.2f},{wf[2]:.2f},{wf[3]:.2f}] CV={row["cv"]:.2f}', flush=True)
+    print(f'{name}: Cal={row["7.4y"]:.2f} WF=[{wf[0]:.2f},{wf[1]:.2f},{wf[2]:.2f},{wf[3]:.2f}] CV={row["cv"]:.2f}', flush=True)
 
 # 출력
-bl_cal = all_results[0]['7.8y']
+bl_cal = all_results[0]['7.4y']
 print(f'\n{"="*95}')
-print(f'{"설정":<20} {"7.8y":>6} {"CAGR":>6} {"MDD":>6} {"WF1":>6} {"WF2":>6} {"WF3":>6} {"WF4":>6} {"min":>6} {"mean":>6} {"CV":>5}')
+print(f'{"설정":<20} {"7.4y":>6} {"CAGR":>6} {"MDD":>6} {"WF1":>6} {"WF2":>6} {"WF3":>6} {"WF4":>6} {"min":>6} {"mean":>6} {"CV":>5}')
 print('-'*95)
-for r in sorted(all_results, key=lambda x: x['7.8y'], reverse=True):
+for r in sorted(all_results, key=lambda x: x['7.4y'], reverse=True):
     wf = [r.get(f'WF{i}',0) for i in range(1,5)]
-    d = r['7.8y'] - bl_cal
+    d = r['7.4y'] - bl_cal
     m = ' ***' if d > 0.2 and r['cv'] < 0.40 else (' *' if d > 0 else '')
-    print(f'{r["name"]:<20} {r["7.8y"]:>6.2f} {r.get("cagr",0):>6.1f} {r.get("mdd",0):>6.1f} {wf[0]:>6.2f} {wf[1]:>6.2f} {wf[2]:>6.2f} {wf[3]:>6.2f} {r["wf_min"]:>6.2f} {r["wf_mean"]:>6.2f} {r["cv"]:>5.2f}{m}')
+    print(f'{r["name"]:<20} {r["7.4y"]:>6.2f} {r.get("cagr",0):>6.1f} {r.get("mdd",0):>6.1f} {wf[0]:>6.2f} {wf[1]:>6.2f} {wf[2]:>6.2f} {wf[3]:>6.2f} {r["wf_min"]:>6.2f} {r["wf_mean"]:>6.2f} {r["cv"]:>5.2f}{m}')
 
 # 인접 안정성 판정
 print('\n=== 인접 안정성 판정 ===')
@@ -133,8 +133,8 @@ for target in ['o2_d5 SL10', 'S3/S5 SL7']:
         adj = [r for r in all_results if any(x in r['name'] for x in ['o1_d5','o2_d4','o2_d6','o3_d5'])]
     else:
         adj = [r for r in all_results if any(x in r['name'] for x in ['SL6','SL8','SL9','SL12'])]
-    adj_cals = [r['7.8y'] for r in adj]
-    t_cal = t['7.8y']
+    adj_cals = [r['7.4y'] for r in adj]
+    t_cal = t['7.4y']
     adj_cv = np.std(adj_cals + [t_cal]) / np.mean(adj_cals + [t_cal])
     passed = adj_cv < 0.30
     print(f'  {target}: Cal={t_cal:.2f}, 인접 Cal={[f"{c:.2f}" for c in adj_cals]}, 인접 CV={adj_cv:.2f} {"PASS" if passed else "FAIL"}')
@@ -143,13 +143,13 @@ for target in ['o2_d5 SL10', 'S3/S5 SL7']:
 msg = '<b>[WF + 인접 안정성 결과]</b>\n\n'
 msg += f'baseline: Cal={bl_cal:.2f}\n\n'
 
-for r in sorted(all_results, key=lambda x: x['7.8y'], reverse=True):
-    d = r['7.8y'] - bl_cal
+for r in sorted(all_results, key=lambda x: x['7.4y'], reverse=True):
+    d = r['7.4y'] - bl_cal
     wf = [r.get(f'WF{i}',0) for i in range(1,5)]
     cv_ok = r['cv'] < 0.40
     emoji = '\u2b50' if d > 0.2 and cv_ok else ('\u2705' if d > 0 else '\u274c')
     msg += f'{emoji} <b>{r["name"]}</b>\n'
-    msg += f'   Cal={r["7.8y"]:.2f}(d{d:+.2f}) CAGR={r.get("cagr",0):.0f}% MDD={r.get("mdd",0):.0f}%\n'
+    msg += f'   Cal={r["7.4y"]:.2f}(d{d:+.2f}) CAGR={r.get("cagr",0):.0f}% MDD={r.get("mdd",0):.0f}%\n'
     msg += f'   WF=[{wf[0]:.1f},{wf[1]:.1f},{wf[2]:.1f},{wf[3]:.1f}] CV={r["cv"]:.2f}\n\n'
 
 send_tg(msg)

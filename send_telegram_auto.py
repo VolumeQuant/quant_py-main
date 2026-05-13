@@ -336,9 +336,16 @@ def calc_system_returns(regime_info=None):
     # reranking 불필요 — ranking 파일이 이미 현재 버전 파라미터로 재계산됨
     # 버전 변경 시 전체 파일 재계산 필수 (feedback_full_rerank_on_version_change.md)
 
-    # 날짜별 국면 판단 (v80: KP_MA170_8d)
+    # 날짜별 국면 판단 (v80.6: KP_MA250_8d)
     _kospi_file = Path(__file__).parent / 'data_cache' / 'kospi_yf.parquet'
-    _kospi = pd.read_parquet(_kospi_file).iloc[:, 0].dropna() if _kospi_file.exists() else pd.Series()
+    if _kospi_file.exists():
+        _kdf = pd.read_parquet(_kospi_file)
+        _kospi = _kdf.iloc[:, 0].copy()
+        for _c in _kdf.columns[1:]:  # 옛 멀티컬럼 호환 (종가+kospi 보완)
+            _kospi = _kospi.fillna(_kdf[_c])
+        _kospi = _kospi.dropna()
+    else:
+        _kospi = pd.Series()
     from regime_indicator import MA_PERIOD, CONFIRM_DAYS
     _kma = _kospi.rolling(MA_PERIOD).mean() if len(_kospi) >= MA_PERIOD else pd.Series()
 
@@ -351,7 +358,7 @@ def calc_system_returns(regime_info=None):
         s = (kv > mv) if kv is not None and mv is not None else _md
         if s == _ss: _stk += 1
         else: _stk = 1; _ss = s
-        if _stk >= CONFIRM_DAYS and _md != s: _md = s  # v80: MA170 8d (regime_indicator에서 로드)
+        if _stk >= CONFIRM_DAYS and _md != s: _md = s  # v80.6: MA250 8d (regime_indicator에서 로드)
         regime_by_date[d] = _md  # True=공격, False=방어
 
     # 날짜별 국면에 맞는 ranking + 파라미터 선택
@@ -424,7 +431,7 @@ def calc_system_returns(regime_info=None):
         _entry_rank = rp['ENTRY_RANK']
         _exit_rank = rp['EXIT_RANK']
         _max_slots = rp['MAX_SLOTS']
-        _stop_loss = rp.get('STOP_LOSS', -0.10)  # v80.2 rollback (2026-05-12)
+        _stop_loss = rp.get('STOP_LOSS', -0.10)  # v80.6: SL -10% 유지
 
         # 국면 전환 시 포트폴리오 전량 청산 (cooldown도 리셋)
         if i >= 1:
@@ -441,7 +448,7 @@ def calc_system_returns(regime_info=None):
                 del ts_cooldown[tk]
 
         # 손절 + 트레일링 체크
-        _trailing_stop = rp.get('TRAILING_STOP', -0.15)  # v80.2 rollback (2026-05-12)
+        _trailing_stop = rp.get('TRAILING_STOP', -0.08)  # v80.6: TS -15% → -8%
         for tk in list(portfolio.keys()):
             cp = _get_price(tk, d0)
             ep = portfolio[tk]
@@ -846,7 +853,7 @@ def create_regime_switch_message(regime_mode, prev_mode=None):
             '',
             '■ 오늘의 판단',
             '',
-            '  코스피가 170일 이동평균선 위에서',
+            '  코스피가 250일 이동평균선 위에서',
             '  8거래일 연속 마감했습니다.',
             "  시장이 단기 반등이 아닌 '상승 추세'에 들어섰다고 봅니다.",
             '',
@@ -857,27 +864,28 @@ def create_regime_switch_message(regime_mode, prev_mode=None):
             '  1. 현재 방어 모드로 보유 중인 종목은 전량 정리해주세요.',
             '  2. 오늘 브리핑에 ✅ 로 표시된 종목 중 상위부터',
             '     새로 진입하시면 됩니다.',
-            '  3. 종목당 동일한 금액으로 최대 3종목까지 담는 것이',
+            '  3. 종목당 동일한 금액으로 최대 5종목까지 담는 것이',
             '     기본 운용 방식입니다.',
             '',
             '■ 공격 모드 매매 기준',
             '',
-            '  · 매수: 3일 연속 당일 상위 3위 이내 ✅ 종목',
+            '  · 매수: 3일 연속 당일 상위 2위 이내 ✅ 종목',
             '  · 매도: 3일 평균 순위가 6위 밖으로 밀릴 때',
-            '  · 보유: 최대 3종목, 균등 비중',
+            '  · 보유: 최대 5종목, 균등 비중',
             '  · 손절: 매수가 대비 -10%',
-            '  · 트레일링: 최고가 대비 -15%',
+            '  · 트레일링: 최고가 대비 -8%',
             '',
             '■ 공격 모드가 작동하는 방식',
             '',
             "  상승장에서는 '실적이 빠르게 성장하는 종목'이",
             '  가장 크게 오르는 경향이 있습니다.',
             '  매출·영업이익 성장세와 최근 12개월 주가 추세를 중심으로',
-            '  3종목을 골라 집중 투자합니다.',
+            '  가장 강한 2종목에 신규 진입하고, 보유 중인 종목 포함',
+            '  최대 5종목으로 분산합니다.',
             '',
-            '■ 전략 성과 (지난 8년, 2018-07~2026-04)',
+            '■ 전략 성과 (지난 7.4년, 2019-01~2026-05)',
             '',
-            '  · 연평균 수익률  +138%  (같은 기간 코스피 +13%)',
+            '  · 연평균 수익률  +143%  (같은 기간 코스피 대비 압도)',
             '  · 최대 손실폭    -36%',
             '',
             '───────────────────────────',
@@ -893,7 +901,7 @@ def create_regime_switch_message(regime_mode, prev_mode=None):
         '',
         '■ 오늘의 판단',
         '',
-        '  코스피가 170일 이동평균선 아래에서',
+        '  코스피가 250일 이동평균선 아래에서',
         '  8거래일 연속 마감했습니다.',
         "  일시적 조정이 아닌 '하락 추세'에 들어섰다고 봅니다.",
         '',
@@ -906,28 +914,28 @@ def create_regime_switch_message(regime_mode, prev_mode=None):
         '      하락장에서 성장주는 가장 크게 되밀리기 때문입니다.)',
         '  2. 오늘 브리핑에 ✅ 로 표시된 종목 중 상위부터',
         '     새로 진입하시면 됩니다.',
-        '  3. 종목당 동일한 금액으로 최대 7종목까지',
+        '  3. 종목당 동일한 금액으로 최대 4종목까지',
         '     분산해 담는 것이 기본 운용 방식입니다.',
         '',
         '■ 방어 모드 매매 기준',
         '',
         '  · 매수: 3일 연속 당일 상위 3위 이내 ✅ 종목',
         '  · 매도: 3일 평균 순위가 6위 밖으로 밀릴 때',
-        '  · 보유: 최대 7종목, 균등 비중',
+        '  · 보유: 최대 4종목, 균등 비중',
         '  · 손절: 매수가 대비 -10%',
-        '  · 트레일링: 최고가 대비 -15%',
+        '  · 트레일링: 최고가 대비 -8%',
         '',
         '■ 방어 모드가 작동하는 방식',
         '',
         "  하락장에서는 '더 싸고, 덜 망가진 종목'이",
         '  상대적으로 잘 버티는 경향이 있습니다.',
         '  최근 6개월 주가 추세가 살아있으면서 밸류에이션 부담이 낮은',
-        '  종목 중심으로 5개에 분산합니다.',
+        '  종목 중심으로 4개에 분산합니다.',
         '',
-        '■ 전략 성과 (지난 8년, 2018-07~2026-04)',
+        '■ 전략 성과 (지난 7.4년, 2019-01~2026-05)',
         '',
-        '  · 연평균 수익률  +138%  (같은 기간 코스피 +13%)',
-        '  · 최대 손실폭    -36%  (이전 버전 대비 개선)',
+        '  · 연평균 수익률  +143%  (같은 기간 코스피 대비 압도)',
+        '  · 최대 손실폭    -36%  (이전 버전 대비 7%p 개선)',
         '',
         '───────────────────────────',
         '본 서비스는 종목 선정을 돕는 참고 자료이며,',

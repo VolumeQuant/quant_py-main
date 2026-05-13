@@ -227,30 +227,41 @@ def refresh_ohlcv_incremental(base_date: str, market_cap_df: pd.DataFrame = None
 
 
 def refresh_index(base_date: str) -> None:
-    """KOSPI/KOSDAQ 인덱스 OHLCV 갱신 (국면 판단용 MA200)"""
+    """KOSPI/KOSDAQ 인덱스 OHLCV 갱신 (국면 판단용 MA200)
+    단일 'close' 컬럼으로 저장. 옛 멀티컬럼 ('종가'+'kospi') 발견 시 fillna 병합."""
     for name, ticker in [('kospi', '1001'), ('kosdaq', '2001')]:
         cache_file = CACHE_DIR / f'{name}_yf.parquet'
         try:
+            existing_series = None
             if cache_file.exists():
-                existing = pd.read_parquet(cache_file).iloc[:, 0].dropna()
-                last = existing.index[-1].strftime('%Y%m%d')
-                if last >= base_date:
-                    print(f"[인덱스] {name}: 캐시 히트 ({last})")
-                    continue
-                start = last
+                existing_df = pd.read_parquet(cache_file)
+                # 멀티컬럼이면 fillna로 단일 series 병합
+                merged = existing_df.iloc[:, 0].copy()
+                for col in existing_df.columns[1:]:
+                    merged = merged.fillna(existing_df[col])
+                existing_series = merged.dropna()
+                if len(existing_series) > 0:
+                    last = existing_series.index[-1].strftime('%Y%m%d')
+                    if last >= base_date:
+                        print(f"[인덱스] {name}: 캐시 히트 ({last})")
+                        continue
+                    start = last
+                else:
+                    start = '20200101'
             else:
                 start = '20200101'
             df = pykrx_stock.get_index_ohlcv(start, base_date, ticker)
             if not df.empty and len(df.columns) >= 4:
-                close = df.iloc[:, 3]  # 종가
-                close.name = name
-                if cache_file.exists():
-                    old = pd.read_parquet(cache_file)
-                    combined = pd.concat([old, pd.DataFrame(close)])
+                close = df.iloc[:, 3].copy()  # 종가
+                close.name = 'close'
+                new_df = pd.DataFrame(close)
+                if existing_series is not None:
+                    existing_series.name = 'close'
+                    combined = pd.concat([pd.DataFrame(existing_series), new_df])
                     combined = combined[~combined.index.duplicated(keep='last')].sort_index()
                     combined.to_parquet(cache_file)
                 else:
-                    pd.DataFrame(close).to_parquet(cache_file)
+                    new_df.to_parquet(cache_file)
                 print(f"[인덱스] {name}: {len(df)}일 갱신 ({base_date})")
             time.sleep(1)
         except Exception as e:

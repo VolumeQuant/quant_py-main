@@ -66,6 +66,22 @@ def main():
             try:
                 df = dc.fetch_single(tk, 2016, 2026)
                 if df is not None and not df.empty:
+                    # MERGE: 기존 캐시 row 보존 (5/12 SK하이닉스 손실 사고 재발 방지)
+                    if os.path.exists(cp):
+                        try:
+                            import pandas as pd
+                            existing = pd.read_parquet(cp)
+                            # 새 데이터 + 기존 row 추가 (중복 제거: 새 데이터 우선)
+                            keys_new = set(zip(df['계정'], df['기준일'], df['공시구분']))
+                            ext_extra = existing[~existing.apply(
+                                lambda r: (r['계정'], r['기준일'], r['공시구분']) in keys_new, axis=1
+                            )]
+                            if 'fs_div' in df.columns and 'fs_div' not in ext_extra.columns:
+                                ext_extra['fs_div'] = None
+                            ext_extra = ext_extra.reindex(columns=df.columns)
+                            df = pd.concat([df, ext_extra], ignore_index=True)
+                        except Exception:
+                            pass
                     tmp = cp + '.tmp'
                     df.to_parquet(tmp, index=False)
                     shutil.move(tmp, cp)

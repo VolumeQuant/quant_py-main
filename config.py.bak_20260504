@@ -1,0 +1,49 @@
+"""
+일별 모니터링 설정 파일 템플릿
+이 파일을 config.py로 복사한 후 설정값을 입력하세요.
+
+사용법:
+1. 이 파일을 config.py로 복사
+2. 텔레그램 봇 토큰과 채팅 ID 입력
+3. daily_monitor.py 실행
+
+텔레그램 봇 설정 방법:
+1. @BotFather에게 /newbot 명령 → 봇 토큰 받기
+2. 봇에게 아무 메시지 보내기
+3. https://api.telegram.org/bot{BOT_TOKEN}/getUpdates 접속
+4. 응답에서 "chat":{"id":123456789} 부분의 숫자가 채팅 ID
+"""
+
+# 텔레그램 설정
+TELEGRAM_BOT_TOKEN = "8504167814:AAHC_fSmYslVAnKHIneZZOvb_8zRgUpOA9g"
+TELEGRAM_CHAT_ID = "-1003817272553"  # 채널 ID
+TELEGRAM_PRIVATE_ID = "7580571403"   # 개인 채팅 ID (테스트용)
+
+# Gemini AI 설정
+GEMINI_API_KEY = "AIzaSyDQsxUo_uo4fc0iaad-JFrFHv-d1w0Q_sw"
+
+# Git 설정
+GIT_AUTO_PUSH = True  # 자동 커밋/푸시 활성화
+
+# ECOS 한국은행 API (신용스프레드용, 없으면 US HY만 사용)
+ECOS_API_KEY = "K99OS9L3DLMV10Q7LG09"
+FRED_API_KEY = "e8821072adff7e87eaea63d47b2291cc"
+
+# KRX 데이터 시스템 로그인 (2026-02-27~ 필수)
+KRX_USER_ID = "jkw8886"
+KRX_PASSWORD = "na7306ver!!"
+
+# OpenDART API Keys (트리플 키 — 키당 20,000건/일)
+DART_API_KEYS = [
+    "c7eec448cded2df9828c360fa9546a21e39f56f7",
+    "8e4325768fba382be2bb0d49d7224bd4621124a1",
+    "f9a421fa054e45e31e17de82cad89fafff213776",
+]
+
+# 사전필터 설정
+SKIP_PREFILTER = True   # True: 마법공식 사전필터 건너뜀 (모든 종목 멀티팩터 채점)
+MIN_MARKET_CAP = 1000   # 시가총액 최소 1,000억원 (기존 3,000억)
+
+# 진입 점수 임계값
+SCORE_BUY = 0.6      # 이 점수 이상이면 "매수 적기"
+SCORE_WATCH = 0.3    # 이 점수 이상이면 "관망"

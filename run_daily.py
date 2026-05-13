@@ -601,15 +601,15 @@ def main():
             import pandas as pd
             from pathlib import Path
 
-            # KOSPI MA 계산 (v80: MA170 8d)
+            # KOSPI MA 계산 (v80.6: MA250 8d)
             kospi_close = kospi_ma = kospi_ma200 = kospi_ret20 = None
             kospi_file = SCRIPT_DIR / 'data_cache' / 'kospi_yf.parquet'
             if kospi_file.exists():
                 _df = pd.read_parquet(kospi_file)
-                if 'kospi' in _df.columns:
-                    kp = _df.iloc[:, 0].fillna(_df['kospi']).dropna()
-                else:
-                    kp = _df.iloc[:, 0].dropna()
+                kp = _df.iloc[:, 0].copy()
+                for _c in _df.columns[1:]:  # 옛 멀티컬럼 호환 (종가+kospi 보완)
+                    kp = kp.fillna(_df[_c])
+                kp = kp.dropna()
                 if len(kp) >= max(MA_PERIOD, 200):
                     kospi_close = float(kp.iloc[-1])
                     kospi_ma = float(kp.rolling(MA_PERIOD).mean().iloc[-1])

@@ -1,0 +1,196 @@
+"""Tier 2 — Dense grid search (Tier 1 Top 후보 인접 영역)
+
+Tier 1 인사이트:
+  - entry=2 우월 (3보다 +0.11)
+  - TS -10% 우월 (-15%보다 +0.16)
+  - G_REV 0.4~0.6 우월 (0.8 매우 약화)
+  - slots ≥5 우월 (3 약함)
+  - SL -7~-10 비슷, -5 약화
+
+Tier 2 격자:
+  entry: 2 (고정)
+  slots_boost: 4, 5, 6, 7
+  slots_defense: 4, 5, 6, 7
+  SL: -7, -8, -9, -10, -11
+  TS: -8, -10, -12
+  G_REV: 0.3, 0.4, 0.5, 0.6, 0.7
+
+총 4×4×5×3×5 = 1,200 조합 ≈ 34분
+"""
+import sys, os, json, glob, time
+sys.stdout.reconfigure(encoding='utf-8')
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import pandas as pd, numpy as np
+import requests
+from pathlib import Path
+from itertools import product
+from turbo_simulator import TurboSimulator
+
+PROJECT = Path(__file__).parent.parent
+
+# 텔레그램
+from config import TELEGRAM_BOT_TOKEN as BOT, TELEGRAM_PRIVATE_ID as PID
+def send_tg(msg):
+    if len(msg) > 4096: msg = msg[:4090] + '...'
+    try:
+        requests.post(f'https://api.telegram.org/bot{BOT}/sendMessage',
+                      data={'chat_id': PID, 'text': msg, 'parse_mode': 'HTML'}, timeout=30)
+    except: pass
+
+# === 데이터 로드 (1회) ===
+print('=== Tier 2 — 데이터 로드 ===', flush=True)
+t_start = time.time()
+
+def load_rankings(dirs):
+    data = {}
+    for d in dirs:
+        d = Path(d)
+        if not d.exists(): continue
+        for fp in sorted(d.glob('ranking_*.json')):
+            k = fp.stem.replace('ranking_', '')
+            if len(k) != 8 or not k.isdigit(): continue
+            if k not in data:
+                with open(fp, 'r', encoding='utf-8') as f:
+                    data[k] = json.load(f)
+    return data
+
+boost_rd = load_rankings([PROJECT / 'state'])
+defense_rd = load_rankings([PROJECT / 'state' / 'defense'])
+all_dates = sorted(set(boost_rd) & set(defense_rd))
+boost_rk = {d: boost_rd[d]['rankings'] for d in all_dates}
+
+START, END = '20190102', '20260512'
+dates_74 = [d for d in all_dates if START <= d <= END]
+print(f'  거래일: {len(dates_74)} ({dates_74[0]} ~ {dates_74[-1]})', flush=True)
+
+ohlcv = pd.read_parquet(PROJECT / 'data_cache' / 'all_ohlcv_20170601_20260512.parquet').replace(0, np.nan)
+kdf = pd.read_parquet(PROJECT / 'data_cache' / 'kospi_yf.parquet')
+kospi = kdf.iloc[:, 0].copy()
+for c in kdf.columns[1:]:
+    kospi = kospi.fillna(kdf[c])
+kospi = kospi.dropna()
+ma170 = kospi.rolling(170).mean()
+
+def calc_regime(target_dates):
+    reg = {}; md = False; stk = 0; ss = None
+    for d in target_dates:
+        ts = pd.Timestamp(d); kv = kospi.get(ts); mv = ma170.get(ts)
+        if kv is None or pd.isna(mv): reg[d] = md; continue
+        s = kv > mv
+        if s == ss: stk += 1
+        else: stk = 1; ss = s
+        if stk >= 8 and md != s: md = s
+        reg[d] = md
+    return reg
+REGIME = calc_regime(dates_74)
+
+print('  TurboSimulator 초기화...', flush=True)
+TSIM = TurboSimulator({d: boost_rk[d] for d in dates_74}, dates_74, ohlcv)
+print(f'  로드 완료: {time.time()-t_start:.1f}초\n', flush=True)
+
+DEFENSE_BASE = {'v':0.30,'q':0.15,'g':0.15,'m':0.40,'g_rev':0.7,'entry':3,'exit':6,'mom':'6m-1m'}
+GS_FIXED = ('rev_z', 'oca_z', None, None, None, None)
+
+# === Tier 2 격자 ===
+ENTRY = 2  # 고정
+SLOTS_BOOST = [4, 5, 6, 7]
+SLOTS_DEF = [4, 5, 6, 7]
+SL_VALS = [-0.07, -0.08, -0.09, -0.10, -0.11]
+TS_VALS = [-0.08, -0.10, -0.12]
+G_REV_BOOST = [0.3, 0.4, 0.5, 0.6, 0.7]
+
+total = len(SLOTS_BOOST) * len(SLOTS_DEF) * len(SL_VALS) * len(TS_VALS) * len(G_REV_BOOST)
+print(f'=== Tier 2 격자 ===')
+print(f'  entry=2 고정')
+print(f'  sb × sd × SL × TS × gr = {len(SLOTS_BOOST)}×{len(SLOTS_DEF)}×{len(SL_VALS)}×{len(TS_VALS)}×{len(G_REV_BOOST)} = {total}조합')
+print(f'  예상: ~{total*1.7/60:.0f}분\n', flush=True)
+
+# === 표본 5건 ===
+print('  [표본 5건]', flush=True)
+t_sample = time.time()
+for i, (sb, sd, sl, ts, gr) in enumerate(product(SLOTS_BOOST, SLOTS_DEF, SL_VALS, TS_VALS, G_REV_BOOST)):
+    if i >= 5: break
+    boost_p = {'v':0.15,'q':0.0,'g':0.55,'m':0.30,'g_rev':gr,
+               'entry':ENTRY,'exit':6,'slots':sb,'mom':'12m'}
+    defense_p = {**DEFENSE_BASE, 'slots':sd}
+    r = TSIM.run_regime(defense_params=defense_p, offense_params=boost_p,
+                        regime_dict=REGIME, trailing_stop=ts, stop_loss=sl,
+                        g_sub1_o=GS_FIXED[0], g_sub2_o=GS_FIXED[1], g_sub3_o=GS_FIXED[2],
+                        g_w1_o=GS_FIXED[3], g_w2_o=GS_FIXED[4], g_w3_o=GS_FIXED[5],
+                        g_sub1_d=GS_FIXED[0], g_sub2_d=GS_FIXED[1], g_sub3_d=GS_FIXED[2],
+                        g_w1_d=GS_FIXED[3], g_w2_d=GS_FIXED[4], g_w3_d=GS_FIXED[5])
+    print(f'    sb{sb} sd{sd} SL{sl:.0%} TS{ts:.0%} gr{gr}: Cal={r["calmar"]:.2f} CAGR={r["cagr"]:.0f}%', flush=True)
+
+sample_avg = (time.time() - t_sample) / 5
+print(f'  표본 평균: {sample_avg*1000:.0f}ms/combo')
+print(f'  예상 잔여: {(total-5)*sample_avg/60:.1f}분\n', flush=True)
+
+# === 전체 실행 ===
+print('=== 전체 격자 실행 ===', flush=True)
+results = []
+t0 = time.time()
+count = 0
+for sb, sd, sl, ts, gr in product(SLOTS_BOOST, SLOTS_DEF, SL_VALS, TS_VALS, G_REV_BOOST):
+    boost_p = {'v':0.15,'q':0.0,'g':0.55,'m':0.30,'g_rev':gr,
+               'entry':ENTRY,'exit':6,'slots':sb,'mom':'12m'}
+    defense_p = {**DEFENSE_BASE, 'slots':sd}
+    try:
+        r = TSIM.run_regime(defense_params=defense_p, offense_params=boost_p,
+                            regime_dict=REGIME, trailing_stop=ts, stop_loss=sl,
+                            g_sub1_o=GS_FIXED[0], g_sub2_o=GS_FIXED[1], g_sub3_o=GS_FIXED[2],
+                            g_w1_o=GS_FIXED[3], g_w2_o=GS_FIXED[4], g_w3_o=GS_FIXED[5],
+                            g_sub1_d=GS_FIXED[0], g_sub2_d=GS_FIXED[1], g_sub3_d=GS_FIXED[2],
+                            g_w1_d=GS_FIXED[3], g_w2_d=GS_FIXED[4], g_w3_d=GS_FIXED[5])
+        results.append({
+            'sb': sb, 'sd': sd, 'sl': sl, 'ts': ts, 'gr': gr,
+            'cal': r['calmar'], 'cagr': r['cagr'], 'mdd': r['mdd'],
+            'sharpe': r['sharpe'], 'sortino': r['sortino'],
+        })
+    except Exception as e:
+        results.append({'sb':sb,'sd':sd,'sl':sl,'ts':ts,'gr':gr,
+                        'cal':0,'cagr':0,'mdd':99,'sharpe':0,'sortino':0,'err':str(e)[:50]})
+    count += 1
+    if count % 100 == 0 or count == total:
+        elapsed = time.time() - t0
+        avg = elapsed / count
+        remain = avg * (total - count) / 60
+        print(f'  {count}/{total} ({elapsed/60:.1f}분 경과, {remain:.1f}분 남음)', flush=True)
+
+wall = time.time() - t0
+print(f'\n=== 완료: {wall/60:.1f}분, 평균 {wall/total*1000:.0f}ms/combo ===\n', flush=True)
+
+# === 결과 ===
+df = pd.DataFrame(results)
+df_sorted = df.sort_values('cal', ascending=False)
+
+# Top 30
+print('=' * 80)
+print(f'{"순위":>3} {"sb":>3} {"sd":>3} {"SL":>5} {"TS":>5} {"gr":>4} {"Cal":>6} {"CAGR":>6} {"MDD":>6} {"Sharpe":>7}')
+print('-' * 80)
+for i, (_, r) in enumerate(df_sorted.head(30).iterrows(), 1):
+    print(f'{i:>3} {r.sb:>3.0f} {r.sd:>3.0f} {r.sl:>5.0%} {r.ts:>5.0%} {r.gr:>4.1f} '
+          f'{r.cal:>6.2f} {r.cagr:>6.1f} {r.mdd:>6.1f} {r.sharpe:>7.2f}')
+
+# 변수별 평균
+print(f'\n=== 변수별 평균 Cal ===')
+print(f'sb: {dict(df.groupby("sb").cal.mean().round(2))}')
+print(f'sd: {dict(df.groupby("sd").cal.mean().round(2))}')
+print(f'SL: {dict(df.groupby("sl").cal.mean().round(2))}')
+print(f'TS: {dict(df.groupby("ts").cal.mean().round(2))}')
+print(f'gr: {dict(df.groupby("gr").cal.mean().round(2))}')
+
+df.to_csv(PROJECT.parent / '_tier2_results_20260513.csv', index=False)
+print(f'\n저장: _tier2_results_20260513.csv')
+
+# 텔레그램
+top10 = df_sorted.head(10)
+msg = f'<b>[Tier 2 grid 결과 — entry=2 고정]</b>\n\n'
+msg += f'총 {total}조합, {wall/60:.1f}분\n\n'
+msg += '<b>Top 10:</b>\n'
+for i, (_, r) in enumerate(top10.iterrows(), 1):
+    msg += f'{i}. sb{int(r.sb)} sd{int(r.sd)} SL{int(r.sl*100)} TS{int(r.ts*100)} gr{r.gr}: '
+    msg += f'Cal={r.cal:.2f} CAGR={r.cagr:.0f}% MDD={r.mdd:.0f}%\n'
+send_tg(msg)
+print('telegram sent')

@@ -46,8 +46,12 @@ def calc_regime(target_dates, kospi, ma170):
 
 
 def run_v80(boost_rk, defense_rk, dates, ohlcv, kospi, ma170,
-            sl=-0.07, ts=-0.10, ts_cd=2):
-    """v80.2 + TS 쿨다운 2일."""
+            sl=-0.07, ts=-0.10, ts_cd=2, disparity_max=None):
+    """v80.2 + TS 쿨다운 2일.
+
+    disparity_max: 이격도20 (현재가/MA20) 상한. None=비활성.
+                   production 일치용 1.5 (2026-05-12 도입).
+    """
     reg = calc_regime(dates, kospi, ma170)
     tsim_b = TurboSimulator({d: boost_rk[d]['rankings'] for d in dates}, dates, ohlcv)
     tsim_b._ensure_cache(0.15, 0.00, 0.55, 0.30, 0.6, 20, '12m', 'rev_z', 'oca_z')
@@ -136,6 +140,16 @@ def run_v80(boost_rk, defense_rk, dates, ohlcv, kospi, ma170,
                 if cand_wranks[k] <= entry_p:
                     c = cand_cols[k]
                     if c not in portfolio and c not in cooldown:
+                        # 이격도20 안전망 (production 일치, 2026-05-12)
+                        if disparity_max is not None:
+                            ma20_start = max(0, cur_row - 19)
+                            ma20_window = price_arr[ma20_start:cur_row+1, c]
+                            ma20_window = ma20_window[ma20_window == ma20_window]  # NaN 제외
+                            if len(ma20_window) >= 5:
+                                ma20 = ma20_window.mean()
+                                cur_p_check = price_arr[cur_row, c]
+                                if ma20 > 0 and cur_p_check / ma20 > disparity_max:
+                                    continue  # 차단
                         portfolio[c] = cand_prices[k]
                         peak_prices[c] = cand_prices[k]
                         slots_avail -= 1

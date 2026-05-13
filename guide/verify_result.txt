@@ -1,0 +1,84 @@
+﻿===================================================
+  Mi-Tone v6.1/v11.1/v6.1 Integrity Check
+  Run: 2026-05-13 17:38:57
+===================================================
+
+[1] Byte size (limit 65258 / hard limit 65508)
+---------------------------------------------------
+[OK]   CX         65180 byte
+[OK]   EMP        34086 byte
+[OK]   UX         35090 byte
+
+[2] CRLF check (LF only)
+---------------------------------------------------
+[OK]   CX      CRLF 0
+[OK]   EMP     CRLF 0
+[OK]   UX      CRLF 0
+
+[3] Single brace violation (allow context/question)
+---------------------------------------------------
+[OK]   CX      single-open 2 / allowed 2 / violation 0
+[OK]   EMP     single-open 2 / allowed 2 / violation 0
+[OK]   UX      single-open 2 / allowed 2 / violation 0
+
+[4] Section sign residue (rule-block 1 each only)
+---------------------------------------------------
+[OK]   CX      section-sign 1
+[OK]   EMP     section-sign 1
+[OK]   UX      section-sign 1
+
+[5] Extract answer-data xlsx
+---------------------------------------------------
+[run] extract_xlsx.ps1
+  [skip] guide_rag_cx_docx_flat - no xlsx
+  
+  ===================================
+  Extract: 정답데이터1
+    src: C:\dev\guide\01_CX\vector_db\정답데이터1\정답데이터1.xlsx
+    out: C:\dev\guide\정답데이터1_xlsx_dump.txt
+  ===================================
+    shared strings: 190
+    sheets: 6
+    2026목표 : 7 rows
+    메시지검토 : 49 rows
+    중개형ISA 해지 : 8 rows
+    표준 1회성 메시지 : 6 rows
+    업무일정 : 5 rows
+    자기계발 : 3 rows
+    [OK] saved: 75.3 KB
+  
+  ===================================
+  Extract: 정답데이터2
+    src: C:\dev\guide\01_CX\vector_db\정답데이터2\정답데이터2.xlsx
+    out: C:\dev\guide\정답데이터2_xlsx_dump.txt
+  ===================================
+    shared strings: 3999
+    sheets: 8
+    1차_국내해외주식채권_피드백반영 : 146 rows
+    2차_파생 등_피드백반영 : 134 rows
+    3차_프로세스 외_피드백 반영 : 113 rows
+    4차_ 연금 전체 : 137 rows
+    연금 외 메시지 선발대 제외_260127 : 323 rows
+    시트6 : 7 rows
+    차수별 대시보드 (1) : 29 rows
+    연금 외 메시지 선발대 제외_260127 (1) : 323 rows
+    [OK] saved: 2330.6 KB
+  
+  ===================================
+    All extraction done
+  ===================================
+    - 정답데이터1_xlsx_dump.txt (75.3 KB)
+    - 정답데이터2_xlsx_dump.txt (2330.6 KB)
+  ===================================
+[OK]   2 dump files generated:
+       - 정답데이터1_xlsx_dump.txt (75.3 KB)
+       - 정답데이터2_xlsx_dump.txt (2330.6 KB)
+
+===================================================
+  Summary: count [FAIL] / [WARN] above
+  All [OK] = production-ready
+
+  Next:
+    1. python C:\dev\guide\eda_pipeline.py
+    2. apply 13 verification cases
+===================================================

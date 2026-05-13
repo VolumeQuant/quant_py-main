@@ -51,10 +51,10 @@ def _save_state(state):
         json.dump(state, f, ensure_ascii=False, indent=2)
 
 
-MA_PERIOD = 170                 # v80: MA170 (v79: MA200)
+MA_PERIOD = 250                 # v80.6: MA250 (v80: MA170)
 
 def check_regime_signal(kospi_close=None, kospi_ma=None, kospi_ma200=None, **kwargs):
-    """KP_MA170: KOSPI > 170일 이동평균 = boost
+    """KP_MA250 (v80.6): KOSPI > 250일 이동평균 = boost
 
     kospi_close: KOSPI 종가
     kospi_ma: KOSPI MA(MA_PERIOD)일 이동평균
@@ -67,7 +67,7 @@ def check_regime_signal(kospi_close=None, kospi_ma=None, kospi_ma200=None, **kwa
 
 
 # v80 파라미터
-CONFIRM_DAYS = 8                # KP_MA170_8d (v79: MA200 7d)
+CONFIRM_DAYS = 8                # KP_MA250_8d (v80.6, v80: MA170_8d)
 
 
 def get_current_regime(kospi_close=None, kospi_ma200=None, kospi_ma=None, date_str=None, **kwargs):
@@ -141,16 +141,16 @@ def get_regime_params(mode):
     if mode == 'boost':
         return {
             'V_W': 0.15, 'Q_W': 0.00, 'G_W': 0.55, 'M_W': 0.30,
-            'G_REV': 0.6,                   # 2팩터 rev 비중 60% (v79: 3팩터 → 2팩터)
+            'G_REV': 0.5,                   # v80.6: 0.6→0.5 (oca 비중↑)
             'G_SUB1': 'rev_z',
             'G_SUB2': 'oca_z',
-            'G_SUB3': None,                 # v80: 2팩터 (gp_growth 제거)
+            'G_SUB3': None,
             'G_W1': None, 'G_W2': None, 'G_W3': None,
             'MOM_PERIOD': '12m',
-            'ENTRY_RANK': 3, 'EXIT_RANK': 6, 'MAX_SLOTS': 3,
-            'STOP_LOSS': -0.10,             # v80.2 rollback (2026-05-12): 옵션F만 데이터 BT에서 baseline 우위
-            'TRAILING_STOP': -0.15,         # v80.2 rollback (2026-05-12)
-            'TS_COOLDOWN': 2,               # v80.1: 트레일링 퇴출 후 2거래일 재진입 금지
+            'ENTRY_RANK': 2, 'EXIT_RANK': 6, 'MAX_SLOTS': 5,  # v80.6: e3→2, slots 3→5
+            'STOP_LOSS': -0.10,             # v80.6: 유지
+            'TRAILING_STOP': -0.08,         # v80.6: -0.15→-0.08 (Tier 5~6 검증)
+            'TS_COOLDOWN': 2,
             'CORR_THRESHOLD': None,
             'USE_REV_ACCEL': False,
             'label': '공격 모드 (Growth 55%)',
@@ -158,17 +158,17 @@ def get_regime_params(mode):
         }
     else:  # defense
         return {
-            'V_W': 0.30, 'Q_W': 0.15, 'G_W': 0.15, 'M_W': 0.40,
-            'G_REV': 0.7,                   # 2팩터 rev 비중 70%
+            'V_W': 0.35, 'Q_W': 0.15, 'G_W': 0.15, 'M_W': 0.35,  # v80.6: V 0.30→0.35, M 0.40→0.35
+            'G_REV': 0.8,                   # v80.6: 0.7→0.8 (rev 비중↑)
             'G_SUB1': 'rev_z',
             'G_SUB2': 'oca_z',
-            'G_SUB3': None,                 # 2팩터
+            'G_SUB3': None,
             'G_W1': None, 'G_W2': None, 'G_W3': None,
             'MOM_PERIOD': '6m-1m',
-            'ENTRY_RANK': 3, 'EXIT_RANK': 6, 'MAX_SLOTS': 5,  # v80: 7→5
-            'STOP_LOSS': -0.10,             # v80.2 rollback (2026-05-12)
-            'TRAILING_STOP': -0.15,         # v80.2 rollback (2026-05-12)
-            'TS_COOLDOWN': 2,               # v80.1: 트레일링 퇴출 후 2거래일 재진입 금지
+            'ENTRY_RANK': 3, 'EXIT_RANK': 6, 'MAX_SLOTS': 4,  # v80.6: slots 5→4
+            'STOP_LOSS': -0.10,             # v80.6: 유지
+            'TRAILING_STOP': -0.08,         # v80.6: -0.15→-0.08
+            'TS_COOLDOWN': 2,
             'CORR_THRESHOLD': None,
             'USE_REV_ACCEL': False,
             'label': '방어 모드 (Momentum 40%)',

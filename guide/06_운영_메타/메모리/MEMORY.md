@@ -1,0 +1,5 @@
+- [Mi-Tone 프로젝트 개요](project_mitone_overview.md) — 회사 공식 AI 로드맵, 정답데이터1·2 = 1차·2차 개선 578·666건, CX 우선
+- [Mi-Tone 작업 진행 방식](feedback_work_style.md) — divide-and-conquer, 매 단계 인사이트 누적, 북극성=정답데이터처럼 사람답게
+- [Mi-Tone Phase 1A·1B 핵심 발견](project_phase1_findings.md) — 가이드 PDF 153p 정독 결과, 5대 결정적 발견 + 30+ 충돌 5 카테고리 분류, v5.21 페르소나안
+- [Mi-Tone Phase 7·8 아키텍처 결정](project_phase7_8_architecture.md) — 3 레이어 아키텍처 + 정답데이터2 카드 형식 + v5.21 패치 우선순위 + 6 Phase 실행 계획
+- [Mi-Tone v5.21 시행착오 교훈](feedback_v521_lessons.md) — 1차 시도에서 발견된 자의 작성·백업 누락·환각·메모리 결정 무시 8 룰. v5.21 손댈 때 무조건 읽기
