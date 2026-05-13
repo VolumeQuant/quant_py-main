@@ -455,20 +455,20 @@ def main():
         # 종목명 캐시 — 별도 스케줄러 (매주 월요일 09시)
         log("DART 캐시 증분 갱신", logfile)
         try:
-            ok_dart = run_script("refresh_dart_cache.py", timeout=10800, logfile=logfile)
+            ok_dart = run_script("refresh_dart_cache.py", timeout=18000, logfile=logfile)
             log(f"DART 갱신: {'성공' if ok_dart else '실패'}", logfile)
         except subprocess.TimeoutExpired:
-            log("DART 갱신 타임아웃 (3시간) — 기존 캐시로 진행", logfile)
+            log("DART 갱신 타임아웃 (5시간) — 기존 캐시로 진행", logfile)
         except Exception as e:
             log(f"DART 갱신 오류: {e} — 기존 캐시로 진행", logfile)
 
         # 0.1. FnGuide 증분 (DART 최근 공시 종목만, rcept_dt 역추적 포함)
         log("FnGuide 증분 갱신 (DART 최근 공시 종목)", logfile)
         try:
-            ok_fng = run_script("refresh_fnguide_incremental.py", timeout=10800, logfile=logfile)
+            ok_fng = run_script("refresh_fnguide_incremental.py", timeout=18000, logfile=logfile)
             log(f"FnGuide 갱신: {'성공' if ok_fng else '실패(비치명적)'}", logfile)
         except subprocess.TimeoutExpired:
-            log("FnGuide 갱신 타임아웃 (15분) — 기존 캐시로 진행", logfile)
+            log("FnGuide 갱신 타임아웃 (5시간) — 기존 캐시로 진행", logfile)
         except Exception as e:
             log(f"FnGuide 갱신 오류: {e} — 기존 캐시로 진행", logfile)
 
