@@ -465,7 +465,7 @@ def main():
         # 0.1. FnGuide 증분 (DART 최근 공시 종목만, rcept_dt 역추적 포함)
         log("FnGuide 증분 갱신 (DART 최근 공시 종목)", logfile)
         try:
-            ok_fng = run_script("refresh_fnguide_incremental.py", timeout=900, logfile=logfile)
+            ok_fng = run_script("refresh_fnguide_incremental.py", timeout=10800, logfile=logfile)
             log(f"FnGuide 갱신: {'성공' if ok_fng else '실패(비치명적)'}", logfile)
         except subprocess.TimeoutExpired:
             log("FnGuide 갱신 타임아웃 (15분) — 기존 캐시로 진행", logfile)
@@ -705,12 +705,12 @@ def main():
         # 1.5. ranking 검증 — 데이터 정합성 미달 시 30분 후 재시도 (B 안전망)
         # 매핑 버그 같은 외부 트리거 사고 방지 (2026-05-04 도입)
         state_dir = SCRIPT_DIR / 'state'
-        ok_val, n_stocks = _validate_ranking(today, state_dir, threshold=320, logfile=logfile)
+        ok_val, n_stocks = _validate_ranking(today, state_dir, threshold=150, logfile=logfile)
         if not ok_val:
-            log(f"⚠️ ranking 검증 미달: {n_stocks}종목 < 320 — 채널 발송 차단, 30분 후 재시도", logfile)
+            log(f"⚠️ ranking 검증 미달: {n_stocks}종목 < 150 — 채널 발송 차단, 30분 후 재시도", logfile)
             _send_personal_warning(
                 f"⚠️ <b>ranking 검증 미달</b>\n\n"
-                f"종목 수: <b>{n_stocks}</b> (임계: 320, 정상 350+)\n\n"
+                f"종목 수: <b>{n_stocks}</b> (임계: 150, wholesale 사고 감지선)\n\n"
                 f"채널 발송 보류. 30분 후 재시도 예정.\n"
                 f"데이터 정합성 점검 필요할 수 있음.",
                 logfile=logfile,
@@ -729,12 +729,12 @@ def main():
                     logfile=logfile,
                 )
                 return
-            ok_val, n_stocks = _validate_ranking(today, state_dir, threshold=320, logfile=logfile)
+            ok_val, n_stocks = _validate_ranking(today, state_dir, threshold=150, logfile=logfile)
             if not ok_val:
                 log(f"⚠️ 재시도 후에도 미달: {n_stocks}종목 — 발송 보류", logfile)
                 _send_personal_warning(
                     f"❌ <b>재시도 후에도 검증 미달</b>\n\n"
-                    f"종목 수: <b>{n_stocks}</b> (임계: 320)\n\n"
+                    f"종목 수: <b>{n_stocks}</b> (임계: 150)\n\n"
                     f"오늘 채널 발송 보류. 수동 점검 필요.",
                     logfile=logfile,
                 )

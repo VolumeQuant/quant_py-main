@@ -127,6 +127,46 @@
 - 이유: 2018 H2 DART 데이터 부족 ((d) 필터 941종목, 정상 1700+ 대비 55%) → BT 시작점에 부적합
 - 5.25y 기준 완전 폐기. **7.4y 단일 기준**.
 
+### v80.6 production 정련 (2026-05-13 저녁 세션)
+회사PC v80.6 commit `89e580f42` 후 자동 발송이 종목수 미달(288/320)로 차단된 사고에서 시작. 시스템 점검 + 정련.
+
+**1. 종목수 임계 320 → 150** (`run_daily.py:708, 732`)
+- 시장 자연 약세 (305→302→288)를 데이터 사고로 오인하던 문제
+- historical 분포: min 193, p5 205, p10 215 — 약세장에선 200대가 정상
+- 임계 150 = wholesale 사고(캐시 통째 손실 등) 감지선
+- 부분 사고(특정 종목 이탈 등)는 별도 신호로 (DART vs FN baseline 비교 등)
+
+**2. 메시지 문구 v80.6 명확화** (`send_telegram_auto.py`, `send_notice_once.py`)
+- "위 이내" 모호 표현 → "상위 N종목" 명시
+- "WR > 6" 내부 용어 → "X위 밖"
+- "트레일링" → "고점대비"
+- 매수: `상위 2종목 (최대 5종목 보유)` / 매도: `6위 밖 / 손절 -10% / 고점대비 -8%`
+- send_notice_once.py: MA170→MA250, 슬롯 3/5→5/4, 트레일링 -15%→-8%, defense 팩터 V30M40→V35M35
+
+**3. HY 캐시 복원** (`data_cache/hy_spread.parquet`)
+- 5/13 새벽 작업 중 7650일 → 799일(3년)로 손상 (FRED 3년 제한 + 캐시 덮어쓰기)
+- git commit `d7f198504`에서 84KB 옛 캐시 추출 + 4/17~5/11 신규 16일 병합 → **7666일 복원**
+- 백업: `hy_spread.parquet.bak_799d_corrupt` 보존
+- credit_monitor HY 분석 정상 작동 확인 (2.79% Q2 여름 8일째)
+
+**4. Gemini API 키 갱신**
+- 기존 키 leak 보고 (Google 403 "API key was reported as leaked") → AI 분석 모두 누락
+- 새 키 발급 후 `config.py:23` 교체
+- `config.py`는 `.gitignore` 등록 → git push 안 됨, 회사PC 별도 동기화 필요
+
+**5. FnGuide refresh 정책 개선** (`refresh_fnguide_incremental.py`)
+- 종목 선정: DAYS cutoff 3→30일 + **mtime 비교 추가** (fnguide < dart인 종목만)
+- 처리: ThreadPool=2 worker + 종목당 30초 timeout (hang 보호)
+- 전체 timeout: 900s → 10800s (3시간, `run_daily.py:468`)
+- 환경변수: `FNG_INCR_DAYS`, `FNG_TICKER_TIMEOUT`, `FNG_WORKERS`
+- 5/13 stale 1550 종목 일괄 보충 완료 (100% 성공, 23.4분) → 이후 자동 실행은 소량
+- 이유: FnGuide 사이트는 DART보다 며칠~수주 늦게 들어옴. 3일 cutoff면 누락 확정. 매일 매일 30일까지 재시도하다 사이트 데이터 들어오면 받음.
+
+**6. 점수 영향 분석 결과**
+- v80.6 G_SUB = `매출성장률(DART) × G_REV + 영업이익변화/자산(DART) × (1-G_REV)` — fnguide 비의존
+- V (PCR/PSR) / Q (GPA/CFO)도 DART 14개 핵심 계정으로 계산 가능 — fnguide는 보충용
+- fnguide 단독 항목 없음 — 다만 (e) capped 검사에 영업CF z 결측은 영향 미미
+
 ## 국면전환 전략 (v80, 2026-04-18, 옛 production)
 
 ### v79→v80 경위

@@ -869,11 +869,11 @@ def create_regime_switch_message(regime_mode, prev_mode=None):
             '',
             '■ 공격 모드 매매 기준',
             '',
-            '  · 매수: 3일 연속 당일 상위 2위 이내 ✅ 종목',
+            '  · 매수: 3일 연속 상위 2종목 ✅ 안에 든 종목',
             '  · 매도: 3일 평균 순위가 6위 밖으로 밀릴 때',
             '  · 보유: 최대 5종목, 균등 비중',
             '  · 손절: 매수가 대비 -10%',
-            '  · 트레일링: 최고가 대비 -8%',
+            '  · 고점대비 매도: 최고가 대비 -8% 하락 시',
             '',
             '■ 공격 모드가 작동하는 방식',
             '',
@@ -919,11 +919,11 @@ def create_regime_switch_message(regime_mode, prev_mode=None):
         '',
         '■ 방어 모드 매매 기준',
         '',
-        '  · 매수: 3일 연속 당일 상위 3위 이내 ✅ 종목',
+        '  · 매수: 3일 연속 상위 3종목 ✅ 안에 든 종목',
         '  · 매도: 3일 평균 순위가 6위 밖으로 밀릴 때',
         '  · 보유: 최대 4종목, 균등 비중',
         '  · 손절: 매수가 대비 -10%',
-        '  · 트레일링: 최고가 대비 -8%',
+        '  · 고점대비 매도: 최고가 대비 -8% 하락 시',
         '',
         '■ 방어 모드가 작동하는 방식',
         '',
@@ -1353,17 +1353,19 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         _sl = rp_current.get('STOP_LOSS')
         _tr = rp_current.get('TRAILING_STOP')
         _corr = rp_current.get('CORR_THRESHOLD')
-        sl_s = f'{int(_sl*100)}% 손절' if _sl else ''
-        tr_s = f'트레일링 {int(_tr*100)}%' if _tr else ''
+        sl_s = f'매수가 대비 {int(_sl*100)}% 손절' if _sl else ''
+        tr_s = f'최고가 대비 {int(_tr*100)}% 트레일링' if _tr else ''
         corr_s = f' · 상관{_corr}' if _corr else ''
-        exit_parts = [f'WR > {_x}']
-        if sl_s: exit_parts.append(sl_s)
-        if tr_s: exit_parts.append(tr_s)
-        lines.append(f'매수: 3일 검증 상위 {_e}종목 중 {_s}종목{corr_s}')
-        lines.append(f'매도: {" 또는 ".join(exit_parts)}')
+        sl_short = f'손절 {int(_sl*100)}%' if _sl else ''
+        tr_short = f'고점대비 {int(_tr*100)}%' if _tr else ''
+        exit_parts = [f'{_x}위 밖']
+        if sl_short: exit_parts.append(sl_short)
+        if tr_short: exit_parts.append(tr_short)
+        lines.append(f'매수: 상위 {_e}종목 (최대 {_s}종목 보유){corr_s}')
+        lines.append(f'매도: {" / ".join(exit_parts)}')
     else:
-        lines.append(f'매수: 3일 검증 상위 {ENTRY_RANK}종목 중 {MAX_SLOTS}종목')
-        lines.append(f'매도: 3일 가중순위 > {EXIT_RANK}.0 또는 -10% 손절')
+        lines.append(f'매수: 상위 {ENTRY_RANK}종목 (최대 {MAX_SLOTS}종목 보유)')
+        lines.append(f'매도: {EXIT_RANK}위 밖 / 손절 -10% / 고점대비 -8%')
 
     return '\n'.join(lines)
 
