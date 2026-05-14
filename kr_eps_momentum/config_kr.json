@@ -1,0 +1,31 @@
+{
+  "_comment": "KR EPS Momentum 시스템 config (2026-05-14 시작, US 코드 base로 adapt 중)",
+  "git_enabled": false,
+  "git_remote": "origin",
+  "git_branch": "main",
+
+  "telegram_enabled": false,
+  "telegram_bot_token": "",
+  "telegram_chat_id": "",
+  "telegram_channel_id": "",
+  "telegram_private_id": "",
+
+  "db_path": "C:/dev/kr_eps_momentum/eps_momentum_data_kr.db",
+  "data_cache": "C:/dev/yf_eps_workspace/data_cache_yf",
+
+  "market": "KR",
+  "timezone": "Asia/Seoul",
+
+  "universe_source": "kr_market_cap",
+  "universe_min_mcap_krw": 100000000000,
+  "universe_filter_pref": true,
+
+  "benchmark_index": "^KS11",
+  "benchmark_label": "KOSPI",
+
+  "_notes": [
+    "이 config는 KR 사본 골격용. daily_runner.py 자체는 아직 US 종목용.",
+    "KR adapt TODO 문서 참고: KR_ADAPT_TODO.md",
+    "production v80.6과 완전 격리. data_cache 공유 안 함."
+  ]
+}

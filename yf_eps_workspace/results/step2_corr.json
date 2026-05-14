@@ -1,0 +1,62 @@
+{
+  "corr_results": [
+    {
+      "pair": "growth_s   vs NTM",
+      "pearson": -0.067,
+      "spearman": -0.057,
+      "n": 101
+    },
+    {
+      "pair": "rev_z      vs NTM",
+      "pearson": -0.159,
+      "spearman": -0.142,
+      "n": 101
+    },
+    {
+      "pair": "oca_z      vs NTM",
+      "pearson": 0.039,
+      "spearman": 0.083,
+      "n": 101
+    },
+    {
+      "pair": "composite  vs NTM",
+      "pearson": 0.12,
+      "spearman": 0.116,
+      "n": 101
+    },
+    {
+      "pair": "m_score    vs NTM",
+      "pearson": 0.294,
+      "spearman": 0.27,
+      "n": 101
+    },
+    {
+      "pair": "growth_s   vs rev_net30",
+      "pearson": -0.019,
+      "spearman": -0.144,
+      "n": 101
+    },
+    {
+      "pair": "rev_z      vs rev_net30",
+      "pearson": -0.068,
+      "spearman": -0.171,
+      "n": 101
+    },
+    {
+      "pair": "growth_s   vs s_7d",
+      "pearson": -0.184,
+      "spearman": -0.144,
+      "n": 101
+    },
+    {
+      "pair": "growth_s   vs s_90d",
+      "pearson": -0.004,
+      "spearman": 0.01,
+      "n": 101
+    }
+  ],
+  "decision": "INDEPENDENT",
+  "g_ntm_spearman": -0.057,
+  "overlap_top10": 1,
+  "n_merged": 101
+}

@@ -85,3 +85,12 @@ diagnose_*.py
 check_*.py
 fix_kospi_columns.py
 fix_ohlcv_*.py
+
+# 5/14 백업 (KR EPS 작업 안전망 — 로컬만, push X)
+data_cache_BACKUP_*/
+code_FULL_BACKUP_*/
+code_v80_6_BACKUP_*/
+state_v80_6_FULL_BACKUP_*/
+
+# 5/14 yf_eps_workspace 로컬 데이터 (parquet은 push, log/db는 작아서 push OK)
+yf_eps_workspace/logs/
