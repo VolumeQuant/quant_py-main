@@ -14,12 +14,12 @@ FnGuide에도 새 분기 데이터가 있을 가능성 높음.
 import sys, os, glob, time
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
-sys.path.insert(0, 'C:/dev')
+sys.path.insert(0, str(Path(__file__).parent))
 sys.stdout.reconfigure(encoding='utf-8')
 
 import pandas as pd
 
-DATA = Path('C:/dev/data_cache')
+DATA = Path(__file__).parent / 'data_cache'
 # DAYS: DART 갱신 후 fnguide 시도할 기간. FnGuide 사이트는 DART보다 며칠~수주 늦게 들어옴.
 # 너무 짧으면 누락, 너무 길면 사이트 부담. 30일이면 분기보고서 들어올 때까지 매일 재시도 가능.
 DAYS = int(os.environ.get('FNG_INCR_DAYS', '30'))  # 기본 30일
@@ -102,7 +102,7 @@ def main(base_date=None):
     print('\nrcept_dt 역추적 (postprocess_fnguide_rcept.py 호출)...')
     import subprocess
     subprocess.run(
-        [sys.executable, 'C:/dev/backtest/postprocess_fnguide_rcept.py'],
+        [sys.executable, str(Path(__file__).parent / 'backtest' / 'postprocess_fnguide_rcept.py')],
         check=False,
     )
 

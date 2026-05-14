@@ -16,7 +16,7 @@ sys.stdout.reconfigure(encoding='utf-8')
 
 import pandas as pd
 
-DATA = Path('C:/dev/data_cache')
+DATA = Path(__file__).resolve().parent.parent / 'data_cache'
 
 
 def process_ticker(ticker):
