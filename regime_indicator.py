@@ -141,19 +141,19 @@ def get_regime_params(mode):
     if mode == 'boost':
         return {
             'V_W': 0.15, 'Q_W': 0.00, 'G_W': 0.55, 'M_W': 0.30,
-            'G_REV': 0.5,                   # v80.6: 0.6→0.5 (oca 비중↑)
+            'G_REV': 0.5,                   # 2팩터 폴백 (3팩터 모드에선 미사용)
             'G_SUB1': 'rev_z',
             'G_SUB2': 'oca_z',
-            'G_SUB3': None,
-            'G_W1': None, 'G_W2': None, 'G_W3': None,
+            'G_SUB3': 'gp_growth_z',        # v80.6.1 (2026-05-15): 3팩터 도입
+            'G_W1': 0.4, 'G_W2': 0.4, 'G_W3': 0.2,  # rev/oca/gp_growth 비율
             'MOM_PERIOD': '12m',
-            'ENTRY_RANK': 2, 'EXIT_RANK': 6, 'MAX_SLOTS': 5,  # v80.6: e3→2, slots 3→5
-            'STOP_LOSS': -0.10,             # v80.6: 유지
-            'TRAILING_STOP': -0.08,         # v80.6: -0.15→-0.08 (Tier 5~6 검증)
+            'ENTRY_RANK': 2, 'EXIT_RANK': 6, 'MAX_SLOTS': 5,
+            'STOP_LOSS': -0.10,
+            'TRAILING_STOP': -0.08,
             'TS_COOLDOWN': 2,
             'CORR_THRESHOLD': None,
             'USE_REV_ACCEL': False,
-            'label': '공격 모드 (Growth 55%)',
+            'label': '공격 모드 (Growth 55%, 3팩터)',
             'icon': '📈',
         }
     else:  # defense

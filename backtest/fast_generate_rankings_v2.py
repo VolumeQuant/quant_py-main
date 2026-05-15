@@ -1234,7 +1234,19 @@ def calculate_multifactor_fast(multifactor_df, price_df, sector_map, base_date,
     data = multifactor_df.copy()
 
     # --- Value 팩터 ---
-    if 'pykrx_PER' in data.columns:
+    # USE_SELF_PER=1: 자체 TTM PER (fs_dart 4분기 NI 합 기반, 어닝 즉시 반영)
+    # 기본 (=0): pykrx PER (KRX 공식, 시차 있음)
+    USE_SELF_PER = os.environ.get('USE_SELF_PER', '0') == '1'
+    if USE_SELF_PER and '시가총액' in data.columns:
+        ttm_ni_eok = data['지배주주당기순이익'].fillna(data.get('당기순이익', np.nan)) if '지배주주당기순이익' in data.columns else data.get('당기순이익', pd.Series(dtype=float))
+        ttm_ni_won = ttm_ni_eok * 1e8  # 억원 → 원
+        self_per = np.where(ttm_ni_won > 0, data['시가총액'] / ttm_ni_won, np.nan)
+        data['PER'] = self_per
+        # pykrx_PER을 self_per로 폴백 (그러나 pykrx>0이고 self가 없는 종목엔 pykrx 사용)
+        if 'pykrx_PER' in data.columns:
+            fallback = pd.isna(data['PER']) & (data['pykrx_PER'] > 0)
+            data.loc[fallback, 'PER'] = data.loc[fallback, 'pykrx_PER']
+    elif 'pykrx_PER' in data.columns:
         data['PER'] = data['pykrx_PER'].where(data['pykrx_PER'] > 0, np.nan)
     else:
         data['PER'] = np.nan

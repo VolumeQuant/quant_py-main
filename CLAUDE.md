@@ -55,10 +55,36 @@
 
 ---
 
-# 🇰🇷 KR 전략 — quant_py-main (v80.6, 2026-05-13)
+# 🇰🇷 KR 전략 — quant_py-main (v80.6.1, 2026-05-15)
 
 > 경로: `C:\dev\claude code\quant_py-main`
 > 영구 지도: `C:\dev\SYSTEM_MAP.md` (전략 교체 시 맹점 제로 체크리스트)
+
+## v80.6.1 변경 — boost G 3팩터 도입 (2026-05-15)
+
+- **boost G subfactor**: rev_z + oca_z **+ gp_growth_z** (0.4/0.4/0.2) ← 3팩터로 확장
+- 이유: 7.4y BT Cal 2.888 → 2.961 (+0.073 미미), **WF CV 0.508 → 0.440 (-13% 안정성 개선) ★**
+- 약세장 (2022-23) Cal 1.81 → 1.84 유지 (v80.7 사고 패턴 회피)
+- 인접 안정성 CV 0.142 ✅ PASS
+- defense 무변경 (rev+oca 0.8/0.2 그대로, defense G grid 결과 baseline 최적)
+
+### v80.6.1 grid search 검증 (2026-05-15)
+- V/Q/G/M 격자 56조합: baseline **1/56위** = v80.6 비율 (V15Q0G55M30) 그대로 최적
+- G subfactor grid:
+  - 단일 팩터 모두 baseline 대비 -1.1 ~ -2.4 (단독 alpha X)
+  - 2팩터 rev+oca = 최적
+  - **3팩터 rev+oca+gp 0.4/0.4/0.2 = WF 안정성 ★**
+  - 4팩터 rev+oca+op_margin+cfo 0.4/0.4/0.1/0.1: Cal 3.868 (+0.980 대형 lift) but 약세장 1.12 함정 → **반려**
+  - trio rev+oca+cfo: Cal +0.206 but 약세장 0.92 함정 → 반려
+- defense G grid: rev+oca 0.8/0.2 = baseline 최적, 다른 조합 모두 marginal (Δ<0.02)
+- MOM 기간 단일화 검증: baseline (boost 12m + defense 6m-1m) = 최강. regime별 변경이 진짜 알파
+
+### v80.6.1 production 적용 (2026-05-15)
+- `regime_indicator.py:142~158`: boost G_SUB3='gp_growth_z', G_W1/2/3=0.4/0.4/0.2
+- `backtest/regenerate_all_v80.py`: BOOST_ENV 3팩터, defense job 비활성 (baseline 유지)
+- state 1930일 재생성 (boost만, 38.7분) + wr_batch 후처리 (61초)
+- 백업: `state_v80_6_pre_3f_20260515_RAW/` 1931개 + `state_v80_6_backup_pre_3f_20260515/`
+- 5/14 검증: cr=3 제주반도체 (3팩터로 7→3 상승), wr=9 (3일 가중 영향)
 
 ## 국면전환 전략 (v80.6, 2026-05-13)
 
