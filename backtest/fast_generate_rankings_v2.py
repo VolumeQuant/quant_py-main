@@ -1775,6 +1775,51 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
     if scored.empty:
         return False, 'scoring failed'
 
+    # ============================================================
+    # v80.7 (2026-05-16): 계절성 패널티
+    # Q2+Q4 매출 / Q1+Q3 매출 > 1.4 인 종목 → 성장_점수 × 0.5
+    # 효과: 7.4y Cal 2.90 → 3.29 (+0.39, MDD 개선)
+    # 사용자 케이스(선익시스템) 함정 회피 — 8.6세대 OLED 같은 일회성 Q2/Q4 폭증 패턴 자동 감지
+    # 환경변수: SEASONALITY_DISABLE=1로 비활성화
+    # ============================================================
+    if os.environ.get('SEASONALITY_DISABLE') != '1':
+        SEAS_RATIO_THRESH = float(os.environ.get('SEASONALITY_RATIO_THRESH', '1.4'))
+        SEAS_PENALTY = float(os.environ.get('SEASONALITY_PENALTY', '0.5'))
+        fs_dict_local = preloaded.get('fs', {})
+        seas_applied = 0
+        for idx, row in scored.iterrows():
+            tk = row.get('종목코드')
+            if not tk or tk not in fs_dict_local: continue
+            fs_tk = fs_dict_local[tk]
+            q_tk = fs_tk[(fs_tk['공시구분']=='q') & (fs_tk['계정']=='매출액')]
+            if 'rcept_dt' not in q_tk.columns: continue
+            q_avail = q_tk[q_tk['rcept_dt'].notna() & (q_tk['rcept_dt'] <= base_ts)]
+            if len(q_avail) < 8: continue
+            last8 = q_avail.sort_values('rcept_dt').tail(8)
+            q24 = last8[last8['기준일'].dt.month.isin([6, 12])]['값'].sum()
+            q13 = last8[last8['기준일'].dt.month.isin([3, 9])]['값'].sum()
+            if q13 <= 0: continue
+            ratio = q24 / q13
+            if ratio > SEAS_RATIO_THRESH:
+                # 성장_점수 × penalty + 멀티팩터_점수 재계산
+                V_W = float(os.environ.get('FACTOR_V_W', '0.20'))
+                Q_W = float(os.environ.get('FACTOR_Q_W', '0.20'))
+                G_W = float(os.environ.get('FACTOR_G_W', '0.30'))
+                M_W = float(os.environ.get('FACTOR_M_W', '0.30'))
+                new_g = (row.get('성장_점수', 0) or 0) * SEAS_PENALTY
+                scored.at[idx, '성장_점수'] = new_g
+                scored.at[idx, '멀티팩터_점수'] = (
+                    (row.get('밸류_점수', 0) or 0) * V_W +
+                    (row.get('퀄리티_점수', 0) or 0) * Q_W +
+                    new_g * G_W +
+                    (row.get('모멘텀_점수', 0) or 0) * M_W
+                )
+                seas_applied += 1
+        if seas_applied > 0:
+            # 순위 재부여
+            scored['멀티팩터_순위'] = scored['멀티팩터_점수'].rank(ascending=False, method='first', na_option='bottom')
+            print(f'    계절성 패널티: {seas_applied}종목 (ratio>{SEAS_RATIO_THRESH}, ×{SEAS_PENALTY})')
+
     # (e) 2차 안전망: G 서브팩터 5개 이상 동일값 → capped 신호 → 제외
     #     (d) 시점별 필터를 통과했어도 rcept_dt 누락 등 엣지 케이스 잡기
     if os.environ.get('FILTER_NO_CAPPED') != '1':
