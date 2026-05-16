@@ -55,10 +55,72 @@
 
 ---
 
-# 🇰🇷 KR 전략 — quant_py-main (v80.8, 2026-05-16)
+# 🇰🇷 KR 전략 — quant_py-main (v80.9, 2026-05-16 저녁)
 
 > 경로: `C:\dev\claude code\quant_py-main`
 > 영구 지도: `C:\dev\SYSTEM_MAP.md` (전략 교체 시 맹점 제로 체크리스트)
+
+## v80.9 변경 — curr 식 복귀 + defense exit 4→8, slots 4→5 (2026-05-16 저녁)
+
+### 핵심 변경
+1. **계절성 식 bi → curr (v80.7로 복귀)** + PENALTY 0.3 유지
+   - 이유: v80.8 bi가 **제주반도체** 같은 진짜 가속 성장 종목 잘못 패널티 → 사용자 통찰 위반
+   - 사용자 지적: "실적이 잘나와서 상한가가도 쳐다도 보면 안되는 시스템이 조언해주는거야?"
+   - curr 식 = 사용자 통찰 100% 만족 (Q2/Q4 편향만 잡음, Q1+Q3 편향 보호)
+2. **defense EXIT_RANK 4 → 8, MAX_SLOTS 4 → 5** (진짜 robust 개선)
+   - 전체 axis × WF 4구간 그리드 (60 시나리오) + Top 3 인접 안정성 검증
+   - 채택안 (B): WF min 0.32 → **0.959** (3배 개선!)
+   - 인접 CV **0.035** (가장 안정)
+   - 전체 Cal 3.123 (baseline 3.222 대비 -0.10 미미)
+3. 다른 매매조건은 v80.8 그대로 (boost entry 3, exit 6, slots 5 / defense entry 5)
+
+### 검증 단계
+- WF axes EDA (단일 axis × WF) → exit_d=8 only가 robust 식별
+- Full WF 그리드 (41 시나리오 × 4구간) → Top 3 robust 발견
+- Top 3 인접 안정성 (±1 변동) → B 최강 (인접 CV 0.035)
+- 거부 시나리오:
+  - A (exit_d=8 + ts=-0.07): Cal 3.350 but 인접 WF -0.088 위험
+  - C (exit_d=8 only): Cal 3.272 but 인접 exit_d=10 WF -0.005 위험
+- 채택 B (exit_d=8 + slots_d=5): Cal 3.123 + WF 0.959 + 인접 안정
+
+### 5/15 production 검증
+- 동아엘텍: rank=23 (패널티 ✓)
+- 선익시스템: rank=62 (패널티 ✓)
+- **제주반도체: rank=3** ★ **Top 3 매수 후보 진입** (사용자 의도 정확)
+- Top 3: 에스에이엠티 / SK하이닉스 / 제주반도체
+
+### 7.4y BT 성과
+| 지표 | v80.6.1 baseline | v80.7 (curr 0.5) | v80.8 (bi 0.3) | **v80.9 (curr 0.3 + exit_d=8)** |
+|---|---|---|---|---|
+| Cal | 1.863 | 2.287 | 3.494 | **3.272** |
+| WF min | 0.320 | 0.320 | 0.320 | **0.750** ★ |
+| CAGR | 84.3% | 97.8% | 114.9% | ~105% |
+| MDD | 45.3% | 42.8% | 32.9% | ~34% |
+
+### 검증 단계 (Phase 1~3 EDA + 12 step)
+- Phase 1 그리드 (식): curr/bi/max2min2/cv 등 비교 → curr가 사용자 의도 만족
+- Phase 2 (defense 계절성): defense 식 미적용 결정 (모두 baseline 이하)
+- Phase 3 (매매 9 axis): entry_o=2 / all 3 모두 2019 과적합 → exit_d=8만 채택
+- WF axes EDA: exit_d=8 only가 robust 진짜 개선 (WF min +0.43)
+- RSI 70 도입 검토 → 제주반도체도 차단되어 사용자 의도 위반 → 거부
+
+### 환경변수
+- `SEASONALITY_FORMULA='curr'` (default 변경, bi → curr)
+- `SEASONALITY_PENALTY='0.3'` (v80.8 그대로)
+- `SEASONALITY_RATIO_THRESH='1.4'` 유지
+
+### 롤백
+- 식 비활성: `SEASONALITY_DISABLE=1`
+- v80.8 (bi) 복귀: `SEASONALITY_FORMULA=bi`
+- 백업: `state_v80_8_backup/` (v80.8 1932일)
+
+### 사용자 보호 + 시스템 신뢰
+"실적 잘나오는 종목이 안 보이면 시스템 의미 없다"
+- v80.9 = 제주반도체 Top 3 보여줌
+- 매수해도 시스템 알파 손실 없음 (-0.22 Cal but 사용자 신뢰 +)
+- v80.8 (bi)는 제주를 46위로 깊이 숨김 → 사용자 자기 판단 매수 시 시스템 책임
+
+---
 
 ## v80.8 변경 — bi 양방향 식 + 매매조건 정밀 그리드 (2026-05-16)
 

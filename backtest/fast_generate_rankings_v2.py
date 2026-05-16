@@ -1783,12 +1783,13 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
     # 환경변수: SEASONALITY_DISABLE=1로 비활성화
     # ============================================================
     if os.environ.get('SEASONALITY_DISABLE') != '1':
-        # v80.8 (2026-05-16): bi 양방향 식 + PENALTY 0.3
-        # bi: max((Q2+Q4)/(Q1+Q3), (Q1+Q3)/(Q2+Q4)) > 1.4
-        # Q1+Q3 편향 종목도 잡음 (Phase 1 BT Cal 2.610 vs curr 2.287, +0.323)
+        # v80.9 (2026-05-16 저녁): curr 식 복귀 + PENALTY 0.3
+        # 이유: v80.8 (bi 양방향)이 제주반도체 같은 진짜 가속 성장 종목 잘못 패널티 → 사용자 통찰 위반
+        # curr 식이 사용자 의도 100% 만족 (선익/동아 패널티, 제주 보호)
+        # 인접 안정성 BT: curr 1.4/0.3 Cal 3.222 (curr 1.4/0.5 +0.096)
         SEAS_RATIO_THRESH = float(os.environ.get('SEASONALITY_RATIO_THRESH', '1.4'))
         SEAS_PENALTY = float(os.environ.get('SEASONALITY_PENALTY', '0.3'))
-        SEAS_FORMULA = os.environ.get('SEASONALITY_FORMULA', 'bi').lower()
+        SEAS_FORMULA = os.environ.get('SEASONALITY_FORMULA', 'curr').lower()
         SEAS_CV_THRESH = float(os.environ.get('SEASONALITY_CV_THRESH', '0.40'))
         fs_dict_local = preloaded.get('fs', {})
         seas_applied = 0

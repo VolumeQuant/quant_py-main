@@ -29,8 +29,9 @@ BOOST_ENV = {
     'G_W3': '0.2',
     'G_REVENUE_WEIGHT': '0.5',
     'MOM_PERIOD': '12m',
-    # v80.8: 계절성 식
-    'SEASONALITY_FORMULA': 'bi',
+    # v80.9: 계절성 식 (curr 복귀 + PENALTY 0.3)
+    # v80.8 bi가 제주반도체 같은 진짜 가속 종목 잘못 잡음 → curr 복귀
+    'SEASONALITY_FORMULA': 'curr',
     'SEASONALITY_RATIO_THRESH': '1.4',
     'SEASONALITY_PENALTY': '0.3',
     'PYTHONIOENCODING': 'utf-8',

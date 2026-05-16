@@ -165,10 +165,10 @@ def get_regime_params(mode):
             'G_SUB3': None,
             'G_W1': None, 'G_W2': None, 'G_W3': None,
             'MOM_PERIOD': '6m-1m',
-            'ENTRY_RANK': 5, 'EXIT_RANK': 4, 'MAX_SLOTS': 4,  # v80.8: entry 3→5, exit 6→4
+            'ENTRY_RANK': 5, 'EXIT_RANK': 8, 'MAX_SLOTS': 5,  # v80.9: exit 4→8, slots 4→5 (인접 CV 0.035, WF min 0.96)
             'STOP_LOSS': -0.10,
             'TRAILING_STOP': -0.08,
-            'TS_COOLDOWN': 1,                                  # v80.8: 2→1
+            'TS_COOLDOWN': 1,
             'CORR_THRESHOLD': None,
             'USE_REV_ACCEL': False,
             'label': '방어 모드 (Momentum 40%)',
