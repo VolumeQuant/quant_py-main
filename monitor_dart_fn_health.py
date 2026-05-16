@@ -143,6 +143,38 @@ def main():
         print(f'[health] ⚠️ 영업이익 부호 다름 {opi_sign_diff} > {THRESHOLD_OPI_SIGN} — 영업이익 매핑 사고 의심')
         abnormal = True
 
+    # ── Phase B 추가 (2026-05-16): 직전 분기 누락률 자동 감지 ──
+    # 분기 마감 후 5거래일(약 1주) 이후에도 누락률 30%+ → finstate_all sync 문제
+    # 5/15 (1Q마감) → 5/22 이후 / 8/15 (2Q마감) → 8/22 이후 등
+    import datetime as _dt
+    today = _dt.date.today()
+    # 가장 가까운 분기말 (3/31, 6/30, 9/30, 12/31)
+    q_ends = [_dt.date(today.year, m, d) for m, d in [(3,31), (6,30), (9,30), (12,31)]]
+    q_ends = [q for q in q_ends if q <= today]
+    if q_ends:
+        last_q = max(q_ends)
+        days_since = (today - last_q).days
+        if 7 <= days_since <= 60:  # 분기마감 1주~2달
+            q1_missing = 0
+            total_checked = 0
+            for fp in CACHE_DIR.glob('fs_dart_*.parquet'):
+                if 'backup' in fp.name: continue
+                try:
+                    df = pd.read_parquet(fp, columns=['계정', '기준일', '공시구분'])
+                    q1 = df[(df['기준일'] == pd.Timestamp(last_q)) & (df['공시구분'] == 'q')]
+                    total_checked += 1
+                    if not any(q1['계정'] == '매출액'):
+                        q1_missing += 1
+                except Exception:
+                    pass
+            miss_rate = q1_missing / max(total_checked, 1) * 100
+            print(f'\n[health] {last_q} 분기 매출 누락률 (마감 {days_since}일 후): '
+                  f'{q1_missing}/{total_checked} ({miss_rate:.1f}%)')
+            THRESHOLD_MISS_PCT = 25  # 5/15 baseline 28.1%, 7일 후 25%까지 허용
+            if days_since > 7 and miss_rate > THRESHOLD_MISS_PCT:
+                print(f'[health] ⚠️ 누락률 {miss_rate:.1f}% > {THRESHOLD_MISS_PCT}% — document API 폴백 또는 재수집 권고')
+                abnormal = True
+
     if abnormal:
         print(f'\n[health] ⚠️ 비정상 변동: rows={fix_total}/{THRESHOLD_ROW}, tickers={fix_tickers}/{THRESHOLD_TICKER}, big_diff={big_diff}/{THRESHOLD_BIG_DIFF}')
         return 1
