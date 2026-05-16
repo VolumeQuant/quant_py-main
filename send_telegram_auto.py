@@ -108,9 +108,9 @@ def expand_single_date_to_3days(target_date: str, regime_mode: str):
 
 
 # ============================================================
-# v78 재순위: 저장된 z-score로 composite score 재계산
+# (v78 재순위 함수 — 2026-05-16 제거. 호출처 없음, ranking 파일이 이미 현재 버전 파라미터로 재계산됨)
 # ============================================================
-def _rerank_for_regime(ranking_data, mode):
+def _DEAD_rerank_for_regime(ranking_data, mode):
     """ranking 데이터를 v78 파라미터로 재순위 매김.
 
     저장된 개별 z-score(rev_z, oca_z, op_margin_z, mom_12m_s 등)로부터
@@ -396,10 +396,10 @@ def calc_system_returns(regime_info=None):
                 return v
         return 0
 
-    # 포트폴리오 시뮬레이션 — 일간 수익률 기반 + 손절 + 트레일링 + TS cooldown
+    # 포트폴리오 시뮬레이션 — 일간 수익률 기반 + 손절 + 트레일링
+    # (2026-05-16: TS cooldown 제거 — 사용자 명시 "TS/SL은 고객 판단" 정책 일치)
     portfolio = {}  # ticker → entry_price
     peak_prices = {}  # ticker → 보유 중 최고가 (트레일링용)
-    ts_cooldown = {}  # ticker → 남은 cooldown 일수 (TS 발동 후 1일 재진입 차단)
     equity = 1.0
     start_date = None
     equity_history = {}  # date → equity
@@ -433,26 +433,18 @@ def calc_system_returns(regime_info=None):
         _max_slots = rp['MAX_SLOTS']
         _stop_loss = rp.get('STOP_LOSS', -0.10)  # v80.6: SL -10% 유지
 
-        # 국면 전환 시 포트폴리오 전량 청산 (cooldown도 리셋)
+        # 국면 전환 시 포트폴리오 전량 청산
         if i >= 1:
             prev_boost = regime_by_date.get(dates[i-1], True)
             if is_boost != prev_boost:
                 portfolio.clear()
                 peak_prices.clear()
-                ts_cooldown.clear()
 
-        # TS cooldown 카운트 감소 (만료된 종목 제거)
-        for tk in list(ts_cooldown.keys()):
-            ts_cooldown[tk] -= 1
-            if ts_cooldown[tk] <= 0:
-                del ts_cooldown[tk]
-
-        # 손절 + 트레일링 체크
-        _trailing_stop = rp.get('TRAILING_STOP', -0.08)  # v80.6: TS -15% → -8%
+        # 손절 + 트레일링 체크 (시뮬용 알파 측정, production은 고객 판단)
+        _trailing_stop = rp.get('TRAILING_STOP', -0.08)
         for tk in list(portfolio.keys()):
             cp = _get_price(tk, d0)
             ep = portfolio[tk]
-            # 최고가 갱신
             if tk in peak_prices:
                 if cp > peak_prices[tk]:
                     peak_prices[tk] = cp
@@ -462,11 +454,10 @@ def calc_system_returns(regime_info=None):
             if cp > 0 and ep > 0 and (cp / ep - 1) <= _stop_loss:
                 del portfolio[tk]
                 peak_prices.pop(tk, None)
-            # 트레일링: 고점 대비 (TS 발동 시 1일 cooldown 등록)
+            # 트레일링: 고점 대비
             elif cp > 0 and peak_prices.get(tk, 0) > 0 and (cp / peak_prices[tk] - 1) <= _trailing_stop:
                 del portfolio[tk]
                 peak_prices.pop(tk, None)
-                ts_cooldown[tk] = 1
 
         # pipeline 계산 (3일 교집합)
         r0 = all_data[d0].get('rankings', [])
@@ -484,12 +475,14 @@ def calc_system_returns(regime_info=None):
         all_t1 = {r['ticker']: r for r in r1}
         all_t2 = {r['ticker']: r for r in r2}
 
+        # PENALTY=50 (production _postprocess_ranking과 일치, 누락 종목 매도 가속 X)
+        _PEN = 50
         def _wr(tk):
             if tk not in all_t0:
-                return 999
-            cr0 = all_t0[tk].get('composite_rank', all_t0[tk].get('rank', 999))
-            cr1 = all_t1[tk].get('composite_rank', all_t1[tk].get('rank', 999)) if tk in all_t1 else 999
-            cr2 = all_t2[tk].get('composite_rank', all_t2[tk].get('rank', 999)) if tk in all_t2 else 999
+                return _PEN
+            cr0 = all_t0[tk].get('composite_rank', all_t0[tk].get('rank', _PEN))
+            cr1 = all_t1[tk].get('composite_rank', all_t1[tk].get('rank', _PEN)) if tk in all_t1 else _PEN
+            cr2 = all_t2[tk].get('composite_rank', all_t2[tk].get('rank', _PEN)) if tk in all_t2 else _PEN
             return cr0 * 0.5 + cr1 * 0.3 + cr2 * 0.2
 
         # 이탈: 가중순위 > exit_rank (국면별)
@@ -510,11 +503,9 @@ def calc_system_returns(regime_info=None):
         # 동점 tie-breaker: cr 작은 쪽(오늘 더 강한 종목) 우선 (v80)
         verified.sort(key=lambda x: (x['weighted_rank'], x['composite_rank']))
 
-        # 진입: 상위 entry_rank개 (국면별, TS cooldown 종목 제외)
+        # 진입: 상위 entry_rank개 (국면별)
         for v in verified[:_entry_rank]:
             if v['ticker'] in portfolio:
-                continue
-            if v['ticker'] in ts_cooldown:
                 continue
             if len(portfolio) >= _max_slots:
                 break
@@ -596,7 +587,6 @@ def calc_system_returns(regime_info=None):
         'kospi_month': kospi_month,
         'kosdaq_ytd': kosdaq_ytd,
         'kosdaq_month': kosdaq_month,
-        'ts_cooldown': dict(ts_cooldown),
     }
 
 
@@ -1305,7 +1295,10 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
     _all_wr = [s.get('weighted_rank', 999) for s in display_pipeline]
     _min_wr = min(_all_wr) if _all_wr else 1
 
+    entry_line_shown = False
     exit_line_shown = False
+    _cur_entry = rp_current.get('ENTRY_RANK', ENTRY_RANK) if rp_current else ENTRY_RANK
+    _cur_exit = rp_current.get('EXIT_RANK', EXIT_RANK) if rp_current else EXIT_RANK
     for idx, s in enumerate(display_pipeline, 1):
         name = s['name']
         sector = _SECTOR_SHORT.get(s.get('sector', '기타'), s.get('sector', '기타'))
@@ -1318,11 +1311,14 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         score_100 = max(5.0, min(100.0, 100.0 - (w_rank_val - _min_wr) * 5))
         score_disp = f'{score_100:.1f}'
 
-        # 자동매도선 (국면별 exit_rank)
-        _cur_exit = rp_current.get('EXIT_RANK', EXIT_RANK) if rp_current else EXIT_RANK
+        # 매수 기준선: idx > ENTRY_RANK 첫 종목 직전
+        if not entry_line_shown and idx > _cur_entry:
+            lines.append(f'── 매수 기준선 (상위 {_cur_entry}종목) ──')
+            entry_line_shown = True
+        # 매도 기준선: wr > EXIT_RANK 첫 종목 직전
         w_rank = s.get('weighted_rank', 999)
         if not exit_line_shown and w_rank > _cur_exit:
-            lines.append('── 매도 기준선 ──')
+            lines.append(f'── 매도 기준선 (가중순위 {_cur_exit}위 초과) ──')
             exit_line_shown = True
 
         # 궤적: cr-rank 그대로 표시 (없으면 "-")
@@ -1368,11 +1364,14 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         exit_parts = [f'{_x}위 밖']
         if sl_short: exit_parts.append(sl_short)
         if tr_short: exit_parts.append(tr_short)
-        lines.append(f'매수: 상위 {_e}종목 (최대 {_s}종목 보유){corr_s}')
-        lines.append(f'매도: {" / ".join(exit_parts)}')
+        lines.append(f'📍 매수 신호: 상위 {_e}종목 (최대 {_s}종목 보유){corr_s}')
+        lines.append(f'📍 매도 신호: {" / ".join(exit_parts)}')
     else:
-        lines.append(f'매수: 상위 {ENTRY_RANK}종목 (최대 {MAX_SLOTS}종목 보유)')
-        lines.append(f'매도: {EXIT_RANK}위 밖 / 손절 -10% / 고점대비 -8%')
+        lines.append(f'📍 매수 신호: 상위 {ENTRY_RANK}종목 (최대 {MAX_SLOTS}종목 보유)')
+        lines.append(f'📍 매도 신호: {EXIT_RANK}위 밖 / 손절 -10% / 고점대비 -8%')
+    lines.append('')
+    lines.append('💡 <b>분할매수 권장</b>: 1종목당 50% 1차 진입 → 다음 거래일 순위 유지 확인 후 나머지 50% 추가')
+    lines.append('⚠️ <b>자동매매 X</b>: 시스템은 신호만 보냅니다. 실제 매수/매도/손절은 본인이 직접 실행하세요.')
 
     return '\n'.join(lines)
 

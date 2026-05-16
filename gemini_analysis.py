@@ -340,7 +340,12 @@ def run_ai_analysis(portfolio_message, stock_list, base_date=None, market_contex
         analysis_html = convert_markdown_to_html(analysis_text)
 
         # ✅ 위험 신호 없음 — 코드가 직접 생성 (Gemini에 맡기면 포맷 불안정)
-        clean_names = [s.get('name', '') for s in stock_list if not compute_risk_flags(s)]
+        # wr (weighted_rank) 기준 정렬 — Top 20과 일관 (당일 cr 정렬 X)
+        clean_stocks = sorted(
+            [s for s in stock_list if not compute_risk_flags(s)],
+            key=lambda x: x.get('weighted_rank', x.get('rank', 999))
+        )
+        clean_names = [s.get('name', '') for s in clean_stocks]
         clean_section = ''
         if clean_names:
             clean_section = f'\n\n✅ 위험 신호 없음 ({len(clean_names)}종목)\n' + ', '.join(clean_names)
