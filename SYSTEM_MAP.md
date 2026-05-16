@@ -757,3 +757,79 @@ full_mode = '--full' in sys.argv  # is_friday 자동 트리거 제거
 - 정정 결과는 logfile의 "항목정정 X종목/Yrow" 메시지로 확인
 - BT는 5/12 이후 옵션 F 적용 상태로 생성 (bt_optf_boost/, bt_optf_defense/)
 
+## 14. Phase B — DART document API 폴백 (2026-05-16 도입)
+
+### 14.1 사건 — 5/15 1Q 분기마감 finstate_all 37.3% 누락
+
+5/15 1Q 분기마감일 폭주 직후 DART finstate_all '013 데이터없음' 다발 발생. 5/13~16 분기보고서 1813종목 중 표본 300건 측정:
+- finstate_all 정상: 188 (62.7%)
+- **finstate_all 누락: 112 (37.3%) ★**
+
+대표 누락 사례 (대형주 포함):
+- SK하이닉스 (000660) — 5/15 마감 직후 데이터 없음
+- 메가스터디 (215200), 이건산업 (008250) 등 525종목 추정
+
+영향: V/Q/G/M 점수 계산 누락 → ranking 이탈 (FnGuide 보충 또는 옛 데이터)
+
+### 14.2 진짜 원인
+
+DART finstate_all API의 5/15 마감일 직후 DB sync 지연. document API (XBRL) 호출은 정상 작동 = data 자체는 있지만 finstate_all endpoint만 못 가져옴.
+
+### 14.3 해결: document API XBRL 폴백
+
+`dart_collector._fetch_quarter_via_document(ticker, year, rcode)`:
+1. `dart.list(ticker, year)` → 분기보고서 rcept_no 찾음
+2. `dart.document(rcept_no)` → XBRL XML 반환 (1.5~4MB)
+3. `_parse_document_xml(doc_xml, member)` → 정규식으로 14계정 추출
+
+**ACONTEXT 패턴**: `(CFY|PFY)yyyy(d|e)(FQQ|FQA|FQ|...)_..._ConsolidatedMember`
+- CFY/PFY: 당기/전기
+- d/e: duration(손익)/instant(상태)
+- FQQ: 분기단독 / FQA: 누적 / eFQA: 분기말 instant
+- ConsolidatedMember 우선, 없으면 SeparateMember
+
+**ADECIMAL**: 0=원, -3=천원, -6=백만원 (단위)
+
+### 14.4 통합 흐름
+
+`fetch_single`에서 finstate_all empty 시 자동 폴백 (year >= current-1 한정):
+```python
+if df is None or df.empty:
+    if year >= current_year - 1:
+        doc_accounts, doc_rcept_dt = self._fetch_quarter_via_document(ticker, year, rcode)
+        # → fs_div='DOC' 추적
+```
+
+매일 자동: `refresh_dart_cache.py` → `fetch_single` → 자동 폴백 (코드 변경 0).
+
+**PIT 유지**: rcept_dt = rcept_no 앞 8자리 (정확 공시일) → 과거 ranking 오염 없음.
+
+### 14.5 검증 (mismatch 0)
+
+| 종목 | finstate_all | document | 결과 |
+|---|---|---|---|
+| 동아엘텍/선익/제주 | 16 계정 정상 | 16 계정 | 일치 ✓ |
+| SK하이닉스 | 누락 | 16 계정 | 폴백 ★ |
+| 메가스터디/이건산업 | 누락 | 16 계정 | 폴백 ★ |
+
+SK 26Q1 매출 52.58조 (전년 17.64조 +198% HBM3E 호황) 정확 추출.
+
+### 14.6 추가 안전망
+
+`monitor_dart_fn_health.py` 분기마감 누락률 자동 감지:
+- 분기말(3/31, 6/30, 9/30, 12/31) 7~60일 사이 fs_dart 매출 누락 카운트
+- 누락률 > 25% (5/15 baseline 28.1%) → 비정상 + document 폴백 권고
+
+### 14.7 비용 / 한계
+- 폴백 발동 시: 종목당 +2 API 호출 (list + document)
+- 5/15 폭주 시 525종목 × 4분기 × 2 = 약 4200 추가 API (일일 한도 59,700 대비 7%)
+- transfer: 1.5~4MB/종목 XML, 평균 12분/1971종목
+- 한계: Q3 누적값(thstrm_add_amount) 폴백 미구현 → Q4 도출 부정확 가능 (드문 case)
+- FnGuide PIT rcept_dt 이식 (postprocess_fnguide_rcept.py) 유지 — 점진적 의존도 감소
+
+### How to apply
+- commit `0f5a2c0e3` push 완료
+- 회사 PC 5/18 자동 pull 시 반영 (run_daily.py 시작 시 git pull --rebase)
+- 회귀 위험: 함수 추가 + 1곳 호출 통합. 폴백은 finstate_all 정상 시 발동 안 됨 (영향 0).
+- 5/16 밤 후속: 553종목 26Q1 일괄 재수집 (Phase B 폴백 실효성 검증)
+
