@@ -1154,12 +1154,36 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         for p in parts[1:]:
             lines.append(p)
 
-    # ── 범례 + 면책 (Signal) ──
+    # ── Signal footer: 매매 룰 (사용자 즉시 확인용) ──
     lines.append('')
     lines.append('━━━━━━━━━━━━━━━')
-    lines.append('순위: 3일 가중순위 (2일전→1일전→오늘)')
-    lines.append('종목 선별 기준이며, 비중은 투자자의 판단입니다.')
-    lines.append('투자 손실의 책임은 본인에게 있습니다.')
+    lines.append('📍 <b>매매 룰</b>')
+    lines.append('━━━━━━━━━━━━━━━')
+    _rule_e = ENTRY_RANK
+    _rule_x = EXIT_RANK
+    _rule_s = MAX_SLOTS
+    try:
+        from regime_indicator import get_regime_params as _grp_sig
+        _rp_sig = _grp_sig(os.environ.get('REGIME_MODE', 'defense'))
+        _rule_e = _rp_sig.get('ENTRY_RANK', ENTRY_RANK)
+        _rule_x = _rp_sig.get('EXIT_RANK', EXIT_RANK)
+        _rule_s = _rp_sig.get('MAX_SLOTS', MAX_SLOTS)
+    except Exception:
+        pass
+    lines.append(f'• 매수: 3일 연속 ✅ 검증된 상위 {_rule_e}종목 (보유 최대 {_rule_s}종목)')
+    lines.append(f'• 매도: 아래 셋 중 <b>하나라도</b> 발생 시')
+    lines.append(f'   ① 가중순위 {_rule_x}위 밖으로 밀림')
+    lines.append(f'   ② 매수가 대비 -10% 손절')
+    lines.append(f'   ③ 매수 후 최고가 대비 -8% 하락')
+    lines.append('')
+    lines.append('💡 <b>분할매수 권장 (예: 천만원 투자 시)</b>')
+    lines.append(f'• 1종목 배정 금액 = 천만원 ÷ {_rule_s}종목 = 200만원')
+    lines.append('• 1차 100만원 매수 → 다음 거래일 순위 유지 확인 → 100만원 추가')
+    lines.append('• 가격이 떨어졌어도 순위 유지면 OK (시스템 신호 유지)')
+    lines.append('• 순위 하락 시 추가 매수 X (물타기 금지)')
+    lines.append('')
+    lines.append('⚠️ <b>자동매매 X</b>: 시스템은 신호만 보냅니다.')
+    lines.append('매수/매도/손절 실행은 본인이 직접 하세요.')
 
     return '\n'.join(lines)
 
@@ -1311,14 +1335,19 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         score_100 = max(5.0, min(100.0, 100.0 - (w_rank_val - _min_wr) * 5))
         score_disp = f'{score_100:.1f}'
 
-        # 매수 기준선: idx > ENTRY_RANK 첫 종목 직전
-        if not entry_line_shown and idx > _cur_entry:
-            lines.append(f'── 매수 기준선 (상위 {_cur_entry}종목) ──')
-            entry_line_shown = True
-        # 매도 기준선: wr > EXIT_RANK 첫 종목 직전
         w_rank = s.get('weighted_rank', 999)
-        if not exit_line_shown and w_rank > _cur_exit:
-            lines.append(f'── 매도 기준선 (가중순위 {_cur_exit}위 초과) ──')
+        need_entry = (not entry_line_shown) and (idx > _cur_entry)
+        need_exit = (not exit_line_shown) and (w_rank > _cur_exit)
+        # 매수/매도 기준선 같은 위치 = 합쳐서 한 줄
+        if need_entry and need_exit:
+            lines.append(f'── 매수 후보 끝 (상위 {_cur_entry}) · 매도 검토 시작 (가중순위 {_cur_exit} 초과) ──')
+            entry_line_shown = True
+            exit_line_shown = True
+        elif need_entry:
+            lines.append(f'── 매수 후보 끝 (상위 {_cur_entry}종목까지 추천) ──')
+            entry_line_shown = True
+        elif need_exit:
+            lines.append(f'── 매도 검토 시작 (가중순위 {_cur_exit} 초과) ──')
             exit_line_shown = True
 
         # 궤적: cr-rank 그대로 표시 (없으면 "-")
@@ -1346,32 +1375,14 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         lines.append('━━━━━━━━━━━━━━━')
         lines.append('📊 데이터 축적 중 — 3일 완료 시 상위 종목이 표시됩니다.')
 
-    # ── 매매 조건 + 범례 ──
+    # ── Watchlist footer: 면책 (마지막 메시지에 적합) ──
     lines.append('')
     lines.append('━━━━━━━━━━━━━━━')
-    if rp_current:
-        _e = rp_current['ENTRY_RANK']
-        _x = rp_current['EXIT_RANK']
-        _s = rp_current['MAX_SLOTS']
-        _sl = rp_current.get('STOP_LOSS')
-        _tr = rp_current.get('TRAILING_STOP')
-        _corr = rp_current.get('CORR_THRESHOLD')
-        sl_s = f'매수가 대비 {int(_sl*100)}% 손절' if _sl else ''
-        tr_s = f'최고가 대비 {int(_tr*100)}% 트레일링' if _tr else ''
-        corr_s = f' · 상관{_corr}' if _corr else ''
-        sl_short = f'손절 {int(_sl*100)}%' if _sl else ''
-        tr_short = f'고점대비 {int(_tr*100)}%' if _tr else ''
-        exit_parts = [f'{_x}위 밖']
-        if sl_short: exit_parts.append(sl_short)
-        if tr_short: exit_parts.append(tr_short)
-        lines.append(f'📍 매수 신호: 상위 {_e}종목 (최대 {_s}종목 보유){corr_s}')
-        lines.append(f'📍 매도 신호: {" / ".join(exit_parts)}')
-    else:
-        lines.append(f'📍 매수 신호: 상위 {ENTRY_RANK}종목 (최대 {MAX_SLOTS}종목 보유)')
-        lines.append(f'📍 매도 신호: {EXIT_RANK}위 밖 / 손절 -10% / 고점대비 -8%')
+    lines.append('순위 표기: 3일 가중순위 (2일전 → 1일전 → 오늘)')
     lines.append('')
-    lines.append('💡 <b>분할매수 권장</b>: 1종목당 50% 1차 진입 → 다음 거래일 순위 유지 확인 후 나머지 50% 추가')
-    lines.append('⚠️ <b>자동매매 X</b>: 시스템은 신호만 보냅니다. 실제 매수/매도/손절은 본인이 직접 실행하세요.')
+    lines.append('본 서비스는 종목 선별 기준을 제공하는 참고 자료입니다.')
+    lines.append('비중·매수·매도 실행은 투자자 본인의 판단입니다.')
+    lines.append('투자 손실에 대한 책임은 투자자 본인에게 있습니다.')
 
     return '\n'.join(lines)
 
