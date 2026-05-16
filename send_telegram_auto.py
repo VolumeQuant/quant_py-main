@@ -1140,23 +1140,7 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         if i < n - 1:
             lines.append('─ ─ ─ ─ ─ ─ ─ ─')
 
-    # ── 이탈 알림 (사유별 묶기) ──
-    if exited:
-        from collections import defaultdict
-        reason_groups = defaultdict(list)
-        for e in exited:
-            reason = e.get('exit_reason', '순위밀림') or '순위밀림'
-            reason_groups[reason].append(e['name'])
-        parts = []
-        for reason, names in reason_groups.items():
-            names_str = '·'.join(names[:4])
-            if len(names) > 4:
-                names_str += f' 외 {len(names)-4}'
-            parts.append(f'{names_str}({reason})')
-        lines.append('')
-        lines.append('📉 순위 이탈: ' + parts[0])
-        for p in parts[1:]:
-            lines.append(p)
+    # 순위 이탈 알림은 Watchlist 메시지(Top 20)에 통합 — Signal에선 제거
 
     # ── Signal footer: 매매 룰 (간결) ──
     _rule_e = ENTRY_RANK
@@ -1329,10 +1313,10 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         score_100 = max(5.0, min(100.0, 100.0 - (w_rank_val - _min_wr) * 5))
         score_disp = f'{score_100:.1f}'
 
-        # 매도 기준선: 3일 가중순위 > EXIT_RANK 첫 종목 직전
+        # 매도 기준선: 3일 가중순위 > EXIT_RANK 첫 종목 직전 (룰은 footer에 명시)
         w_rank = s.get('weighted_rank', 999)
         if not exit_line_shown and w_rank > _cur_exit:
-            lines.append(f'── 매도 기준선 (3일 가중순위 {_cur_exit} 초과) ──')
+            lines.append('── 매도 기준선 ──')
             exit_line_shown = True
 
         # 궤적: cr-rank 그대로 표시 (없으면 "-")
@@ -1360,14 +1344,11 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         lines.append('━━━━━━━━━━━━━━━')
         lines.append('📊 데이터 축적 중 — 3일 완료 시 상위 종목이 표시됩니다.')
 
-    # ── Watchlist footer: 면책 (마지막 메시지에 적합) ──
+    # ── Watchlist footer: 면책 (간결) ──
     lines.append('')
     lines.append('━━━━━━━━━━━━━━━')
     lines.append('순위 표기: 3일 가중순위 (2일전 → 1일전 → 오늘)')
-    lines.append('')
-    lines.append('본 서비스는 종목 선별 기준을 제공하는 참고 자료입니다.')
-    lines.append('비중·매수·매도 실행은 투자자 본인의 판단입니다.')
-    lines.append('투자 손실에 대한 책임은 투자자 본인에게 있습니다.')
+    lines.append('투자 손실 책임은 투자자 본인에게 있습니다.')
 
     return '\n'.join(lines)
 
