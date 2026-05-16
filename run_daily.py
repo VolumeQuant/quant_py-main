@@ -241,45 +241,27 @@ def _postprocess_ranking(base_date, state_dir, mode, logfile):
     if not rankings:
         return False
 
-    # weighted_rank: 같은 mode의 이전 파일에서 T-1, T-2 로드
-    from ranking_manager import get_available_ranking_dates
-    # state_dir 내의 ranking 파일에서 날짜 추출
+    # weighted_rank: 같은 mode의 이전 파일에서 T-1, T-2 로드 (Top 20 한정)
+    # CLAUDE.md 의도: 빈 날(Top 20 안 들면) = PENALTY 50. cr 값 그대로 X.
     avail = sorted([fp.stem.replace('ranking_', '') for fp in Path(state_dir).glob('ranking_*.json')
                      if len(fp.stem.replace('ranking_', '')) == 8])
     prev = [d for d in avail if d < base_date]
-
-    t1_map, t2_map = {}, {}
-    for i, prev_date in enumerate(prev[-2:]):
-        pp = Path(state_dir) / f'ranking_{prev_date}.json'
-        if pp.exists():
-            with open(pp, 'r', encoding='utf-8') as f:
-                pd_data = json.load(f)
-            m = {r['ticker']: r.get('composite_rank', r['rank']) for r in pd_data.get('rankings', [])}
-            if i == len(prev[-2:]) - 2:
-                t2_map = m
-            else:
-                t1_map = m
-    if len(prev) >= 2:
-        # t1 = prev[-1], t2 = prev[-2]
-        t1_map, t2_map = {}, {}
-        for prev_date, target in [(prev[-1], 't1'), (prev[-2], 't2')]:
-            pp = Path(state_dir) / f'ranking_{prev_date}.json'
-            if pp.exists():
-                with open(pp, 'r', encoding='utf-8') as f:
-                    pd_data = json.load(f)
-                m = {r['ticker']: r.get('composite_rank', r['rank']) for r in pd_data.get('rankings', [])}
-                if target == 't1':
-                    t1_map = m
-                else:
-                    t2_map = m
-    elif len(prev) == 1:
-        pp = Path(state_dir) / f'ranking_{prev[0]}.json'
-        if pp.exists():
-            with open(pp, 'r', encoding='utf-8') as f:
-                pd_data = json.load(f)
-            t1_map = {r['ticker']: r.get('composite_rank', r['rank']) for r in pd_data.get('rankings', [])}
-
     PENALTY = 50
+
+    def _load_top20_cr_map(date_str):
+        """Top 20 안 종목만 cr 매핑 (Top 20 밖 = PENALTY 적용 대상)"""
+        pp = Path(state_dir) / f'ranking_{date_str}.json'
+        if not pp.exists():
+            return {}
+        with open(pp, 'r', encoding='utf-8') as f:
+            pd_data = json.load(f)
+        return {r['ticker']: r.get('composite_rank', r['rank'])
+                for r in pd_data.get('rankings', [])
+                if r.get('composite_rank', r.get('rank', 999)) <= 20}
+
+    t1_map = _load_top20_cr_map(prev[-1]) if len(prev) >= 1 else {}
+    t2_map = _load_top20_cr_map(prev[-2]) if len(prev) >= 2 else {}
+
     for item in rankings:
         r0 = item.get('composite_rank', item['rank'])
         r1 = t1_map.get(item['ticker'], PENALTY)
@@ -634,13 +616,12 @@ def main():
             display_params = get_regime_params(regime['mode'])
             kp_str = f'KOSPI={kospi_close:.0f} MA{MA_PERIOD}={kospi_ma:.0f}' if kospi_close else '?'
             ret_str = f' ret20={kospi_ret20*100:+.1f}%' if kospi_ret20 is not None else ''
-            log(f"국면: {display_params['icon']} {display_params['label']} ({kp_str}{ret_str}, 신호={regime['signal']}, 전환={regime['switched']}, crash={regime.get('crash_active', False)})", logfile)
+            log(f"국면: {display_params['icon']} {display_params['label']} ({kp_str}{ret_str}, 신호={regime['signal']}, 전환={regime['switched']})", logfile)
         except Exception as e:
             log(f"국면 판단 실패: {e} — 기본 방어 모드", logfile)
             from regime_indicator import get_regime_params
             regime = {'mode': 'defense', 'underlying_mode': 'defense', 'switched': False,
-                      'signal': 'defense', 'streak': 0, 'prev_mode': 'defense',
-                      'crash_active': False, 'crash_entered': False, 'crash_exited': False}
+                      'signal': 'defense', 'streak': 0, 'prev_mode': 'defense'}
             params = get_regime_params('defense')
             display_params = params
 
@@ -666,9 +647,6 @@ def main():
             'G_W2': str(params['G_W2']) if params['G_W2'] is not None else '',
             'G_W3': str(params['G_W3']) if params['G_W3'] is not None else '',
             'REGIME_SWITCHED': '1' if regime.get('switched') else '0',
-            'REGIME_CRASH_ACTIVE': '1' if regime.get('crash_active') else '0',
-            'REGIME_CRASH_ENTERED': '1' if regime.get('crash_entered') else '0',
-            'REGIME_CRASH_EXITED': '1' if regime.get('crash_exited') else '0',
             'REGIME_PREV_MODE': regime.get('prev_mode', ''),
         }
 

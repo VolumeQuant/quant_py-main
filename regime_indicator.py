@@ -1,17 +1,19 @@
-"""국면 판단 모듈 — KP_MA170_8d (v80, 2026-04-18)
+"""국면 판단 모듈 — KP_MA250_8d (v80.9, 2026-05-16)
 
-v80 전략:
-  공격: V15Q0G55M30, 2f rev+oca(0.6/0.4), 12m, E3X6S3, sl-10%, tr-15%
-  방어: V30Q15G15M40, 2f rev+oca(0.7/0.3), 6m-1m, E3X6S5, sl-10%, tr-15%
-  국면: KOSPI > MA170 8일 확인 → 공격, 미만 → 방어
+v80.9 전략:
+  공격: V15Q0G55M30, 3f rev+oca+gp_growth(0.4/0.4/0.2), 12m, E3X6S5, sl-10%, tr-8%
+  방어: V35Q15G15M35, 2f rev+oca(0.8/0.2), 6m-1m, E5X8S5, sl-10%, tr-8%
+  국면: KOSPI > MA250 8일 확인 → 공격, 미만 → 방어
+  계절성 패널티: SEASONALITY_FORMULA=curr, PENALTY=0.3, RATIO=1.4
 
-변경사항 (v79 → v80, 2026-04-18):
-  - 국면: MA200 7d → MA170 8d (352조합 국면 탐색, 5지표 공정비교+촘촘탐색)
-  - 공격 G서브: 3f(rev+oca+gp, 0.5/0.3/0.2) → 2f(rev+oca, 0.6/0.4) — gp_growth 제거
-  - 공격 Q: 5→0 (Growth에 집중)
-  - 공격 G: 50→55
-  - 방어 S: 7→5 (슬롯 축소)
-  - 잠정실적 PIT 호환: 2f(매출+영업이익만) → PIT 위반 없음
+진화:
+  v80 (04-18): MA170 8d, 2f rev+oca, E3X6S3, tr-15%
+  v80.6 (05-13): MA250 8d, slots 5, tr-8%, V35M35 (defense)
+  v80.6.1 (05-15): boost G 3팩터 (rev+oca+gp_growth_z 0.4/0.4/0.2)
+  v80.7 (05-16): 계절성 패널티 (Q2+Q4/Q1+Q3>1.4 시 G×0.5)
+  v80.8 (05-16): bi 양방향 + 매매조건 (entry 2→3, ts_cd 2→1)
+  v80.9 (05-16 저녁): curr 복귀 + defense E4→8 / S4→5 (사용자 통찰 보호)
+  2026-05-17: jump>2.0 AND revcv>0.7 안전망 (Cal +0.274), wr PENALTY 50 통일
 
 사용:
     from regime_indicator import get_current_regime
@@ -123,10 +125,6 @@ def get_current_regime(kospi_close=None, kospi_ma200=None, kospi_ma=None, date_s
         'streak': state['streak'],
         'switched': switched,
         'prev_mode': prev_mode,
-        # v79에서 제거되었지만 기존 호출처 호환 유지 (항상 False)
-        'crash_active': False,
-        'crash_entered': False,
-        'crash_exited': False,
     }
 
 
@@ -151,7 +149,6 @@ def get_regime_params(mode):
             'STOP_LOSS': -0.10,
             'TRAILING_STOP': -0.08,
             'TS_COOLDOWN': 1,                                  # v80.8: 2→1
-            'CORR_THRESHOLD': None,
             'USE_REV_ACCEL': False,
             'label': '공격 모드 (Growth 55%, 3팩터)',
             'icon': '📈',
@@ -169,7 +166,6 @@ def get_regime_params(mode):
             'STOP_LOSS': -0.10,
             'TRAILING_STOP': -0.08,
             'TS_COOLDOWN': 1,
-            'CORR_THRESHOLD': None,
             'USE_REV_ACCEL': False,
             'label': '방어 모드 (Momentum 40%)',
             'icon': '📉',

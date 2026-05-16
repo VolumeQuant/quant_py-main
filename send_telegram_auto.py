@@ -108,190 +108,6 @@ def expand_single_date_to_3days(target_date: str, regime_mode: str):
 
 
 # ============================================================
-# (v78 재순위 함수 — 2026-05-16 제거. 호출처 없음, ranking 파일이 이미 현재 버전 파라미터로 재계산됨)
-# ============================================================
-def _DEAD_rerank_for_regime(ranking_data, mode):
-    """ranking 데이터를 v78 파라미터로 재순위 매김.
-
-    저장된 개별 z-score(rev_z, oca_z, op_margin_z, mom_12m_s 등)로부터
-    v78 가중치 기준 composite score를 재계산하고 composite_rank를 갱신.
-
-    Args:
-        ranking_data: ranking JSON dict (rankings 리스트 포함)
-        mode: 'boost' or 'defense'
-
-    Returns:
-        ranking_data (in-place 수정됨)
-    """
-    if not ranking_data:
-        return ranking_data
-
-    from regime_indicator import get_regime_params
-    rp = get_regime_params(mode)
-
-    rankings = ranking_data.get('rankings', [])
-    if not rankings:
-        return ranking_data
-
-    # 1) Growth raw 재계산
-    for r in rankings:
-        if rp.get('G_SUB3'):
-            # 3팩터: G_W1*SUB1 + G_W2*SUB2 + G_W3*SUB3
-            s1 = r.get(rp['G_SUB1'], 0) or 0
-            s2 = r.get(rp['G_SUB2'], 0) or 0
-            s3 = r.get(rp['G_SUB3'], 0) or 0
-            r['_growth_raw'] = s1 * rp['G_W1'] + s2 * rp['G_W2'] + s3 * rp['G_W3']
-        else:
-            # 2팩터: G_REV * SUB1 + (1-G_REV) * SUB2
-            s1 = r.get(rp['G_SUB1'], 0) or 0
-            s2 = r.get(rp['G_SUB2'], 0) or 0
-            r['_growth_raw'] = s1 * rp['G_REV'] + s2 * (1.0 - rp['G_REV'])
-
-    # 2) Growth raw 재표준화 → growth_s
-    g_vals = [r['_growth_raw'] for r in rankings if r['_growth_raw'] is not None]
-    if g_vals:
-        g_mean = sum(g_vals) / len(g_vals)
-        g_std = (sum((v - g_mean) ** 2 for v in g_vals) / len(g_vals)) ** 0.5
-    else:
-        g_mean, g_std = 0, 0
-
-    for r in rankings:
-        if g_std > 0:
-            r['_growth_s'] = (r['_growth_raw'] - g_mean) / g_std
-        else:
-            r['_growth_s'] = 0.0
-
-    # 3) 모멘텀 선택 (mom_12m_s, mom_6m_s 등 — 이미 재표준화됨)
-    mom_key_map = {'12m': 'mom_12m_s', '12m-1m': 'mom_12m1m_s',
-                   '6m': 'mom_6m_s', '6m-1m': 'mom_6m1m_s'}
-    mom_key = mom_key_map.get(rp['MOM_PERIOD'], 'mom_12m_s')
-
-    # 4) Composite score 재계산
-    v_w, q_w, g_w, m_w = rp['V_W'], rp['Q_W'], rp['G_W'], rp['M_W']
-    for r in rankings:
-        val_s = r.get('value_s', 0) or 0
-        qua_s = r.get('quality_s', 0) or 0
-        gro_s = r['_growth_s']
-        mom_s = r.get(mom_key, 0) or 0
-
-        r['score'] = round(v_w * val_s + q_w * qua_s + g_w * gro_s + m_w * mom_s, 4)
-        # momentum_s도 갱신 (display용)
-        r['momentum_s'] = mom_s
-        r['growth_s'] = round(gro_s, 4)
-
-    # 5) Score 기준 재순위 → composite_rank
-    rankings.sort(key=lambda x: x['score'], reverse=True)
-    for i, r in enumerate(rankings):
-        r['composite_rank'] = i + 1
-        # 임시 필드 제거
-        r.pop('_growth_raw', None)
-        r.pop('_growth_s', None)
-
-    ranking_data['rankings'] = rankings
-    return ranking_data
-
-
-def _rerank_and_wr(ranking_data, prev1_data, prev2_data, mode):
-    """ranking 데이터에 v78 rerank + weighted_rank 재계산.
-
-    T-0, T-1, T-2 모두의 weighted_rank를 v78 기준으로 재계산.
-    T-1의 wr에는 T-3, T-2의 wr에는 T-3,T-4가 필요하므로 추가 로딩.
-
-    Args:
-        ranking_data: T-0 ranking
-        prev1_data: T-1 ranking (or None)
-        prev2_data: T-2 ranking (or None)
-        mode: 'boost' or 'defense'
-
-    Returns:
-        ranking_data with updated weighted_rank and rank (T-1, T-2도 갱신)
-    """
-    # 모든 날짜 rerank (composite_rank 갱신)
-    _rerank_for_regime(ranking_data, mode)
-    if prev1_data:
-        _rerank_for_regime(prev1_data, mode)
-    if prev2_data:
-        _rerank_for_regime(prev2_data, mode)
-
-    if not ranking_data:
-        return ranking_data
-
-    PENALTY = 50
-
-    # T-3, T-4 로딩 (T-1, T-2의 wr 계산용)
-    def _load_extra_dates(mode):
-        """T-0, T-1, T-2 이전 날짜 2개 로딩"""
-        ranking_dir = STATE_DIR if mode == 'boost' else STATE_DIR / 'defense'
-        import glob as _g
-        files = sorted(_g.glob(str(ranking_dir / 'ranking_*.json')))
-        files = [f for f in files if 'boost' not in os.path.basename(f).replace('ranking_', '')
-                 and 'core' not in f and 'backup' not in f]
-        date_map = {}
-        for fp in files:
-            d = os.path.basename(fp).replace('ranking_', '').replace('.json', '')
-            date_map[d] = fp
-        return date_map
-
-    t0_date = ranking_data.get('date', '')
-    t1_date = prev1_data.get('date', '') if prev1_data else ''
-    t2_date = prev2_data.get('date', '') if prev2_data else ''
-
-    date_file_map = _load_extra_dates(mode)
-    all_dates = sorted(date_file_map.keys())
-
-    # T-3, T-4 찾기
-    t3_data = t4_data = None
-    if t2_date:
-        earlier = [d for d in all_dates if d < t2_date]
-        if len(earlier) >= 1:
-            t3_fp = date_file_map[earlier[-1]]
-            with open(t3_fp, 'r', encoding='utf-8') as f:
-                t3_data = json.load(f)
-            _rerank_for_regime(t3_data, mode)
-        if len(earlier) >= 2:
-            t4_fp = date_file_map[earlier[-2]]
-            with open(t4_fp, 'r', encoding='utf-8') as f:
-                t4_data = json.load(f)
-            _rerank_for_regime(t4_data, mode)
-
-    def _cr_map(data):
-        if not data:
-            return {}
-        return {r['ticker']: r['composite_rank'] for r in data.get('rankings', [])}
-
-    t0_cr = _cr_map(ranking_data)
-    t1_cr = _cr_map(prev1_data)
-    t2_cr = _cr_map(prev2_data)
-    t3_cr = _cr_map(t3_data)
-    t4_cr = _cr_map(t4_data)
-
-    def _compute_wr(rankings, cr0_map, cr1_map, cr2_map):
-        """rankings 리스트에 weighted_rank + rank 재계산"""
-        for r in rankings:
-            c0 = cr0_map.get(r['ticker'], PENALTY)
-            c1 = cr1_map.get(r['ticker'], PENALTY)
-            c2 = cr2_map.get(r['ticker'], PENALTY)
-            r['weighted_rank'] = round(c0 * 0.5 + c1 * 0.3 + c2 * 0.2, 1)
-        # 동점 tie-breaker: cr 작은 쪽(오늘 더 강한 종목) 우선 (v80)
-        rankings.sort(key=lambda x: (x['weighted_rank'], x.get('composite_rank', 999)))
-        for i, r in enumerate(rankings):
-            r['rank'] = i + 1
-
-    # T-2 wr: cr_t2 * 0.5 + cr_t3 * 0.3 + cr_t4 * 0.2
-    if prev2_data:
-        _compute_wr(prev2_data.get('rankings', []), t2_cr, t3_cr, t4_cr)
-
-    # T-1 wr: cr_t1 * 0.5 + cr_t2 * 0.3 + cr_t3 * 0.2
-    if prev1_data:
-        _compute_wr(prev1_data.get('rankings', []), t1_cr, t2_cr, t3_cr)
-
-    # T-0 wr: cr_t0 * 0.5 + cr_t1 * 0.3 + cr_t2 * 0.2
-    _compute_wr(ranking_data.get('rankings', []), t0_cr, t1_cr, t2_cr)
-
-    return ranking_data
-
-
-# ============================================================
 # 시스템 수익률 추적
 # ============================================================
 def calc_system_returns(regime_info=None):
@@ -1264,8 +1080,18 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
 
     for s in pipeline:
         s['_r0'] = t0_cr.get(s['ticker'], '-')
-        s['_r1'] = t1_cr.get(s['ticker'], '-')
-        s['_r2'] = t2_cr.get(s['ticker'], '-')
+        # 🆕(1일) → T-1/T-2 검증 안 됨, ⏳(2일) → T-2 검증 안 됨 → '-' 표시
+        # ✅(3일 검증)만 r1/r2 cr 순위 표시
+        _st = s.get('status', '')
+        if _st == '🆕':
+            s['_r1'] = '-'
+            s['_r2'] = '-'
+        elif _st == '⏳':
+            s['_r1'] = t1_cr.get(s['ticker'], '-')
+            s['_r2'] = '-'
+        else:  # ✅ 또는 미정
+            s['_r1'] = t1_cr.get(s['ticker'], '-')
+            s['_r2'] = t2_cr.get(s['ticker'], '-')
 
     # v70: weighted_rank 순 정렬 (rank 기반 진입/이탈과 일관)
     # v80: 동점 tie-breaker를 cr 작은 쪽(오늘 더 강한 종목) 우선 — 파일 생성/궤적 맵과 일치
@@ -1394,14 +1220,10 @@ def main():
         regime_mode = os.environ['REGIME_MODE']
         regime_info['mode'] = regime_mode
     regime_switched = os.environ.get('REGIME_SWITCHED') == '1'
-    # v79: Crash Cash 제거. 환경변수는 항상 '0'이지만 호환 위해 읽기 유지 (무해)
-    regime_crash_entered = os.environ.get('REGIME_CRASH_ENTERED') == '1'
-    regime_crash_exited = os.environ.get('REGIME_CRASH_EXITED') == '1'
     regime_prev_mode = os.environ.get('REGIME_PREV_MODE', '')
-    mode_transition = regime_switched or regime_crash_entered or regime_crash_exited
+    mode_transition = regime_switched
     print(f"\n[국면 상태] 모드: {regime_mode}, 브레스: {regime_info.get('breadth')}, "
-          f"규칙: {regime_info.get('rule', '')}, 전환: {regime_switched} "
-          f"crash(in/out): {regime_crash_entered}/{regime_crash_exited} prev: {regime_prev_mode}")
+          f"규칙: {regime_info.get('rule', '')}, 전환: {regime_switched}, prev: {regime_prev_mode}")
 
     # ============================================================
     # 날짜 계산 (최근 3거래일)
@@ -1493,7 +1315,8 @@ def main():
     market_max_picks = pick_level['max_picks']  # _synthesize_action 기반 (0이면 전종목 중단)
     stock_weight = WEIGHT_PER_STOCK
     final_action = credit.get('final_action', '')
-    print(f"\n[매수 추천 설정] 행동: {final_action} · 레벨: {pick_level['label']} · 진입: {ENTRY_SCORE_100}점↑ · 퇴출: {EXIT_SCORE_100}점↓")
+    # v80 이후 wr 기준 매수/매도 (점수 임계 X). 진입 ENTRY_RANK/퇴출 EXIT_RANK는 국면별 (regime_indicator 참조)
+    print(f"\n[매수 추천 설정] 행동: {final_action} · 레벨: {pick_level['label']}")
 
     # ============================================================
     # 순위 데이터 로드 (3일) — 국면별 랭킹 파일 사용

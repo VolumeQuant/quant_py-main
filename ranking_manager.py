@@ -26,9 +26,10 @@ EXIT_RANK = int(os.environ.get('REGIME_EXIT_RANK', '10'))
 MAX_SLOTS = int(os.environ.get('REGIME_MAX_SLOTS', '5'))
 STOP_LOSS_PCT = -10    # 손절: -10% (사용자 수동, 메시지 표시용)
 
-# (하위호환) score_100 기준 — 매도검토선 표시용
-ENTRY_SCORE_100 = 72
-EXIT_SCORE_100 = 68
+# (v77 잔존 — v80 이후 매수/매도 wr 기준이라 의미 X. 2026-05-17 제거 예정)
+# 옛 호출처 호환용 더미 (실제 매매 판단엔 미사용)
+ENTRY_SCORE_100 = 72  # deprecated
+EXIT_SCORE_100 = 68   # deprecated
 
 
 def get_ranking_path(date_str: str) -> Path:

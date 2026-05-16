@@ -327,18 +327,28 @@ class TurboSimulator:
             else:
                 ws = s0
 
-            # rank 가중평균 (legacy)
+            # rank 가중평균 (legacy) — Top 20 한정 + PENALTY 50 (production과 일치)
+            # CLAUDE.md 의도: 빈 날(Top 20 안 들면) = PENALTY 50. cr 그대로 X.
+            _PEN = 50
             r0 = int(ranks_0[j])
             if has_t1:
                 idx1 = tk_to_idx_1.get(tk)
-                r1 = int(ranks_1[idx1]) if idx1 is not None else 999
+                if idx1 is not None:
+                    r1_raw = int(ranks_1[idx1])
+                    r1 = r1_raw if r1_raw <= top_n else _PEN
+                else:
+                    r1 = _PEN
             else:
-                r1 = 999
+                r1 = _PEN
             if has_t2:
                 idx2 = tk_to_idx_2.get(tk)
-                r2 = int(ranks_2[idx2]) if idx2 is not None else 999
+                if idx2 is not None:
+                    r2_raw = int(ranks_2[idx2])
+                    r2 = r2_raw if r2_raw <= top_n else _PEN
+                else:
+                    r2 = _PEN
             else:
-                r2 = 999
+                r2 = _PEN
             if has_both:
                 wr_legacy = r0 * 0.5 + r1 * 0.3 + r2 * 0.2
             elif has_t1:
