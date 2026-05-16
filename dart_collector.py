@@ -268,6 +268,146 @@ class DartCollector:
                 pass
         return None
 
+    # ── document API 폴백 (5/4, 5/15 분기 마감 직후 finstate_all 누락 우회) ──
+    _DOC_TE_PAT = None  # lazy-compile
+
+    @classmethod
+    def _doc_pattern(cls):
+        if cls._DOC_TE_PAT is None:
+            import re as _re
+            cls._DOC_TE_PAT = _re.compile(
+                r'<TE ACODE="([^"]+)" ACONTEXT="([^"]+)"[^>]*ADECIMAL="(-?\d+)"[^>]*>([^<]*)</TE>'
+            )
+        return cls._DOC_TE_PAT
+
+    @staticmethod
+    def _parse_doc_value(val_str, adecimal):
+        s = str(val_str).strip().replace(',', '').replace('(', '-').replace(')', '').replace(' ', '')
+        if not s or s == '-':
+            return None
+        try:
+            return float(s) * (10 ** -int(adecimal))
+        except ValueError:
+            return None
+
+    def _parse_document_xml(self, doc_xml, member='Consolidated'):
+        """document XML → {계정: 값} 추출. ACCOUNT_ID_MAP 14계정 + 영업CF dFQA.
+
+        member: 'Consolidated' 또는 'Separate'
+        반환: {계정: 값(원 단위)} — 분기단독(dFQQ) 또는 분기누적(dFQA) 또는 분기말 instant(eFQA)
+        """
+        import re as _re
+        result = {}
+        member_tag = f'{member}Member'
+        pat_ctx = _re.compile(r'(CFY\d{4}[de](?:FQQ|FQA|FQ|SFQ|TFQ|SFA|TFA|FY|AFA))')
+        for m in self._doc_pattern().finditer(doc_xml):
+            code, ctx, dec, val = m.group(1), m.group(2), m.group(3), m.group(4)
+            if code not in ACCOUNT_ID_MAP:
+                continue
+            if member_tag not in ctx:
+                continue
+            ctx_match = pat_ctx.match(ctx)
+            if not ctx_match:
+                continue
+            ctx_base = ctx_match.group(1)
+            # 1Q: dFQQ=dFQA. 손익은 dFQQ 우선, 영업CF는 dFQA, 재무상태표는 eFQA.
+            # 첫 매칭 사용 (중복 시 무시) — XBRL 순서는 보고서마다 동일
+            if 'dFQQ' not in ctx_base and 'eFQA' not in ctx_base and 'dFQA' not in ctx_base:
+                continue
+            v = self._parse_doc_value(val, dec)
+            if v is None:
+                continue
+            sys_name = ACCOUNT_ID_MAP[code]
+            if sys_name not in result:
+                result[sys_name] = v
+        return result
+
+    def _fetch_quarter_via_document(self, ticker, year, rcode):
+        """document API로 단일 분기 수집 (finstate_all 폴백용).
+
+        흐름: dart.list로 year+rcode 매칭 rcept_no 찾기 → document XML → parse
+        반환: ({계정: 값(억원)}, rcept_dt) 또는 ({}, None)
+        """
+        # rcode → 보고서명 매칭 (분기/반기/사업)
+        rcode_to_kind = {
+            '11013': '분기',  # Q1
+            '11012': '반기',  # H1 (반기보고서)
+            '11014': '분기',  # Q3 (분기보고서)
+            '11011': '사업',  # Y (사업보고서)
+        }
+        kind_kw = rcode_to_kind.get(rcode)
+        if not kind_kw:
+            return {}, None
+
+        # year의 보고서 (해당 종목 한정) — dart.list는 corp_code 기반
+        try:
+            time.sleep(0.15)
+            self._per_key_counts[self._key_idx] += 1
+            self._call_count += 1
+            flist = self.dart.list(ticker, start=f'{year}-01-01', end=f'{year+1}-04-30',
+                                    kind='A', final=True)
+        except Exception:
+            return {}, None
+        if flist is None or len(flist) == 0:
+            return {}, None
+
+        # 분기/반기/사업보고서 + rcode 매칭
+        # Q1 (11013): "분기보고서" + 3월말 기준
+        # H1 (11012): "반기보고서"
+        # Q3 (11014): "분기보고서" + 9월말 기준
+        # Y (11011): "사업보고서"
+        if kind_kw == '사업':
+            cand = flist[flist['report_nm'].str.contains('사업보고서', na=False)]
+            cand = cand[~cand['report_nm'].str.contains('첨부|위임', na=False)]
+        elif kind_kw == '반기':
+            cand = flist[flist['report_nm'].str.contains('반기보고서', na=False)]
+        else:  # 분기
+            cand = flist[flist['report_nm'].str.contains('분기보고서', na=False)]
+        if len(cand) == 0:
+            return {}, None
+
+        # Q1 vs Q3 분기보고서 구분: rcept_no 날짜로 추정
+        # Q1 = 4~5월 제출, Q3 = 10~11월 제출
+        if rcode == '11013':  # Q1
+            cand['_month'] = cand['rcept_no'].str[4:6].astype(int)
+            cand = cand[cand['_month'].between(3, 7)]
+        elif rcode == '11014':  # Q3
+            cand['_month'] = cand['rcept_no'].str[4:6].astype(int)
+            cand = cand[cand['_month'].between(9, 12)]
+        if len(cand) == 0:
+            return {}, None
+
+        # 최신 정정 본 우선 (rcept_no 큰 것)
+        cand = cand.sort_values('rcept_no', ascending=False)
+        rno = cand.iloc[0]['rcept_no']
+        rcept_dt = None
+        try:
+            rcept_dt = pd.Timestamp(str(rno)[:8])
+        except Exception:
+            pass
+
+        # document API
+        try:
+            time.sleep(0.15)
+            self._per_key_counts[self._key_idx] += 1
+            self._call_count += 1
+            doc_xml = self.dart.document(rno)
+        except Exception:
+            return {}, rcept_dt
+        if not doc_xml or len(doc_xml) < 1000:
+            return {}, rcept_dt
+
+        # Consolidated 우선, 없으면 Separate
+        accounts = self._parse_document_xml(doc_xml, 'Consolidated')
+        if len(accounts) < 8:
+            ofs_accounts = self._parse_document_xml(doc_xml, 'Separate')
+            if len(ofs_accounts) > len(accounts):
+                accounts = ofs_accounts
+
+        # 원 → 억원 변환
+        accounts = {k: v / UNIT_DIVISOR for k, v in accounts.items()}
+        return accounts, rcept_dt
+
     def fetch_single(self, ticker, start_year, end_year):
         """단일 종목의 분기/연간 재무제표 수집
 
@@ -308,6 +448,25 @@ class DartCollector:
                     continue
 
                 if df is None or (hasattr(df, 'empty') and df.empty):
+                    # document API 폴백 (최근 2년 데이터만, finstate_all 누락 우회)
+                    # 5/4 SK매핑버그 / 5/15 분기마감 직후 SK하이닉스·메가스터디 케이스
+                    current_year = pd.Timestamp.now().year
+                    if year < current_year - 1:
+                        continue
+                    try:
+                        doc_accounts, doc_rcept_dt = self._fetch_quarter_via_document(ticker, year, rcode)
+                    except Exception:
+                        continue
+                    if not doc_accounts:
+                        continue
+                    year_data[qname] = doc_accounts
+                    year_rcept[qname] = doc_rcept_dt
+                    year_fs_divs[(year, qname)] = 'DOC'
+                    if qname == 'Q3':
+                        # Q3 누적값: dFQA 우선 사용 (parse_document_xml에서 이미 dFQA 포함)
+                        # 분기단독(dFQQ)이 누적값이 아니지만 1Q=2Q-Q1=Q3-H1 이라 dFQA 누적 필요
+                        # 추후 정밀화 — 일단 비워둠 (Q3에서 finstate_all 폴백 발동 시 Q4 도출 부정확 가능)
+                        pass
                     continue
 
                 accounts = self._extract_accounts(df)
