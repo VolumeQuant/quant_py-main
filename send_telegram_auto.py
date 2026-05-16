@@ -1596,11 +1596,10 @@ def main():
     all_candidates = []
     drop_info = []
     if not cold_start:
-        # TS cooldown 종목은 매수 후보에서 제외 (전날 TS 발동 → 오늘 1일 차단)
-        ts_cooldown_set = set((system_returns or {}).get('ts_cooldown', {}).keys())
-        if ts_cooldown_set:
-            print(f"  TS cooldown 적용: {len(ts_cooldown_set)}종목 매수 후보 제외 ({sorted(ts_cooldown_set)})")
-        verified_picks = [s for s in pipeline if s['status'] == '✅' and s['ticker'] not in ts_cooldown_set]
+        # TS/SL cooldown 차단 제거 (2026-05-16 원복) — 사용자 지적:
+        # 신규 가입자는 어느 날 가입할지 모름. 시스템이 매수했다고 가정 X.
+        # TS/SL은 보유 중인 사용자가 알아서 지키는 룰. 매수 후보 표시는 모두에게 동일.
+        verified_picks = [s for s in pipeline if s['status'] == '✅']
         verified_picks.sort(key=lambda x: score_100_pre.get(x['ticker'], 0), reverse=True)
         print(f"  ✅ 검증 종목: {len(verified_picks)}개")
 
