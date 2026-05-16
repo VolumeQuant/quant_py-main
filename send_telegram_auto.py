@@ -658,6 +658,35 @@ def calc_rsi(prices, period=14):
     return rsi.iloc[-1] if not pd.isna(rsi.iloc[-1]) else 50
 
 
+def _calc_jump_revcv(ticker, base_date):
+    """fs_dart parquet에서 매출 jump + revcv 계산 (PIT, rcept_dt <= base_date).
+    jump = 최근 분기 매출 / 직전 4분기 평균
+    revcv = 직전 4분기 매출의 std/mean (변동계수)
+    """
+    import numpy as np
+    fp = Path(__file__).parent / 'data_cache' / f'fs_dart_{str(ticker).zfill(6)}.parquet'
+    if not fp.exists():
+        return None, None
+    try:
+        df = pd.read_parquet(fp)
+        if '공시구분' not in df.columns or 'rcept_dt' not in df.columns:
+            return None, None
+        base_ts = pd.Timestamp(datetime.strptime(base_date, '%Y%m%d'))
+        q = df[(df['공시구분'] == 'q') & (df['계정'] == '매출액')].sort_values('기준일')
+        q = q[q['rcept_dt'].notna() & (pd.to_datetime(q['rcept_dt']) <= base_ts)]
+        if len(q) < 5:
+            return None, None
+        vals = q['값'].values
+        prev4 = vals[-5:-1]
+        cur = vals[-1]
+        pm = float(np.mean(prev4))
+        if pm <= 0:
+            return None, None
+        return cur / pm, float(np.std(prev4)) / pm
+    except Exception:
+        return None, None
+
+
 def get_stock_technical(ticker, base_date):
     """종목 기술적 지표 계산"""
     ticker_str = str(ticker).zfill(6)
@@ -674,14 +703,17 @@ def get_stock_technical(ticker, base_date):
         rsi = calc_rsi(ohlcv['종가'])
         high_52w = ohlcv['고가'].max()
         w52_pct = (price / high_52w - 1) * 100
-        # 이격도20 = 현재가 / 20일 평균 (BT 검증 안전망, 2026-05-12)
+        # 이격도20 (정보 표시용, v80.9 BT 결과 안전망 효과 X → 차단 X)
         sma20 = ohlcv['종가'].tail(20).mean() if len(ohlcv) >= 20 else None
         disparity20 = (price / sma20) if (sma20 and sma20 > 0) else None
+        # 매출 jump + revcv (v80.9 안전망, 2026-05-16 BT 검증 Cal +0.274 / WF min 1.791)
+        jump, revcv = _calc_jump_revcv(ticker_str, base_date)
 
         return {
             'price': price, 'daily_chg': daily_chg,
             'rsi': rsi, 'w52_pct': w52_pct,
             'sma20': sma20, 'disparity20': disparity20,
+            'jump': jump, 'revcv': revcv,
         }
     except Exception as e:
         print(f"  기술지표 실패 {ticker_str}: {e}")
@@ -1244,35 +1276,10 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
     # v80: 동점 tie-breaker를 cr 작은 쪽(오늘 더 강한 종목) 우선 — 파일 생성/궤적 맵과 일치
     sorted_pipeline = sorted(pipeline, key=lambda x: (x.get('weighted_rank', x['rank']), x.get('composite_rank', 999)))
 
-    # v80.3 안전망 (2026-05-12): 이격도20 > 1.5 종목 완전 제거 (관찰 목록에서도)
-    # 부모님 같은 가입자가 Watchlist 1위 보고 매수하는 위험 차단
-    try:
-        import glob as _glob_w
-        _ohlcv_files = sorted(_glob_w.glob('C:/dev/data_cache/all_ohlcv_*.parquet'))
-        if _ohlcv_files:
-            _ohlcv_w = pd.read_parquet(_ohlcv_files[-1]).replace(0, np.nan).ffill()
-            _base_ts = pd.Timestamp(rankings_t0.get('date', '20260101'))
-            if _base_ts in _ohlcv_w.index:
-                _idx = _ohlcv_w.index.get_loc(_base_ts)
-                if _idx >= 19:
-                    _window = _ohlcv_w.iloc[_idx-19:_idx+1]
-                    _sma20 = _window.mean()
-                    _cur = _ohlcv_w.iloc[_idx]
-                    _disp20_map = (_cur / _sma20.replace(0, np.nan)).to_dict()
-                    blocked_w = []
-                    new_sorted = []
-                    for s in sorted_pipeline:
-                        d = _disp20_map.get(s['ticker'])
-                        if d is not None and pd.notna(d) and d > 1.5:
-                            blocked_w.append((s['name'], d))
-                            continue
-                        new_sorted.append(s)
-                    if blocked_w:
-                        print(f'  Watchlist 이격도20 차단: {len(blocked_w)}종목 — ' +
-                              ', '.join(f'{n}({d:.2f})' for n,d in blocked_w[:5]))
-                    sorted_pipeline = new_sorted
-    except Exception as e:
-        print(f'  Watchlist 이격도20 필터 실패: {e}')
+    # Watchlist 이격도20 차단 제거 (v80.9 BT 2026-05-16):
+    # 47 시나리오 BT 결과 sma20 모든 임계 알파 손해 (-0.05 ~ -0.43).
+    # v80.6 시절 +0.18 → v80.9 -0.151 환경 반전. 차단 무의미.
+    # 또 진정 가속 성장 종목 (SK하이닉스/제주반도체)까지 차단 위험 → 관찰 표시 유지.
 
     # 상위 WATCHLIST_N개만 표시
     display_pipeline = sorted_pipeline[:WATCHLIST_N]
@@ -1615,10 +1622,12 @@ def main():
         t1_cr_rank_main = _cr_int_rank_map_main(rankings_t1)
         t2_cr_rank_main = _cr_int_rank_map_main(rankings_t2)
 
-        # 이격도20 안전망 (BT 검증, 2026-05-12)
-        # KBI메탈 같은 폭등 종목 매수 후보 자동 차단 (이격도20 > 1.5)
-        # BT 7.8년: baseline Cal 3.937 → +안전망 Cal 4.117 (+0.18)
-        DISPARITY_THRESHOLD = 1.5
+        # v80.9 매출 안전망 (BT 검증, 2026-05-16): jump > 2.0 AND revcv > 0.7
+        # 47 시나리오 + 조합 BT: Cal 2.078 → 2.352 (+0.274), WF min 1.791, CV 0.544 (가장 안정)
+        # 이전 sma20>1.5 안전망 제거 (v80.9 환경 반전 -0.151 손해)
+        # AND 조건: jump 큰 진정 성장(SK하이닉스/제주반도체)은 통과, 함정 패턴(동아엘텍/선익시스템)만 차단
+        JUMP_THRESHOLD = 2.0
+        REVCV_THRESHOLD = 0.7
         overextended_excluded = []
         for candidate in verified_picks:
             tech = get_stock_technical(candidate['ticker'], BASE_DATE)
@@ -1631,17 +1640,21 @@ def main():
             if daily_chg <= -5:
                 drop_info.append((candidate, daily_chg))
 
-            # 이격도20 차단 안전망
-            disparity20 = (tech or {}).get('disparity20')
-            if disparity20 is not None and disparity20 > DISPARITY_THRESHOLD:
-                overextended_excluded.append((candidate, disparity20))
-                print(f"  🚫 이격도20 차단: {candidate['name']} (이격도 {disparity20:.2f} > {DISPARITY_THRESHOLD})")
+            # 매출 안전망: jump AND revcv 동시 초과 → 일회성 폭증 + 변동성 큰 함정 패턴
+            jump = (tech or {}).get('jump')
+            revcv = (tech or {}).get('revcv')
+            if (jump is not None and revcv is not None
+                    and jump > JUMP_THRESHOLD and revcv > REVCV_THRESHOLD):
+                overextended_excluded.append((candidate, jump, revcv))
+                print(f"  🚫 매출 안전망 차단: {candidate['name']} (jump {jump:.2f} > {JUMP_THRESHOLD} AND revcv {revcv:.2f} > {REVCV_THRESHOLD})")
                 continue
 
             all_candidates.append(candidate)
             if tech:
                 disp_str = f", 이격도20 {tech.get('disparity20', 0):.2f}" if tech.get('disparity20') else ''
-                print(f"    {candidate['name']}: rank {candidate['rank']}, RSI {tech['rsi']:.0f}, 52주 {tech['w52_pct']:.0f}%{disp_str}")
+                j = tech.get('jump'); c = tech.get('revcv')
+                jc_str = f", jump {j:.2f}, revcv {c:.2f}" if (j is not None and c is not None) else ''
+                print(f"    {candidate['name']}: rank {candidate['rank']}, RSI {tech['rsi']:.0f}, 52주 {tech['w52_pct']:.0f}%{disp_str}{jc_str}")
             else:
                 print(f"    {candidate['name']}: rank {candidate['rank']} (기술지표 실패)")
     else:
