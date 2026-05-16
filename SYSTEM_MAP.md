@@ -833,3 +833,64 @@ SK 26Q1 매출 52.58조 (전년 17.64조 +198% HBM3E 호황) 정확 추출.
 - 회귀 위험: 함수 추가 + 1곳 호출 통합. 폴백은 finstate_all 정상 시 발동 안 됨 (영향 0).
 - 5/16 밤 후속: 553종목 26Q1 일괄 재수집 (Phase B 폴백 실효성 검증)
 
+
+
+## 15. wr PENALTY 통일 + 매출 안전망 + Phase C NAV + v80.10 candidate (2026-05-17 밤샘)
+
+### 15.1 wr PENALTY Top 20 + 50 통일
+- 사용자 지적: 'Top 20 밖 = PENALTY 50 룰' production 코드 누락
+- 옛: cr 그대로 사용 (보성파워텍 wr 18.6 = cr 36/24)
+- 새: Top 20 한정 + PENALTY 50 (보성파워텍 wr 28.0 = 50/50)
+- run_daily._postprocess_ranking + turbo_simulator 둘 다 통일
+- state 1932일 × 2 (boost+defense) 재생성 완료
+- commit: 6c76442cf
+
+### 15.2 매출 안전망 교체 (sma20>1.5 → jump>2.0 AND revcv>0.7)
+- BT 47 시나리오 + 조합/WF: sma20 v80.9에서 알파 손해, jump+revcv Cal +0.274
+- AND 조건: 진정 가속 성장 (SK 26Q1 +198%) 보호, 함정 (일회성+변동성) 차단
+- commit: 0c26beb05
+
+### 15.3 TS/SL cooldown 매수 차단 제거
+- v80.1 commit 9bf741b22 ts_cooldown_set 필터 = 신규 가입자 가정 위반
+- 사용자 명시: 'TS/SL은 고객 판단, 매수 후보 표시는 모두 동일'
+- send_telegram_auto verified_picks + calc_system_returns 둘 다 제거
+- commit: 37494c4ed
+
+### 15.4 메시지 표시 종합 정리
+- 매도 기준선 단순화: ━━━━━ 매도 기준선 ━━━━━
+- Signal footer = 매매 룰 (간결 6줄): 매수 / 매도 OR / 분할매수 / 자동매매 X
+- Watchlist footer = 면책 (간결 3줄)
+- AI Risk 헤더 구분선 19자 → 15자 통일 (gemini_analysis + send_telegram_auto)
+- 매도 OR 명시 + 단위 '시' 통일
+- 분할매수 권장 (1차 50% + 다음날 추가) 적립식 시점 분산
+- 🆕/⏳ 검증 안 된 날 r1/r2 = '-' 표시
+- 순위 이탈 Signal에서 제거 (Watchlist에만)
+- 점진적 commit: 591b387ed, 0c63d9c8e, 0ead51a12, fae7fb063, 7208ea634
+
+### 15.5 Dead code 정리 (12개 모순 → 0)
+- _rerank_for_regime / _rerank_and_wr 200줄 (v78 잔존)
+- ENTRY_SCORE_100=72 / EXIT_SCORE_100=68 deprecated 마킹 + 출력 라인 정정
+- crash_active/entered/exited 4파일 (v79 제거됨)
+- regime_indicator docstring v80.9로 갱신
+- CORR_THRESHOLD dead branch (v74)
+- compute_3day_intersection dead function (호출 X)
+- _postprocess_ranking 첫 블록 dead → _load_top20_cr_map 통합
+
+### 15.6 Phase C — NAV 디스카운트 별도 트랙 (production 매매 X)
+- 9 산업지주사 (SK스퀘어/SK/HD조선해양/HD현대/LG/LS/한진칼/GS/CJ)
+- DART '타법인출자' API + find_corp_code 자동 매핑 (197 자회사)
+- 5/15 결과: SK스퀘어 44.4% / LG 38.5% / HD현대 31.0%
+- nav_discount_module.py + Watchlist 별도 섹션
+- commit: 86c3e58ec
+
+### 15.7 v80.10 candidate — 브이엠 case 면제 로직
+- 사용자 발견: 브이엠 (089970) v80.6.1 cr 6위 → v80.9 60위대 추락
+- 원인: 25년 매출 Q2/Q4 vs Q1/Q3 ratio 1.66 → 계절성 패널티 발동
+- 진정 가속 성장 (25Q4 508 → 26Q1 889 +396% YoY)
+- 면제 조건 후보: (vals[-2]/vals[-1]) > 0.6
+- 5/14 표본: 브이엠 cr 61→5 ★, 보성파워텍 cr 36→2, 동아/선익 차단 유지
+- 7.4y EDA (52건): cr 30~50 +25.5% / cr 50+ 음수
+- 코드 추가 (SEASONALITY_EXEMPT_QQ_THRESH, 기본 0=비활성)
+- 7.4y state 재생성 BT 결과 대기 중 (사용자 결정 후 v80.10 진화)
+- commit: 15044de3d
+
