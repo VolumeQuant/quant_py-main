@@ -55,10 +55,83 @@
 
 ---
 
-# 🇰🇷 KR 전략 — quant_py-main (v80.9 + Phase B, 2026-05-16 밤)
+# 🇰🇷 KR 전략 — quant_py-main (v80.9 + Phase B + 매출 안전망 + Phase C, 2026-05-17)
 
 > 경로: `C:\dev\claude code\quant_py-main`
 > 영구 지도: `C:\dev\SYSTEM_MAP.md` (전략 교체 시 맹점 제로 체크리스트)
+
+## 2026-05-17 변경 종합 (밤샘 작업, 자율 진행)
+
+### 매출 안전망 교체 (sma20>1.5 → jump>2.0 AND revcv>0.7)
+- BT 47 시나리오 결과: v80.9 환경에서 sma20 모든 임계 알파 손해 (-0.05 ~ -0.43)
+- v80.6 시절 +0.18 → v80.9 -0.151 환경 반전 (계절성 패널티 + 3팩터 G 도입 영향)
+- 새 안전망 (조합 + WF 검증): Cal +0.274, WF min 1.791, CV 0.544 (가장 안정)
+- AND 조건: 진정 가속 성장 (SK 26Q1 +198% HBM) 보호, 함정 (일회성 폭증+변동성) 차단
+- 5/15 표본: 차단 0건, Top 3 (SK/제주/SAMT) 정상 진입
+- commit: `0c26beb05`
+
+### TS/SL 매수 후보 차단 제거 (시뮬 가정 위반)
+- v80.1 (commit 9bf741b22) 도입 ts_cooldown_set 필터 = 신규 가입자 가정 위반
+- 사용자 명시: "TS/SL은 보유 중 고객 판단. 매수 후보 표시는 모두 동일"
+- send_telegram_auto.py verified_picks에서 cooldown 필터 제거
+- calc_system_returns의 TS cooldown 로직도 제거 (시뮬 일관성)
+- commit: `37494c4ed`
+
+### wr PENALTY 통일 (Top 20 한정 + PENALTY 50)
+- 사용자 지적: '빈 날짜 PENALTY 제대로 주고 있나?'
+- 원인: 보성파워텍 wr 18.6 = cr 36/24 그대로 사용 (PENALTY 50 적용 X)
+- 수정 (run_daily._postprocess_ranking + turbo_simulator):
+  - T-1/T-2 cr 매핑 시 Top 20 한정 → 밖이면 PENALTY 50
+  - BT와 production 동일 룰 (시뮬-실전 일치)
+- state 1932일 × 2 (boost+defense) 전체 재생성 (6분)
+- BT 결과 변화 미미 (entry=3 종목은 모두 Top 안)
+- commit: `6c76442cf`
+
+### 메시지 표시 정리 (4가지 정정 후 단순화)
+- 매도 기준선만 (매수 기준선 제거): `━━━━━ 매도 기준선 ━━━━━`
+- 매도 OR 조건 명시: '아래 셋 중 하나라도 해당 시 (① 매도 기준선 이탈 / ② -10% 시 / ③ 고점대비 -8% 시)'
+- Signal footer = 매매 룰 (간결 6줄)
+- Watchlist footer = 면책 (간결 3줄)
+- AI Risk 헤더 구분선 19자 → 15자 통일 (gemini_analysis.py + send_telegram_auto.py)
+- 순위 이탈 → Watchlist에만 표시 (Signal에서 제거)
+- 🆕/⏳ 종목 검증 안 된 날 r1/r2 = '-' 표시
+- 분할매수 권장 안내: '1차 50% + 다음날 추가' (적립식 시점 분산)
+- '시스템은 신호만, 매매는 본인 판단' 명시
+- 점진적 commit: `591b387ed`, `0c63d9c8e`, `7208ea634`, `0ead51a12`, `fae7fb063`
+
+### Dead code 정리 (12개 모순 → 0)
+- `_rerank_for_regime` / `_rerank_and_wr` 200줄 통째 삭제 (v78 잔존, 호출 X)
+- `ENTRY_SCORE_100`=72 / `EXIT_SCORE_100`=68 deprecated 마킹 (v77 wr 무관)
+- `crash_active`/`crash_entered`/`crash_exited` 4파일 잔존 제거 (v79 Crash Cash 제거됨)
+- `CORR_THRESHOLD` dead branch 제거 (v74 잔존)
+- `compute_3day_intersection` dead function 제거 (호출 X)
+- `_postprocess_ranking` 첫 블록 → `_load_top20_cr_map` 단순화
+- regime_indicator.py docstring v80.9 업데이트 + 진화 history (v80→v80.6→v80.7→v80.8→v80.9)
+
+### Phase C — NAV 디스카운트 별도 트랙 (production 매매 신호 X)
+- 9 산업지주사 식별 (KRX 금융섹터 비키워드 + 시총)
+- DART '타법인출자' API + find_corp_code 자동 매핑 (197 자회사)
+- 자회사 시가 × 지분율 = NAV 합계
+- 5/15 결과: SK스퀘어 **44.4%** ★ (사용자 메모리 일치) / LG **38.5%** / HD현대 **31.0%**
+- `nav_discount_module.py` + Watchlist 끝 별도 섹션 (매매 신호 X, 정보만)
+- step 6 (BT 검증) 보류 (9 종목 풀 작아 BT 의미 X)
+- commit: `86c3e58ec`
+
+### Phase B 폴백 실제 적용 (오늘 밤 5/15 ranking 재계산 포함)
+- 5/15 분기마감 finstate_all 누락 37.3% (300 표본) — Phase B 폴백 동작 검증
+- 553 종목 재수집: finstate_all 380 + DOC 폴백 58 + empty 115
+- DOC 폴백 = SK하이닉스/메가스터디/이건산업 같은 누락 종목 정상 보강
+- monitor_dart_fn_health에 분기마감 누락률 자동 감지 + DOC 폴백 카운트 추가
+- commit: `0f5a2c0e3`, `2213c6c67`
+
+### 브이엠 케이스 발견 (사용자 위기 의식)
+- 브이엠 (089970) v80.6.1에서 cr 6위 → v80.9에서 cr 60위대 (5/14까지)
+- 5/15 1Q 발표 후 자동 해제 → cr 5위 진입
+- 원인: 25년 매출 Q2/Q4 vs Q1/Q3 ratio = 1.66 > 1.4 → 계절성 패널티 발동
+- 진짜 가속 성장 (25Q4 508 → 26Q1 889, +75% QoQ) but 시스템 함정으로 분류
+- 제주반도체 패턴 재발 = 사용자 통찰 위반 가능성
+- production 변경 X (사용자 명시), 별도 BT 트랙으로 면제 로직 검토 예정
+- 메모리 기록: [[project-vm-seasonality-trap-2026-05-17]]
 
 ## Phase B — DART document API 폴백 (2026-05-16 밤, commit 0f5a2c0e3)
 

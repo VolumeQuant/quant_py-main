@@ -1838,6 +1838,16 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
                 triggered = cv > SEAS_CV_THRESH
 
             if triggered:
+                # v80.10 후보 (2026-05-17): 진정 성장 종목 면제 — (Q-2 매출 / Q-1 매출) > THRESH
+                # 직전 분기가 최근 분기의 X% 이상이면 일회성 아님 (브이엠 보호, 동아/선익 차단 유지)
+                # 환경변수: SEASONALITY_EXEMPT_QQ_THRESH (기본 0=비활성, BT 검증 후 0.6 등 설정)
+                # EDA (52건): cr 30~50 종목 면제 시 +60d 평균 +25.5% / cr 50+ 음수
+                EXEMPT_THRESH = float(os.environ.get('SEASONALITY_EXEMPT_QQ_THRESH', '0'))
+                if EXEMPT_THRESH > 0 and len(vals) >= 2 and vals[-1] > 0:
+                    qq_ratio = vals[-2] / vals[-1]
+                    if qq_ratio > EXEMPT_THRESH:
+                        continue  # 면제 → 패널티 적용 X
+
                 # 성장_점수 × penalty + 멀티팩터_점수 재계산
                 V_W = float(os.environ.get('FACTOR_V_W', '0.20'))
                 Q_W = float(os.environ.get('FACTOR_Q_W', '0.20'))
