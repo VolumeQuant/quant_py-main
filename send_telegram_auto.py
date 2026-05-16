@@ -1170,6 +1170,19 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         lines.append('━━━━━━━━━━━━━━━')
         lines.append('📊 데이터 축적 중 — 3일 완료 시 상위 종목이 표시됩니다.')
 
+    # ── NAV 디스카운트 별도 섹션 (Phase C, 정보 제공, 매매 신호 X) ──
+    try:
+        from nav_discount_module import compute_nav_discount, format_nav_discount_section
+        _base_date = rankings_t0.get('date', '20260101') if rankings_t0 else '20260101'
+        if isinstance(_base_date, str) and len(_base_date) == 10:  # '2026-05-15' → '20260515'
+            _base_date = _base_date.replace('-', '')
+        _nav = compute_nav_discount(_base_date)
+        _nav_sec = format_nav_discount_section(_nav)
+        if _nav_sec:
+            lines.append(_nav_sec)
+    except Exception as _e:
+        pass  # NAV 모듈 실패해도 메인 메시지에 영향 없음
+
     # ── Watchlist footer: 면책 (간결, 빈 줄 없이 붙임) ──
     lines.append('━━━━━━━━━━━━━━━')
     lines.append('순위 표기: 3일 가중순위 (2일전 → 1일전 → 오늘)')

@@ -106,70 +106,7 @@ def load_recent_rankings(trading_dates: List[str]) -> Dict[str, Optional[dict]]:
     return result
 
 
-def compute_3day_intersection(
-    rankings_t0: dict,
-    rankings_t1: dict,
-    rankings_t2: dict,
-    top_n: int = 20,
-    max_picks: int = 5,
-) -> List[dict]:
-    """
-    3일 교집합 계산 — Slow In 핵심 로직
-
-    3거래일 연속 Top N에 있었던 종목의 교집합을 구하고,
-    가중 평균 순위로 정렬하여 최종 추천 종목 반환.
-
-    가중치: T-0 × 0.5 + T-1 × 0.3 + T-2 × 0.2
-
-    Args:
-        rankings_t0: T-0 순위 데이터
-        rankings_t1: T-1 순위 데이터
-        rankings_t2: T-2 순위 데이터
-        top_n: 교집합 기준 상위 N개 (기본 20)
-        max_picks: 최종 추천 최대 수 (기본 10)
-
-    Returns:
-        가중 평균 순위로 정렬된 추천 종목 리스트
-    """
-    def get_top_n_map(ranking_data, n):
-        """순위 데이터에서 Top N 종목의 {ticker: rank} 맵 반환"""
-        top = {}
-        for item in ranking_data.get('rankings', []):
-            if item['rank'] <= n:
-                top[item['ticker']] = item
-        return top
-
-    top_t0 = get_top_n_map(rankings_t0, top_n)
-    top_t1 = get_top_n_map(rankings_t1, top_n)
-    top_t2 = get_top_n_map(rankings_t2, top_n)
-
-    # 3일 교집합
-    common_tickers = set(top_t0.keys()) & set(top_t1.keys()) & set(top_t2.keys())
-
-    if not common_tickers:
-        return []
-
-    # 가중 평균 순위 계산 — composite_rank 기반 (누적 방지)
-    results = []
-    for ticker in common_tickers:
-        rank_t0 = top_t0[ticker].get('composite_rank', top_t0[ticker]['rank'])
-        rank_t1 = top_t1[ticker].get('composite_rank', top_t1[ticker]['rank'])
-        rank_t2 = top_t2[ticker].get('composite_rank', top_t2[ticker]['rank'])
-        weighted_rank = rank_t0 * 0.5 + rank_t1 * 0.3 + rank_t2 * 0.2
-
-        # T-0 데이터를 기본으로 사용 (최신 정보)
-        item = top_t0[ticker].copy()
-        item['weighted_rank'] = round(weighted_rank, 1)
-        item['rank_t0'] = rank_t0
-        item['rank_t1'] = rank_t1
-        item['rank_t2'] = rank_t2
-        results.append(item)
-
-    # 가중 평균 순위로 정렬 (낮을수록 좋음, 동점 시 score 높은 순)
-    results.sort(key=lambda x: (x['weighted_rank'], -x.get('score', x.get('weighted_score', 0))))
-
-    # 최대 picks 제한
-    return results[:max_picks]
+# compute_3day_intersection 제거 (2026-05-17, 호출처 없음. 3일 교집합은 send_telegram_auto에서 직접 구현)
 
 
 PRICE_CHANGE_THRESHOLD = 0.03   # 3% 이상 변동만 가격 태그 표시
