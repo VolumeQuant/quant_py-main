@@ -147,10 +147,10 @@ def get_regime_params(mode):
             'G_SUB3': 'gp_growth_z',        # v80.6.1 (2026-05-15): 3팩터 도입
             'G_W1': 0.4, 'G_W2': 0.4, 'G_W3': 0.2,  # rev/oca/gp_growth 비율
             'MOM_PERIOD': '12m',
-            'ENTRY_RANK': 2, 'EXIT_RANK': 6, 'MAX_SLOTS': 5,
+            'ENTRY_RANK': 3, 'EXIT_RANK': 6, 'MAX_SLOTS': 5,  # v80.8: entry 2→3
             'STOP_LOSS': -0.10,
             'TRAILING_STOP': -0.08,
-            'TS_COOLDOWN': 2,
+            'TS_COOLDOWN': 1,                                  # v80.8: 2→1
             'CORR_THRESHOLD': None,
             'USE_REV_ACCEL': False,
             'label': '공격 모드 (Growth 55%, 3팩터)',
@@ -165,10 +165,10 @@ def get_regime_params(mode):
             'G_SUB3': None,
             'G_W1': None, 'G_W2': None, 'G_W3': None,
             'MOM_PERIOD': '6m-1m',
-            'ENTRY_RANK': 3, 'EXIT_RANK': 6, 'MAX_SLOTS': 4,  # v80.6: slots 5→4
-            'STOP_LOSS': -0.10,             # v80.6: 유지
-            'TRAILING_STOP': -0.08,         # v80.6: -0.15→-0.08
-            'TS_COOLDOWN': 2,
+            'ENTRY_RANK': 5, 'EXIT_RANK': 4, 'MAX_SLOTS': 4,  # v80.8: entry 3→5, exit 6→4
+            'STOP_LOSS': -0.10,
+            'TRAILING_STOP': -0.08,
+            'TS_COOLDOWN': 1,                                  # v80.8: 2→1
             'CORR_THRESHOLD': None,
             'USE_REV_ACCEL': False,
             'label': '방어 모드 (Momentum 40%)',

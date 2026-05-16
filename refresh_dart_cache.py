@@ -229,6 +229,48 @@ def main():
                f'API {dc._call_count}건 | {elapsed:.0f}초')
     print(summary)
 
+    # ▼ v80.8 (2026-05-16): 자동 누락 감지
+    # list API에 잡힌 종목 vs fs_dart 캐시에 해당 분기 데이터 있나 대조
+    # 누락 감지 시 개인봇 알림 (사용자 발견 의존 사고 방지)
+    if recently_disclosed:
+        missing = []
+        for tk in recently_disclosed:
+            cache_path = CACHE_DIR / f'fs_dart_{tk}.parquet'
+            if not cache_path.exists():
+                missing.append((tk, 'no_cache'))
+                continue
+            try:
+                cache_df = pd.read_parquet(cache_path)
+                # target_date 분기 데이터 있나
+                tgt_q = cache_df[(cache_df['공시구분'] == 'q') & (cache_df['기준일'] == target_date)]
+                if tgt_q.empty:
+                    missing.append((tk, 'no_target_quarter'))
+                else:
+                    # 매출액 있나 (핵심 계정)
+                    rev = tgt_q[tgt_q['계정'] == '매출액']
+                    if rev.empty:
+                        missing.append((tk, 'no_revenue'))
+            except Exception as e:
+                missing.append((tk, f'read_err: {e}'))
+        if missing:
+            try:
+                import requests
+                from config import TELEGRAM_BOT_TOKEN, TELEGRAM_PRIVATE_ID
+                miss_summary = '\n'.join([f'  {tk}: {reason}' for tk, reason in missing[:20]])
+                msg = (f'⚠️ DART 누락 감지 ({len(missing)}/{len(recently_disclosed)}종목)\n'
+                       f'{target_date.strftime("%Y-%m")} 분기 list 잡혔으나 캐시 누락:\n'
+                       f'{miss_summary}\n')
+                if len(missing) > 20:
+                    msg += f'... 외 {len(missing) - 20}종목\n'
+                msg += '재시도 또는 document API fallback 필요'
+                requests.post(f'https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage',
+                              data={'chat_id': TELEGRAM_PRIVATE_ID, 'text': msg}, timeout=15)
+                print(f'\n⚠️ 누락 {len(missing)}종목 감지 — 개인봇 알림 발송')
+            except Exception as e:
+                print(f'누락 알림 발송 실패: {e}')
+        else:
+            print(f'✅ 누락 감지: 0종목 ({len(recently_disclosed)}종목 모두 정상 수집)')
+
     # 텔레그램 개인봇 알림
     try:
         import requests

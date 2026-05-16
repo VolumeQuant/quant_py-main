@@ -1783,8 +1783,13 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
     # 환경변수: SEASONALITY_DISABLE=1로 비활성화
     # ============================================================
     if os.environ.get('SEASONALITY_DISABLE') != '1':
+        # v80.8 (2026-05-16): bi 양방향 식 + PENALTY 0.3
+        # bi: max((Q2+Q4)/(Q1+Q3), (Q1+Q3)/(Q2+Q4)) > 1.4
+        # Q1+Q3 편향 종목도 잡음 (Phase 1 BT Cal 2.610 vs curr 2.287, +0.323)
         SEAS_RATIO_THRESH = float(os.environ.get('SEASONALITY_RATIO_THRESH', '1.4'))
-        SEAS_PENALTY = float(os.environ.get('SEASONALITY_PENALTY', '0.5'))
+        SEAS_PENALTY = float(os.environ.get('SEASONALITY_PENALTY', '0.3'))
+        SEAS_FORMULA = os.environ.get('SEASONALITY_FORMULA', 'bi').lower()
+        SEAS_CV_THRESH = float(os.environ.get('SEASONALITY_CV_THRESH', '0.40'))
         fs_dict_local = preloaded.get('fs', {})
         seas_applied = 0
         for idx, row in scored.iterrows():
@@ -1796,11 +1801,42 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
             q_avail = q_tk[q_tk['rcept_dt'].notna() & (q_tk['rcept_dt'] <= base_ts)]
             if len(q_avail) < 8: continue
             last8 = q_avail.sort_values('rcept_dt').tail(8)
-            q24 = last8[last8['기준일'].dt.month.isin([6, 12])]['값'].sum()
-            q13 = last8[last8['기준일'].dt.month.isin([3, 9])]['값'].sum()
-            if q13 <= 0: continue
-            ratio = q24 / q13
-            if ratio > SEAS_RATIO_THRESH:
+            vals = last8['값'].astype(float).values
+            if (vals <= 0).any(): continue
+            months = last8['기준일'].dt.month.values
+            q24 = vals[(months == 6) | (months == 12)].sum()
+            q13 = vals[(months == 3) | (months == 9)].sum()
+            if q13 <= 0 or q24 <= 0: continue
+            ratio_curr = q24 / q13
+
+            # 식 후보별 판정
+            triggered = False
+            if SEAS_FORMULA == 'curr':
+                triggered = ratio_curr > SEAS_RATIO_THRESH
+            elif SEAS_FORMULA == 'bi':
+                ratio_bi = max(ratio_curr, 1.0 / ratio_curr)
+                triggered = ratio_bi > SEAS_RATIO_THRESH
+            elif SEAS_FORMULA == 'bi_and_cv':
+                ratio_bi = max(ratio_curr, 1.0 / ratio_curr)
+                import numpy as _np
+                cv = _np.std(vals) / _np.mean(vals)
+                triggered = (ratio_bi > SEAS_RATIO_THRESH) and (cv > SEAS_CV_THRESH)
+            elif SEAS_FORMULA == 'bi_or_cv':
+                ratio_bi = max(ratio_curr, 1.0 / ratio_curr)
+                import numpy as _np
+                cv = _np.std(vals) / _np.mean(vals)
+                triggered = (ratio_bi > SEAS_RATIO_THRESH) or (cv > SEAS_CV_THRESH)
+            elif SEAS_FORMULA == 'max2min2':
+                import numpy as _np
+                sv = _np.sort(vals)
+                m2m2 = sv[-2:].sum() / max(sv[:2].sum(), 1e-9)
+                triggered = m2m2 > SEAS_RATIO_THRESH
+            elif SEAS_FORMULA == 'cv':
+                import numpy as _np
+                cv = _np.std(vals) / _np.mean(vals)
+                triggered = cv > SEAS_CV_THRESH
+
+            if triggered:
                 # 성장_점수 × penalty + 멀티팩터_점수 재계산
                 V_W = float(os.environ.get('FACTOR_V_W', '0.20'))
                 Q_W = float(os.environ.get('FACTOR_Q_W', '0.20'))

@@ -13,9 +13,9 @@ PYTHON = sys.executable
 FG = str(Path(__file__).parent / 'fast_generate_rankings_v2.py')
 PROJECT = Path(__file__).parent.parent
 
-# v80.6.1 (2026-05-15): boost G 2팩터 → 3팩터 (rev+oca+gp_growth_z 0.4/0.4/0.2)
-# 7.4y BT: Cal +0.073, WF CV 0.508→0.440 (-13% 안정성 개선)
-# v80.6 (2026-05-13): MA170→MA250 + boost gr 0.6→0.5 + defense V/Q/G/M V30→V35 M40→M35 gr 0.7→0.8
+# v80.8 (2026-05-16): bi 양방향 식 + PENALTY 0.3 (Phase 1 그리드 결과)
+# 7.4y BT: Cal 1.863 → 3.494 (+87%), MDD 45.3% → 32.9% (-12.4%p)
+# v80.6.1 (2026-05-15): boost G 3팩터 (rev+oca+gp_growth_z 0.4/0.4/0.2)
 BOOST_ENV = {
     'FACTOR_V_W': '0.15',
     'FACTOR_Q_W': '0.00',
@@ -23,12 +23,16 @@ BOOST_ENV = {
     'FACTOR_M_W': '0.30',
     'G_SUB1': 'rev_z',
     'G_SUB2': 'oca_z',
-    'G_SUB3': 'gp_growth_z',  # v80.6.1: 3팩터 도입
+    'G_SUB3': 'gp_growth_z',
     'G_W1': '0.4',
     'G_W2': '0.4',
     'G_W3': '0.2',
-    'G_REVENUE_WEIGHT': '0.5',  # 2팩터 폴백용 (3팩터 모드에선 G_W1~3 사용)
+    'G_REVENUE_WEIGHT': '0.5',
     'MOM_PERIOD': '12m',
+    # v80.8: 계절성 식
+    'SEASONALITY_FORMULA': 'bi',
+    'SEASONALITY_RATIO_THRESH': '1.4',
+    'SEASONALITY_PENALTY': '0.3',
     'PYTHONIOENCODING': 'utf-8',
 }
 DEFENSE_ENV = {

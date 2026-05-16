@@ -96,3 +96,17 @@ state_v80_6_FULL_BACKUP_*/
 yf_eps_workspace/logs/
 state_pre_v80_7_backup/
 data_cache/_q1_*_backup/
+
+# v80.8 임시 작업 파일 (2026-05-16)
+state_v80_7_quick_backup/
+_phase*.py
+_phase*.log
+_phase*.csv
+_phase*.json
+_eda_*.py
+_eda_*.csv
+_stage0_*.py
+_stage0.log
+_tg_send_*.py
+_tg_private.py
+_v80_8_regen.log

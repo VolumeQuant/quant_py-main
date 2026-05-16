@@ -55,10 +55,72 @@
 
 ---
 
-# 🇰🇷 KR 전략 — quant_py-main (v80.7, 2026-05-16)
+# 🇰🇷 KR 전략 — quant_py-main (v80.8, 2026-05-16)
 
 > 경로: `C:\dev\claude code\quant_py-main`
 > 영구 지도: `C:\dev\SYSTEM_MAP.md` (전략 교체 시 맹점 제로 체크리스트)
+
+## v80.8 변경 — bi 양방향 식 + 매매조건 정밀 그리드 (2026-05-16)
+
+### 핵심 변경
+1. **계절성 식 curr → bi (양방향)**: `max((Q2+Q4)/(Q1+Q3), (Q1+Q3)/(Q2+Q4)) > 1.4`
+   - Q1+Q3 편향 종목도 잡음 (curr는 못 잡았던 패턴)
+   - 단, Q1+Q2/Q3+Q4 인접 2분기 폭증은 여전히 못 잡음 (top4_bot4 BT 망했음)
+2. **PENALTY 0.5 → 0.3** (G_score 50% → 70% 깎음)
+3. **매매 조건 (Phase 3 9 axis 그리드)**:
+   - boost ENTRY_RANK: 2 → **3**
+   - defense ENTRY_RANK: 3 → **5**, EXIT_RANK: 6 → **4**
+   - TS_COOLDOWN: 2 → **1** (양 모드)
+
+### 7.4y BT 성과 (2019-01~2026-05)
+| 지표 | v80.6.1 baseline | v80.7 (curr) | **v80.8 (bi+매매조건)** |
+|---|---|---|---|
+| Cal | 1.863 | 2.287 | **3.494** |
+| CAGR | 84.3% | 97.8% | **114.9%** |
+| MDD | 45.3% | 42.8% | **32.9%** |
+| Sharpe | 1.43 | 1.68 | **1.98** |
+
+baseline 대비 **Cal +87%**, CAGR +30.6%p, MDD -12.4%p
+
+### Phase 1 그리드 결과 (식 × 임계 × PENALTY)
+- Round 1 (12 시나리오): bi 1.4/0.5 = 2.523 (curr 1.4/0.5 = 2.287 +0.236)
+- Round 2 (43 시나리오): **bi 1.4/0.3 = 2.610** (PENALTY 0.3 일관 우월)
+- top4_bot4 단일 식: 모든 임계 baseline 미달
+- bi OR top4_bot4: bi 단독에 못 미침
+- AND 조건(bi_and_cv): trigger 좁혀 알파 감소
+
+### Phase 2 결과
+- defense 계절성 패널티 → **미적용** (모든 시나리오 baseline 이하 -0.005~-0.082)
+- 이격도20 → **1.5 유지** (BT 영향 0, 안전망 기능)
+
+### Phase 3 결과 (9 axis 그리드)
+- entry_o 2→3 (+0.315), exit_o 6 유지, slots_o 5 유지
+- entry_d 3→5 (+0.087), exit_d 6→4 (+0.112), slots_d 4 유지
+- SL -10% 유지, TS -8% 유지
+- ts_cd 2→1 (+0.370 단독 우월, 5 variant 강건성 검증 PASS)
+
+### 강건성 검증
+- ts_cd=1 우월 (5 variant 평균 Δ +0.267)
+- WF CV 0.638 ⚠️ (2019 dip Cal 0.320 — 약세장 약점)
+- 단일 종목 의존성 1.3% ✅
+
+### 환경변수 (`fast_generate_rankings_v2.py`)
+- `SEASONALITY_FORMULA='bi'` (default 변경)
+- `SEASONALITY_PENALTY='0.3'` (default 변경)
+- `SEASONALITY_RATIO_THRESH='1.4'` (유지)
+- `SEASONALITY_DISABLE=1` 시 비활성
+
+### 롤백 트리거 (v80.8)
+- 5거래일 KOSPI 대비 알파 -3%p 이하 / MDD -10% 초과
+- 백업: `state_v80_7_backup/`, `state_pre_v80_7_backup/`
+- 즉시 롤백: `SEASONALITY_FORMULA=curr SEASONALITY_PENALTY=0.5` 환경변수
+
+### 약점 / 추가 작업
+- WF 2019 약점 — 약세장 모니터링 강화
+- 인접 2분기 폭증 패턴(Q1+Q2, Q3+Q4 등) 못 잡음
+- DART finstate_all 누락 자동 감지 X (5/16 동아엘텍 사용자 발견 의존) → **Phase 4.5에서 document 메인 전환 진행**
+
+---
 
 ## v80.7 변경 — 계절성 패널티 도입 (2026-05-16)
 
