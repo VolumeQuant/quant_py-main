@@ -891,18 +891,20 @@ def create_regime_switch_message(regime_mode, prev_mode=None):
             '',
             '■ 공격 모드 매매 기준',
             '',
-            '  · 매수: 3일 연속 상위 3종목 ✅ 안에 든 종목',
-            '  · 매도: 3일 평균 순위가 6위 밖으로 밀릴 때',
+            '  · 매수: 3일 연속 ✅ 상위 3종목',
+            '  · 매도 (셋 중 하나):',
+            '     - 3일 가중순위 6위 밖',
+            '     - 매수가 대비 -10% 손절',
+            '     - 최고가 대비 -8% 고점매도',
             '  · 보유: 최대 5종목, 균등 비중',
-            '  · 손절: 매수가 대비 -10%',
-            '  · 고점대비 매도: 최고가 대비 -8% 하락 시',
+            '  · 매수 방식: 분할매수 권장 (1차 50% + 다음날 추가)',
             '',
             '■ 공격 모드가 작동하는 방식',
             '',
             "  상승장에서는 '실적이 빠르게 성장하는 종목'이",
             '  가장 크게 오르는 경향이 있습니다.',
             '  매출·영업이익 성장세와 최근 12개월 주가 추세를 중심으로',
-            '  가장 강한 2종목에 신규 진입하고, 보유 중인 종목 포함',
+            '  상위 3종목에 신규 진입하고, 보유 중인 종목 포함',
             '  최대 5종목으로 분산합니다.',
             '',
             '■ 전략 성과 (지난 7.4년, 2019-01~2026-05)',
@@ -941,11 +943,13 @@ def create_regime_switch_message(regime_mode, prev_mode=None):
         '',
         '■ 방어 모드 매매 기준',
         '',
-        '  · 매수: 3일 연속 상위 5종목 ✅ 안에 든 종목',
-        '  · 매도: 3일 평균 순위가 8위 밖으로 밀릴 때',
+        '  · 매수: 3일 연속 ✅ 상위 5종목',
+        '  · 매도 (셋 중 하나):',
+        '     - 3일 가중순위 8위 밖',
+        '     - 매수가 대비 -10% 손절',
+        '     - 최고가 대비 -8% 고점매도',
         '  · 보유: 최대 5종목, 균등 비중',
-        '  · 손절: 매수가 대비 -10%',
-        '  · 고점대비 매도: 최고가 대비 -8% 하락 시',
+        '  · 매수 방식: 분할매수 권장 (1차 50% + 다음날 추가)',
         '',
         '■ 방어 모드가 작동하는 방식',
         '',
@@ -1154,11 +1158,7 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         for p in parts[1:]:
             lines.append(p)
 
-    # ── Signal footer: 매매 룰 (사용자 즉시 확인용) ──
-    lines.append('')
-    lines.append('━━━━━━━━━━━━━━━')
-    lines.append('📍 <b>매매 룰</b>')
-    lines.append('━━━━━━━━━━━━━━━')
+    # ── Signal footer: 매매 룰 (간결) ──
     _rule_e = ENTRY_RANK
     _rule_x = EXIT_RANK
     _rule_s = MAX_SLOTS
@@ -1170,20 +1170,16 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         _rule_s = _rp_sig.get('MAX_SLOTS', MAX_SLOTS)
     except Exception:
         pass
-    lines.append(f'• 매수: 3일 연속 ✅ 검증된 상위 {_rule_e}종목 (보유 최대 {_rule_s}종목)')
-    lines.append(f'• 매도: 아래 셋 중 <b>하나라도</b> 발생 시')
-    lines.append(f'   ① 가중순위 {_rule_x}위 밖으로 밀림')
-    lines.append(f'   ② 매수가 대비 -10% 손절')
-    lines.append(f'   ③ 매수 후 최고가 대비 -8% 하락')
     lines.append('')
-    lines.append('💡 <b>분할매수 권장 (예: 천만원 투자 시)</b>')
-    lines.append(f'• 1종목 배정 금액 = 천만원 ÷ {_rule_s}종목 = 200만원')
-    lines.append('• 1차 100만원 매수 → 다음 거래일 순위 유지 확인 → 100만원 추가')
-    lines.append('• 가격이 떨어졌어도 순위 유지면 OK (시스템 신호 유지)')
-    lines.append('• 순위 하락 시 추가 매수 X (물타기 금지)')
+    lines.append('━━━━━━━━━━━━━━━')
+    lines.append(f'매수: 3일 연속 ✅ 상위 {_rule_e}종목 (최대 {_rule_s}종목)')
+    lines.append('매도 (셋 중 하나):')
+    lines.append(f'• 3일 가중순위 {_rule_x}위 밖')
+    lines.append('• 매수가 대비 -10% 손절')
+    lines.append('• 최고가 대비 -8% 고점매도')
     lines.append('')
-    lines.append('⚠️ <b>자동매매 X</b>: 시스템은 신호만 보냅니다.')
-    lines.append('매수/매도/손절 실행은 본인이 직접 하세요.')
+    lines.append('💵 분할매수 권장 (1차 50% + 다음날 추가)')
+    lines.append('※ 시스템은 신호만, 매매는 본인 판단')
 
     return '\n'.join(lines)
 
@@ -1319,9 +1315,7 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
     _all_wr = [s.get('weighted_rank', 999) for s in display_pipeline]
     _min_wr = min(_all_wr) if _all_wr else 1
 
-    entry_line_shown = False
     exit_line_shown = False
-    _cur_entry = rp_current.get('ENTRY_RANK', ENTRY_RANK) if rp_current else ENTRY_RANK
     _cur_exit = rp_current.get('EXIT_RANK', EXIT_RANK) if rp_current else EXIT_RANK
     for idx, s in enumerate(display_pipeline, 1):
         name = s['name']
@@ -1335,19 +1329,10 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         score_100 = max(5.0, min(100.0, 100.0 - (w_rank_val - _min_wr) * 5))
         score_disp = f'{score_100:.1f}'
 
+        # 매도 기준선: 3일 가중순위 > EXIT_RANK 첫 종목 직전
         w_rank = s.get('weighted_rank', 999)
-        need_entry = (not entry_line_shown) and (idx > _cur_entry)
-        need_exit = (not exit_line_shown) and (w_rank > _cur_exit)
-        # 매수/매도 기준선 같은 위치 = 합쳐서 한 줄
-        if need_entry and need_exit:
-            lines.append(f'── 매수 후보 끝 (상위 {_cur_entry}) · 매도 검토 시작 (가중순위 {_cur_exit} 초과) ──')
-            entry_line_shown = True
-            exit_line_shown = True
-        elif need_entry:
-            lines.append(f'── 매수 후보 끝 (상위 {_cur_entry}종목까지 추천) ──')
-            entry_line_shown = True
-        elif need_exit:
-            lines.append(f'── 매도 검토 시작 (가중순위 {_cur_exit} 초과) ──')
+        if not exit_line_shown and w_rank > _cur_exit:
+            lines.append(f'── 매도 기준선 (3일 가중순위 {_cur_exit} 초과) ──')
             exit_line_shown = True
 
         # 궤적: cr-rank 그대로 표시 (없으면 "-")
