@@ -143,6 +143,29 @@ def main():
         print(f'[health] ⚠️ 영업이익 부호 다름 {opi_sign_diff} > {THRESHOLD_OPI_SIGN} — 영업이익 매핑 사고 의심')
         abnormal = True
 
+    # ── Phase B 추가 (2026-05-16): document 폴백 발동 카운트 ──
+    # 5/15 같은 finstate_all 누락 사고 즉시 감지 (DOC 폴백 발동 = 사고 신호)
+    doc_fallback_count = 0
+    doc_recent_tickers = []
+    for fp in CACHE_DIR.glob('fs_dart_*.parquet'):
+        if 'backup' in fp.name: continue
+        try:
+            df = pd.read_parquet(fp, columns=['기준일', '공시구분', 'fs_div'])
+            recent = df[df['기준일'] >= '2026-01-01']  # 올해 분기만
+            if 'fs_div' in recent.columns and 'DOC' in recent['fs_div'].values:
+                doc_fallback_count += 1
+                if len(doc_recent_tickers) < 10:
+                    doc_recent_tickers.append(fp.stem.replace('fs_dart_', ''))
+        except Exception:
+            pass
+    print(f'\n[health] document API 폴백 발동 종목 (올해 분기): {doc_fallback_count}')
+    if doc_recent_tickers:
+        print(f'           표본: {doc_recent_tickers}')
+    THRESHOLD_DOC = 100  # 폴백 발동 100+ 종목 = finstate_all 대량 sync 지연 의심
+    if doc_fallback_count > THRESHOLD_DOC:
+        print(f'[health] ⚠️ DOC 폴백 {doc_fallback_count} > {THRESHOLD_DOC} — finstate_all 대량 sync 지연')
+        # 폴백이 정상 작동 = 진짜 사고 X (data 자체는 보강됨). 모니터링만.
+
     # ── Phase B 추가 (2026-05-16): 직전 분기 누락률 자동 감지 ──
     # 분기 마감 후 5거래일(약 1주) 이후에도 누락률 30%+ → finstate_all sync 문제
     # 5/15 (1Q마감) → 5/22 이후 / 8/15 (2Q마감) → 8/22 이후 등
