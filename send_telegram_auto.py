@@ -1156,14 +1156,15 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         pass
     lines.append('')
     lines.append('━━━━━━━━━━━━━━━')
-    lines.append(f'매수: 3일 연속 ✅ 상위 {_rule_e}종목 (최대 {_rule_s}종목)')
-    lines.append('매도 (셋 중 하나):')
-    lines.append(f'• 3일 가중순위 {_rule_x}위 밖')
-    lines.append('• 매수가 대비 -10% 손절')
-    lines.append('• 최고가 대비 -8% 고점매도')
+    lines.append(f'매수: 3일 연속 상위 {_rule_e}종목 (최대 {_rule_s}종목)')
     lines.append('')
-    lines.append('💵 분할매수 권장 (1차 50% + 다음날 추가)')
-    lines.append('※ 시스템은 신호만, 매매는 본인 판단')
+    lines.append('매도 (아래 셋 중 하나라도 해당 시)')
+    lines.append('• 매도 기준선 이탈 (Top 20 메시지 참고)')
+    lines.append('• 매수가 대비 -10% 시')
+    lines.append('• 최고가 대비 -8% 시')
+    lines.append('')
+    lines.append('분할매수 권장 (1차 50% + 다음날 추가)')
+    lines.append('시스템은 신호만, 매매는 본인 판단')
 
     return '\n'.join(lines)
 
@@ -1178,9 +1179,9 @@ def create_ai_risk_message(credit, kospi_data, kosdaq_data, market_warnings,
     kosdaq_close, kosdaq_chg, kosdaq_color = kosdaq_data
 
     lines = [
-        '━━━━━━━━━━━━━━━━━━━',
-        '  🤖 AI 리스크 필터',
-        '━━━━━━━━━━━━━━━━━━━',
+        '━━━━━━━━━━━━━━━',
+        '🤖 AI 리스크 필터',
+        '━━━━━━━━━━━━━━━',
         '상위 종목의 리스크 요소를 AI가 분석했습니다.',
         '',
         '📊 <b>시장 지수</b>',
@@ -1316,15 +1317,14 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         # 매도 기준선: 3일 가중순위 > EXIT_RANK 첫 종목 직전 (룰은 footer에 명시)
         w_rank = s.get('weighted_rank', 999)
         if not exit_line_shown and w_rank > _cur_exit:
-            lines.append('── 매도 기준선 ──')
+            lines.append('━━━━━ 매도 기준선 ━━━━━')
             exit_line_shown = True
 
         # 궤적: cr-rank 그대로 표시 (없으면 "-")
         lines.append(f'{status} {idx}. {name}({sector}) {r2}→{r1}→{r0}위 · {score_disp}점')
 
-    # ── 이탈 섹션 (사유별 묶기) ──
+    # ── 이탈 섹션 (사유별 묶기, 20위 다음 빈 줄 없이 바로) ──
     if exited:
-        lines.append('')
         lines.append('━━━━━━━━━━━━━━━')
         lines.append('📉 <b>순위 이탈</b>')
         from collections import defaultdict
@@ -1344,8 +1344,7 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         lines.append('━━━━━━━━━━━━━━━')
         lines.append('📊 데이터 축적 중 — 3일 완료 시 상위 종목이 표시됩니다.')
 
-    # ── Watchlist footer: 면책 (간결) ──
-    lines.append('')
+    # ── Watchlist footer: 면책 (간결, 빈 줄 없이 붙임) ──
     lines.append('━━━━━━━━━━━━━━━')
     lines.append('순위 표기: 3일 가중순위 (2일전 → 1일전 → 오늘)')
     lines.append('투자 손실 책임은 투자자 본인에게 있습니다.')

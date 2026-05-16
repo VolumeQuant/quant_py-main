@@ -353,9 +353,9 @@ def run_ai_analysis(portfolio_message, stock_list, base_date=None, market_contex
         # 최종 메시지 구성
         now = datetime.now(KST)
         lines = [
-            '━━━━━━━━━━━━━━━━━━━',
-            '    🤖 AI 리스크 필터',
-            '━━━━━━━━━━━━━━━━━━━',
+            '━━━━━━━━━━━━━━━',
+            '🤖 AI 리스크 필터',
+            '━━━━━━━━━━━━━━━',
             '',
             '후보 종목 중 주의할 점을 AI가 점검했습니다.',
             '',
