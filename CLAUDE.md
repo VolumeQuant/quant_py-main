@@ -55,10 +55,54 @@
 
 ---
 
-# 🇰🇷 KR 전략 — quant_py-main (v80.9, 2026-05-16 저녁)
+# 🇰🇷 KR 전략 — quant_py-main (v80.9 + Phase B, 2026-05-16 밤)
 
 > 경로: `C:\dev\claude code\quant_py-main`
 > 영구 지도: `C:\dev\SYSTEM_MAP.md` (전략 교체 시 맹점 제로 체크리스트)
+
+## Phase B — DART document API 폴백 (2026-05-16 밤, commit 0f5a2c0e3)
+
+### 배경 — 5/15 1Q 분기마감 finstate_all 37.3% 누락 발견
+- 5/15 마감일 폭주 → DART finstate_all '013 데이터없음' 다발 (sync 지연 추정)
+- 표본 300건 측정: 188 정상 / **112 누락 (37.3%) ★**
+- 누락 사례: SK하이닉스/메가스터디/이건산업 등
+- 누락 종목 = V/Q/G/M 점수 계산 누락 → ranking 이탈 (FnGuide 보충 또는 옛 데이터)
+- 동시에 5/4 SG&A 매핑버그 같은 finstate_all 결과 자체 buggy 사례 우회 효과
+
+### 해결 — XBRL document API 폴백
+- `dart_collector._fetch_quarter_via_document(ticker, year, rcode)`: dart.list → dart.document(XBRL) → parse
+- `_parse_document_xml(doc_xml, member)`: ACONTEXT (CFY/PFY × dFQQ/dFQA/eFQA × ConsolidatedMember) 정규식 파싱
+- ADECIMAL: 0=원, -3=천원, -6=백만원
+- fetch_single에서 finstate_all empty 시 자동 폴백 (year >= current-1 한정)
+- fs_div='DOC' 추적 (monitoring)
+- 매일 자동: refresh_dart_cache.py → fetch_single → 자동 폴백 (코드 변경 0)
+- **PIT 원칙 유지**: rcept_dt = rcept_no 앞 8자리 (정확한 공시일) → 과거 ranking 오염 없음
+
+### 검증 (6종목 표본 mismatch 0)
+
+| 종목 | finstate_all | document API | 결과 |
+|---|---|---|---|
+| 동아엘텍 | 16 계정 정상 | 16 계정 | 일치 ✓ |
+| 선익시스템 | 16 계정 정상 | 16 계정 | 일치 ✓ |
+| 제주반도체 | 15 계정 정상 | 15 계정 | 일치 ✓ |
+| SK하이닉스 | **누락** | 16 계정 | 폴백 ★ |
+| 메가스터디 | **누락** | 16 계정 | 폴백 ★ |
+| 이건산업 (5/15) | **누락** | 16 계정 | 폴백 ★ |
+
+- SK 26Q1 매출 52.58조 (전년 17.64조 +198% HBM3E 호황) 정확 추출
+
+### 비용 / 한계
+- 폴백 발동 시: 종목당 +2 API 호출 (list + document)
+- 5/15 폭주 추정: 525종목 × 4분기 × 2호출 = 약 4200 추가 API (일일 한도 59,700 대비 7%)
+- transfer: 평균 1.5~4MB/종목 XML
+- 한계: Q3 누적값(thstrm_add_amount) 폴백 미구현 → Q4 도출 부정확 가능 (드문 case)
+- FnGuide PIT rcept_dt 이식 흐름 (postprocess_fnguide_rcept.py) 유지 — 점진적 의존도 감소
+
+### 운영
+- commit: `0f5a2c0e3`
+- 회사 PC: 5/18 (월) 자동 pull 시 반영 (run_daily.py 시작 시 git pull --rebase)
+- 회귀 위험: 함수 추가 + 1곳 호출 통합. 폴백은 finstate_all 정상 시 발동 안 됨 (영향 0).
+- 5/16 밤 후속: 유니버스 1971종목 26년 fs_dart 일괄 재수집 (폴백 적용 → 5/15 누락 일제 보강)
 
 ## v80.9 변경 — curr 식 복귀 + defense exit 4→8, slots 4→5 (2026-05-16 저녁)
 
