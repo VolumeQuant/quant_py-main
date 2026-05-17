@@ -1842,8 +1842,9 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
                 # 조건: min(last4) / max(last4) > MM_THRESH (직전 4분기 변동성 작음 = 일관 성장)
                 # 브이엠 0.35 ✓, 보성파워텍 0.31 ✓ → 진정 성장 (보호)
                 # 동아엘텍 0.11, 선익시스템 0.07 → 함정 (차단 유지)
-                # 환경변수: SEASONALITY_EXEMPT_MM_THRESH (기본 0=비활성)
-                MM_THRESH = float(os.environ.get('SEASONALITY_EXEMPT_MM_THRESH', '0'))
+                # 환경변수: SEASONALITY_EXEMPT_MM_THRESH (v80.10: 기본 0.2 활성)
+                # 7.4y BT Cal -0.07 (noise 범위) + MDD -0.71%p 개선 + 브이엠/보성파워텍 보호
+                MM_THRESH = float(os.environ.get('SEASONALITY_EXEMPT_MM_THRESH', '0.2'))
                 if MM_THRESH > 0 and len(vals) >= 4:
                     import numpy as _np
                     last4 = vals[-4:]
