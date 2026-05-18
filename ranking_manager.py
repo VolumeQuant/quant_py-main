@@ -311,7 +311,8 @@ def get_stock_status(rankings_t0, rankings_t1=None, rankings_t2=None, top_n=20, 
         if rankings_t1 and rankings_t2:
             rank_t1 = all_t1[ticker].get('composite_rank', all_t1[ticker]['rank']) if ticker in all_t1 else DEFAULT_MISSING_RANK
             rank_t2 = all_t2[ticker].get('composite_rank', all_t2[ticker]['rank']) if ticker in all_t2 else DEFAULT_MISSING_RANK
-            weighted = rank_t0 * 0.5 + rank_t1 * 0.3 + rank_t2 * 0.2
+            # v80.13 (2026-05-18): 가중치 0.5/0.3/0.2 → 0.4/0.35/0.25 (당일 비중 ↓)
+            weighted = rank_t0 * 0.4 + rank_t1 * 0.35 + rank_t2 * 0.25
         elif rankings_t1:
             rank_t1 = all_t1[ticker].get('composite_rank', all_t1[ticker]['rank']) if ticker in all_t1 else DEFAULT_MISSING_RANK
             weighted = rank_t0 * 0.6 + rank_t1 * 0.4
