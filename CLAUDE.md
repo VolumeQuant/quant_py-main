@@ -55,7 +55,77 @@
 
 ---
 
-# 🇰🇷 KR 전략 — quant_py-main (v80.11, 2026-05-18 채택)
+# 🇰🇷 KR 전략 — quant_py-main (v80.12, 2026-05-18 채택)
+
+## v80.12 변경 — QoQ 패널티 + 강한 boost (D6_SG6, 2026-05-18 저녁)
+
+### 핵심 — 사용자 통찰 시스템 반영
+- **사용자 발견**: 보성파워텍처럼 25Q1 base 작아서 26Q1 OP YoY +285%지만 QoQ +11% 미미한 base 효과 종목 시스템이 잘못 강한 신호
+- **해결**: 영업이익 QoQ < +20% 종목 G_score × 0.7
+- **조건**: 강한 boost (KOSPI > MA220 × 1.06)일 때만 적용 (회복기 종목 보호)
+
+### 7년 BT 결과 (2019-01-02 ~ 2026-05-15, 비용 미반영)
+| 지표 | baseline (v80.11) | **v80.12 (D6_SG6)** | Δ |
+|---|---|---|---|
+| Cal | 1.846 | **2.374** | **+29%** ★ |
+| NAV | ×34.28 | ×39.75 | +16% |
+| CAGR | +60.9% | +64.1% | +3.2%p |
+| MDD | 33.0% | **27.0%** | **-6.0%p** ★ |
+| 2020-21 회복기 Cal | 2.33 | **3.53** | **+52%** ★ |
+| 2022-23 약세장 Cal | 3.45 | 3.28 | -0.17 (미미) |
+| 2024-25 강세장 Cal | 2.46 | 2.64 | +0.18 |
+| 2019 Cal | 1.39 | 1.39 | 동등 |
+
+### 변경 항목 (3 파일)
+1. **fast_generate_rankings_v2.py**:
+   - `_compute_ticker_growth_events`에 `rev_qoq`, `op_qoq` 추가
+   - 메인 코드에 QoQ 패널티 (D6 mode) + SG6 조건 (KOSPI 거리 6%+)
+   - SG6: KOSPI vs MA220 asof 매칭 (timestamp 정확 매칭 우회)
+2. **regime_indicator.py**: boost params에 G_QOQ_PENALTY, G_QOQ_PENALTY_THRESHOLD=20, G_QOQ_PENALTY_MULTIPLIER=0.7, G_QOQ_SG6_THRESH=0.06 추가
+3. **run_daily.py**: `_build_mode_env` + `regime_env` 에 G_QOQ_* 환경변수 전달 (boost only)
+
+### Defense 변경 없음
+- v80.11 V35Q15G15M35 그대로
+- state/defense/ 재생성 불필요
+
+### 인접 안정성
+| MA 거리 임계 | Cal |
+|---|---|
+| 4% | 2.267 |
+| 5% | 2.327 |
+| **6%** ★ | **2.374** |
+| 7% | 1.988 |
+
+CV **0.067 ✅ PASS** (기준 < 0.10)
+
+### 5/18 production 적용
+- state/ 재생성 (1873일, boost만, defense는 baseline 유지)
+- 백업: `state_v80_11_backup_pre_v80_12_20260518/`
+- 5/18 매수 후보: 에스에이엠티 (wr 1.6) / SK하이닉스 (2.0) / 제주반도체 (2.6)
+- 보성파워텍 차단 확인 (wr 7.9, cr 5→8→9) ★
+
+### 환경변수
+```
+G_QOQ_PENALTY=D6
+G_QOQ_PENALTY_THRESHOLD=20      # +20% 미만이면 패널티
+G_QOQ_PENALTY_MULTIPLIER=0.7    # G_score × 0.7
+G_QOQ_SG6_THRESH=0.06           # KOSPI > MA220 × 1.06일 때만 적용
+```
+
+### 검증 단계 (사용자 인사이트 → 표본 → 정통 BT)
+1. 표본 BT (sleeve, 7년 어닝서프): D6 Cal 0.904 (Opt2b 0.888 능가)
+2. 정통 BT (3년 2023~2025): A Cal 1.259 (baseline 0.968 대비 +30%)
+3. 사용자 인사이트: 2022-23 약세장에서 A 약함 → SG6 (강한 boost) 게이팅
+4. 강한 boost grid: SG1~SG7 비교 → SG4/SG6 (MA 거리 5~6%) 최강
+5. 인접 안정성: CV 0.067 PASS
+6. D6 + SG6 조합: Cal 2.374 (최강)
+
+### 롤백 트리거
+- 5거래일 KOSPI 대비 알파 -3%p 이하 / MDD -10% 초과
+- 즉시 롤백: `regime_indicator.py` boost params에서 G_QOQ_* 키 4개 제거
+- 백업: `state_v80_11_backup_pre_v80_12_20260518/` 7년 ranking
+
+---
 
 ## v80.11 변경 — regime MA250 → MA220 ×8d (2026-05-18)
 

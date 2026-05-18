@@ -222,6 +222,12 @@ def _build_mode_env(params):
         env['G_W1'] = str(params['G_W1'])
         env['G_W2'] = str(params['G_W2'])
         env['G_W3'] = str(params['G_W3'])
+    # v80.12 (2026-05-18): QoQ 패널티 + SG6 (boost only)
+    if params.get('G_QOQ_PENALTY'):
+        env['G_QOQ_PENALTY'] = str(params['G_QOQ_PENALTY'])
+        env['G_QOQ_PENALTY_THRESHOLD'] = str(params['G_QOQ_PENALTY_THRESHOLD'])
+        env['G_QOQ_PENALTY_MULTIPLIER'] = str(params['G_QOQ_PENALTY_MULTIPLIER'])
+        env['G_QOQ_SG6_THRESH'] = str(params['G_QOQ_SG6_THRESH'])
     return env
 
 
@@ -649,6 +655,12 @@ def main():
             'REGIME_SWITCHED': '1' if regime.get('switched') else '0',
             'REGIME_PREV_MODE': regime.get('prev_mode', ''),
         }
+        # v80.12: QoQ 패널티 (boost only)
+        if params.get('G_QOQ_PENALTY'):
+            regime_env['G_QOQ_PENALTY'] = str(params['G_QOQ_PENALTY'])
+            regime_env['G_QOQ_PENALTY_THRESHOLD'] = str(params['G_QOQ_PENALTY_THRESHOLD'])
+            regime_env['G_QOQ_PENALTY_MULTIPLIER'] = str(params['G_QOQ_PENALTY_MULTIPLIER'])
+            regime_env['G_QOQ_SG6_THRESH'] = str(params['G_QOQ_SG6_THRESH'])
 
         use_new = os.environ.get('USE_NEW_PIPELINE', '1') == '1'
 

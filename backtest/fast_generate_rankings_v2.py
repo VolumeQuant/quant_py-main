@@ -441,11 +441,28 @@ def _compute_ticker_growth_events(ticker, fs_df, rev_account='매출액'):
                 if p4 > 0:
                     cfo_yoy = (r4 / p4 - 1) * 100
 
-            if any(v is not None for v in [rev_yoy, oca, gp_yoy, op_margin_chg, cfo_yoy]):
+            # QoQ — 단일 분기 직전 대비 (v80.12 NEW)
+            rev_qoq = None
+            op_qoq = None
+            if len(rev_avail) >= 2 and (qd, rev_account) in q_vals:
+                cur_rev = q_vals[(qd, rev_account)]
+                prev_q_d = rev_avail[1] if rev_avail[0] == qd else rev_avail[0]
+                prev_rev = q_vals.get((prev_q_d, rev_account))
+                if prev_rev is not None and prev_rev > 0:
+                    rev_qoq = (cur_rev - prev_rev) / prev_rev * 100
+            if len(op_avail) >= 2 and (qd, '영업이익') in q_vals:
+                cur_op = q_vals[(qd, '영업이익')]
+                prev_op_d = op_avail[1] if op_avail[0] == qd else op_avail[0]
+                prev_op_val = q_vals.get((prev_op_d, '영업이익'))
+                if prev_op_val is not None and abs(prev_op_val) > 1:
+                    op_qoq = (cur_op - prev_op_val) / abs(prev_op_val) * 100
+
+            if any(v is not None for v in [rev_yoy, oca, gp_yoy, op_margin_chg, cfo_yoy, rev_qoq, op_qoq]):
                 events.append((eff_date, {
                     'rev_yoy': rev_yoy, 'oca': oca,
                     'gp_yoy': gp_yoy, 'op_margin_chg': op_margin_chg,
                     'cfo_yoy': cfo_yoy,
+                    'rev_qoq': rev_qoq, 'op_qoq': op_qoq,
                 }))
 
     elif y_mask.any():
@@ -1870,6 +1887,92 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
             # 순위 재부여
             scored['멀티팩터_순위'] = scored['멀티팩터_점수'].rank(ascending=False, method='first', na_option='bottom')
             print(f'    계절성 패널티: {seas_applied}종목 (ratio>{SEAS_RATIO_THRESH}, ×{SEAS_PENALTY})')
+
+    # ============================================================
+    # v80.12 (2026-05-18): QoQ 패널티 — base 효과 종목 차단
+    # 사용자 통찰: 보성파워텍처럼 25Q1 base 작아서 26Q1 OP YoY +285%이지만 QoQ +11% 미미
+    # 옵션: A (qoq_op<-10%→0.5x), B (qoq_op<-5%→0.5x), C (AND-Gate)
+    # 환경변수: G_QOQ_PENALTY=A/B/C (default off)
+    # ============================================================
+    qoq_mode = os.environ.get('G_QOQ_PENALTY', '').upper()
+    if qoq_mode in ('A', 'B', 'C', 'D6'):
+        QOQ_PENALTY = float(os.environ.get('G_QOQ_PENALTY_MULTIPLIER', '0.5'))
+        QOQ_THRESHOLD = float(os.environ.get('G_QOQ_PENALTY_THRESHOLD', '-10'))
+        # v80.12 SG6: 강한 boost (KOSPI > MA220 × (1+SG6)) 일 때만 패널티 적용
+        # 약한 boost (회복기) 또는 defense에선 baseline 유지 → 회복기 종목 보호
+        # 환경변수: G_QOQ_SG6_THRESH (기본 0.06 = 6% 거리)
+        sg6_active = False
+        sg6_thresh = float(os.environ.get('G_QOQ_SG6_THRESH', '0.06'))
+        if sg6_thresh > 0:
+            try:
+                kdf = pd.read_parquet(CACHE_DIR / 'kospi_yf.parquet')
+                kp_s = kdf['close'] if 'close' in kdf.columns else kdf.iloc[:, 0]
+                ma220 = kp_s.rolling(220).mean()
+                base_ts_q = pd.Timestamp(date_str)
+                # Series.get(key)는 정확 매칭만 — 거래일 timestamp 매칭 위해 asof/loc 사용
+                # date_str (YYYYMMDD) → kp_s index 중 최근 거래일
+                avail_idx = kp_s.index[kp_s.index <= base_ts_q]
+                if len(avail_idx) == 0:
+                    k_now = None; ma_now = None
+                else:
+                    last_d = avail_idx[-1]
+                    k_now = kp_s.loc[last_d]
+                    ma_now = ma220.loc[last_d]
+                if k_now is not None and pd.notna(k_now) and pd.notna(ma_now) and ma_now > 0:
+                    sg6_active = k_now > ma_now * (1 + sg6_thresh)
+                else:
+                    sg6_active = False
+            except Exception as _e:
+                print(f'    SG6 체크 에러: {_e}')
+                sg6_active = False
+        else:
+            sg6_active = True  # SG6 비활성화 시 모든 boost 적용
+        if not sg6_active:
+            qoq_mode = ''  # 패널티 안 적용
+        else:
+            print(f'    SG6 활성 (k={k_now:.0f}, ma={ma_now:.0f}, 거리 {(k_now/ma_now-1)*100:+.1f}%)')
+    if qoq_mode in ('A', 'B', 'C', 'D6'):
+        # growth_lookup에서 PIT QoQ 추출 (이미 _compute_ticker_growth_events에서 계산)
+        gl = preloaded.get('growth_lookup', {})
+        cur_gl = gl.get(date_str, {})
+        qoq_applied = 0
+        V_W = float(os.environ.get('FACTOR_V_W', '0.20'))
+        Q_W = float(os.environ.get('FACTOR_Q_W', '0.20'))
+        G_W = float(os.environ.get('FACTOR_G_W', '0.30'))
+        M_W = float(os.environ.get('FACTOR_M_W', '0.30'))
+        for idx, row in scored.iterrows():
+            tk = row.get('종목코드')
+            if not tk: continue
+            vals = cur_gl.get(tk) if cur_gl else None
+            if not vals: continue
+            rev_qoq = vals.get('rev_qoq')
+            op_qoq = vals.get('op_qoq')
+            penalize = False
+            if qoq_mode == 'A' and op_qoq is not None and op_qoq < -10:
+                penalize = True
+            elif qoq_mode == 'B' and op_qoq is not None and op_qoq < -5:
+                penalize = True
+            elif qoq_mode == 'C':
+                if op_qoq is not None and rev_qoq is not None:
+                    if op_qoq <= 0 or rev_qoq <= 0:
+                        penalize = True
+            elif qoq_mode == 'D6' and op_qoq is not None and op_qoq < QOQ_THRESHOLD:
+                # D6: G_QOQ_PENALTY_THRESHOLD (default +20%) 미만이면 패널티
+                # 양수 미미 종목까지 잡음 (보성파워텍 같은 base 효과 차단)
+                penalize = True
+            if penalize:
+                new_g = (row.get('성장_점수', 0) or 0) * QOQ_PENALTY
+                scored.at[idx, '성장_점수'] = new_g
+                scored.at[idx, '멀티팩터_점수'] = (
+                    (row.get('밸류_점수', 0) or 0) * V_W +
+                    (row.get('퀄리티_점수', 0) or 0) * Q_W +
+                    new_g * G_W +
+                    (row.get('모멘텀_점수', 0) or 0) * M_W
+                )
+                qoq_applied += 1
+        if qoq_applied > 0:
+            scored['멀티팩터_순위'] = scored['멀티팩터_점수'].rank(ascending=False, method='first', na_option='bottom')
+            print(f'    QoQ 패널티({qoq_mode}): {qoq_applied}종목 (×{QOQ_PENALTY})')
 
     # (e) 2차 안전망: G 서브팩터 5개 이상 동일값 → capped 신호 → 제외
     #     (d) 시점별 필터를 통과했어도 rcept_dt 누락 등 엣지 케이스 잡기

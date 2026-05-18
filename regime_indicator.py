@@ -150,7 +150,14 @@ def get_regime_params(mode):
             'TRAILING_STOP': -0.08,
             'TS_COOLDOWN': 1,                                  # v80.8: 2→1
             'USE_REV_ACCEL': False,
-            'label': '공격 모드 (Growth 55%, 3팩터)',
+            # v80.12 (2026-05-18): QoQ 패널티 + 강한 boost (SG6)
+            # 강한 boost (KOSPI > MA220 × 1.06) 일 때 영업이익 QoQ < +20% 종목 G × 0.7
+            # 7년 BT: Cal 1.846 → 2.374 (+29%), MDD 33%→27%, 2020-21 회복기 +52%
+            'G_QOQ_PENALTY': 'D6',
+            'G_QOQ_PENALTY_THRESHOLD': 20,
+            'G_QOQ_PENALTY_MULTIPLIER': 0.7,
+            'G_QOQ_SG6_THRESH': 0.06,
+            'label': '공격 모드 (Growth 55%, 3팩터, QoQ-D6-SG6)',
             'icon': '📈',
         }
     else:  # defense
