@@ -101,6 +101,10 @@ def get_recently_disclosed(dc, days_back=3, universe_set=None):
 
     당일 발표된 실적을 즉시 캐치하기 위함. days_back은 주말/공휴일 안전마진.
     실패 시 None 반환 → 호출자가 폴백 로직 사용.
+
+    Returns:
+        list[(ticker, rcept_dt)] — 종목과 최신 공시일(YYYYMMDD) 튜플
+        정정공시 감지를 위해 rcept_dt 함께 반환 (2026-05-18 보강)
     """
     end = datetime.now().date()
     start = end - timedelta(days=days_back)
@@ -119,10 +123,11 @@ def get_recently_disclosed(dc, days_back=3, universe_set=None):
     pat = '사업보고서|분기보고서|반기보고서'
     df = df[df['report_nm'].str.contains(pat, na=False)]
     df = df[df['stock_code'].notna() & (df['stock_code'] != '')]
-    tickers = df['stock_code'].unique().tolist()
+    # 종목별 최신 rcept_dt (정정공시 발생 시 가장 늦은 날짜)
+    latest = df.groupby('stock_code')['rcept_dt'].max().to_dict()
     if universe_set is not None:
-        tickers = [t for t in tickers if t in universe_set]
-    return tickers
+        latest = {t: d for t, d in latest.items() if t in universe_set}
+    return list(latest.items())
 
 
 def needs_refresh(ticker, target_date):
@@ -185,10 +190,27 @@ def main():
 
     if recently_disclosed is not None:
         # 2026-05-18 사용자 지적: pull 받은 후 이미 target_date 데이터 있는 종목은 재fetch 불필요
-        # → list API 결과에서 needs_refresh 통과 종목만 (이미 캐시에 26Q1 있으면 skip)
+        # 2026-05-18 보강: 정정공시 누락 방지 — rcept_dt > cache mtime인 종목은 강제 fetch
+        # → list API 결과를 3가지로 분류: skip(이미 정정 반영) / fetch_amended(정정 미반영) / fetch_new(신규)
         recently_total = len(recently_disclosed)
-        recently_disclosed = [t for t in recently_disclosed if needs_refresh(t, target_date)]
-        recently_skip = recently_total - len(recently_disclosed)
+        recently_fetch = []
+        recently_skip = 0
+        for ticker, rcept_dt_str in recently_disclosed:
+            fp = CACHE_DIR / f'fs_dart_{ticker}.parquet'
+            if not fp.exists():
+                recently_fetch.append(ticker)  # no_cache 경로
+                continue
+            # mtime > rcept_dt = 이미 정정 반영, skip 안전
+            mtime_str = datetime.fromtimestamp(fp.stat().st_mtime).strftime('%Y%m%d')
+            if mtime_str < rcept_dt_str:
+                recently_fetch.append(ticker)  # 정정공시 미반영 → fetch
+                continue
+            # mtime >= rcept_dt — needs_refresh로 target_date 데이터 유무 확인
+            if needs_refresh(ticker, target_date):
+                recently_fetch.append(ticker)
+            else:
+                recently_skip += 1
+        recently_disclosed = recently_fetch
         # 신규 공시 + 캐시 없는 종목(신규 상장 등) 합집합
         no_cache = [t for t in tickers
                     if not (CACHE_DIR / f'fs_dart_{t}.parquet').exists()]

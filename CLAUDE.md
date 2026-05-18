@@ -78,6 +78,24 @@
 - MA250 × 8d (baseline) = 9위
 - 인접 안정성 CV 0.092 ✅ PASS
 
+### MA220 인접 plateau 검증 (5/18 추가, 25 조합)
+- MA[210,215,220,225,230] × confirm[6,7,8,9,10] = 25 조합
+- confirm=8 행 plateau: 210=2.716 / 215=2.800 / 220=2.798 / 225=2.702 / 230=2.702
+- **단일 peak 아닌 plateau** — MA215×8d (2.800) ≈ MA220×8d (2.798) 거의 동일
+- 인접 CV **0.059** (PASS 기준 0.30 대비 5배 안전)
+
+### 5/18 추가 검증 (사용자 우려 반영)
+1. **KOSPI MA220 vs MA250 신호 차이**: 최근 30일 0건 (강세장에서 MA220/MA250 모두 한참 위)
+   - state.json streak=4 (defense) → 5/18 첫 실행 시 boost로 재계산되어 reset 후 진행. mode='boost' 유지, 사고 없음
+2. **16:00 자동 실행 DART 캐치율**: 5/15 1Q 마감일 1982건 분기보고서, 약 20%가 16시 이후 제출 (serial 2500+)
+   - 평시는 영향 미미 / 분기마감일(3/31, 5/15, 8/14, 11/14)만 위험 / 다음날 자동 갱신으로 회복
+
+### refresh_dart_cache.py 정정공시 보강 (2026-05-18)
+- get_recently_disclosed: `[ticker, ...]` → `[(ticker, rcept_dt), ...]` 튜플 반환
+- 분류 로직 3가지: skip(이미 정정 반영) / fetch_amended(mtime < rcept_dt) / fetch_new(target_date 데이터 없음)
+- **정정공시 누락 위험 차단** (이전 needs_refresh는 target_date 데이터 있으면 skip → 정정공시 못 받음)
+- 5/18 실전 동작: 992종목 중 skip 991 + fetch 1 + 캐시없음 1 = 부담 0
+
 ### 5/18 종합 검증
 **검증 + 채택 안 됨**:
 - defense V30Q05G25M40 + MOM 6m-1m: Cal +0.334 but **2022-23 Cal 0.97 사고 패턴** → 반려
