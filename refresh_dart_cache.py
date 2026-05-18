@@ -184,11 +184,16 @@ def main():
     recently_disclosed = get_recently_disclosed(dc, days_back=3, universe_set=universe_set)
 
     if recently_disclosed is not None:
+        # 2026-05-18 사용자 지적: pull 받은 후 이미 target_date 데이터 있는 종목은 재fetch 불필요
+        # → list API 결과에서 needs_refresh 통과 종목만 (이미 캐시에 26Q1 있으면 skip)
+        recently_total = len(recently_disclosed)
+        recently_disclosed = [t for t in recently_disclosed if needs_refresh(t, target_date)]
+        recently_skip = recently_total - len(recently_disclosed)
         # 신규 공시 + 캐시 없는 종목(신규 상장 등) 합집합
         no_cache = [t for t in tickers
                     if not (CACHE_DIR / f'fs_dart_{t}.parquet').exists()]
         to_refresh = list(set(recently_disclosed) | set(no_cache))
-        print(f'최근 3일 정기공시: {len(recently_disclosed)}종목 · '
+        print(f'최근 3일 정기공시: {recently_total}종목 (캐시 hit skip {recently_skip}, 실제 fetch {len(recently_disclosed)}) · '
               f'캐시 없음: {len(no_cache)}종목 · 합집합: {len(to_refresh)}종목')
     else:
         # list API 실패 → 기존 needs_refresh 폴백 (시즌 폭주 가능성 있음)

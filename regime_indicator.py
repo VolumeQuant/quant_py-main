@@ -53,7 +53,7 @@ def _save_state(state):
         json.dump(state, f, ensure_ascii=False, indent=2)
 
 
-MA_PERIOD = 250                 # v80.6: MA250 (v80: MA170)
+MA_PERIOD = 220                 # v80.11 (2026-05-18): MA250→220 (Cal +0.206, WF CV -22%, 약세장 min 1.94)
 
 def check_regime_signal(kospi_close=None, kospi_ma=None, kospi_ma200=None, **kwargs):
     """KP_MA250 (v80.6): KOSPI > 250일 이동평균 = boost
