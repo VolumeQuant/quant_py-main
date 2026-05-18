@@ -3,7 +3,7 @@
 run_daily.py의 _postprocess_ranking은 "당일 파일"만 처리. 과거 파일엔 wr 없음.
 v79 재생성 기회에 과거 파일 전부에 wr 붙임 (시스템 수익률 정확도 향상).
 
-wr 공식: T0 × 0.5 + T1 × 0.3 + T2 × 0.2  (PENALTY = 50, run_daily와 동일)
+wr 공식: T0 × 0.4 + T1 × 0.35 + T2 × 0.25 (v80.13, PENALTY=50, run_daily와 동일)
 
 처리 순서: 날짜 오름차순 (T-1/T-2 참조 위해)
 """
@@ -69,7 +69,7 @@ def postprocess_dir(state_dir):
                 r0 = item.get('composite_rank', item.get('rank', PENALTY))
                 r1 = t1_map.get(item['ticker'], PENALTY)
                 r2 = t2_map.get(item['ticker'], PENALTY)
-                item['weighted_rank'] = round(r0 * 0.5 + r1 * 0.3 + r2 * 0.2, 1)
+                item['weighted_rank'] = round(r0 * 0.4 + r1 * 0.35 + r2 * 0.25, 1)  # v80.13
 
             # rank 재정렬 (wr 기준)
             rankings.sort(key=lambda x: (x['weighted_rank'], -x.get('score', 0)))

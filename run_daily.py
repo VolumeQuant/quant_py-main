@@ -272,7 +272,8 @@ def _postprocess_ranking(base_date, state_dir, mode, logfile):
         r0 = item.get('composite_rank', item['rank'])
         r1 = t1_map.get(item['ticker'], PENALTY)
         r2 = t2_map.get(item['ticker'], PENALTY)
-        item['weighted_rank'] = round(r0 * 0.5 + r1 * 0.3 + r2 * 0.2, 1)
+        # v80.13 (2026-05-18): wr 가중치 50:30:20 → 40:35:25 (BT Cal 2.22→2.60, WF min 0.14→0.18)
+        item['weighted_rank'] = round(r0 * 0.4 + r1 * 0.35 + r2 * 0.25, 1)
 
     rankings.sort(key=lambda x: x['weighted_rank'])
     for i, item in enumerate(rankings):

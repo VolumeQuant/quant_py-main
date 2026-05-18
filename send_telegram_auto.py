@@ -299,7 +299,7 @@ def calc_system_returns(regime_info=None):
             cr0 = all_t0[tk].get('composite_rank', all_t0[tk].get('rank', _PEN))
             cr1 = all_t1[tk].get('composite_rank', all_t1[tk].get('rank', _PEN)) if tk in all_t1 else _PEN
             cr2 = all_t2[tk].get('composite_rank', all_t2[tk].get('rank', _PEN)) if tk in all_t2 else _PEN
-            return cr0 * 0.5 + cr1 * 0.3 + cr2 * 0.2
+            return cr0 * 0.4 + cr1 * 0.35 + cr2 * 0.25
 
         # 이탈: 가중순위 > exit_rank (국면별)
         for tk in list(portfolio.keys()):
@@ -312,7 +312,7 @@ def calc_system_returns(regime_info=None):
             cr0 = top20_t0[tk].get('composite_rank', top20_t0[tk]['rank'])
             cr1 = top20_t1[tk].get('composite_rank', top20_t1[tk]['rank'])
             cr2 = top20_t2[tk].get('composite_rank', top20_t2[tk]['rank'])
-            wr = cr0 * 0.5 + cr1 * 0.3 + cr2 * 0.2
+            wr = cr0 * 0.4 + cr1 * 0.35 + cr2 * 0.25
             verified.append({'ticker': tk, 'weighted_rank': wr,
                              'composite_rank': cr0,
                              'price': top20_t0[tk].get('price', 0)})

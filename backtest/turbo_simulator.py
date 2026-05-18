@@ -321,7 +321,7 @@ class TurboSimulator:
             s1_val = float(scores_1[tk_to_idx_1[tk]]) if has_t1 and tk in tk_to_idx_1 else 0.0
             s2_val = float(scores_2[tk_to_idx_2[tk]]) if has_t2 and tk in tk_to_idx_2 else 0.0
             if has_both:
-                ws = s0 * 0.5 + s1_val * 0.3 + s2_val * 0.2
+                ws = s0 * 0.4 + s1_val * 0.35 + s2_val * 0.25  # v80.13: 50:30:20 → 40:35:25
             elif has_t1:
                 ws = s0 * 0.6 + s1_val * 0.4
             else:
@@ -350,7 +350,7 @@ class TurboSimulator:
             else:
                 r2 = _PEN
             if has_both:
-                wr_legacy = r0 * 0.5 + r1 * 0.3 + r2 * 0.2
+                wr_legacy = r0 * 0.4 + r1 * 0.35 + r2 * 0.25  # v80.13: 50:30:20 → 40:35:25
             elif has_t1:
                 wr_legacy = r0 * 0.6 + r1 * 0.4
             else:

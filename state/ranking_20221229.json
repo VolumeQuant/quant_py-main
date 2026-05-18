@@ -23,7 +23,11 @@
       "mom_6m1m_s": 0.3823,
       "mom_12m_s": 0.1991,
       "mom_12m1m_s": 0.3213,
-      "price": 64100
+      "price": 64100,
+      "weighted_rank": 1.0,
+      "per": 8.95,
+      "pbr": 1.26,
+      "roe": 14.03
     },
     {
       "rank": 2,
@@ -46,7 +50,9 @@
       "mom_6m1m_s": -0.0621,
       "mom_12m_s": -0.0055,
       "mom_12m1m_s": -0.1566,
-      "price": 37000
+      "price": 37000,
+      "weighted_rank": 2.0,
+      "pbr": 2.64
     },
     {
       "rank": 3,
@@ -69,7 +75,11 @@
       "mom_6m1m_s": 2.4103,
       "mom_12m_s": 2.9509,
       "mom_12m1m_s": 2.9,
-      "price": 391000
+      "price": 391000,
+      "weighted_rank": 4.0,
+      "per": 4.05,
+      "pbr": 0.27,
+      "roe": 6.63
     },
     {
       "rank": 4,
@@ -92,7 +102,11 @@
       "mom_6m1m_s": 2.3405,
       "mom_12m_s": 2.1274,
       "mom_12m1m_s": 2.0871,
-      "price": 29800
+      "price": 29800,
+      "weighted_rank": 5.2,
+      "per": 4.78,
+      "pbr": 0.26,
+      "roe": 5.49
     },
     {
       "rank": 5,
@@ -115,30 +129,38 @@
       "mom_6m1m_s": 1.6679,
       "mom_12m_s": 1.8289,
       "mom_12m1m_s": 1.7923,
-      "price": 11250
+      "price": 11250,
+      "weighted_rank": 6.2,
+      "per": 18.19,
+      "pbr": 4.46,
+      "roe": 24.53
     },
     {
       "rank": 6,
-      "composite_rank": 6,
-      "ticker": "173130",
-      "name": "오파스넷",
-      "score": 0.9491,
-      "sector": "IT서비스",
-      "value_s": -0.1319,
-      "quality_s": -0.4873,
-      "growth_s": 0.8347,
-      "momentum_s": 1.6994,
-      "rev_z": 0.7443,
-      "oca_z": 0.7999,
-      "rev_accel_z": 1.067,
-      "gp_growth_z": 0.6341,
-      "op_margin_z": 0.2758,
-      "cfo_growth_z": 0.7443,
-      "mom_6m_s": 0.9881,
-      "mom_6m1m_s": 1.2657,
-      "mom_12m_s": 1.6994,
-      "mom_12m1m_s": 1.6645,
-      "price": 8510
+      "composite_rank": 8,
+      "ticker": "085670",
+      "name": "뉴프렉스",
+      "score": 0.906,
+      "sector": "전기전자",
+      "value_s": -0.2599,
+      "quality_s": 0.3372,
+      "growth_s": 1.6483,
+      "momentum_s": 0.1282,
+      "rev_z": 1.2854,
+      "oca_z": 1.467,
+      "rev_accel_z": 1.0998,
+      "gp_growth_z": 1.8355,
+      "op_margin_z": 1.2112,
+      "cfo_growth_z": 1.2854,
+      "mom_6m_s": 0.4406,
+      "mom_6m1m_s": 0.4957,
+      "mom_12m_s": 0.1282,
+      "mom_12m1m_s": 0.1134,
+      "price": 7430,
+      "weighted_rank": 8.2,
+      "per": 15.36,
+      "pbr": 1.25,
+      "roe": 8.12
     },
     {
       "rank": 7,
@@ -161,56 +183,14 @@
       "mom_6m1m_s": 1.2278,
       "mom_12m_s": 0.7314,
       "mom_12m1m_s": 0.7869,
-      "price": 8090
+      "price": 8090,
+      "weighted_rank": 9.4,
+      "per": 5.81,
+      "pbr": 0.52,
+      "roe": 8.92
     },
     {
       "rank": 8,
-      "composite_rank": 8,
-      "ticker": "085670",
-      "name": "뉴프렉스",
-      "score": 0.906,
-      "sector": "전기전자",
-      "value_s": -0.2599,
-      "quality_s": 0.3372,
-      "growth_s": 1.6483,
-      "momentum_s": 0.1282,
-      "rev_z": 1.2854,
-      "oca_z": 1.467,
-      "rev_accel_z": 1.0998,
-      "gp_growth_z": 1.8355,
-      "op_margin_z": 1.2112,
-      "cfo_growth_z": 1.2854,
-      "mom_6m_s": 0.4406,
-      "mom_6m1m_s": 0.4957,
-      "mom_12m_s": 0.1282,
-      "mom_12m1m_s": 0.1134,
-      "price": 7430
-    },
-    {
-      "rank": 9,
-      "composite_rank": 9,
-      "ticker": "032190",
-      "name": "다우데이타",
-      "score": 0.888,
-      "sector": "유통",
-      "value_s": 1.7166,
-      "quality_s": -0.4863,
-      "growth_s": 0.0983,
-      "momentum_s": 1.9215,
-      "rev_z": 1.4599,
-      "oca_z": -0.6471,
-      "rev_accel_z": 1.3286,
-      "gp_growth_z": -1.178,
-      "op_margin_z": -1.772,
-      "cfo_growth_z": 0.0125,
-      "mom_6m_s": 2.3213,
-      "mom_6m1m_s": 2.0608,
-      "mom_12m_s": 1.9215,
-      "mom_12m1m_s": 1.7506,
-      "price": 30950
-    },
-    {
-      "rank": 10,
       "composite_rank": 10,
       "ticker": "310200",
       "name": "애니플러스",
@@ -230,33 +210,14 @@
       "mom_6m1m_s": 0.4345,
       "mom_12m_s": -0.0764,
       "mom_12m1m_s": -0.0886,
-      "price": 4740
+      "price": 4740,
+      "weighted_rank": 10.5,
+      "per": 9.86,
+      "pbr": 1.07,
+      "roe": 10.82
     },
     {
-      "rank": 11,
-      "composite_rank": 11,
-      "ticker": "079810",
-      "name": "디이엔티",
-      "score": 0.8846,
-      "sector": "기계",
-      "value_s": -1.4874,
-      "quality_s": -0.4098,
-      "growth_s": 1.1679,
-      "momentum_s": 1.5511,
-      "rev_z": 0.6155,
-      "oca_z": 0.9475,
-      "rev_accel_z": 1.829,
-      "gp_growth_z": 2.0781,
-      "op_margin_z": 1.4122,
-      "cfo_growth_z": 0.6155,
-      "mom_6m_s": 0.6833,
-      "mom_6m1m_s": 0.7458,
-      "mom_12m_s": 1.5511,
-      "mom_12m1m_s": 1.5181,
-      "price": 9590
-    },
-    {
-      "rank": 12,
+      "rank": 9,
       "composite_rank": 12,
       "ticker": "028670",
       "name": "팬오션",
@@ -276,10 +237,41 @@
       "mom_6m1m_s": -0.9616,
       "mom_12m_s": -0.3665,
       "mom_12m1m_s": -0.4131,
-      "price": 5730
+      "price": 5730,
+      "weighted_rank": 12.8,
+      "per": 10.55,
+      "pbr": 0.56,
+      "roe": 5.27
     },
     {
-      "rank": 13,
+      "rank": 10,
+      "composite_rank": 9,
+      "ticker": "032190",
+      "name": "다우데이타",
+      "score": 0.888,
+      "sector": "유통",
+      "value_s": 1.7166,
+      "quality_s": -0.4863,
+      "growth_s": 0.0983,
+      "momentum_s": 1.9215,
+      "rev_z": 1.4599,
+      "oca_z": -0.6471,
+      "rev_accel_z": 1.3286,
+      "gp_growth_z": -1.178,
+      "op_margin_z": -1.772,
+      "cfo_growth_z": 0.0125,
+      "mom_6m_s": 2.3213,
+      "mom_6m1m_s": 2.0608,
+      "mom_12m_s": 1.9215,
+      "mom_12m1m_s": 1.7506,
+      "price": 30950,
+      "weighted_rank": 13.5,
+      "per": 3.98,
+      "pbr": 0.54,
+      "roe": 13.59
+    },
+    {
+      "rank": 11,
       "composite_rank": 13,
       "ticker": "003220",
       "name": "대원제약",
@@ -299,33 +291,12 @@
       "mom_6m1m_s": 1.3213,
       "mom_12m_s": 0.9504,
       "mom_12m1m_s": 1.4155,
-      "price": 18750
+      "price": 18750,
+      "weighted_rank": 14.2,
+      "pbr": 0.77
     },
     {
-      "rank": 14,
-      "composite_rank": 14,
-      "ticker": "018470",
-      "name": "조일알미늄",
-      "score": 0.813,
-      "sector": "금속",
-      "value_s": 0.3201,
-      "quality_s": -0.8971,
-      "growth_s": 1.2068,
-      "momentum_s": 0.3376,
-      "rev_z": 0.8868,
-      "oca_z": 1.0015,
-      "rev_accel_z": -1.1339,
-      "gp_growth_z": 1.6004,
-      "op_margin_z": 0.7443,
-      "cfo_growth_z": 0.8868,
-      "mom_6m_s": 0.4236,
-      "mom_6m1m_s": 0.2593,
-      "mom_12m_s": 0.3376,
-      "mom_12m1m_s": 0.2221,
-      "price": 2355
-    },
-    {
-      "rank": 15,
+      "rank": 12,
       "composite_rank": 15,
       "ticker": "267290",
       "name": "경동도시가스",
@@ -345,10 +316,41 @@
       "mom_6m1m_s": 0.5491,
       "mom_12m_s": 0.3685,
       "mom_12m1m_s": 0.4491,
-      "price": 25300
+      "price": 25300,
+      "weighted_rank": 16.0,
+      "per": 3.93,
+      "pbr": 0.27,
+      "roe": 6.91
     },
     {
-      "rank": 16,
+      "rank": 13,
+      "composite_rank": 14,
+      "ticker": "018470",
+      "name": "조일알미늄",
+      "score": 0.813,
+      "sector": "금속",
+      "value_s": 0.3201,
+      "quality_s": -0.8971,
+      "growth_s": 1.2068,
+      "momentum_s": 0.3376,
+      "rev_z": 0.8868,
+      "oca_z": 1.0015,
+      "rev_accel_z": -1.1339,
+      "gp_growth_z": 1.6004,
+      "op_margin_z": 0.7443,
+      "cfo_growth_z": 0.8868,
+      "mom_6m_s": 0.4236,
+      "mom_6m1m_s": 0.2593,
+      "mom_12m_s": 0.3376,
+      "mom_12m1m_s": 0.2221,
+      "price": 2355,
+      "weighted_rank": 16.2,
+      "per": 22.87,
+      "pbr": 0.87,
+      "roe": 3.81
+    },
+    {
+      "rank": 14,
       "composite_rank": 16,
       "ticker": "048260",
       "name": "nan",
@@ -368,10 +370,38 @@
       "mom_6m1m_s": -0.0533,
       "mom_12m_s": -0.0569,
       "mom_12m1m_s": -0.1967,
-      "price": 138100
+      "price": 138100,
+      "weighted_rank": 16.2
     },
     {
-      "rank": 17,
+      "rank": 15,
+      "composite_rank": 11,
+      "ticker": "079810",
+      "name": "디이엔티",
+      "score": 0.8846,
+      "sector": "기계",
+      "value_s": -1.4874,
+      "quality_s": -0.4098,
+      "growth_s": 1.1679,
+      "momentum_s": 1.5511,
+      "rev_z": 0.6155,
+      "oca_z": 0.9475,
+      "rev_accel_z": 1.829,
+      "gp_growth_z": 2.0781,
+      "op_margin_z": 1.4122,
+      "cfo_growth_z": 0.6155,
+      "mom_6m_s": 0.6833,
+      "mom_6m1m_s": 0.7458,
+      "mom_12m_s": 1.5511,
+      "mom_12m1m_s": 1.5181,
+      "price": 9590,
+      "weighted_rank": 24.6,
+      "per": 1292.5,
+      "pbr": 0.66,
+      "roe": 0.05
+    },
+    {
+      "rank": 16,
       "composite_rank": 17,
       "ticker": "003230",
       "name": "삼양식품",
@@ -391,10 +421,14 @@
       "mom_6m1m_s": 0.0902,
       "mom_12m_s": 0.6065,
       "mom_12m1m_s": 0.4153,
-      "price": 127000
+      "price": 127000,
+      "weighted_rank": 25.6,
+      "per": 26.19,
+      "pbr": 8.2,
+      "roe": 31.3
     },
     {
-      "rank": 18,
+      "rank": 17,
       "composite_rank": 18,
       "ticker": "022100",
       "name": "포스코DX",
@@ -414,10 +448,14 @@
       "mom_6m1m_s": 0.66,
       "mom_12m_s": 0.0977,
       "mom_12m1m_s": 0.403,
-      "price": 6250
+      "price": 6250,
+      "weighted_rank": 25.6,
+      "per": 98.54,
+      "pbr": 9.01,
+      "roe": 9.14
     },
     {
-      "rank": 19,
+      "rank": 18,
       "composite_rank": 19,
       "ticker": "114190",
       "name": "강원에너지",
@@ -437,7 +475,36 @@
       "mom_6m1m_s": 0.4542,
       "mom_12m_s": 1.3694,
       "mom_12m1m_s": 1.3387,
-      "price": 8800
+      "price": 8800,
+      "weighted_rank": 27.1,
+      "pbr": 9.28
+    },
+    {
+      "rank": 19,
+      "composite_rank": 6,
+      "ticker": "173130",
+      "name": "오파스넷",
+      "score": 0.9491,
+      "sector": "IT서비스",
+      "value_s": -0.1319,
+      "quality_s": -0.4873,
+      "growth_s": 0.8347,
+      "momentum_s": 1.6994,
+      "rev_z": 0.7443,
+      "oca_z": 0.7999,
+      "rev_accel_z": 1.067,
+      "gp_growth_z": 0.6341,
+      "op_margin_z": 0.2758,
+      "cfo_growth_z": 0.7443,
+      "mom_6m_s": 0.9881,
+      "mom_6m1m_s": 1.2657,
+      "mom_12m_s": 1.6994,
+      "mom_12m1m_s": 1.6645,
+      "price": 8510,
+      "weighted_rank": 32.4,
+      "per": 7.8,
+      "pbr": 1.53,
+      "roe": 19.57
     },
     {
       "rank": 20,
@@ -460,7 +527,9 @@
       "mom_6m1m_s": 1.4981,
       "mom_12m_s": 1.402,
       "mom_12m1m_s": 1.0912,
-      "price": 41400
+      "price": 41400,
+      "weighted_rank": 38.0,
+      "pbr": 5.68
     },
     {
       "rank": 21,
@@ -483,7 +552,11 @@
       "mom_6m1m_s": 0.6428,
       "mom_12m_s": 0.1421,
       "mom_12m1m_s": 0.5001,
-      "price": 13150
+      "price": 13150,
+      "weighted_rank": 38.4,
+      "per": 10.59,
+      "pbr": 1.17,
+      "roe": 11.04
     },
     {
       "rank": 22,
@@ -506,7 +579,11 @@
       "mom_6m1m_s": -1.3765,
       "mom_12m_s": -0.2178,
       "mom_12m1m_s": -0.5694,
-      "price": 2880
+      "price": 2880,
+      "weighted_rank": 38.8,
+      "per": 8.49,
+      "pbr": 0.79,
+      "roe": 9.28
     },
     {
       "rank": 23,
@@ -529,7 +606,11 @@
       "mom_6m1m_s": -0.1613,
       "mom_12m_s": -0.1857,
       "mom_12m1m_s": -0.0886,
-      "price": 14900
+      "price": 14900,
+      "weighted_rank": 39.2,
+      "per": 7.59,
+      "pbr": 1.04,
+      "roe": 13.71
     },
     {
       "rank": 24,
@@ -552,7 +633,11 @@
       "mom_6m1m_s": 1.2864,
       "mom_12m_s": 1.2906,
       "mom_12m1m_s": 0.9996,
-      "price": 17200
+      "price": 17200,
+      "weighted_rank": 39.6,
+      "per": 10.8,
+      "pbr": 1.54,
+      "roe": 14.24
     },
     {
       "rank": 25,
@@ -575,7 +660,11 @@
       "mom_6m1m_s": -0.8142,
       "mom_12m_s": -0.7596,
       "mom_12m1m_s": -0.833,
-      "price": 5800
+      "price": 5800,
+      "weighted_rank": 40.0,
+      "per": 25.25,
+      "pbr": 2.62,
+      "roe": 10.36
     },
     {
       "rank": 26,
@@ -598,7 +687,11 @@
       "mom_6m1m_s": 2.0608,
       "mom_12m_s": 2.5578,
       "mom_12m1m_s": 2.512,
-      "price": 134100
+      "price": 134100,
+      "weighted_rank": 40.4,
+      "per": 3.82,
+      "pbr": 0.35,
+      "roe": 9.14
     },
     {
       "rank": 27,
@@ -621,7 +714,11 @@
       "mom_6m1m_s": 0.3509,
       "mom_12m_s": -0.6912,
       "mom_12m1m_s": -0.6956,
-      "price": 34600
+      "price": 34600,
+      "weighted_rank": 40.8,
+      "per": 16.13,
+      "pbr": 0.9,
+      "roe": 5.58
     },
     {
       "rank": 28,
@@ -644,7 +741,11 @@
       "mom_6m1m_s": -0.6411,
       "mom_12m_s": -1.0879,
       "mom_12m1m_s": -0.8704,
-      "price": 4305
+      "price": 4305,
+      "weighted_rank": 41.2,
+      "per": 7.9,
+      "pbr": 0.26,
+      "roe": 3.31
     },
     {
       "rank": 29,
@@ -667,7 +768,11 @@
       "mom_6m1m_s": -0.4673,
       "mom_12m_s": 0.2618,
       "mom_12m1m_s": 0.1159,
-      "price": 100000
+      "price": 100000,
+      "weighted_rank": 41.6,
+      "per": 26.01,
+      "pbr": 0.76,
+      "roe": 2.92
     },
     {
       "rank": 30,
@@ -690,7 +795,11 @@
       "mom_6m1m_s": 2.0089,
       "mom_12m_s": 2.3421,
       "mom_12m1m_s": 2.299,
-      "price": 425000
+      "price": 425000,
+      "weighted_rank": 42.0,
+      "per": 7.77,
+      "pbr": 0.21,
+      "roe": 2.77
     },
     {
       "rank": 31,
@@ -713,7 +822,11 @@
       "mom_6m1m_s": 0.4285,
       "mom_12m_s": 0.8166,
       "mom_12m1m_s": 0.9301,
-      "price": 69700
+      "price": 69700,
+      "weighted_rank": 42.4,
+      "per": 53.32,
+      "pbr": 2.93,
+      "roe": 5.49
     },
     {
       "rank": 32,
@@ -736,7 +849,11 @@
       "mom_6m1m_s": 1.3296,
       "mom_12m_s": 0.7325,
       "mom_12m1m_s": 1.0096,
-      "price": 180000
+      "price": 180000,
+      "weighted_rank": 42.8,
+      "per": 4549.02,
+      "pbr": 5.07,
+      "roe": 0.11
     },
     {
       "rank": 33,
@@ -759,7 +876,11 @@
       "mom_6m1m_s": 0.2339,
       "mom_12m_s": 0.5921,
       "mom_12m1m_s": 0.5248,
-      "price": 92200
+      "price": 92200,
+      "weighted_rank": 43.2,
+      "per": 72.3,
+      "pbr": 12.82,
+      "roe": 17.73
     },
     {
       "rank": 34,
@@ -782,7 +903,11 @@
       "mom_6m1m_s": 0.5579,
       "mom_12m_s": 0.6064,
       "mom_12m1m_s": 0.5855,
-      "price": 17600
+      "price": 17600,
+      "weighted_rank": 43.6,
+      "per": 13.28,
+      "pbr": 0.73,
+      "roe": 5.52
     },
     {
       "rank": 35,
@@ -805,7 +930,11 @@
       "mom_6m1m_s": -1.4196,
       "mom_12m_s": -0.873,
       "mom_12m1m_s": -0.944,
-      "price": 8520
+      "price": 8520,
+      "weighted_rank": 44.0,
+      "per": 26.28,
+      "pbr": 1.3,
+      "roe": 4.94
     },
     {
       "rank": 36,
@@ -828,7 +957,11 @@
       "mom_6m1m_s": 0.6212,
       "mom_12m_s": -0.2745,
       "mom_12m1m_s": 0.3523,
-      "price": 448000
+      "price": 448000,
+      "weighted_rank": 44.4,
+      "per": 14.46,
+      "pbr": 1.49,
+      "roe": 10.3
     },
     {
       "rank": 37,
@@ -851,7 +984,9 @@
       "mom_6m1m_s": -0.6458,
       "mom_12m_s": -0.5658,
       "mom_12m1m_s": -0.7232,
-      "price": 34000
+      "price": 34000,
+      "weighted_rank": 44.8,
+      "pbr": 1.99
     },
     {
       "rank": 38,
@@ -874,7 +1009,8 @@
       "mom_6m1m_s": -0.1061,
       "mom_12m_s": 0.0738,
       "mom_12m1m_s": 0.0191,
-      "price": 19750
+      "price": 19750,
+      "weighted_rank": 45.2
     },
     {
       "rank": 39,
@@ -897,7 +1033,11 @@
       "mom_6m1m_s": 0.1139,
       "mom_12m_s": 0.8053,
       "mom_12m1m_s": 0.6978,
-      "price": 210500
+      "price": 210500,
+      "weighted_rank": 45.6,
+      "per": 12.05,
+      "pbr": 1.79,
+      "roe": 14.87
     },
     {
       "rank": 40,
@@ -920,7 +1060,8 @@
       "mom_6m1m_s": 0.8224,
       "mom_12m_s": 0.065,
       "mom_12m1m_s": 0.1724,
-      "price": 8000
+      "price": 8000,
+      "weighted_rank": 46.0
     },
     {
       "rank": 41,
@@ -943,7 +1084,11 @@
       "mom_6m1m_s": 0.8692,
       "mom_12m_s": 0.2271,
       "mom_12m1m_s": 0.2892,
-      "price": 26350
+      "price": 26350,
+      "weighted_rank": 46.4,
+      "per": 27.89,
+      "pbr": 5.36,
+      "roe": 19.22
     },
     {
       "rank": 42,
@@ -966,7 +1111,9 @@
       "mom_6m1m_s": -0.2918,
       "mom_12m_s": 0.1765,
       "mom_12m1m_s": -0.0789,
-      "price": 83100
+      "price": 83100,
+      "weighted_rank": 46.8,
+      "pbr": 2.03
     },
     {
       "rank": 43,
@@ -989,7 +1136,11 @@
       "mom_6m1m_s": 1.6821,
       "mom_12m_s": 0.7748,
       "mom_12m1m_s": 1.5181,
-      "price": 11900
+      "price": 11900,
+      "weighted_rank": 47.2,
+      "per": 22.61,
+      "pbr": 0.36,
+      "roe": 1.6
     },
     {
       "rank": 44,
@@ -1012,7 +1163,11 @@
       "mom_6m1m_s": 0.0004,
       "mom_12m_s": 0.5082,
       "mom_12m1m_s": 0.4885,
-      "price": 78000
+      "price": 78000,
+      "weighted_rank": 47.6,
+      "per": 66.81,
+      "pbr": 14.77,
+      "roe": 22.11
     },
     {
       "rank": 45,
@@ -1035,7 +1190,9 @@
       "mom_6m1m_s": 0.3517,
       "mom_12m_s": -0.149,
       "mom_12m1m_s": 0.1251,
-      "price": 3920
+      "price": 3920,
+      "weighted_rank": 48.0,
+      "pbr": 0.69
     },
     {
       "rank": 46,
@@ -1058,7 +1215,11 @@
       "mom_6m1m_s": 1.0411,
       "mom_12m_s": 0.9798,
       "mom_12m1m_s": 0.7886,
-      "price": 357000
+      "price": 357000,
+      "weighted_rank": 48.4,
+      "per": 13.46,
+      "pbr": 0.81,
+      "roe": 6.05
     },
     {
       "rank": 47,
@@ -1081,7 +1242,11 @@
       "mom_6m1m_s": -0.3759,
       "mom_12m_s": 0.5906,
       "mom_12m1m_s": -0.4298,
-      "price": 7080
+      "price": 7080,
+      "weighted_rank": 48.8,
+      "per": 15.78,
+      "pbr": 5.33,
+      "roe": 33.77
     },
     {
       "rank": 48,
@@ -1104,7 +1269,11 @@
       "mom_6m1m_s": -0.3283,
       "mom_12m_s": -0.7192,
       "mom_12m1m_s": -0.5121,
-      "price": 68000
+      "price": 68000,
+      "weighted_rank": 49.2,
+      "per": 230.66,
+      "pbr": 6.4,
+      "roe": 2.77
     },
     {
       "rank": 49,
@@ -1127,7 +1296,11 @@
       "mom_6m1m_s": -0.7807,
       "mom_12m_s": -0.5812,
       "mom_12m1m_s": -0.5008,
-      "price": 79600
+      "price": 79600,
+      "weighted_rank": 49.6,
+      "per": 5.4,
+      "pbr": 0.91,
+      "roe": 16.81
     },
     {
       "rank": 50,
@@ -1150,7 +1323,11 @@
       "mom_6m1m_s": -0.1862,
       "mom_12m_s": 0.5881,
       "mom_12m1m_s": 0.4509,
-      "price": 17200
+      "price": 17200,
+      "weighted_rank": 50.0,
+      "per": 296.84,
+      "pbr": 10.51,
+      "roe": 3.54
     },
     {
       "rank": 51,
@@ -1173,7 +1350,11 @@
       "mom_6m1m_s": 0.5521,
       "mom_12m_s": 0.4955,
       "mom_12m1m_s": 0.2638,
-      "price": 33650
+      "price": 33650,
+      "weighted_rank": 50.4,
+      "per": 15.96,
+      "pbr": 1.02,
+      "roe": 6.4
     },
     {
       "rank": 52,
@@ -1196,7 +1377,11 @@
       "mom_6m1m_s": 0.1679,
       "mom_12m_s": 0.4378,
       "mom_12m1m_s": 0.3105,
-      "price": 128000
+      "price": 128000,
+      "weighted_rank": 50.8,
+      "per": 14.07,
+      "pbr": 1.41,
+      "roe": 10.05
     },
     {
       "rank": 53,
@@ -1219,7 +1404,11 @@
       "mom_6m1m_s": -0.5587,
       "mom_12m_s": -0.2054,
       "mom_12m1m_s": -0.216,
-      "price": 86000
+      "price": 86000,
+      "weighted_rank": 51.2,
+      "per": 86.01,
+      "pbr": 1.11,
+      "roe": 1.29
     },
     {
       "rank": 54,
@@ -1242,7 +1431,9 @@
       "mom_6m1m_s": 0.8022,
       "mom_12m_s": 0.5801,
       "mom_12m1m_s": 0.4486,
-      "price": 15750
+      "price": 15750,
+      "weighted_rank": 51.6,
+      "pbr": 0.48
     },
     {
       "rank": 55,
@@ -1265,7 +1456,11 @@
       "mom_6m1m_s": -0.8555,
       "mom_12m_s": 0.5733,
       "mom_12m1m_s": 0.0624,
-      "price": 298000
+      "price": 298000,
+      "weighted_rank": 52.0,
+      "per": 32.34,
+      "pbr": 4.39,
+      "roe": 13.57
     },
     {
       "rank": 56,
@@ -1288,7 +1483,11 @@
       "mom_6m1m_s": 1.2657,
       "mom_12m_s": 0.8743,
       "mom_12m1m_s": 1.0455,
-      "price": 9400
+      "price": 9400,
+      "weighted_rank": 52.4,
+      "per": 144.15,
+      "pbr": 3.27,
+      "roe": 2.27
     },
     {
       "rank": 57,
@@ -1311,7 +1510,9 @@
       "mom_6m1m_s": -1.11,
       "mom_12m_s": -0.9661,
       "mom_12m1m_s": -0.855,
-      "price": 12950
+      "price": 12950,
+      "weighted_rank": 52.8,
+      "pbr": 0.54
     },
     {
       "rank": 58,
@@ -1334,7 +1535,11 @@
       "mom_6m1m_s": -0.3669,
       "mom_12m_s": -1.2633,
       "mom_12m1m_s": -0.8141,
-      "price": 6930
+      "price": 6930,
+      "weighted_rank": 53.2,
+      "per": 3.5,
+      "pbr": 0.22,
+      "roe": 6.37
     },
     {
       "rank": 59,
@@ -1357,7 +1562,11 @@
       "mom_6m1m_s": 1.2657,
       "mom_12m_s": 1.0724,
       "mom_12m1m_s": 1.0455,
-      "price": 36950
+      "price": 36950,
+      "weighted_rank": 53.6,
+      "per": 8.07,
+      "pbr": 0.76,
+      "roe": 9.38
     },
     {
       "rank": 60,
@@ -1380,7 +1589,11 @@
       "mom_6m1m_s": 0.6005,
       "mom_12m_s": -0.2425,
       "mom_12m1m_s": 0.0546,
-      "price": 155500
+      "price": 155500,
+      "weighted_rank": 54.0,
+      "per": 50.45,
+      "pbr": 10.48,
+      "roe": 20.78
     },
     {
       "rank": 61,
@@ -1403,7 +1616,9 @@
       "mom_6m1m_s": 0.4863,
       "mom_12m_s": -0.3282,
       "mom_12m1m_s": 0.1646,
-      "price": 18750
+      "price": 18750,
+      "weighted_rank": 54.4,
+      "pbr": 0.37
     },
     {
       "rank": 62,
@@ -1426,7 +1641,11 @@
       "mom_6m1m_s": -1.2689,
       "mom_12m_s": -0.8088,
       "mom_12m1m_s": -0.7446,
-      "price": 56400
+      "price": 56400,
+      "weighted_rank": 54.8,
+      "per": 131.42,
+      "pbr": 18.21,
+      "roe": 13.86
     },
     {
       "rank": 63,
@@ -1449,7 +1668,11 @@
       "mom_6m1m_s": 0.6058,
       "mom_12m_s": 0.533,
       "mom_12m1m_s": 0.7023,
-      "price": 28400
+      "price": 28400,
+      "weighted_rank": 55.2,
+      "per": 28.49,
+      "pbr": 7.12,
+      "roe": 25.01
     },
     {
       "rank": 64,
@@ -1472,7 +1695,11 @@
       "mom_6m1m_s": -0.3244,
       "mom_12m_s": 0.1816,
       "mom_12m1m_s": 0.1661,
-      "price": 5500
+      "price": 5500,
+      "weighted_rank": 55.6,
+      "per": 14.68,
+      "pbr": 0.89,
+      "roe": 6.06
     },
     {
       "rank": 65,
@@ -1495,7 +1722,11 @@
       "mom_6m1m_s": -1.4053,
       "mom_12m_s": -0.2381,
       "mom_12m1m_s": -0.3897,
-      "price": 176000
+      "price": 176000,
+      "weighted_rank": 56.0,
+      "per": 24.72,
+      "pbr": 0.77,
+      "roe": 3.1
     },
     {
       "rank": 66,
@@ -1518,7 +1749,11 @@
       "mom_6m1m_s": -0.3635,
       "mom_12m_s": -0.9661,
       "mom_12m1m_s": -0.7893,
-      "price": 10100
+      "price": 10100,
+      "weighted_rank": 56.4,
+      "per": 50.3,
+      "pbr": 8.98,
+      "roe": 17.84
     },
     {
       "rank": 67,
@@ -1541,7 +1776,11 @@
       "mom_6m1m_s": -0.5995,
       "mom_12m_s": -0.6682,
       "mom_12m1m_s": -0.3709,
-      "price": 69900
+      "price": 69900,
+      "weighted_rank": 56.8,
+      "per": 19.6,
+      "pbr": 5.23,
+      "roe": 26.66
     },
     {
       "rank": 68,
@@ -1564,7 +1803,9 @@
       "mom_6m1m_s": 0.812,
       "mom_12m_s": 0.4613,
       "mom_12m1m_s": 0.5991,
-      "price": 1510
+      "price": 1510,
+      "weighted_rank": 57.2,
+      "pbr": 1.17
     },
     {
       "rank": 69,
@@ -1587,7 +1828,11 @@
       "mom_6m1m_s": -1.5522,
       "mom_12m_s": -0.8969,
       "mom_12m1m_s": -1.4381,
-      "price": 6550
+      "price": 6550,
+      "weighted_rank": 57.6,
+      "per": 10.06,
+      "pbr": 0.45,
+      "roe": 4.51
     },
     {
       "rank": 70,
@@ -1610,7 +1855,9 @@
       "mom_6m1m_s": 1.0436,
       "mom_12m_s": 1.1413,
       "mom_12m1m_s": 1.4155,
-      "price": 5580
+      "price": 5580,
+      "weighted_rank": 58.0,
+      "pbr": 0.62
     },
     {
       "rank": 71,
@@ -1633,7 +1880,11 @@
       "mom_6m1m_s": -1.5399,
       "mom_12m_s": -0.5498,
       "mom_12m1m_s": -0.8169,
-      "price": 20450
+      "price": 20450,
+      "weighted_rank": 58.4,
+      "per": 9.63,
+      "pbr": 1.17,
+      "roe": 12.12
     },
     {
       "rank": 72,
@@ -1656,7 +1907,11 @@
       "mom_6m1m_s": 0.3809,
       "mom_12m_s": 0.629,
       "mom_12m1m_s": 0.2969,
-      "price": 20900
+      "price": 20900,
+      "weighted_rank": 58.8,
+      "per": 21.47,
+      "pbr": 0.82,
+      "roe": 3.81
     },
     {
       "rank": 73,
@@ -1679,7 +1934,11 @@
       "mom_6m1m_s": 0.1975,
       "mom_12m_s": 0.0643,
       "mom_12m1m_s": 0.3523,
-      "price": 15900
+      "price": 15900,
+      "weighted_rank": 59.2,
+      "per": 8.9,
+      "pbr": 0.65,
+      "roe": 7.25
     },
     {
       "rank": 74,
@@ -1702,7 +1961,11 @@
       "mom_6m1m_s": 0.4942,
       "mom_12m_s": 0.6748,
       "mom_12m1m_s": 0.6361,
-      "price": 73600
+      "price": 73600,
+      "weighted_rank": 59.6,
+      "per": 43.01,
+      "pbr": 6.52,
+      "roe": 15.16
     },
     {
       "rank": 75,
@@ -1725,7 +1988,11 @@
       "mom_6m1m_s": -0.0621,
       "mom_12m_s": 0.0526,
       "mom_12m1m_s": 0.0387,
-      "price": 76700
+      "price": 76700,
+      "weighted_rank": 60.0,
+      "per": 5.76,
+      "pbr": 2.0,
+      "roe": 34.63
     },
     {
       "rank": 76,
@@ -1748,7 +2015,11 @@
       "mom_6m1m_s": 1.0594,
       "mom_12m_s": 0.3995,
       "mom_12m1m_s": 0.7744,
-      "price": 7990
+      "price": 7990,
+      "weighted_rank": 60.4,
+      "per": 522.94,
+      "pbr": 6.48,
+      "roe": 1.24
     },
     {
       "rank": 77,
@@ -1771,7 +2042,9 @@
       "mom_6m1m_s": -0.7805,
       "mom_12m_s": 0.3173,
       "mom_12m1m_s": 0.2118,
-      "price": 7790
+      "price": 7790,
+      "weighted_rank": 60.8,
+      "pbr": 0.35
     },
     {
       "rank": 78,
@@ -1794,7 +2067,9 @@
       "mom_6m1m_s": -1.1052,
       "mom_12m_s": -0.8663,
       "mom_12m1m_s": -1.0271,
-      "price": 6720
+      "price": 6720,
+      "weighted_rank": 61.2,
+      "pbr": 2.71
     },
     {
       "rank": 79,
@@ -1817,7 +2092,11 @@
       "mom_6m1m_s": 1.5418,
       "mom_12m_s": 1.1923,
       "mom_12m1m_s": 1.4595,
-      "price": 91500
+      "price": 91500,
+      "weighted_rank": 61.6,
+      "per": 17.44,
+      "pbr": 1.99,
+      "roe": 11.43
     },
     {
       "rank": 80,
@@ -1840,7 +2119,11 @@
       "mom_6m1m_s": -0.5995,
       "mom_12m_s": -0.3823,
       "mom_12m1m_s": -0.3906,
-      "price": 9370
+      "price": 9370,
+      "weighted_rank": 62.0,
+      "per": 20.48,
+      "pbr": 1.04,
+      "roe": 5.06
     },
     {
       "rank": 81,
@@ -1863,7 +2146,11 @@
       "mom_6m1m_s": -1.4815,
       "mom_12m_s": -0.8475,
       "mom_12m1m_s": -0.8303,
-      "price": 2150
+      "price": 2150,
+      "weighted_rank": 62.4,
+      "per": 29.98,
+      "pbr": 0.4,
+      "roe": 1.34
     },
     {
       "rank": 82,
@@ -1886,7 +2173,9 @@
       "mom_6m1m_s": -0.6893,
       "mom_12m_s": -0.8184,
       "mom_12m1m_s": -0.7507,
-      "price": 21900
+      "price": 21900,
+      "weighted_rank": 62.8,
+      "pbr": 0.68
     },
     {
       "rank": 83,
@@ -1909,7 +2198,11 @@
       "mom_6m1m_s": -0.2367,
       "mom_12m_s": 0.2193,
       "mom_12m1m_s": 0.1012,
-      "price": 42600
+      "price": 42600,
+      "weighted_rank": 63.2,
+      "per": 17.4,
+      "pbr": 2.39,
+      "roe": 13.74
     },
     {
       "rank": 84,
@@ -1932,7 +2225,11 @@
       "mom_6m1m_s": -0.109,
       "mom_12m_s": -1.0351,
       "mom_12m1m_s": -0.777,
-      "price": 13850
+      "price": 13850,
+      "weighted_rank": 63.6,
+      "per": 14.03,
+      "pbr": 0.75,
+      "roe": 5.37
     },
     {
       "rank": 85,
@@ -1955,7 +2252,11 @@
       "mom_6m1m_s": 1.3417,
       "mom_12m_s": 1.3735,
       "mom_12m1m_s": 1.4759,
-      "price": 98500
+      "price": 98500,
+      "weighted_rank": 64.0,
+      "per": 6.83,
+      "pbr": 0.25,
+      "roe": 3.74
     },
     {
       "rank": 86,
@@ -1978,7 +2279,11 @@
       "mom_6m1m_s": -1.7123,
       "mom_12m_s": -1.0492,
       "mom_12m1m_s": -1.2538,
-      "price": 6770
+      "price": 6770,
+      "weighted_rank": 64.4,
+      "per": 2.77,
+      "pbr": 0.23,
+      "roe": 8.21
     },
     {
       "rank": 87,
@@ -2001,7 +2306,11 @@
       "mom_6m1m_s": -0.7454,
       "mom_12m_s": -0.523,
       "mom_12m1m_s": -1.0271,
-      "price": 5490
+      "price": 5490,
+      "weighted_rank": 64.8,
+      "per": 8.16,
+      "pbr": 1.12,
+      "roe": 13.77
     },
     {
       "rank": 88,
@@ -2024,7 +2333,11 @@
       "mom_6m1m_s": 1.236,
       "mom_12m_s": 1.3531,
       "mom_12m1m_s": 1.3227,
-      "price": 15000
+      "price": 15000,
+      "weighted_rank": 65.2,
+      "per": 18.38,
+      "pbr": 0.85,
+      "roe": 4.62
     },
     {
       "rank": 89,
@@ -2047,7 +2360,9 @@
       "mom_6m1m_s": 1.2105,
       "mom_12m_s": 0.9555,
       "mom_12m1m_s": 1.1749,
-      "price": 12300
+      "price": 12300,
+      "weighted_rank": 65.6,
+      "pbr": 0.39
     },
     {
       "rank": 90,
@@ -2070,7 +2385,11 @@
       "mom_6m1m_s": -0.5792,
       "mom_12m_s": -1.2291,
       "mom_12m1m_s": -0.8761,
-      "price": 2645
+      "price": 2645,
+      "weighted_rank": 66.0,
+      "per": 6.6,
+      "pbr": 0.65,
+      "roe": 9.79
     },
     {
       "rank": 91,
@@ -2093,7 +2412,9 @@
       "mom_6m1m_s": -0.7468,
       "mom_12m_s": -1.1045,
       "mom_12m1m_s": -1.1036,
-      "price": 17500
+      "price": 17500,
+      "weighted_rank": 66.4,
+      "pbr": 5.55
     },
     {
       "rank": 92,
@@ -2116,7 +2437,11 @@
       "mom_6m1m_s": -1.4455,
       "mom_12m_s": -0.8143,
       "mom_12m1m_s": -0.9513,
-      "price": 18250
+      "price": 18250,
+      "weighted_rank": 66.8,
+      "per": 19.43,
+      "pbr": 0.55,
+      "roe": 2.85
     },
     {
       "rank": 93,
@@ -2139,7 +2464,11 @@
       "mom_6m1m_s": -1.4455,
       "mom_12m_s": -1.1032,
       "mom_12m1m_s": -1.2908,
-      "price": 104700
+      "price": 104700,
+      "weighted_rank": 67.2,
+      "per": 29.89,
+      "pbr": 0.32,
+      "roe": 1.06
     },
     {
       "rank": 94,
@@ -2162,7 +2491,11 @@
       "mom_6m1m_s": 0.4539,
       "mom_12m_s": 0.3689,
       "mom_12m1m_s": 0.4724,
-      "price": 62200
+      "price": 62200,
+      "weighted_rank": 67.6,
+      "per": 28.61,
+      "pbr": 1.57,
+      "roe": 5.48
     },
     {
       "rank": 95,
@@ -2185,7 +2518,11 @@
       "mom_6m1m_s": -0.6952,
       "mom_12m_s": -0.5163,
       "mom_12m1m_s": -0.5324,
-      "price": 8140
+      "price": 8140,
+      "weighted_rank": 68.0,
+      "per": 42.5,
+      "pbr": 1.21,
+      "roe": 2.84
     },
     {
       "rank": 96,
@@ -2208,7 +2545,11 @@
       "mom_6m1m_s": 0.1975,
       "mom_12m_s": 0.3547,
       "mom_12m1m_s": 0.337,
-      "price": 2920
+      "price": 2920,
+      "weighted_rank": 68.4,
+      "per": 13.55,
+      "pbr": 0.8,
+      "roe": 5.93
     },
     {
       "rank": 97,
@@ -2231,7 +2572,11 @@
       "mom_6m1m_s": -0.8112,
       "mom_12m_s": 0.349,
       "mom_12m1m_s": -0.2362,
-      "price": 109000
+      "price": 109000,
+      "weighted_rank": 68.8,
+      "per": 16.77,
+      "pbr": 0.46,
+      "roe": 2.72
     },
     {
       "rank": 98,
@@ -2254,7 +2599,11 @@
       "mom_6m1m_s": 0.0697,
       "mom_12m_s": -0.4352,
       "mom_12m1m_s": -0.2473,
-      "price": 128000
+      "price": 128000,
+      "weighted_rank": 69.2,
+      "per": 42.43,
+      "pbr": 1.56,
+      "roe": 3.67
     },
     {
       "rank": 99,
@@ -2277,7 +2626,11 @@
       "mom_6m1m_s": -1.4571,
       "mom_12m_s": -0.3111,
       "mom_12m1m_s": -0.4188,
-      "price": 50900
+      "price": 50900,
+      "weighted_rank": 69.6,
+      "per": 84.79,
+      "pbr": 8.61,
+      "roe": 10.16
     },
     {
       "rank": 100,
@@ -2300,7 +2653,11 @@
       "mom_6m1m_s": 0.5945,
       "mom_12m_s": -0.1705,
       "mom_12m1m_s": 0.1919,
-      "price": 83100
+      "price": 83100,
+      "weighted_rank": 70.0,
+      "per": 376.6,
+      "pbr": 18.23,
+      "roe": 4.84
     },
     {
       "rank": 101,
@@ -2323,7 +2680,9 @@
       "mom_6m1m_s": -0.5051,
       "mom_12m_s": -0.8116,
       "mom_12m1m_s": -0.4682,
-      "price": 178500
+      "price": 178500,
+      "weighted_rank": 70.4,
+      "pbr": 0.28
     },
     {
       "rank": 102,
@@ -2346,7 +2705,11 @@
       "mom_6m1m_s": 1.3213,
       "mom_12m_s": 0.8383,
       "mom_12m1m_s": 1.4155,
-      "price": 25650
+      "price": 25650,
+      "weighted_rank": 70.8,
+      "per": 10.16,
+      "pbr": 0.87,
+      "roe": 8.56
     },
     {
       "rank": 103,
@@ -2369,7 +2732,11 @@
       "mom_6m1m_s": 0.924,
       "mom_12m_s": 1.0095,
       "mom_12m1m_s": 0.9835,
-      "price": 36450
+      "price": 36450,
+      "weighted_rank": 71.2,
+      "per": 133.33,
+      "pbr": 1.9,
+      "roe": 1.43
     },
     {
       "rank": 104,
@@ -2392,7 +2759,11 @@
       "mom_6m1m_s": -0.3306,
       "mom_12m_s": -0.5643,
       "mom_12m1m_s": -0.785,
-      "price": 74100
+      "price": 74100,
+      "weighted_rank": 71.6,
+      "per": 16.63,
+      "pbr": 3.67,
+      "roe": 22.05
     },
     {
       "rank": 105,
@@ -2415,7 +2786,11 @@
       "mom_6m1m_s": -0.0621,
       "mom_12m_s": 0.2107,
       "mom_12m1m_s": 0.4095,
-      "price": 17850
+      "price": 17850,
+      "weighted_rank": 72.0,
+      "per": 12.54,
+      "pbr": 0.54,
+      "roe": 4.29
     },
     {
       "rank": 106,
@@ -2438,7 +2813,11 @@
       "mom_6m1m_s": 0.0657,
       "mom_12m_s": -0.2216,
       "mom_12m1m_s": -0.5862,
-      "price": 134900
+      "price": 134900,
+      "weighted_rank": 72.4,
+      "per": 20.02,
+      "pbr": 2.97,
+      "roe": 14.85
     },
     {
       "rank": 107,
@@ -2461,7 +2840,11 @@
       "mom_6m1m_s": -0.7476,
       "mom_12m_s": -0.7626,
       "mom_12m1m_s": -0.8457,
-      "price": 5950
+      "price": 5950,
+      "weighted_rank": 72.8,
+      "per": 115.53,
+      "pbr": 2.26,
+      "roe": 1.96
     },
     {
       "rank": 108,
@@ -2484,7 +2867,11 @@
       "mom_6m1m_s": -0.0621,
       "mom_12m_s": -0.886,
       "mom_12m1m_s": -0.7182,
-      "price": 350000
+      "price": 350000,
+      "weighted_rank": 73.2,
+      "per": 167.66,
+      "pbr": 1.16,
+      "roe": 0.69
     },
     {
       "rank": 109,
@@ -2507,7 +2894,9 @@
       "mom_6m1m_s": -0.2596,
       "mom_12m_s": 0.1159,
       "mom_12m1m_s": 0.0076,
-      "price": 3410
+      "price": 3410,
+      "weighted_rank": 73.6,
+      "pbr": 0.68
     },
     {
       "rank": 110,
@@ -2530,7 +2919,11 @@
       "mom_6m1m_s": -0.3217,
       "mom_12m_s": -0.6682,
       "mom_12m1m_s": -0.3709,
-      "price": 7360
+      "price": 7360,
+      "weighted_rank": 74.0,
+      "per": 5.68,
+      "pbr": 0.69,
+      "roe": 12.08
     },
     {
       "rank": 111,
@@ -2553,7 +2946,11 @@
       "mom_6m1m_s": 0.2456,
       "mom_12m_s": -0.0764,
       "mom_12m1m_s": 0.0087,
-      "price": 39100
+      "price": 39100,
+      "weighted_rank": 74.4,
+      "per": 20.83,
+      "pbr": 2.45,
+      "roe": 11.77
     },
     {
       "rank": 112,
@@ -2576,7 +2973,9 @@
       "mom_6m1m_s": -0.8755,
       "mom_12m_s": -1.1888,
       "mom_12m1m_s": -1.1868,
-      "price": 15600
+      "price": 15600,
+      "weighted_rank": 74.8,
+      "pbr": 2.95
     },
     {
       "rank": 113,
@@ -2599,7 +2998,9 @@
       "mom_6m1m_s": -1.1052,
       "mom_12m_s": -0.7212,
       "mom_12m1m_s": -0.8684,
-      "price": 28300
+      "price": 28300,
+      "weighted_rank": 75.2,
+      "pbr": 0.92
     },
     {
       "rank": 114,
@@ -2622,7 +3023,11 @@
       "mom_6m1m_s": -1.8756,
       "mom_12m_s": -1.3706,
       "mom_12m1m_s": -1.7801,
-      "price": 10250
+      "price": 10250,
+      "weighted_rank": 75.6,
+      "per": 18.45,
+      "pbr": 3.32,
+      "roe": 17.98
     },
     {
       "rank": 115,
@@ -2645,7 +3050,11 @@
       "mom_6m1m_s": -0.9272,
       "mom_12m_s": -0.8959,
       "mom_12m1m_s": -0.785,
-      "price": 137500
+      "price": 137500,
+      "weighted_rank": 76.0,
+      "per": 35.25,
+      "pbr": 1.52,
+      "roe": 4.32
     }
   ],
   "metadata": {
@@ -3393,6 +3802,7 @@
       "047400",
       "011150",
       "032850"
-    ]
+    ],
+    "mode": "boost"
   }
 }
