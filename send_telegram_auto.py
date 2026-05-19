@@ -956,9 +956,9 @@ def create_ai_risk_message(credit, kospi_data, kosdaq_data, market_warnings,
 
     lines = [
         '━━━━━━━━━━━━━━━',
-        '🤖 AI 리스크 필터',
+        '🤖 AI 시장 리스크 분석',
         '━━━━━━━━━━━━━━━',
-        '상위 종목의 리스크 요소를 AI가 분석했습니다.',
+        '오늘의 시장 환경과 위험 요인을 AI가 분석했습니다.',
         '',
         '📊 <b>시장 지수</b>',
     ]

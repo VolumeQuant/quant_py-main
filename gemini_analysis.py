@@ -354,15 +354,15 @@ def run_ai_analysis(portfolio_message, stock_list, base_date=None, market_contex
         now = datetime.now(KST)
         lines = [
             '━━━━━━━━━━━━━━━',
-            '🤖 AI 리스크 필터',
+            '🤖 AI 시장 리스크 분석',
             '━━━━━━━━━━━━━━━',
             '',
-            '후보 종목 중 주의할 점을 AI가 점검했습니다.',
+            '오늘의 시장 환경과 위험 요인을 AI가 분석했습니다.',
             '',
             analysis_html + clean_section,
         ]
 
-        print("[Gemini] AI 리스크 필터 완료")
+        print("[Gemini] AI 시장 리스크 분석 완료")
         return '\n'.join(lines)
 
     except Exception as e:
