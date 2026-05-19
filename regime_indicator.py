@@ -1,10 +1,12 @@
-"""국면 판단 모듈 — KP_MA250_8d (v80.9, 2026-05-16)
+"""국면 판단 모듈 — KP_MA220_10d (v80.14, 2026-05-19)
 
-v80.9 전략:
+v80.14 전략:
   공격: V15Q0G55M30, 3f rev+oca+gp_growth(0.4/0.4/0.2), 12m, E3X6S5, sl-10%, tr-8%
   방어: V35Q15G15M35, 2f rev+oca(0.8/0.2), 6m-1m, E5X8S5, sl-10%, tr-8%
-  국면: KOSPI > MA250 8일 확인 → 공격, 미만 → 방어
+  국면: KOSPI > MA220 10일 확인 → 공격, 미만 → 방어 (v80.14: 8→10 7년 BT Cal +0.19)
   계절성 패널티: SEASONALITY_FORMULA=curr, PENALTY=0.3, RATIO=1.4
+  QoQ 패널티 (D6, v80.12): boost + KOSPI>MA220×1.06 시 op_qoq<+20% → G×0.7
+  wr 가중치 (v80.13): T-0×0.4 + T-1×0.35 + T-2×0.25 (당일 비중 ↓, 3일 검증 강화)
 
 진화:
   v80 (04-18): MA170 8d, 2f rev+oca, E3X6S3, tr-15%
@@ -13,7 +15,11 @@ v80.9 전략:
   v80.7 (05-16): 계절성 패널티 (Q2+Q4/Q1+Q3>1.4 시 G×0.5)
   v80.8 (05-16): bi 양방향 + 매매조건 (entry 2→3, ts_cd 2→1)
   v80.9 (05-16 저녁): curr 복귀 + defense E4→8 / S4→5 (사용자 통찰 보호)
-  2026-05-17: jump>2.0 AND revcv>0.7 안전망 (Cal +0.274), wr PENALTY 50 통일
+  v80.10 (05-17): 진정 가속 면제 (min/max 4Q > 0.2)
+  v80.11 (05-18): MA250→220 (Cal +0.21, WF CV -22%)
+  v80.12 (05-18): QoQ 패널티 D6 + SG6 강한 boost (Cal +29%, MDD -6%p)
+  v80.13 (05-18): wr 가중치 50:30:20 → 40:35:25 (Cal +17%, 노이즈 매수 차단)
+  v80.14 (05-19): regime CONFIRM_DAYS 8→10 (Cal +0.19, 전환 39→35, whipsaw -3.5%p)
 
 사용:
     from regime_indicator import get_current_regime
@@ -56,7 +62,7 @@ def _save_state(state):
 MA_PERIOD = 220                 # v80.11 (2026-05-18): MA250→220 (Cal +0.206, WF CV -22%, 약세장 min 1.94)
 
 def check_regime_signal(kospi_close=None, kospi_ma=None, kospi_ma200=None, **kwargs):
-    """KP_MA250 (v80.6): KOSPI > 250일 이동평균 = boost
+    """KP_MA220 (v80.11+, v80.14): KOSPI > MA_PERIOD 이동평균 = boost
 
     kospi_close: KOSPI 종가
     kospi_ma: KOSPI MA(MA_PERIOD)일 이동평균
@@ -73,7 +79,7 @@ CONFIRM_DAYS = 10               # v80.14 (2026-05-19): 8→10 (7년 BT Cal 2.474
 
 
 def get_current_regime(kospi_close=None, kospi_ma200=None, kospi_ma=None, date_str=None, **kwargs):
-    """현재 국면 판단 (KP_MA150_10d).
+    """현재 국면 판단 (KP_MA220_10d, v80.14).
 
     Args:
         kospi_close: KOSPI 종가
