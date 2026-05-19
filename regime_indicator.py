@@ -1,9 +1,9 @@
-"""국면 판단 모듈 — KP_MA220_10d (v80.14, 2026-05-19)
+"""국면 판단 모듈 — KP_MA200_10d (v80.15, 2026-05-19)
 
-v80.14 전략:
+v80.15 전략:
   공격: V15Q0G55M30, 3f rev+oca+gp_growth(0.4/0.4/0.2), 12m, E3X6S5, sl-10%, tr-8%
   방어: V35Q15G15M35, 2f rev+oca(0.8/0.2), 6m-1m, E5X8S5, sl-10%, tr-8%
-  국면: KOSPI > MA220 10일 확인 → 공격, 미만 → 방어 (v80.14: 8→10 7년 BT Cal +0.19)
+  국면: KOSPI > MA200 10일 확인 → 공격, 미만 → 방어 (v80.15: MA220→200 OOS robust)
   계절성 패널티: SEASONALITY_FORMULA=curr, PENALTY=0.3, RATIO=1.4
   QoQ 패널티 (D6, v80.12): boost + KOSPI>MA220×1.06 시 op_qoq<+20% → G×0.7
   wr 가중치 (v80.13): T-0×0.4 + T-1×0.35 + T-2×0.25 (당일 비중 ↓, 3일 검증 강화)
@@ -20,6 +20,7 @@ v80.14 전략:
   v80.12 (05-18): QoQ 패널티 D6 + SG6 강한 boost (Cal +29%, MDD -6%p)
   v80.13 (05-18): wr 가중치 50:30:20 → 40:35:25 (Cal +17%, 노이즈 매수 차단)
   v80.14 (05-19): regime CONFIRM_DAYS 8→10 (Cal +0.19, 전환 39→35, whipsaw -3.5%p)
+  v80.15 (05-19): regime MA220→200 (OOS robust — 220 cherry-pick 의심 해소, 표준값)
 
 사용:
     from regime_indicator import get_current_regime
@@ -59,10 +60,10 @@ def _save_state(state):
         json.dump(state, f, ensure_ascii=False, indent=2)
 
 
-MA_PERIOD = 220                 # v80.11 (2026-05-18): MA250→220 (Cal +0.206, WF CV -22%, 약세장 min 1.94)
+MA_PERIOD = 200                 # v80.15 (2026-05-19): MA220→200 (OOS 검증 — 220 IS 2위/OOS 8위 cherry-pick 의심 해소, 200=표준값)
 
 def check_regime_signal(kospi_close=None, kospi_ma=None, kospi_ma200=None, **kwargs):
-    """KP_MA220 (v80.11+, v80.14): KOSPI > MA_PERIOD 이동평균 = boost
+    """KP_MA200 (v80.15): KOSPI > MA_PERIOD 이동평균 = boost
 
     kospi_close: KOSPI 종가
     kospi_ma: KOSPI MA(MA_PERIOD)일 이동평균
@@ -79,7 +80,7 @@ CONFIRM_DAYS = 10               # v80.14 (2026-05-19): 8→10 (7년 BT Cal 2.474
 
 
 def get_current_regime(kospi_close=None, kospi_ma200=None, kospi_ma=None, date_str=None, **kwargs):
-    """현재 국면 판단 (KP_MA220_10d, v80.14).
+    """현재 국면 판단 (KP_MA200_10d, v80.15).
 
     Args:
         kospi_close: KOSPI 종가
