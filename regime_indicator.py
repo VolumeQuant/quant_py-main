@@ -69,7 +69,7 @@ def check_regime_signal(kospi_close=None, kospi_ma=None, kospi_ma200=None, **kwa
 
 
 # v80 파라미터
-CONFIRM_DAYS = 8                # KP_MA250_8d (v80.6, v80: MA170_8d)
+CONFIRM_DAYS = 10               # v80.14 (2026-05-19): 8→10 (7년 BT Cal 2.474→2.664 +0.19, MDD -1.5%p, 전환 39→35회, whipsaw -3.5%p)
 
 
 def get_current_regime(kospi_close=None, kospi_ma200=None, kospi_ma=None, date_str=None, **kwargs):
