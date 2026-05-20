@@ -46,7 +46,9 @@ def postprocess_dir(state_dir):
                 skipped += 1
                 continue
 
-            # T-1, T-2 찾기
+            # T-1, T-2 찾기 — Top 20 한정 + 밖이면 PENALTY 50 (run_daily/turbo_simulator와 일치)
+            # CLAUDE.md 5/17 변경: BT와 production 동일 룰. 빈 날(Top 20 안 들면) = PENALTY 50
+            PENALTY_TOP_N = 20
             t1_map, t2_map = {}, {}
             for j, target in [(i-1, 't1'), (i-2, 't2')]:
                 if j < 0:
@@ -55,8 +57,12 @@ def postprocess_dir(state_dir):
                 try:
                     with open(pfp, 'r', encoding='utf-8') as f:
                         pdata = json.load(f)
-                    pm = {r['ticker']: r.get('composite_rank', r.get('rank', PENALTY))
-                          for r in pdata.get('rankings', [])}
+                    # Top 20 한정 cr 매핑 (밖이면 PENALTY 50 적용 대상)
+                    pm = {}
+                    for r in pdata.get('rankings', []):
+                        cr = r.get('composite_rank', r.get('rank', PENALTY))
+                        if cr <= PENALTY_TOP_N:
+                            pm[r['ticker']] = cr
                     if target == 't1':
                         t1_map = pm
                     else:
@@ -64,7 +70,7 @@ def postprocess_dir(state_dir):
                 except Exception:
                     pass
 
-            # wr 계산
+            # wr 계산 (T-1, T-2 Top 20 밖이면 PENALTY 50)
             for item in rankings:
                 r0 = item.get('composite_rank', item.get('rank', PENALTY))
                 r1 = t1_map.get(item['ticker'], PENALTY)

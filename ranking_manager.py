@@ -277,25 +277,39 @@ def get_stock_status(rankings_t0, rankings_t1=None, rankings_t2=None, top_n=20, 
         - 'rank': T-0 단일일 순위 (추이 표시용)
         - 'status': ✅/⏳/🆕
     """
-    # 전체 종목 맵 (Top N 제한 없이)
+    # 전체 종목 맵 (Top N 제한 없이) — verify_n set 생성용
     all_t0 = {item['ticker']: item for item in rankings_t0.get('rankings', [])}
+
+    # PENALTY 50 (Top 20 한정 + 밖이면 50) — run_daily._postprocess_ranking과 동일 룰
+    # CLAUDE.md 5/17 변경: BT(turbo_simulator)와 production 일치. 빈 날(Top 20 안 들면) = PENALTY 50
+    PENALTY = 50
+    PENALTY_TOP_N = 20
+
     all_t1 = {}
-    top_t1_set = set()
+    top20_t1_cr = {}  # cr Top 20 한정 (PENALTY 적용용)
+    top_t1_set = set()  # verify_n 기준 (✅/⏳/🆕 판별용, 표시 전용)
     if rankings_t1:
         rlist_t1 = rankings_t1.get('rankings', [])
         for item in rlist_t1:
             all_t1[item['ticker']] = item
-        # cr 기준 Top verify_n (검증 컷, 당일 순수 실력 기준 ✅/⏳/🆕 판별)
+            cr = item.get('composite_rank', item.get('rank', PENALTY))
+            if cr <= PENALTY_TOP_N:
+                top20_t1_cr[item['ticker']] = cr
+        # cr 기준 Top verify_n (검증 컷, ✅/⏳/🆕 판별)
         sorted_t1 = sorted(rlist_t1, key=lambda r: r.get('composite_rank', 999))
         for item in sorted_t1[:verify_n]:
             top_t1_set.add(item['ticker'])
 
     all_t2 = {}
+    top20_t2_cr = {}
     top_t2_set = set()
     if rankings_t2:
         rlist_t2 = rankings_t2.get('rankings', [])
         for item in rlist_t2:
             all_t2[item['ticker']] = item
+            cr = item.get('composite_rank', item.get('rank', PENALTY))
+            if cr <= PENALTY_TOP_N:
+                top20_t2_cr[item['ticker']] = cr
         sorted_t2 = sorted(rlist_t2, key=lambda r: r.get('composite_rank', 999))
         for item in sorted_t2[:verify_n]:
             top_t2_set.add(item['ticker'])
@@ -306,15 +320,14 @@ def get_stock_status(rankings_t0, rankings_t1=None, rankings_t2=None, top_n=20, 
         entry = item.copy()
         rank_t0 = item.get('composite_rank', item['rank'])
 
-        # 과거 데이터 없으면 50위로 간주 (신규 종목 페널티)
-        DEFAULT_MISSING_RANK = 50
         if rankings_t1 and rankings_t2:
-            rank_t1 = all_t1[ticker].get('composite_rank', all_t1[ticker]['rank']) if ticker in all_t1 else DEFAULT_MISSING_RANK
-            rank_t2 = all_t2[ticker].get('composite_rank', all_t2[ticker]['rank']) if ticker in all_t2 else DEFAULT_MISSING_RANK
+            # Top 20 한정 + 밖이면 PENALTY 50 (run_daily/turbo_simulator/calc_system_returns와 일치)
+            rank_t1 = top20_t1_cr.get(ticker, PENALTY)
+            rank_t2 = top20_t2_cr.get(ticker, PENALTY)
             # v80.13 (2026-05-18): 가중치 0.5/0.3/0.2 → 0.4/0.35/0.25 (당일 비중 ↓)
             weighted = rank_t0 * 0.4 + rank_t1 * 0.35 + rank_t2 * 0.25
         elif rankings_t1:
-            rank_t1 = all_t1[ticker].get('composite_rank', all_t1[ticker]['rank']) if ticker in all_t1 else DEFAULT_MISSING_RANK
+            rank_t1 = top20_t1_cr.get(ticker, PENALTY)
             weighted = rank_t0 * 0.6 + rank_t1 * 0.4
         else:
             weighted = float(rank_t0)
