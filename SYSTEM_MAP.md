@@ -1,7 +1,42 @@
 # SYSTEM_MAP — KR 퀀트 시스템 전수 지도
 
 **목적**: 전략 변경 시 맹점 제로 보장용 영구 문서.
-**작성**: 2026-04-15 (v79), **갱신**: 2026-05-13 (**v80.6**)
+**작성**: 2026-04-15 (v79), **갱신**: 2026-05-24 (**v80.16**)
+
+## v80.16 production (2026-05-24)
+
+### 변경 요약 (v80.15 → v80.16)
+| 항목 | v80.15 | **v80.16** |
+|---|---|---|
+| defense ENTRY_RANK | 5 | **0 (cash 100%)** ★ |
+| 산업지주사 sector 표시 | KRX 분류 (금융) | **"지주" 매핑** |
+| 메시지 안내 | 매수 후보 표시만 | **약세장 cash 안내** 추가 |
+
+### 핵심 변경: defense cash 100%
+- 약세장 진입 시 신규 매수 안 함
+- 7년 BT: Cal 1.797 → 2.261 (+26%)
+- MDD 32.83% → 21.00% (-12%p ★)
+- IS/OOS 둘 다 우월 (overfit X)
+- 22-23 약세장 Cal -0.04 → +0.72 대전환
+- 메커니즘: defense 거래 785건 평균 +0.5% (boost 4.6%의 1/10) → 알파 거의 X
+
+### 변경 파일 (3개)
+- regime_indicator.py: defense ENTRY_RANK = 0
+- send_telegram_auto.py: defense cash 안내 메시지
+- backtest/fast_generate_rankings_v2.py: TICKER_SECTOR_OVERRIDE dict (지주사 매핑)
+
+### 거부된 가짜 알파 (2026-05-24 야간 7시간 검증)
+- cap=3 (2019 sector_cache 결함 의존, overfit) ★ 사용자 직관 "왜 2019년만?"으로 확정
+- Grace period (효과 X)
+- -1.5σ 면제 (현재 필터 정당)
+- 게임/제약 차단 (효과 X)
+- eb=4, xb=7 (OOS 우월 but IS 약함, 2020 -1.55 위험)
+
+### 롤백 트리거
+- 5거래일 KOSPI 알파 -3%p 또는 MDD -8% 초과
+- 즉시 환원: regime_indicator.py defense ENTRY_RANK = 5
+
+---
 
 ## v80.6 production (2026-05-13)
 
