@@ -44,6 +44,42 @@ KRX_SECTOR_MAP = {
 def get_broad_sector(krx_sector: str) -> str:
     return KRX_SECTOR_MAP.get(krx_sector, krx_sector or '기타')
 
+
+# 2026-05-24: KRX 분류 부정확 종목 ticker 기반 수동 매핑 (사용자 혼란 해소)
+# KRX = '금융' 분류된 산업지주사 → '지주' / 실제 사업 분류 X 종목 → 본업 분류
+TICKER_SECTOR_OVERRIDE = {
+    # 산업지주사 (KRX = 금융 → 지주)
+    '402340': '지주',  # SK스퀘어
+    '034730': '지주',  # SK
+    '009540': '지주',  # HD한국조선해양
+    '267250': '지주',  # HD현대
+    '003550': '지주',  # LG
+    '006260': '지주',  # LS
+    '180640': '지주',  # 한진칼
+    '078930': '지주',  # GS
+    '001040': '지주',  # CJ
+    '004800': '지주',  # 효성
+    '000150': '지주',  # 두산
+    '000880': '지주',  # 한화
+    '004990': '지주',  # 롯데지주
+    '241560': '지주',  # 두산밥캣 → 사실 기계지만 보류
+    '003410': '지주',  # 쌍용양회 X → 시멘트, 보류
+    '079160': '지주',  # CJ CGV X → 미디어
+    '011170': '지주',  # 롯데케미칼 X → 화학
+    # KRX 분류 오류 (실제 사업 ≠ KRX)
+    '008060': '전기전자',  # 대덕 (PCB 제조, KRX 분류상 금융이지만 실제 PCB)
+}
+# 무효 매핑 제거
+for _bad in ('241560', '003410', '079160', '011170'):
+    TICKER_SECTOR_OVERRIDE.pop(_bad, None)
+
+
+def get_sector_with_override(ticker: str, krx_sector: str) -> str:
+    """ticker 기반 매핑 우선 → 없으면 KRX 분류."""
+    if ticker in TICKER_SECTOR_OVERRIDE:
+        return TICKER_SECTOR_OVERRIDE[ticker]
+    return get_broad_sector(krx_sector)
+
 EXCLUDE_KEYWORDS = ['금융', '은행', '증권', '보험', '캐피탈', '카드', '저축',
                    '지주', '홀딩스', 'SPAC', '스팩', '리츠', 'REIT',
                    '생명', '화재', '손해보험', 'IB투자', '벤처투자', '자산운용', '신탁']
@@ -2004,7 +2040,7 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
             'ticker': ticker,
             'name': str(row.get('종목명', '')),
             'score': round(float(row.get('멀티팩터_점수', 0)), 4) if pd.notna(row.get('멀티팩터_점수')) else 0,
-            'sector': get_broad_sector(sector_map.get(ticker, '')),
+            'sector': get_sector_with_override(ticker, sector_map.get(ticker, '')),
         }
         for col, key in [('밸류_점수', 'value_s'), ('퀄리티_점수', 'quality_s'),
                          ('성장_점수', 'growth_s'), ('모멘텀_점수', 'momentum_s')]:

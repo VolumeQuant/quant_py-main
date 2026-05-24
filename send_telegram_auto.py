@@ -848,9 +848,20 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
     lines.append('━━━━━━━━━━━━━━━')
     lines.append('🛒 <b>매수 후보 종목</b>')
     lines.append('━━━━━━━━━━━━━━━')
-    for i, pick in enumerate(picks):
-        sector = pick.get('sector', '기타')
-        lines.append(f'<b>{i+1}. {pick["name"]}({pick["ticker"]}) · {sector}</b>')
+    if n == 0:
+        # v80.16 (2026-05-24): defense cash 100% 모드
+        lines.append('🛡️ <b>약세장 진입 — 신규 매수 없음 (cash 100%)</b>')
+        lines.append('')
+        lines.append('현재 KOSPI < 200일 이동평균 (10일 확인).')
+        lines.append('약세장 BT에서 시스템 알파가 거의 0이라 확인됨.')
+        lines.append('cash 보유가 정답 (7년 BT: MDD 33%→21% 대폭 개선).')
+        lines.append('')
+        lines.append('보유 종목은 매도 룰대로 자연 청산 (손절/트레일링).')
+        lines.append('강세장 진입 시 자동 매수 재개 (10일 확인).')
+    else:
+        for i, pick in enumerate(picks):
+            sector = pick.get('sector', '기타')
+            lines.append(f'<b>{i+1}. {pick["name"]}({pick["ticker"]}) · {sector}</b>')
 
     # v74: 상관관계 경고 제거 (전략에서 corr 필터 미사용)
     meta = rankings_t0.get('metadata') or {}

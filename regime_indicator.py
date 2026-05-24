@@ -176,7 +176,12 @@ def get_regime_params(mode):
             'G_SUB3': None,
             'G_W1': None, 'G_W2': None, 'G_W3': None,
             'MOM_PERIOD': '6m-1m',
-            'ENTRY_RANK': 5, 'EXIT_RANK': 8, 'MAX_SLOTS': 5,  # v80.9: exit 4→8, slots 4→5 (인접 CV 0.035, WF min 0.96)
+            # v80.16 (2026-05-24): defense ENTRY_RANK 5 → 0 (cash 100%)
+            # 7년 BT: Cal 1.797→2.261 (+26%), MDD 33→21% (-12%p), IS/OOS 둘 다 우월
+            # 약세장 (22-23) -0.04 → +0.72 대전환
+            # 메커니즘: defense 거래 785건 평균 +0.5% (boost +4.6%의 1/10), 알파 거의 X
+            # 약세장은 시스템 한계 인정 → 매수 안 하고 cash 보유가 정답
+            'ENTRY_RANK': 0, 'EXIT_RANK': 8, 'MAX_SLOTS': 5,
             'STOP_LOSS': -0.10,
             'TRAILING_STOP': -0.08,
             'TS_COOLDOWN': 1,

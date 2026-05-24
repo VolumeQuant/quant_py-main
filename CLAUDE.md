@@ -55,6 +55,39 @@
 
 ---
 
+# 🇰🇷 KR 전략 — quant_py-main (v80.16, 2026-05-24)
+
+## v80.16 변경 — defense cash 100% + KRX 섹터 매핑 (2026-05-24)
+
+### 핵심 변경 1: defense ENTRY_RANK = 5 → 0 (cash 100%)
+- 약세장 진입 시 매수 안 함. 보유 종목만 룰대로 청산.
+- 7년 BT: Cal 1.797 → 2.261 (+0.464, +26%)
+- MDD 32.83% → 21.00% (-12%p ★)
+- IS Cal 1.165→1.573, OOS Cal 2.787→3.589 (둘 다 우월, overfit X)
+- 22-23 약세장 Cal -0.04 → +0.72 대전환
+- 메커니즘: defense 거래 785건 평균 +0.5% (boost 평균 +4.6%의 1/10) → 알파 거의 X
+- 약세장은 시스템 한계 인정 → cash 보유가 정답
+
+### 핵심 변경 2: KRX 섹터 → 실제 사업 매핑
+- 산업지주사 13개 + 대덕 (PCB) ticker 기반 매핑
+- KRX="금융" 분류된 SK/LG/HD현대 등 → "지주" 표시
+- 메시지 사용자 혼란 해소
+- 코드: backtest/fast_generate_rankings_v2.py TICKER_SECTOR_OVERRIDE dict
+
+### 거부된 가짜 알파
+- cap=3 (2019 sector_cache 결함 의존, overfit) — 사용자 직관 ("왜 2019년만?")이 핵심
+- Grace period / -1.5σ 면제 / 게임/제약 차단 (모두 효과 X)
+- Pyramid up / DCA / regime 적응형 / 패턴 162개 / SL/TS 미세 (이전 거부)
+
+### 변경 파일 (3개)
+- regime_indicator.py: defense ENTRY_RANK = 5 → 0
+- send_telegram_auto.py: defense cash 모드 안내 메시지 추가
+- backtest/fast_generate_rankings_v2.py: TICKER_SECTOR_OVERRIDE
+
+### 롤백 트리거
+- 5거래일 KOSPI 대비 알파 -3%p 또는 MDD -8% 초과
+- 즉시 환원: regime_indicator.py defense ENTRY_RANK = 5
+
 # 🇰🇷 KR 전략 — quant_py-main (v80.15, 2026-05-19)
 
 ## 2026-05-20 정리 — wr PENALTY 통일 마무리 + 점수기반 wr 재검증
