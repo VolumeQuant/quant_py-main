@@ -1,7 +1,46 @@
 # SYSTEM_MAP — KR 퀀트 시스템 전수 지도
 
 **목적**: 전략 변경 시 맹점 제로 보장용 영구 문서.
-**작성**: 2026-04-15 (v79), **갱신**: 2026-05-24 (**v80.16**)
+**작성**: 2026-04-15 (v79), **갱신**: 2026-05-25 (**v80.18**)
+
+## v80.18 production (2026-05-25)
+
+### 변경 요약 (v80.16 → v80.18)
+| 항목 | v80.16 | **v80.18** |
+|---|---|---|
+| 국면 판단 | KOSPI > MA200 (10d) | **MA20 > MA80 (5d)** ★ |
+| boost EXIT_RANK | 6 | **4** |
+| boost MAX_SLOTS | 5 | **4** |
+| defense | cash 100% (변경 X) | cash 100% (유지) |
+
+### 핵심 변경: MA cross 국면 + 빡빡 매도
+- 7년 BT: Cal 1.797 → 3.233 (+80%)
+- MDD 32.83% → 22.16% (-10.6%p)
+- 2022 약세장 -0.04 → +11% (MA cross 효과)
+- IS/OOS 둘 다 우월 (overfit X)
+- 1404 시나리오 메가 그리드 검증
+
+### 변경 파일 (4개)
+- regime_indicator.py: SHORT_MA/LONG_MA/CONFIRM_DAYS + MA cross 로직
+- run_daily.py: kospi_short_ma/long_ma 전달
+- send_telegram_auto.py: calc_system_returns regime 계산 변경
+- send_notice_once.py: 공지 메시지 MA cross 안내
+
+### 거부된 옵션 (검증)
+- D (3,3,3 + MA15x80x5): MDD 29% 위험
+- B/C (slots 3): MDD +5%p
+- cap=3 (2019 sector_cache 결함, overfit)
+
+### state 재계산 불필요
+- ranking V/Q/G/M 점수 변경 X
+- 매매룰/국면은 시뮬레이션 시점 적용
+- 다음 16시 자동 실행 시 즉시 적용
+
+### 롤백 트리거
+- 5거래일 KOSPI 알파 -3%p 또는 MDD -8% 초과
+- 즉시 환원: SHORT_MA=200, LONG_MA=200, EXIT_RANK=6, MAX_SLOTS=5
+
+---
 
 ## v80.16 production (2026-05-24)
 

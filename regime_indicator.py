@@ -60,31 +60,41 @@ def _save_state(state):
         json.dump(state, f, ensure_ascii=False, indent=2)
 
 
-MA_PERIOD = 200                 # v80.15 (2026-05-19): MA220→200 (OOS 검증 — 220 IS 2위/OOS 8위 cherry-pick 의심 해소, 200=표준값)
+MA_PERIOD = 200                 # 호환용 (v80.18에서 cross로 변경, 옛 코드 유지)
+SHORT_MA = 20                   # v80.18 (2026-05-25): MA cross 도입 (단기 MA)
+LONG_MA = 80                    # v80.18: 장기 MA
+CONFIRM_DAYS = 5                # v80.18: MA cross 적합 confirm (옛 10일은 단순 MA용)
 
-def check_regime_signal(kospi_close=None, kospi_ma=None, kospi_ma200=None, **kwargs):
-    """KP_MA200 (v80.15): KOSPI > MA_PERIOD 이동평균 = boost
 
-    kospi_close: KOSPI 종가
-    kospi_ma: KOSPI MA(MA_PERIOD)일 이동평균
-    kospi_ma200: 호환용 (v79 이전 코드)
+def check_regime_signal(kospi_close=None, kospi_ma=None, kospi_ma200=None,
+                         kospi_short_ma=None, kospi_long_ma=None, **kwargs):
+    """KP_MA_CROSS (v80.18): KOSPI MA20 > MA80 = boost
+
+    v80.18 (2026-05-25): 단순 MA200 → MA cross 변경
+    BT: Cal 2.601 → 3.233 (+24%), MDD 22.16% (거의 동일), 2022 약세장 +11% (단순 MA는 0%)
+    Whipsaw: 7년 17회 전환 (단순 MA200 13회 대비 +4회만, 안정성 양호)
+
+    우선순위: kospi_short_ma/long_ma > kospi_close/ma (호환)
     """
+    # 신규: MA cross (v80.18)
+    if kospi_short_ma is not None and kospi_long_ma is not None:
+        return 'boost' if kospi_short_ma > kospi_long_ma else 'defense'
+    # 호환: 단순 MA 비교 (옛 v80.15)
     ma_val = kospi_ma if kospi_ma is not None else kospi_ma200
     if kospi_close is not None and ma_val is not None:
         return 'boost' if kospi_close > ma_val else 'defense'
     return 'defense'
 
 
-# v80 파라미터
-CONFIRM_DAYS = 10               # v80.14 (2026-05-19): 8→10 (7년 BT Cal 2.474→2.664 +0.19, MDD -1.5%p, 전환 39→35회, whipsaw -3.5%p)
-
-
-def get_current_regime(kospi_close=None, kospi_ma200=None, kospi_ma=None, date_str=None, **kwargs):
-    """현재 국면 판단 (KP_MA200_10d, v80.15).
+def get_current_regime(kospi_close=None, kospi_ma200=None, kospi_ma=None,
+                        kospi_short_ma=None, kospi_long_ma=None,
+                        date_str=None, **kwargs):
+    """현재 국면 판단 (KP_MA_CROSS, v80.18).
 
     Args:
-        kospi_close: KOSPI 종가
-        kospi_ma200: KOSPI 200일 이동평균
+        kospi_short_ma: KOSPI MA20 (v80.18 신규)
+        kospi_long_ma: KOSPI MA80 (v80.18 신규)
+        kospi_close, kospi_ma, kospi_ma200: 호환용 (옛 v80.15)
         date_str: 날짜 (YYYYMMDD)
 
     Returns:
@@ -94,8 +104,9 @@ def get_current_regime(kospi_close=None, kospi_ma200=None, kospi_ma=None, date_s
     state = _load_state()
     prev_mode = state['mode']
 
-    # 당일 신호 (boost/defense)
-    signal = check_regime_signal(kospi_close=kospi_close, kospi_ma=kospi_ma, kospi_ma200=kospi_ma200)
+    # 당일 신호 (boost/defense) — v80.18: MA cross 우선
+    signal = check_regime_signal(kospi_close=kospi_close, kospi_ma=kospi_ma, kospi_ma200=kospi_ma200,
+                                  kospi_short_ma=kospi_short_ma, kospi_long_ma=kospi_long_ma)
 
     # 연속 카운트
     if signal == state['streak_mode']:
@@ -152,7 +163,11 @@ def get_regime_params(mode):
             'G_SUB3': 'gp_growth_z',        # v80.6.1 (2026-05-15): 3팩터 도입
             'G_W1': 0.4, 'G_W2': 0.4, 'G_W3': 0.2,  # rev/oca/gp_growth 비율
             'MOM_PERIOD': '12m',
-            'ENTRY_RANK': 3, 'EXIT_RANK': 6, 'MAX_SLOTS': 5,  # v80.8: entry 2→3
+            # v80.17 (2026-05-25): EXIT_RANK 6→4, MAX_SLOTS 5→4
+            # 7년 BT: Cal 2.261 → 2.631 (+16%), MDD 21%→22.16% (거의 동일)
+            # 3,3,4 vs 3,4,4 비교: Cal 비슷 (+0.030) but 매도 40% 적음 (759→458)
+            # 모든 해 baseline 우월, IS/OOS 둘 다 우월
+            'ENTRY_RANK': 3, 'EXIT_RANK': 4, 'MAX_SLOTS': 4,
             'STOP_LOSS': -0.10,
             'TRAILING_STOP': -0.08,
             'TS_COOLDOWN': 1,                                  # v80.8: 2→1

@@ -582,36 +582,39 @@ def main():
         except Exception as e:
             log(f"OHLCV 증분 수집 오류: {e} — 기존 데이터로 진행", logfile)
 
-        # 0.5. 국면 판단 (v80: KP_MA170_8d)
+        # 0.5. 국면 판단 (v80.18: KP_MA_CROSS — MA20 > MA80, 5일 confirm)
         try:
             sys.path.insert(0, str(SCRIPT_DIR))
-            from regime_indicator import get_current_regime, get_regime_params, MA_PERIOD, CONFIRM_DAYS
-            log(f"국면 판단 (KP_MA{MA_PERIOD}_{CONFIRM_DAYS}d)", logfile)
+            from regime_indicator import get_current_regime, get_regime_params, MA_PERIOD, CONFIRM_DAYS, SHORT_MA, LONG_MA
+            log(f"국면 판단 (KP_MA_CROSS: MA{SHORT_MA} > MA{LONG_MA}, {CONFIRM_DAYS}d 확인)", logfile)
             import pandas as pd
             from pathlib import Path
 
-            # KOSPI MA 계산 (v80.6: MA250 8d)
-            kospi_close = kospi_ma = kospi_ma200 = kospi_ret20 = None
+            # KOSPI MA 계산 (v80.18: MA cross)
+            kospi_close = kospi_ma = kospi_ma200 = kospi_short_ma = kospi_long_ma = kospi_ret20 = None
             kospi_file = SCRIPT_DIR / 'data_cache' / 'kospi_yf.parquet'
             if kospi_file.exists():
                 _df = pd.read_parquet(kospi_file)
                 kp = _df.iloc[:, 0].copy()
-                for _c in _df.columns[1:]:  # 옛 멀티컬럼 호환 (종가+kospi 보완)
+                for _c in _df.columns[1:]:  # 옛 멀티컬럼 호환
                     kp = kp.fillna(_df[_c])
                 kp = kp.dropna()
-                if len(kp) >= max(MA_PERIOD, 200):
+                if len(kp) >= max(LONG_MA, MA_PERIOD, 200):
                     kospi_close = float(kp.iloc[-1])
-                    kospi_ma = float(kp.rolling(MA_PERIOD).mean().iloc[-1])
-                    kospi_ma200 = float(kp.rolling(200).mean().iloc[-1])  # 호환용
+                    kospi_ma = float(kp.rolling(MA_PERIOD).mean().iloc[-1])  # 호환
+                    kospi_ma200 = float(kp.rolling(200).mean().iloc[-1])  # 호환
+                    kospi_short_ma = float(kp.rolling(SHORT_MA).mean().iloc[-1])  # 신규 v80.18
+                    kospi_long_ma = float(kp.rolling(LONG_MA).mean().iloc[-1])  # 신규 v80.18
                 if len(kp) >= 21:
                     kospi_ret20 = float(kp.iloc[-1] / kp.iloc[-21] - 1)
-                log(f"KOSPI 로드: close={kospi_close} ma{MA_PERIOD}={kospi_ma} ret20={kospi_ret20}", logfile)
+                log(f"KOSPI 로드: close={kospi_close} MA{SHORT_MA}={kospi_short_ma} MA{LONG_MA}={kospi_long_ma}", logfile)
             else:
                 log(f"KOSPI 파일 없음: {kospi_file}", logfile)
 
             regime = get_current_regime(
                 kospi_close=kospi_close, kospi_ma=kospi_ma,
                 kospi_ma200=kospi_ma200,
+                kospi_short_ma=kospi_short_ma, kospi_long_ma=kospi_long_ma,
                 kospi_ret20=kospi_ret20,
                 date_str=today
             )
@@ -621,7 +624,7 @@ def main():
             params = get_regime_params(_underlying)
             # 표시용 라벨은 최종 모드(cash 포함)
             display_params = get_regime_params(regime['mode'])
-            kp_str = f'KOSPI={kospi_close:.0f} MA{MA_PERIOD}={kospi_ma:.0f}' if kospi_close else '?'
+            kp_str = f'KOSPI={kospi_close:.0f} MA{SHORT_MA}={kospi_short_ma:.0f} MA{LONG_MA}={kospi_long_ma:.0f}' if kospi_short_ma else '?'
             ret_str = f' ret20={kospi_ret20*100:+.1f}%' if kospi_ret20 is not None else ''
             log(f"국면: {display_params['icon']} {display_params['label']} ({kp_str}{ret_str}, 신호={regime['signal']}, 전환={regime['switched']})", logfile)
         except Exception as e:

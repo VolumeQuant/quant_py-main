@@ -55,6 +55,93 @@
 
 ---
 
+# 🇰🇷 KR 전략 — quant_py-main (v80.18, 2026-05-25)
+
+## v80.18 변경 — 매매룰 정밀 + 국면 MA cross (2026-05-25)
+
+### 핵심 변경 2가지
+1. **매매룰**: boost EXIT_RANK 6→4, MAX_SLOTS 5→4 (3,4,4)
+2. **국면**: KP_MA200_10d → **KP_MA_CROSS (MA20 > MA80, 5d)**
+
+### 7년 BT 성과
+| 지표 | v80.16 baseline | v80.18 (A) | Δ |
+|---|---|---|---|
+| Cal | 2.261 | **3.233** | +0.97 (+43%) |
+| CAGR | 47.5% | **71.6%** | +24%p |
+| MDD | 21.00% | 22.16% | +1.16%p (거의 동일) |
+| IS Cal | 1.573 | 2.41 | +0.84 |
+| OOS Cal | 3.589 | 5.07 | +1.48 |
+| WFmin | 0.72 | **2.38** | +1.66 |
+| 2022 약세장 | 0% (cash) | **+11%** ★ | MA cross 효과 |
+
+### 메가 그리드 검증 (1404 BT)
+- 매매룰 52 × 국면 9 × IS/OOS = 468 시나리오
+- 종합 점수 Top 10 중 7개가 MA cross 국면
+- 인접 안정성 통과 (CV < 0.15)
+- 매도 횟수 519 (baseline 371, +40%) — 사용자 매도 무관 OK
+- whipsaw 7년 17회 (baseline 13회, +4회 only)
+
+### 거부된 옵션 (검증 후)
+- D (3,3,3 + MA15x80x5): Cal 3.482 but MDD 28.82% (자산 -29% 위험)
+  - 종목 분석: A와 97% 동일 (119/121), 회전만 빠름 (2일 vs 9일)
+  - 알파 본질 같음. MDD만 +7%p
+- B/C (3,6,3 / 3,7,3): MDD +5%p, 사용자 조건 위반
+
+### 변경 파일 (4개)
+1. regime_indicator.py: SHORT_MA=20, LONG_MA=80, CONFIRM_DAYS=5, check_regime_signal 변경
+2. run_daily.py: kospi_short_ma, kospi_long_ma 추가 + regime 호출
+3. send_telegram_auto.py: calc_system_returns regime 계산 MA cross
+4. send_notice_once.py: 공지 메시지 v80.18 반영
+
+### state 재계산 불필요
+- ranking 자체는 변경 X (V/Q/G/M 점수 동일)
+- 매매룰/국면 = 시뮬레이션 시점 적용
+- 다음 16시 자동 실행 시 자동 적용
+
+### 롤백 트리거
+- 5거래일 KOSPI 알파 -3%p 또는 MDD -8% 초과
+- 즉시 환원: regime_indicator.py SHORT_MA/LONG_MA 옛 MA200, EXIT_RANK=6, MAX_SLOTS=5
+
+# 🇰🇷 KR 전략 — quant_py-main (v80.17, 2026-05-25, deprecated)
+
+## v80.17 변경 — boost 매도/슬롯 정밀 (2026-05-25)
+
+### 변경
+- boost EXIT_RANK: 6 → **3** (매도 기준선 빡빡)
+- boost MAX_SLOTS: 5 → **4**
+- defense 그대로 (cash 100%)
+
+### 7년 BT 성과
+| 지표 | v80.16 baseline | v80.17 | Δ |
+|---|---|---|---|
+| Cal | 2.261 | 2.601 | +0.34 (+15%) |
+| CAGR | 47.5% | 57.7% | +10.2%p |
+| MDD | 21.00% | 22.20% | +1.2%p (거의 동일) |
+| IS Cal | 1.573 | 2.193 | +0.62 |
+| OOS Cal | 3.589 | 4.184 | +0.60 |
+
+### 모든 연도 baseline 우월 (overfit X)
+- 2020 +73→+83 / 2021 +24→+44 / 2023 +18→+33 / 2024 +73→+74 / 2025 +54→+80 / 2026 H1 +100→+107
+- 2022 cash (변경 없음)
+
+### 메커니즘
+- EXIT_RANK=3 (매도 빡빡) → 매수 후보 = 보유 종목 (Top 3만)
+- 매도 횟수 4배 증가 (rank 매도 141→581건)
+- 약자 즉시 청산 → 시스템 신호 100% 충실
+- SK하이닉스 같은 강자 자주 재진입
+
+### 위험 인지
+- 매도 횟수 ↑ (사용자 매일 확인 부담)
+- MDD 시기 (2024-08 KOSPI -8.77%, 2025-09) 동일 발생
+- Crash protection 검증 → 효과 X (회복 알파 놓침)
+
+### 변경 파일 (1개)
+- regime_indicator.py: boost EXIT_RANK=3, MAX_SLOTS=4
+
+### 롤백 트리거
+- 5거래일 KOSPI 알파 -3%p 또는 MDD -8% 초과
+- 즉시 환원: regime_indicator.py boost EXIT_RANK=6, MAX_SLOTS=5
+
 # 🇰🇷 KR 전략 — quant_py-main (v80.16, 2026-05-24)
 
 ## v80.16 변경 — defense cash 100% + KRX 섹터 매핑 (2026-05-24)

@@ -162,19 +162,21 @@ def calc_system_returns(regime_info=None):
         _kospi = _kospi.dropna()
     else:
         _kospi = pd.Series()
-    from regime_indicator import MA_PERIOD, CONFIRM_DAYS
-    _kma = _kospi.rolling(MA_PERIOD).mean() if len(_kospi) >= MA_PERIOD else pd.Series()
+    # v80.18: MA cross (MA20 > MA80, 5일 confirm)
+    from regime_indicator import SHORT_MA, LONG_MA, CONFIRM_DAYS
+    _short_ma = _kospi.rolling(SHORT_MA).mean() if len(_kospi) >= LONG_MA else pd.Series()
+    _long_ma = _kospi.rolling(LONG_MA).mean() if len(_kospi) >= LONG_MA else pd.Series()
 
     all_boost_dates = sorted(boost_data.keys())
     regime_by_date = {}
     _md = False; _stk = 0; _ss = False
     for d in all_boost_dates:
         ts = pd.Timestamp(d)
-        kv = _kospi.get(ts, None); mv = _kma.get(ts, None)
-        s = (kv > mv) if kv is not None and mv is not None else _md
+        sv = _short_ma.get(ts, None); lv = _long_ma.get(ts, None)
+        s = (sv > lv) if sv is not None and lv is not None else _md
         if s == _ss: _stk += 1
         else: _stk = 1; _ss = s
-        if _stk >= CONFIRM_DAYS and _md != s: _md = s  # v80.15: MA200 10d (regime_indicator에서 로드)
+        if _stk >= CONFIRM_DAYS and _md != s: _md = s  # v80.18: MA20>MA80, 5d
         regime_by_date[d] = _md  # True=공격, False=방어
 
     # 날짜별 국면에 맞는 ranking + 파라미터 선택
