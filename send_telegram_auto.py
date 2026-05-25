@@ -679,12 +679,12 @@ def _build_top5_streak(top5_tickers):
 
 
 def create_regime_switch_message(regime_mode, prev_mode=None):
-    """국면 전환 안내 — Signal 메시지 앞에 전송 (v80.14)"""
+    """국면 전환 안내 — Signal 메시지 앞에 전송 (v80.18)"""
     if regime_mode == 'boost':
         return '\n'.join([
             '[공격 모드 전환]',
             '',
-            '코스피 200일선 위에서 10거래일 연속 마감.',
+            '코스피 MA20이 MA80 위로 5거래일 연속 마감.',
             '방어 → 공격으로 전환합니다.',
             '',
             '━━━━━━━━━━━━━━━',
@@ -692,23 +692,21 @@ def create_regime_switch_message(regime_mode, prev_mode=None):
             '━━━━━━━━━━━━━━━',
             '1. 방어 모드 보유 종목 전량 정리',
             '2. 오늘 ✅ 상위부터 신규 진입',
-            '3. 최대 5종목 균등 비중',
+            '3. 최대 4종목 균등 비중',
             '',
             '━━━━━━━━━━━━━━━',
             '공격 모드 매매 기준',
             '━━━━━━━━━━━━━━━',
-            '매수: 3일 연속 ✅ 상위 3종목 (최대 5)',
+            '매수: 3일 연속 ✅ 상위 3종목 (최대 4)',
             '매도 (셋 중 하나):',
-            '• 3일 가중순위 6위 밖',
+            '• 3일 가중순위 4위 밖',
             '• 매수가 대비 -10%',
             '• 최고가 대비 -8%',
-            '',
-            '분할매수 권장 (1차 50% + 다음날 추가)',
             '',
             '━━━━━━━━━━━━━━━',
             '백테스트 (7년, 2019~2026)',
             '━━━━━━━━━━━━━━━',
-            'CAGR +62% / MDD -25% / Calmar 2.51',
+            'CAGR +72% / MDD -22% / Calmar 3.23',
             '',
             '자동매매 X — 매수/매도/손절은 본인 실행',
             '투자 손실 책임은 본인에게 있습니다.',
@@ -718,31 +716,26 @@ def create_regime_switch_message(regime_mode, prev_mode=None):
     return '\n'.join([
         '[방어 모드 전환]',
         '',
-        '코스피 200일선 아래에서 10거래일 연속 마감.',
+        '코스피 MA20이 MA80 아래로 5거래일 연속 마감.',
         '공격 → 방어로 전환합니다.',
         '',
         '━━━━━━━━━━━━━━━',
         '대응',
         '━━━━━━━━━━━━━━━',
         '1. 공격 모드 보유 종목 전량 정리 (수익 중이어도 원칙상)',
-        '2. 오늘 ✅ 상위부터 신규 진입',
-        '3. 최대 5종목 균등 비중',
+        '2. 신규 매수 X — 현금 100% 보유',
         '',
         '━━━━━━━━━━━━━━━',
-        '방어 모드 매매 기준',
+        '방어 모드 운영',
         '━━━━━━━━━━━━━━━',
-        '매수: 3일 연속 ✅ 상위 5종목 (최대 5)',
-        '매도 (셋 중 하나):',
-        '• 3일 가중순위 8위 밖',
-        '• 매수가 대비 -10%',
-        '• 최고가 대비 -8%',
-        '',
-        '분할매수 권장 (1차 50% + 다음날 추가)',
+        '현금 보유 — 약세장 매수 안 함',
+        '근거: 7년 BT 방어 모드 알파 거의 0%',
+        '       (시스템 한계 인정 → 현금이 정답)',
         '',
         '━━━━━━━━━━━━━━━',
         '백테스트 (7년, 2019~2026)',
         '━━━━━━━━━━━━━━━',
-        'CAGR +62% / MDD -25% / Calmar 2.51',
+        'CAGR +72% / MDD -22% / Calmar 3.23',
         '',
         '자동매매 X — 매수/매도/손절은 본인 실행',
         '투자 손실 책임은 본인에게 있습니다.',
@@ -801,10 +794,6 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         lines.append(pick_level['warning'])
         lines.append('')
         lines.append('━━━━━━━━━━━━━━━')
-        lines.append('💡 분할매수 권장')
-        lines.append('한 번에 전량 매수보다 2~3회 나눠서')
-        lines.append('조정 시 진입이 유리합니다.')
-        lines.append('')
         lines.append('⚖️ 멀티팩터 순위는 종목 선별 기준이며,')
         lines.append('포트폴리오 비중은 투자자의 판단입니다.')
         lines.append('투자 손실에 대한 책임은 투자자 본인에게 있습니다.')
@@ -818,10 +807,6 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         lines.append('시장이 안정되면 다시 안내드리겠습니다.')
         lines.append('')
         lines.append('━━━━━━━━━━━━━━━')
-        lines.append('💡 분할매수 권장')
-        lines.append('한 번에 전량 매수보다 2~3회 나눠서')
-        lines.append('조정 시 진입이 유리합니다.')
-        lines.append('')
         lines.append('⚖️ 멀티팩터 순위는 종목 선별 기준이며,')
         lines.append('포트폴리오 비중은 투자자의 판단입니다.')
         lines.append('투자 손실에 대한 책임은 투자자 본인에게 있습니다.')
@@ -932,12 +917,24 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
     # 순위 이탈 알림은 Watchlist 메시지(Top 20)에 통합 — Signal에선 제거
 
     # ── Signal footer: 매매 룰 (간결) ──
+    # regime_info(인자) → 환경변수 → state.json 순으로 mode 결정 (디폴트 defense 위험 제거)
+    _mode_for_rule = None
+    if regime_info:
+        _mode_for_rule = regime_info.get('mode')
+    if not _mode_for_rule:
+        _mode_for_rule = os.environ.get('REGIME_MODE')
+    if not _mode_for_rule:
+        try:
+            from regime_indicator import _load_state as _ls
+            _mode_for_rule = _ls().get('mode', 'boost')
+        except Exception:
+            _mode_for_rule = 'boost'
     _rule_e = ENTRY_RANK
     _rule_x = EXIT_RANK
     _rule_s = MAX_SLOTS
     try:
         from regime_indicator import get_regime_params as _grp_sig
-        _rp_sig = _grp_sig(os.environ.get('REGIME_MODE', 'defense'))
+        _rp_sig = _grp_sig(_mode_for_rule)
         _rule_e = _rp_sig.get('ENTRY_RANK', ENTRY_RANK)
         _rule_x = _rp_sig.get('EXIT_RANK', EXIT_RANK)
         _rule_s = _rp_sig.get('MAX_SLOTS', MAX_SLOTS)
@@ -945,15 +942,20 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         pass
     lines.append('')
     lines.append('━━━━━━━━━━━━━━━')
-    lines.append(f'매수: 3일 연속 상위 {_rule_e}종목 (최대 {_rule_s}종목)')
-    lines.append('')
-    lines.append('매도 (아래 셋 중 하나라도 해당 시)')
-    lines.append('• 매도 기준선 이탈 (Top 20 메시지 참고)')
-    lines.append('• 매수가 대비 -10% 시')
-    lines.append('• 최고가 대비 -8% 시')
-    lines.append('')
-    lines.append('분할매수 권장 (1차 50% + 다음날 추가)')
-    lines.append('시스템은 신호만, 매매는 본인 판단')
+    if _mode_for_rule == 'defense':
+        lines.append('🛡️ 방어 모드 — 현금 100% 보유 권장')
+        lines.append('약세장 진입: 신규 매수 X')
+        lines.append('')
+        lines.append('시스템은 신호만, 매매는 본인 판단')
+    else:
+        lines.append(f'매수: 3일 연속 상위 {_rule_e}종목 (최대 {_rule_s}종목)')
+        lines.append('')
+        lines.append('매도 (아래 셋 중 하나라도 해당 시)')
+        lines.append(f'• 3일 가중순위 {_rule_x}위 밖')
+        lines.append('• 매수가 대비 -10% 시')
+        lines.append('• 최고가 대비 -8% 시')
+        lines.append('')
+        lines.append('시스템은 신호만, 매매는 본인 판단')
 
     return '\n'.join(lines)
 
