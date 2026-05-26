@@ -21,6 +21,10 @@ v80.15 전략:
   v80.13 (05-18): wr 가중치 50:30:20 → 40:35:25 (Cal +17%, 노이즈 매수 차단)
   v80.14 (05-19): regime CONFIRM_DAYS 8→10 (Cal +0.19, 전환 39→35, whipsaw -3.5%p)
   v80.15 (05-19): regime MA220→200 (OOS robust — 220 cherry-pick 의심 해소, 표준값)
+  v80.16 (05-24): defense ENTRY 5→0 (cash 100%, 약세장 한계 인정)
+  v80.17 (05-25): boost EXIT 6→4, MAX_SLOTS 5→4
+  v80.18 (05-25): regime MA200 → MA20/MA80 cross (5d), Cal +43%, WFmin +1.66
+  v80.19 (05-27): boost MAX_SLOTS 4→3 (자율주행 검증, Cal +22%, 현실 알파 +0.30)
 
 사용:
     from regime_indicator import get_current_regime
@@ -164,10 +168,13 @@ def get_regime_params(mode):
             'G_W1': 0.4, 'G_W2': 0.4, 'G_W3': 0.2,  # rev/oca/gp_growth 비율
             'MOM_PERIOD': '12m',
             # v80.17 (2026-05-25): EXIT_RANK 6→4, MAX_SLOTS 5→4
-            # 7년 BT: Cal 2.261 → 2.631 (+16%), MDD 21%→22.16% (거의 동일)
-            # 3,3,4 vs 3,4,4 비교: Cal 비슷 (+0.030) but 매도 40% 적음 (759→458)
-            # 모든 해 baseline 우월, IS/OOS 둘 다 우월
-            'ENTRY_RANK': 3, 'EXIT_RANK': 4, 'MAX_SLOTS': 4,
+            # v80.19 (2026-05-27): MAX_SLOTS 4→3 (자율주행 검증)
+            # 7년 BT: Cal 1.991 → 2.432 (+22%), OOS 3.23→4.17 (+29%)
+            # 현실 알파 (slippage 0.1+0.3%): 1.169 → 1.474 (+0.305)
+            # 매도 -12% (486→425), WFmin +0.15 (1.45→1.60)
+            # 약세장 22-23 -0.75 (boost 단기 진입 시 단일종목 손실 ↑)
+            # → defense cash 100% + 손절 -10%로 보호
+            'ENTRY_RANK': 3, 'EXIT_RANK': 4, 'MAX_SLOTS': 3,
             'STOP_LOSS': -0.10,
             'TRAILING_STOP': -0.08,
             'TS_COOLDOWN': 1,                                  # v80.8: 2→1

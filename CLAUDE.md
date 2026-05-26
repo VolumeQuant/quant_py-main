@@ -29,29 +29,92 @@
 
 ---
 
-# 🇺🇸 US 전략 — eps-momentum-us (v80.10c, 2026-05-11)
+# 🇺🇸 US 전략 — eps-momentum-us (v83.1, 2026-05-24)
 
 > 경로: `C:\dev\claude code\eps-momentum-us`
 
-- EPS Revision Momentum, conviction z-score 기반, **균등비중**
+- EPS Revision Momentum, conviction z-score 기반, **2슬롯 80/20 집중** (v83: 균등 3슬롯 → 80/20)
 - conviction: adj_gap × (1 + max(up30/N, min(|eps_chg|/100, 3)) + min(min(rg,0.5)×0.6, 0.3))  ← v80.9 X2: cap 3.0, rev_bonus smooth
 - adj_gap = fwd_pe_chg × (1 + dir_factor) × eps_quality
 - **fwd_pe_chg 가중치 (v80.10)**: **7d 0.30 / 30d 0.10 / 60d 0.10 / 90d 0.50** (90일 누적 PE 압축 강조, long-tail)
 - 점수: 일별 z-score(**하한30, 상한 무제한**) → 3일 가중(T0×0.5+T1×0.3+T2×0.2), 빈 날=30점
 - **v79**: z-score 상한 100 clamp 제거 → outlier 변별력 보존
 - **Case 1 보너스 폐기 (v80.5)**: cr/score_100/part2_rank 정렬 일관성 회복 위해 제거
-- 진입: 3일 가중 Top **3** + ✅(3일 검증) + min_seg ≥ 0%, 슬롯 **3**
+- 진입: 3일 가중 Top **2** + ✅(3일 검증) + min_seg ≥ 0%, 슬롯 **2** (v82: 3→2)
+- **비중 (v83)**: **1위 80% / 2위 20%** (v82 70/30 정정). 슬롯 idx 아닌 점수 순서 기반 배정
+- **C2 boost (v83)**: `eps_chg_weighted > 0 AND 가격 30거래일 변화 < 0` (buy-the-dip) 종목 rank +3. `_apply_c2_boost_rerank` (daily_runner.py:1653), 3곳 적용(save_part2_ranks/score_100_map/_w_gap). 본질 = adj_gap 괴리율 mean reversion이라 C2가 진입 본질 강화 (C1 boost는 본질 거스름 → 거부)
 - **퇴출 (v80.10b)**: part2_rank > **10** OR min_seg < -2%  ← 8→10 변경 (회전 정책 재최적화)
 - **품질 필터 (v79.1)**: FCF < 0 AND ROE < 0 동시 → eligible 제외
 - **rev_up30 ≥ 3 필터 (v80.8)**: 단일 분석가 의존 종목 차단 (WELL 사례)
 - **Signal 진입 (v80.2)**: ✅ but min_seg<0/하향과반/저커버리지 탈락 시 다음 ✅ 후보로 슬라이드
 - **⏸️ 매도 유예 제거 (v80.10c)**: v80.10 장기 가중치 전환으로 ⏸️ 알파(단기 가중 노이즈 완충재) 소멸. BT N=0이 모든 N>0보다 paired 100/100 우월. `check_breakout_hold` 함수는 유지(약세장 재토글용)
+- **v81 롤백**: MA120→MA20 단기 모멘텀 필터 시도 → bt_breakout_hold simulator의 pool-exit price masking 버그 발견 후 롤백 (MA120 유지)
+- **HISTORICAL MODE (v83.1)**: yfinance eps_trend `7daysAgo/30d/60d/90daysAgo`가 호출 시점 기준 → MARKET_DATE 과거 재실행 시 window(사용자 날짜)와 EPS 값(yf 시점) misalign → adj_gap drift. `is_historical_mode()` 감지 시 fetch SKIP + DB part2_rank 그대로 사용(write 0). **production cron 영향 없음** (매일 새 날짜 = real_today 정합), test workflow + 과거 날짜만 영향
 - composite_rank=당일 conviction 순위(추이 표시), part2_rank=3일 가중 순위(매매)
 - RETURN_MATRIX: S&P500 기반 (26년 6,593일), VIX는 yfinance 최신 보완
-- 비중 조절 안 함 (알파가 공포 구간에서 발생)
+- 시장 공포 기반 비중 조절 안 함 (portfolio_mode normal 하드코딩 — 알파가 공포 구간에서 발생). 종목간 80/20은 별개
 - 상관관계: 🔗 유사도% + BFS 그룹핑 + 택1/택1~2 권장
-- **v80.10/10b/10c 종합 성과 (60일 paired)**: v80.9 production +55.89% → v80.10b +104.47%, paired lift **+48.58%p** (100/100 wins). 단계별: 가중치 +40.86%p / exit 8→10 +7.72%p / ⏸️ 제거 +5.37%p. caveat: 60일 sample, 본격 약세장 미검증
-- **롤백 트리거 (v80.10/10b/10c 공통)**: 5거래일 SPY 대비 알파 -3%p 이하 / MDD -8% 초과 / Top3 교체율 50%+ / HY×VIX Q3 진입. backup: `eps_momentum_data.bak_pre_v80_10.db`
+- **v83 성과 (BT)**: 80/20 + C2 boost b=3 = random 500 +48.14%p (500/500 wins), 24 multistart 24/24, M24 lift +52.76%p, **M24 min +13.54%p**, MDD -19.82%. 모든 지표 v82 ≤ v83. 4/2 worst 재검증 v82 +13%p → v83 +38%p (MU 1위 → 80% 자동). caveat: 65일 강세장 단일 환경, 약세장 미검증, MU +103% 단일 슈퍼위너 의존
+- **롤백 트리거 (v83)**: 5거래일 SPY 대비 알파 -5%p 이하 / MDD -10% 초과 / Top3 교체율 50%+. backup: `eps_momentum_data.db.bak_pre_v83`. 롤백: `cp eps_momentum_data.db.bak_pre_v83 eps_momentum_data.db && git checkout 54ee685 -- daily_runner.py`
+
+---
+
+# 🇰🇷 KR 전략 — quant_py-main (v80.19, 2026-05-27)
+
+## v80.19 변경 — boost MAX_SLOTS 4→3 (자율주행 검증)
+
+### 핵심
+`regime_indicator.py:170` boost MAX_SLOTS = 4 → **3**. 1줄 변경.
+
+### 검증 — 자율주행 50+ BT 종합
+- baseline (E3X4S4) Cal 1.991 → 후보 (E3X4S3) Cal **2.432 (+22%)**
+- OOS Cal 3.23 → **4.17 (+29%)**
+- 현실 알파 (slippage 0.1+0.3%): 1.169 → **1.474 (+0.305)**
+- WFmin 1.45 → **1.60** (+0.15)
+- 매도 횟수 486 → 425 (**-12%**, 사용자 부담 ↓)
+
+### 인접 안정성 (E3X4 × SLOTS 2/3/4/5)
+| SLOTS | Cal | WFmin | OOS |
+|---|---|---|---|
+| 2 | 1.629 | 0.639 | 2.87 |
+| **3 ★** | **2.432** | **1.605** | **4.17** |
+| 4 | 1.991 | 1.454 | 3.23 |
+| 5 | 1.905 | 1.436 | 3.04 |
+
+### WF 4구간 트레이드오프
+| 시기 | S4 | S3 | Δ |
+|---|---|---|---|
+| 2019 약세 | 1.45 | 1.60 | +0.15 |
+| 2020-21 코로나 | 2.65 | 3.38 | +0.73 |
+| **2022-23 약세** | **2.40** | 1.65 | **-0.75** ⚠️ |
+| 2024-25 강세 | 5.04 | 5.84 | +0.80 |
+
+= 약세장 22-23 약화. 단 **v80.16 defense cash 100%로 약세장 자동 보호** (520일 중 39%만 boost 진입). 단일 종목 손실 비중 25%→33% 증가는 손절 -10%로 일부 완화.
+
+### 자율주행 종합 결과 (50+ BT)
+**진짜 알파 1개 발견**: SLOTS 4→3
+**가짜 알파 1개 발견 + 제거**: PEAD (look-ahead bias, Cal 3.601 가짜)
+**기타 모두 baseline 미달**:
+- V/Q/G/M 비율 (60+ 조합)
+- G 서브팩터 (production growth_s가 진짜 최적)
+- M 기간 (12m only)
+- Q 재정의 (Q 자체 무효)
+- OHLCV 신팩터 (단기 모멘텀/변동성/52w/거래량)
+- 섹터별 차등 / 국면 cross 변형
+- 매매룰 다른 조합
+
+### 변경 (3 파일)
+- `regime_indicator.py:170` MAX_SLOTS = 4 → 3
+- `regime_indicator.py` docstring v80.19 추가
+- `send_telegram_auto.py` 모드 전환 메시지 "최대 4" → "최대 3"
+- `send_notice_once.py` 공지 "최대 4종목" → "최대 3종목"
+
+### state 재생성 불필요 (매매룰만 변경)
+- 다음 자동 실행 시 즉시 적용
+
+### 롤백 트리거
+- 5거래일 KOSPI 대비 알파 -3%p 또는 MDD -8% 초과
+- `regime_indicator.py:170` MAX_SLOTS = 4 환원
 
 ---
 
