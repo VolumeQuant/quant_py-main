@@ -228,6 +228,11 @@ def _build_mode_env(params):
         env['G_QOQ_PENALTY_THRESHOLD'] = str(params['G_QOQ_PENALTY_THRESHOLD'])
         env['G_QOQ_PENALTY_MULTIPLIER'] = str(params['G_QOQ_PENALTY_MULTIPLIER'])
         env['G_QOQ_SG6_THRESH'] = str(params['G_QOQ_SG6_THRESH'])
+    # v80.20 (2026-05-27): mom_10 + vol_low 신팩터 (boost only)
+    if params.get('FACTOR_MOM_10_W'):
+        env['FACTOR_MOM_10_W'] = str(params['FACTOR_MOM_10_W'])
+    if params.get('FACTOR_VOL_LOW_W'):
+        env['FACTOR_VOL_LOW_W'] = str(params['FACTOR_VOL_LOW_W'])
     return env
 
 

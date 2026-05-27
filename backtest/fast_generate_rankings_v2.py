@@ -2029,6 +2029,42 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
                 if not scored.empty:
                     scored['멀티팩터_순위'] = scored['멀티팩터_점수'].rank(ascending=False, method='first', na_option='bottom')
 
+    # ============================================================
+    # v80.20 (2026-05-27): mom_10 + vol_low 신팩터 boost 가산
+    # BT: Cal 2.43 → 3.06 (+25%), MDD 31% → 29%, OOS 4.17 → 5.60
+    # 사용자 의도: 가격 변동이 매일 ranking에 자연 반영
+    # mom_10 = 10일 가격 변동률 (단기 모멘텀)
+    # vol_low = 20일 일별 수익률 std 역수 (저변동성 우대 = MDD 보호)
+    # 환경변수: FACTOR_MOM_10_W=0.05, FACTOR_VOL_LOW_W=0.06 (boost only)
+    # ============================================================
+    MOM_10_W = float(os.environ.get('FACTOR_MOM_10_W', '0.0'))
+    VOL_LOW_W = float(os.environ.get('FACTOR_VOL_LOW_W', '0.0'))
+    if (MOM_10_W != 0 or VOL_LOW_W != 0) and not scored.empty and price_df is not None:
+        # CRITICAL: OHLCV 캐시는 캘린더 인덱스 (주말/휴일 = NaN 행).
+        # iloc[-N]을 단순 적용하면 주말에 떨어질 위험 → 영업일만 추출.
+        # 한국 KRX 거래일 기준 row가 데이터 있는 행만 사용 (>=50% 종목 가격 있음).
+        nonempty_mask = price_df.notna().sum(axis=1) >= (price_df.shape[1] * 0.5)
+        biz_prices = price_df.loc[nonempty_mask]
+        if MOM_10_W != 0 and len(biz_prices) >= 11:
+            mom_10_raw = biz_prices.iloc[-1] / biz_prices.iloc[-11] - 1
+            mom_10_raw = mom_10_raw.replace([np.inf, -np.inf], np.nan).dropna()
+            m, s = mom_10_raw.mean(), mom_10_raw.std()
+            if s > 0:
+                mom_10_z = (mom_10_raw - m) / s
+                scored['mom_10_z'] = scored['종목코드'].map(mom_10_z.to_dict()).fillna(0)
+                scored['멀티팩터_점수'] = scored['멀티팩터_점수'] + scored['mom_10_z'] * MOM_10_W
+        if VOL_LOW_W != 0 and len(biz_prices) >= 21:
+            daily_rets = biz_prices.iloc[-21:].pct_change().iloc[1:]
+            vol_20 = daily_rets.std()
+            vol_20 = vol_20.replace([np.inf, -np.inf], np.nan).dropna()
+            m, s = vol_20.mean(), vol_20.std()
+            if s > 0:
+                vol_low_z = -(vol_20 - m) / s  # 저변동성 = 양수 z
+                scored['vol_low_z'] = scored['종목코드'].map(vol_low_z.to_dict()).fillna(0)
+                scored['멀티팩터_점수'] = scored['멀티팩터_점수'] + scored['vol_low_z'] * VOL_LOW_W
+        # 순위 재부여
+        scored['멀티팩터_순위'] = scored['멀티팩터_점수'].rank(ascending=False, method='first', na_option='bottom')
+
     # --- 9. Ranking JSON 저장 ---
     scored_sorted = scored.sort_values('멀티팩터_점수', ascending=False)
     rankings_list = []

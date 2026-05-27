@@ -29,7 +29,7 @@
 
 ---
 
-# 🇺🇸 US 전략 — eps-momentum-us (v83.1, 2026-05-24)
+# 🇺🇸 US 전략 — eps-momentum-us (v83.2, 2026-05-27)
 
 > 경로: `C:\dev\claude code\eps-momentum-us`
 
@@ -42,7 +42,7 @@
 - **Case 1 보너스 폐기 (v80.5)**: cr/score_100/part2_rank 정렬 일관성 회복 위해 제거
 - 진입: 3일 가중 Top **2** + ✅(3일 검증) + min_seg ≥ 0%, 슬롯 **2** (v82: 3→2)
 - **비중 (v83)**: **1위 80% / 2위 20%** (v82 70/30 정정). 슬롯 idx 아닌 점수 순서 기반 배정
-- **C2 boost (v83)**: `eps_chg_weighted > 0 AND 가격 30거래일 변화 < 0` (buy-the-dip) 종목 rank +3. `_apply_c2_boost_rerank` (daily_runner.py:1653), 3곳 적용(save_part2_ranks/score_100_map/_w_gap). 본질 = adj_gap 괴리율 mean reversion이라 C2가 진입 본질 강화 (C1 boost는 본질 거스름 → 거부)
+- **C2 boost 제거 (v83.2, 2026-05-27)**: v83 C2 rank+3 boost를 완전 제거. `_apply_c2_boost_rerank`/`_is_c2_for_v83` 헬퍼 + 호출 3곳 삭제. part2_rank = 순수 w_gap 순위로 복귀 (DB 71일 재마이그레이션, `research/apply_no_boost.py`). **이유**: leave-one-superwinner-out 검증서 C2 boost edge가 전부 MU 한 종목 — MU 제외 시 gate vs no_boost 동전던지기(239/500), M24 음수. binary는 no_boost보다 -8.64%p로 더 나빴음. C1 boost(과거 미적용)도 SNDK 제외 시 -4.68%p(186/500) = 동일 single-stock 착시. **부수 효과**: BWXT(약한 EPS+dip)가 FIX보다 높게 표시되던 점수 왜곡 + 궤적(cr, boost無) vs 픽(p2, boost有) 불일치 동시 해소
 - **퇴출 (v80.10b)**: part2_rank > **10** OR min_seg < -2%  ← 8→10 변경 (회전 정책 재최적화)
 - **품질 필터 (v79.1)**: FCF < 0 AND ROE < 0 동시 → eligible 제외
 - **rev_up30 ≥ 3 필터 (v80.8)**: 단일 분석가 의존 종목 차단 (WELL 사례)
@@ -54,8 +54,97 @@
 - RETURN_MATRIX: S&P500 기반 (26년 6,593일), VIX는 yfinance 최신 보완
 - 시장 공포 기반 비중 조절 안 함 (portfolio_mode normal 하드코딩 — 알파가 공포 구간에서 발생). 종목간 80/20은 별개
 - 상관관계: 🔗 유사도% + BFS 그룹핑 + 택1/택1~2 권장
-- **v83 성과 (BT)**: 80/20 + C2 boost b=3 = random 500 +48.14%p (500/500 wins), 24 multistart 24/24, M24 lift +52.76%p, **M24 min +13.54%p**, MDD -19.82%. 모든 지표 v82 ≤ v83. 4/2 worst 재검증 v82 +13%p → v83 +38%p (MU 1위 → 80% 자동). caveat: 65일 강세장 단일 환경, 약세장 미검증, MU +103% 단일 슈퍼위너 의존
+- **leave-one-superwinner-out 교훈 (v83.2)**: 71일 단일 표본 + 2슬롯 80/20에서 boost/집중 메커니즘은 MU/SNDK 한 종목만 빼도 edge가 무너짐(동전던지기 or 음수) = single-stock 착시. **boost·집중 평가 시 반드시 dominant winner 제외 robustness 확인.** 원래 v83 BT(+48%p)는 v82(70/30,3슬롯)→v83(80/20,2슬롯,+boost) 변경을 묶어 측정해 boost 단독 기여를 과대평가했음
+- **v83.2 config 재검증 (전부 유지)**: exit 10 = plateau 중앙(최선 exit이 우주별 6/10/12로 튀어 overfit, 특정값 robust 우위 없음). slots 2 = 위험/수익 중앙(slots1 수익↑ MDD↑, slots3 수익↓). 80/20 = MDD가 70/30과 동일(±1%p), 50/50은 MDD 더 나쁨 → 80/20 유지. **깨진 건 boost뿐, (2,10,2)+80/20은 합리적 중앙값**
+- **롤백 트리거 (v83.2)**: 5거래일 SPY 대비 알파 -5%p / MDD -10% 초과. backup: `eps_momentum_data.db.bak_pre_c2gate_20260527`. 롤백: backup 복원 + `git revert`
 - **롤백 트리거 (v83)**: 5거래일 SPY 대비 알파 -5%p 이하 / MDD -10% 초과 / Top3 교체율 50%+. backup: `eps_momentum_data.db.bak_pre_v83`. 롤백: `cp eps_momentum_data.db.bak_pre_v83 eps_momentum_data.db && git checkout 54ee685 -- daily_runner.py`
+
+---
+
+# 🇰🇷 KR 전략 — quant_py-main (v80.20, 2026-05-27)
+
+## v80.20 변경 — mom_10 + vol_low 신팩터 가산 (가격 자연 반영)
+
+### 핵심
+boost 멀티팩터 점수에 **단기 모멘텀 (mom_10_z) + 저변동성 (vol_low_z)** 가산. 매일 종가 변동이 ranking에 자연 반영.
+
+```python
+score = V × 0.15 + G × 0.55 + M × 0.30
+      + mom_10_z × 0.05   # 10일 가격 변동 z-score
+      + vol_low_z × 0.06  # 20일 일별 std × (-1)
+```
+
+### 사용자 통찰 해결
+이전 문제: 분기 G 데이터 90일 불변 → 가격 ±30% 변동에도 1등 종목 박제 (5/15~5/26 에스에이엠티 12일간 wr 1위 유지). 사용자 우려: "고객이 추격 매수 위험".
+
+해결: mom_10 + vol_low가 매일 갱신 → 점수 매일 변동 → ranking 자연 변동. 표본 5/26 결과 제주반도체 6위 진입 (이전 Top 20 밖).
+
+### BT 검증 (7년 2019~2026)
+| 지표 | baseline (v80.19) | v80.20 | Δ |
+|---|---|---|---|
+| Cal | 2.432 | **3.06** | +25% |
+| MDD | 31.3% | **29.3%** | -2.0%p ★ |
+| OOS | 4.17 | **5.60** | +34% |
+| WFmin | 1.605 | 0.98 | -0.62 |
+
+### WF 4구간 (트레이드오프)
+- 2019 약세: 1.60 → 1.05 (-0.55)
+- 2020-21 회복기: 3.38 → **3.65** (+0.27) ★
+- 2022-23 약세: 1.65 → 0.98 (-0.67)
+- 2024-25 강세: 5.84 → **10.07** (+4.23) ★★
+
+= 강세장/회복기 강화, 약세장 약화. defense cash 100%로 약세장 거래 자체 X (보호).
+
+### V/Q/G/M 재최적화 (12 시나리오)
+| 시나리오 | Cal | OOS | MDD |
+|---|---|---|---|
+| **V15Q00G55M30 (baseline)** | **3.06** | **5.60** | **29.3%** |
+| V20Q00G55M20 | 2.30 | 3.82 | 31.2% |
+| V10Q00G55M35 | 2.17 | 4.09 | 30.4% |
+| (다른 9개) | 1.3~2.2 | 2.6~4.1 | 33~37% |
+
+= **V15Q00G55M30 압도적 최적**. G=55%에서 peak (양쪽 G50/G60 모두 약화). Q 도입 모두 약화. 변경 X.
+
+### 새 팩터 정의
+- **mom_10**: 종가 / 10일 전 종가 - 1 (2주 가격 변동률)
+- **vol_low**: -1 × (20일 일별 수익률 std) z-score (저변동성 우대)
+- 둘 다 cross-sectional z-score (일자별 표준화)
+- ★ 영업일만 사용 (캘린더 인덱스 NaN 자동 필터)
+
+### 변경 파일 (3)
+1. `backtest/fast_generate_rankings_v2.py` — multifactor 점수 합산 후 mom_10/vol_low 가산
+2. `regime_indicator.py` boost params — FACTOR_MOM_10_W=0.05, FACTOR_VOL_LOW_W=0.06
+3. `run_daily.py` _build_mode_env — 환경변수 전달
+
+### 표본 5/26 ranking 변동
+| 종목 | v80.19 | v80.20 | 변화 |
+|---|---|---|---|
+| 에스에이엠티 | 1위 | 1위 | 유지 |
+| 삼지전자 | 4위 | **2위** | ↑↑ (mom_10 +45%) |
+| 브이엠 | 2위 | 3위 | ↓ |
+| SK하이닉스 | 3위 | 5위 | ↓ |
+| **제주반도체** | Top 20 밖 | **6위** ★ | **신규** |
+| 보성파워텍 | 7위 | 10위 밖 | ↓ |
+
+Top 20 교집합 13/20 (35~40% 변화).
+
+### 인접 안정성
+mom_10 × vol_low 5x5 grid 검증:
+- (0.05, 0.06): Cal 3.059 (채택)
+- (0.06, 0.07): Cal 3.191 (더 강한 알파, MDD 26.7%)
+- (0.05, 0.05): Cal 2.665 (감쇠)
+- 인접 CV ~0.06 (PASS)
+
+(0.05, 0.06) 채택 — Cal 3.06 + WFmin 0.98 + 모든 WF 구간 합리적 (0.06, 0.07은 2022-23 1.06으로 더 좋지만 약세장 outlier 의존).
+
+### state 재생성
+- 매일 자동 실행 (5/27 16:00부터 자동 적용)
+- 옛 시기 ranking은 v80.19 점수 유지 (시스템 자연 진화)
+- BT 일관성 위해 1809일 backfill 진행 중
+
+### 롤백 트리거
+- 5거래일 KOSPI 대비 알파 -3%p 또는 MDD -8% 초과
+- 즉시 환원: `regime_indicator.py` boost params에서 FACTOR_MOM_10_W, FACTOR_VOL_LOW_W 키 제거
 
 ---
 

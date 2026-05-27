@@ -25,6 +25,8 @@ v80.15 전략:
   v80.17 (05-25): boost EXIT 6→4, MAX_SLOTS 5→4
   v80.18 (05-25): regime MA200 → MA20/MA80 cross (5d), Cal +43%, WFmin +1.66
   v80.19 (05-27): boost MAX_SLOTS 4→3 (자율주행 검증, Cal +22%, 현실 알파 +0.30)
+  v80.20 (05-27): mom_10 + vol_low 신팩터 가산 (사용자 의도 가격 자연 반영)
+                  BT Cal 2.43→3.06 (+25%), MDD 31→29% (-2%p), OOS 4.17→5.60 (+34%)
 
 사용:
     from regime_indicator import get_current_regime
@@ -186,7 +188,13 @@ def get_regime_params(mode):
             'G_QOQ_PENALTY_THRESHOLD': 20,
             'G_QOQ_PENALTY_MULTIPLIER': 0.7,
             'G_QOQ_SG6_THRESH': 0.06,
-            'label': '공격 모드 (Growth 55%, 3팩터, QoQ-D6-SG6)',
+            # v80.20 (2026-05-27): mom_10 + vol_low 신팩터 가산
+            # BT: Cal 2.43→3.06 (+25%), MDD 31%→29% (-2%p), OOS 4.17→5.60 (+34%)
+            # 사용자 의도: 가격 매일 변동 → ranking 자연 반영
+            # mom_10_z (2주 모멘텀) × 0.05 + vol_low_z (저변동성, 부호 반전) × 0.06
+            'FACTOR_MOM_10_W': 0.05,
+            'FACTOR_VOL_LOW_W': 0.06,
+            'label': '공격 모드 (Growth 55%, 3팩터, QoQ-D6-SG6, mom_10+vol)',
             'icon': '📈',
         }
     else:  # defense
