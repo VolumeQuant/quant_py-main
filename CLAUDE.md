@@ -29,9 +29,11 @@
 
 ---
 
-# 🇺🇸 US 전략 — eps-momentum-us (v83.2, 2026-05-27)
+# 🇺🇸 US 전략 — eps-momentum-us (v84, 2026-05-27)
 
 > 경로: `C:\dev\claude code\eps-momentum-us`
+
+- **국면 오버레이 (v84, 2026-05-27)**: S&P 500 < 200일선(15일 확인) OR VIX > 36(2일 확인) → **defense(방어)**. defense 시 주식 매수 중단 + 채권ETF(**IEF 기본 / BIL 안전**) 권장, 200일선 회복(15일) 시 자동 재개. KR v80.16(defense=현금) 참고. **26년(2000~) 시장데이터 EDA(QQQ 프록시)**: 4대 약세장 포착(dotcom 92/GFC 90/COVID 71(VIX)/2022 77%), MDD -83%→-29%(IEF), Cal 0.11→0.50. 인버스ETF는 탈락(52% 오발일+감쇠, Cal 0.20~0.25). 확인 15일 = 2026-04 얕은 dip 휘프소(-105%p) 거르며 진짜 약세장만 포착(버퍼/데드크로스보다 우월, 깊이 아닌 지속기간 판별). **현재 regime=boost → 배포 즉시 영향 0, 미래 약세장에만 발동.** ⚠️ 신호는 26년 검증, 전략 이득은 프록시 추정(약세장 종목데이터 없음). 구현: `get_market_regime`/`_detect_regime_transition`(regime_state.json)/`_get_system_performance` defense 시 IEF 반영. 킬스위치 `REGIME_OVERLAY_DISABLE=1`, 테스트 `REGIME_FORCE`. research: `research/regime_eda_*.py`
 
 - EPS Revision Momentum, conviction z-score 기반, **2슬롯 80/20 집중** (v83: 균등 3슬롯 → 80/20)
 - conviction: adj_gap × (1 + max(up30/N, min(|eps_chg|/100, 3)) + min(min(rg,0.5)×0.6, 0.3))  ← v80.9 X2: cap 3.0, rev_bonus smooth
@@ -116,17 +118,29 @@ score = V × 0.15 + G × 0.55 + M × 0.30
 2. `regime_indicator.py` boost params — FACTOR_MOM_10_W=0.05, FACTOR_VOL_LOW_W=0.06
 3. `run_daily.py` _build_mode_env — 환경변수 전달
 
-### 표본 5/26 ranking 변동
+### Production state 5/26 ranking (버그 수정 + 영업일 정확 계산)
 | 종목 | v80.19 | v80.20 | 변화 |
 |---|---|---|---|
 | 에스에이엠티 | 1위 | 1위 | 유지 |
-| 삼지전자 | 4위 | **2위** | ↑↑ (mom_10 +45%) |
-| 브이엠 | 2위 | 3위 | ↓ |
+| 브이엠 | 2위 | 2위 | 유지 |
+| **제주반도체** | Top 20 밖 | **3위** ★ | **신규** |
+| 삼지전자 | 4위 | 4위 | 유지 |
 | SK하이닉스 | 3위 | 5위 | ↓ |
-| **제주반도체** | Top 20 밖 | **6위** ★ | **신규** |
 | 보성파워텍 | 7위 | 10위 밖 | ↓ |
+| 타이거일렉 | 10위 밖 | 7위 | ↑↑ |
 
-Top 20 교집합 13/20 (35~40% 변화).
+제주반도체 Top 20 밖 → **3위** = 사용자 의도 완벽 반영 (가격 자연 ranking).
+Top 20 교집합 약 13/20 (35~40% 변화).
+
+### E/X/S 재최적화 (16 시나리오)
+| 시나리오 | Cal | MDD | OOS | 22-23 |
+|---|---|---|---|---|
+| **E3X4S3 (baseline)** | **3.06** | 29.3% | **5.60** | 0.98 |
+| E3X3S4 | 2.75 | 20.6% | 4.56 | 1.53 |
+| E3X4S5 | 2.48 | 18.5% | 4.50 | 1.08 |
+| E3X3S3 | 2.86 | 26.9% | 4.94 | 1.42 |
+
+= **E3X4S3 유지**. MDD 개선 옵션 (E3X3S4) 있지만 OOS Cal -19% 손해. v80.19 자율주행 검증 결정이 v80.20에도 그대로 최강.
 
 ### 인접 안정성
 mom_10 × vol_low 5x5 grid 검증:

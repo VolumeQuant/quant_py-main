@@ -13,8 +13,11 @@ PYTHON = sys.executable
 FG = str(Path(__file__).parent / 'fast_generate_rankings_v2.py')
 PROJECT = Path(__file__).parent.parent
 
-# v80.8 (2026-05-16): bi 양방향 식 + PENALTY 0.3 (Phase 1 그리드 결과)
-# 7.4y BT: Cal 1.863 → 3.494 (+87%), MDD 45.3% → 32.9% (-12.4%p)
+# v80.20 (2026-05-27): mom_10×0.05 + vol_low×0.06 가산 (가격 자연 반영)
+# 7y BT: Cal 2.43→3.06 (+25%), MDD 31.3→29.3%, OOS 4.17→5.60
+# v80.12 (2026-05-18): QoQ 패널티 + 강한 boost (SG6)
+# v80.10 (2026-05-17): seasonality 면제 (MM>0.2 진짜 가속 보호)
+# v80.9 (2026-05-16): 계절성 식 curr + PENALTY 0.3
 # v80.6.1 (2026-05-15): boost G 3팩터 (rev+oca+gp_growth_z 0.4/0.4/0.2)
 BOOST_ENV = {
     'FACTOR_V_W': '0.15',
@@ -30,10 +33,19 @@ BOOST_ENV = {
     'G_REVENUE_WEIGHT': '0.5',
     'MOM_PERIOD': '12m',
     # v80.9: 계절성 식 (curr 복귀 + PENALTY 0.3)
-    # v80.8 bi가 제주반도체 같은 진짜 가속 종목 잘못 잡음 → curr 복귀
     'SEASONALITY_FORMULA': 'curr',
     'SEASONALITY_RATIO_THRESH': '1.4',
     'SEASONALITY_PENALTY': '0.3',
+    # v80.10: 진짜 가속 종목 면제 (min(4Q)/max(4Q) > 0.2)
+    'SEASONALITY_EXEMPT_MM_THRESH': '0.2',
+    # v80.12: QoQ 패널티 + 강한 boost (SG6)
+    'G_QOQ_PENALTY': 'D6',
+    'G_QOQ_PENALTY_THRESHOLD': '20',
+    'G_QOQ_PENALTY_MULTIPLIER': '0.7',
+    'G_QOQ_SG6_THRESH': '0.06',
+    # v80.20: mom_10 + vol_low 신팩터
+    'FACTOR_MOM_10_W': '0.05',
+    'FACTOR_VOL_LOW_W': '0.06',
     'PYTHONIOENCODING': 'utf-8',
 }
 DEFENSE_ENV = {
@@ -51,8 +63,8 @@ DEFENSE_ENV = {
 # 사용자 지시 (2026-05-13): state/ 단일 통합 (bt_extended 분리 폐기)
 # v80.6.1 (2026-05-15): boost 3팩터 도입 — boost만 재생성, defense는 무변경 (baseline 유지)
 jobs = [
-    ('boost_state',   '20180702', '20260514', str(PROJECT / 'state'),                             BOOST_ENV),
-    # ('def_state',     '20180702', '20260512', str(PROJECT / 'state' / 'defense'),                 DEFENSE_ENV),  # defense 무변경
+    ('boost_state',   '20180702', '20260526', str(PROJECT / 'state'),                             BOOST_ENV),
+    # defense는 v80.16 cash 100%로 매수 안 함 — ranking 무관, 무변경
 ]
 
 print(f'v80.6.1 전체 재생성 시작 — 2작업 병렬 (state/ 단일 통합)')
