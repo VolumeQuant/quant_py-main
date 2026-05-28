@@ -35,13 +35,13 @@
 
 ---
 
-# 🇺🇸 US 전략 — eps-momentum-us (v84, 2026-05-27)
+# 🇺🇸 US 전략 — eps-momentum-us (v84+v83.3, 2026-05-28)
 
 > 경로: `C:\dev\claude code\eps-momentum-us`
 
 - **국면 오버레이 (v84, 2026-05-27)**: S&P 500 < 200일선(15일 확인) OR VIX > 36(2일 확인) → **defense(방어)**. defense 시 주식 매수 중단 + 채권ETF(**IEF 기본 / BIL 안전**) 권장, 200일선 회복(15일) 시 자동 재개. KR v80.16(defense=현금) 참고. **26년(2000~) 시장데이터 EDA(QQQ 프록시)**: 4대 약세장 포착(dotcom 92/GFC 90/COVID 71(VIX)/2022 77%), MDD -83%→-29%(IEF), Cal 0.11→0.50. 인버스ETF는 탈락(52% 오발일+감쇠, Cal 0.20~0.25). 확인 15일 = 2026-04 얕은 dip 휘프소(-105%p) 거르며 진짜 약세장만 포착(버퍼/데드크로스보다 우월, 깊이 아닌 지속기간 판별). **현재 regime=boost → 배포 즉시 영향 0, 미래 약세장에만 발동.** ⚠️ 신호는 26년 검증, 전략 이득은 프록시 추정(약세장 종목데이터 없음). 구현: `get_market_regime`/`_detect_regime_transition`(regime_state.json)/`_get_system_performance` defense 시 IEF 반영. 킬스위치 `REGIME_OVERLAY_DISABLE=1`, 테스트 `REGIME_FORCE`. research: `research/regime_eda_*.py`
 
-- EPS Revision Momentum, conviction z-score 기반, **2슬롯 80/20 집중** (v83: 균등 3슬롯 → 80/20)
+- EPS Revision Momentum, conviction z-score 기반, **2슬롯 90/10 집중** (v83: 균등 3슬롯 → 80/20 → v83.3: 90/10)
 - conviction: adj_gap × (1 + max(up30/N, min(|eps_chg|/100, 3)) + min(min(rg,0.5)×0.6, 0.3))  ← v80.9 X2: cap 3.0, rev_bonus smooth
 - adj_gap = fwd_pe_chg × (1 + dir_factor) × eps_quality
 - **fwd_pe_chg 가중치 (v80.10)**: **7d 0.30 / 30d 0.10 / 60d 0.10 / 90d 0.50** (90일 누적 PE 압축 강조, long-tail)
@@ -49,7 +49,8 @@
 - **v79**: z-score 상한 100 clamp 제거 → outlier 변별력 보존
 - **Case 1 보너스 폐기 (v80.5)**: cr/score_100/part2_rank 정렬 일관성 회복 위해 제거
 - 진입: 3일 가중 Top **2** + ✅(3일 검증) + min_seg ≥ 0%, 슬롯 **2** (v82: 3→2)
-- **비중 (v83)**: **1위 80% / 2위 20%** (v82 70/30 정정). 슬롯 idx 아닌 점수 순서 기반 배정
+- **비중 (v83.3, 2026-05-28)**: **1위 90% / 2위 10%** (v83.2 80/20 → 90/10). 72일 BT + random-start 50/50 wins + leave-one-out 9/9 + (E,X) cross-product (2,10)=1위 robust. paired lift +21.45%p, MDD 19.8→20.3% (미세). 95/5·99/1은 marginal gain·MDD 증가로 비채택. **메타 자산 배분 80:20 (시스템:BIL) 사용자 영역 별도** — 시스템은 "투자금" = 80% 부분에서만 운영, 본인이 매년 1월 1회 80:20 리밸런싱 (project_cash_buffer_rule)
+- **비중 이력**: v82 70/30 → v83 80/20 → v83.3 90/10. 슬롯 idx 아닌 점수 순서 기반 배정
 - **C2 boost 제거 (v83.2, 2026-05-27)**: v83 C2 rank+3 boost를 완전 제거. `_apply_c2_boost_rerank`/`_is_c2_for_v83` 헬퍼 + 호출 3곳 삭제. part2_rank = 순수 w_gap 순위로 복귀 (DB 71일 재마이그레이션, `research/apply_no_boost.py`). **이유**: leave-one-superwinner-out 검증서 C2 boost edge가 전부 MU 한 종목 — MU 제외 시 gate vs no_boost 동전던지기(239/500), M24 음수. binary는 no_boost보다 -8.64%p로 더 나빴음. C1 boost(과거 미적용)도 SNDK 제외 시 -4.68%p(186/500) = 동일 single-stock 착시. **부수 효과**: BWXT(약한 EPS+dip)가 FIX보다 높게 표시되던 점수 왜곡 + 궤적(cr, boost無) vs 픽(p2, boost有) 불일치 동시 해소
 - **퇴출 (v80.10b)**: part2_rank > **10** OR min_seg < -2%  ← 8→10 변경 (회전 정책 재최적화)
 - **품질 필터 (v79.1)**: FCF < 0 AND ROE < 0 동시 → eligible 제외
@@ -60,10 +61,10 @@
 - **HISTORICAL MODE (v83.1)**: yfinance eps_trend `7daysAgo/30d/60d/90daysAgo`가 호출 시점 기준 → MARKET_DATE 과거 재실행 시 window(사용자 날짜)와 EPS 값(yf 시점) misalign → adj_gap drift. `is_historical_mode()` 감지 시 fetch SKIP + DB part2_rank 그대로 사용(write 0). **production cron 영향 없음** (매일 새 날짜 = real_today 정합), test workflow + 과거 날짜만 영향
 - composite_rank=당일 conviction 순위(추이 표시), part2_rank=3일 가중 순위(매매)
 - RETURN_MATRIX: S&P500 기반 (26년 6,593일), VIX는 yfinance 최신 보완
-- 시장 공포 기반 비중 조절 안 함 (portfolio_mode normal 하드코딩 — 알파가 공포 구간에서 발생). 종목간 80/20은 별개
+- 시장 공포 기반 비중 조절 안 함 (portfolio_mode normal 하드코딩 — 알파가 공포 구간에서 발생). 종목간 90/10은 별개
 - 상관관계: 🔗 유사도% + BFS 그룹핑 + 택1/택1~2 권장
 - **leave-one-superwinner-out 교훈 (v83.2)**: 71일 단일 표본 + 2슬롯 80/20에서 boost/집중 메커니즘은 MU/SNDK 한 종목만 빼도 edge가 무너짐(동전던지기 or 음수) = single-stock 착시. **boost·집중 평가 시 반드시 dominant winner 제외 robustness 확인.**
-- **롤백 트리거 (v83.2)**: 5거래일 SPY 대비 알파 -5%p / MDD -10% 초과. backup: `eps_momentum_data.db.bak_pre_c2gate_20260527`. 롤백: backup 복원 + `git revert`
+- **롤백 트리거 (v83.2+v83.3)**: 5거래일 SPY 대비 알파 -5%p / MDD -10% 초과. backup: `eps_momentum_data.db.bak_pre_c2gate_20260527`. v83.3 롤백 시 `daily_runner.py`의 `weights_v83`/`v83_weights` 두 곳 `[90, 10]` → `[80, 20]` 환원 + git revert
 
 ---
 
