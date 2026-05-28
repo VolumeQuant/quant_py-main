@@ -259,7 +259,8 @@ def calc_system_returns(regime_info=None):
                 peak_prices.clear()
 
         # 손절 + 트레일링 체크 (시뮬용 알파 측정, production은 고객 판단)
-        _trailing_stop = rp.get('TRAILING_STOP', -0.08)
+        # v80.21: TRAILING_STOP=None이면 트레일링 미적용 (SL + 순위이탈만)
+        _trailing_stop = rp.get('TRAILING_STOP', None)
         for tk in list(portfolio.keys()):
             cp = _get_price(tk, d0)
             ep = portfolio[tk]
@@ -272,8 +273,8 @@ def calc_system_returns(regime_info=None):
             if cp > 0 and ep > 0 and (cp / ep - 1) <= _stop_loss:
                 del portfolio[tk]
                 peak_prices.pop(tk, None)
-            # 트레일링: 고점 대비
-            elif cp > 0 and peak_prices.get(tk, 0) > 0 and (cp / peak_prices[tk] - 1) <= _trailing_stop:
+            # 트레일링: 고점 대비 (v80.21: _trailing_stop=None이면 스킵)
+            elif _trailing_stop is not None and cp > 0 and peak_prices.get(tk, 0) > 0 and (cp / peak_prices[tk] - 1) <= _trailing_stop:
                 del portfolio[tk]
                 peak_prices.pop(tk, None)
 
@@ -698,10 +699,9 @@ def create_regime_switch_message(regime_mode, prev_mode=None):
             '공격 모드 매매 기준',
             '━━━━━━━━━━━━━━━',
             '매수: 3일 연속 ✅ 상위 3종목 (최대 3)',
-            '매도 (셋 중 하나):',
+            '매도 (둘 중 하나):',
             '• 3일 가중순위 4위 밖',
             '• 매수가 대비 -10%',
-            '• 최고가 대비 -8%',
             '',
             '━━━━━━━━━━━━━━━',
             '백테스트 (7년, 2019~2026)',
@@ -839,12 +839,12 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         # v80.16 (2026-05-24): defense cash 100% 모드
         lines.append('🛡️ <b>약세장 진입 — 신규 매수 없음 (cash 100%)</b>')
         lines.append('')
-        lines.append('현재 KOSPI < 200일 이동평균 (10일 확인).')
+        lines.append('현재 KOSPI MA20 < MA80 (단기 < 장기, 5일 확인).')
         lines.append('약세장 BT에서 시스템 알파가 거의 0이라 확인됨.')
         lines.append('cash 보유가 정답 (7년 BT: MDD 33%→21% 대폭 개선).')
         lines.append('')
-        lines.append('보유 종목은 매도 룰대로 자연 청산 (손절/트레일링).')
-        lines.append('강세장 진입 시 자동 매수 재개 (10일 확인).')
+        lines.append('보유 종목은 매도 룰대로 자연 청산 (순위이탈/손절).')
+        lines.append('강세장(MA20 > MA80) 진입 시 자동 매수 재개 (5일 확인).')
     else:
         for i, pick in enumerate(picks):
             sector = pick.get('sector', '기타')
@@ -950,10 +950,9 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
     else:
         lines.append(f'매수: 3일 연속 상위 {_rule_e}종목 (최대 {_rule_s}종목)')
         lines.append('')
-        lines.append('매도 (아래 셋 중 하나라도 해당 시)')
+        lines.append('매도 (아래 둘 중 하나라도 해당 시)')
         lines.append(f'• 3일 가중순위 {_rule_x}위 밖')
         lines.append('• 매수가 대비 -10% 시')
-        lines.append('• 최고가 대비 -8% 시')
         lines.append('')
         lines.append('시스템은 신호만, 매매는 본인 판단')
 

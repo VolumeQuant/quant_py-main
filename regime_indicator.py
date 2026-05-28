@@ -27,6 +27,8 @@ v80.15 전략:
   v80.19 (05-27): boost MAX_SLOTS 4→3 (자율주행 검증, Cal +22%, 현실 알파 +0.30)
   v80.20 (05-27): mom_10 + vol_low 신팩터 가산 (사용자 의도 가격 자연 반영)
                   BT Cal 2.43→3.06 (+25%), MDD 31→29% (-2%p), OOS 4.17→5.60 (+34%)
+  v80.21 (05-28): 트레일링 스탑 -8% → 제거. 비용반영 7년: 회전 -39%인데 수익 동급/Calmar 우위,
+                  SK하이닉스 leave-one-out robust. 공식엔진 교차검증 일치. SL-10%+순위이탈 유지.
 
 사용:
     from regime_indicator import get_current_regime
@@ -178,8 +180,13 @@ def get_regime_params(mode):
             # → defense cash 100% + 손절 -10%로 보호
             'ENTRY_RANK': 3, 'EXIT_RANK': 4, 'MAX_SLOTS': 3,
             'STOP_LOSS': -0.10,
-            'TRAILING_STOP': -0.08,
-            'TS_COOLDOWN': 1,                                  # v80.8: 2→1
+            # v80.21 (2026-05-28): 트레일링 스탑 제거 (None).
+            # 비용반영 7년 검증: 회전 360→220거래(-39%)인데 수익 동급, Calmar 우위
+            #   (중간비용 3.19→3.32 / 고비용 2.77→3.05), MDD도 개선. 공식엔진(2f)도 동일 확인.
+            # SK하이닉스 leave-one-out robust (단일종목 착시 아님). SL-10%+순위이탈 유지.
+            # 유일한 비용: 2020-21 코로나형 변동성 boost 구간 -28%p(gross) → 롤백 트리거 참고.
+            'TRAILING_STOP': None,
+            'TS_COOLDOWN': 1,                                  # v80.8: 2→1 (TS 제거로 사실상 무효)
             'USE_REV_ACCEL': False,
             # v80.12 (2026-05-18): QoQ 패널티 + 강한 boost (SG6)
             # 강한 boost (KOSPI > MA220 × 1.06) 일 때 영업이익 QoQ < +20% 종목 G × 0.7
@@ -213,7 +220,7 @@ def get_regime_params(mode):
             # 약세장은 시스템 한계 인정 → 매수 안 하고 cash 보유가 정답
             'ENTRY_RANK': 0, 'EXIT_RANK': 8, 'MAX_SLOTS': 5,
             'STOP_LOSS': -0.10,
-            'TRAILING_STOP': -0.08,
+            'TRAILING_STOP': None,   # v80.21: TS 제거 (defense는 cash 100%라 원래 무효)
             'TS_COOLDOWN': 1,
             'USE_REV_ACCEL': False,
             'label': '방어 모드 (Momentum 40%)',
