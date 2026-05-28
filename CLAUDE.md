@@ -67,11 +67,11 @@
 
 ---
 
-# 🇰🇷 KR 전략 — quant_py-main (v80.21, 2026-05-28)
+# 🇰🇷 KR 전략 — quant_py-main (v80.22, 2026-05-28)
 
 > 코드 진실: `regime_indicator.py` `get_regime_params()`. 아래는 그 코드 기준 현재 production 파라미터. 변경 이력은 CHANGELOG.md.
 
-## 현재 운영 파라미터 종합 (v80.21 기준, 코드 검증됨)
+## 현재 운영 파라미터 종합 (v80.22 기준, 코드 검증됨)
 
 ### 국면 (regime) — KP_MA_CROSS (v80.18)
 - **KOSPI MA20 > MA80 = boost, 미만 = defense**, **5일 연속 확인** 후 전환 (`SHORT_MA=20, LONG_MA=80, CONFIRM_DAYS=5`)
@@ -87,7 +87,7 @@
 | 모멘텀 | 12m |
 | 가산 신팩터 (v80.20) | + mom_10_z × **0.05** + vol_low_z × **0.06** |
 | 진입/퇴출/슬롯 | rank ≤ **3** / rank > **4** / **3슬롯** (E3X4S3) |
-| 손절 / 트레일링 | **−10% / 없음(v80.21 TS 제거)**. TS 쿨다운 키는 잔존(무효) |
+| 손절 / 트레일링 | **둘 다 없음 (v80.22 SL 제거, v80.21 TS 제거)**. 매도는 rank>4 단독 |
 | QoQ 패널티 (D6, v80.12) | 강한 boost(KOSPI > MA220 × 1.06)에서 영업이익 QoQ < +20% → G × 0.7 |
 | 계절성 패널티 | curr 식 (Q2+Q4)/(Q1+Q3) > 1.4 → G × 0.3, 단 min/max(4Q) > 0.2 면제 (v80.7/9/10) |
 
@@ -111,6 +111,24 @@ score = V × 0.15 + G × 0.55 + M × 0.30 + mom_10_z × 0.05 + vol_low_z × 0.06
 - 둘 다 cross-sectional z-score (일자별 표준화), ★ 영업일만 사용 (캘린더 인덱스 NaN 자동 필터)
 - 변경 파일 3: `backtest/fast_generate_rankings_v2.py` (점수 합산 후 가산), `regime_indicator.py` (FACTOR_MOM_10_W=0.05, FACTOR_VOL_LOW_W=0.06), `run_daily.py` (`_build_mode_env` 환경변수 전달)
 - 7년 BT: Cal 2.43→**3.06** (+25%), MDD 31.3→**29.3%** (-2%p), OOS 4.17→**5.60** (+34%), WFmin 0.98. 인접 5x5 grid CV ~0.06 PASS. V/Q/G/M 12 시나리오 재최적화 → V15Q00G55M30 압도적 1위 (변경 X).
+
+## v80.22 변경 — 손절도 제거 (2026-05-28)
+
+7년 비용반영 BT에서 SL−10% 유지가 SL 없음보다 모든 지표에서 살짝 손해(Cal 3.26 vs 3.33, MDD −26.7 vs −26.5, WF min 1.37 vs 1.47), 동시에 연 4회 손절 발동 부담만 있는 worst-of-both. 단일거래 최악도 SL 있어도 갭다운으로 −19% 선까지 깨지는데, SL 없을 때도 rank>4 청산이 −19% 선에서 자연 멈춤 → SL의 보호 효과가 사실상 0. SK하이닉스 leave-one-out도 SL 없음이 우위. 운영 부담(연 4회 손절)의 가장 큰 항목을 데이터 손해 없이 제거.
+
+매도 룰 최종: **3일 가중순위 4위 밖** (단일 조건).
+
+- 변경: `regime_indicator.py` boost/defense `STOP_LOSS: −0.10 → None`
+- 연동: `send_telegram_auto.py` SL 로직 None 가드 + 매도룰 메시지 단순화 (둘→하나)
+- 연동: `send_notice_once.py` 동일
+- state 재생성 불필요
+- 다음 자동 실행(16:00)부터 적용
+
+⚠️ 미래 위험: 갭다운 −30%/−50% 같은 극단 case 발생 시 보호 없음. 7년 미발현, 1/3 비중이라 portfolio 임팩트 −15~30% 한도. 롤백 트리거 참조.
+
+## v80.22 롤백 트리거
+- 5거래일 KOSPI 대비 알파 −3%p 또는 단일거래 −30% 초과 발생
+- 즉시 환원: `regime_indicator.py` boost/defense `STOP_LOSS = -0.10` + git revert
 
 ## v80.21 변경 — 트레일링 스탑 제거 (2026-05-28)
 

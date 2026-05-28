@@ -29,6 +29,9 @@ v80.15 전략:
                   BT Cal 2.43→3.06 (+25%), MDD 31→29% (-2%p), OOS 4.17→5.60 (+34%)
   v80.21 (05-28): 트레일링 스탑 -8% → 제거. 비용반영 7년: 회전 -39%인데 수익 동급/Calmar 우위,
                   SK하이닉스 leave-one-out robust. 공식엔진 교차검증 일치. SL-10%+순위이탈 유지.
+  v80.22 (05-28): 손절도 제거. rank>4 청산이 항상 SL보다 먼저 잡아 SL의 보호 효과 0.
+                  Cal 3.26→3.33, MDD 개선, WF min 1.37→1.47. 매도 룰 단순화: rank>4 단독.
+                  연 SL 발동 4회→0회 (운영 부담 가장 큰 항목 제거).
 
 사용:
     from regime_indicator import get_current_regime
@@ -179,14 +182,13 @@ def get_regime_params(mode):
             # 약세장 22-23 -0.75 (boost 단기 진입 시 단일종목 손실 ↑)
             # → defense cash 100% + 손절 -10%로 보호
             'ENTRY_RANK': 3, 'EXIT_RANK': 4, 'MAX_SLOTS': 3,
-            'STOP_LOSS': -0.10,
-            # v80.21 (2026-05-28): 트레일링 스탑 제거 (None).
-            # 비용반영 7년 검증: 회전 360→220거래(-39%)인데 수익 동급, Calmar 우위
-            #   (중간비용 3.19→3.32 / 고비용 2.77→3.05), MDD도 개선. 공식엔진(2f)도 동일 확인.
-            # SK하이닉스 leave-one-out robust (단일종목 착시 아님). SL-10%+순위이탈 유지.
-            # 유일한 비용: 2020-21 코로나형 변동성 boost 구간 -28%p(gross) → 롤백 트리거 참고.
-            'TRAILING_STOP': None,
-            'TS_COOLDOWN': 1,                                  # v80.8: 2→1 (TS 제거로 사실상 무효)
+            # v80.22 (2026-05-28): 손절도 제거 (None). rank>4 청산이 SL보다 먼저 잡아
+            # 7년간 SL의 보호 효과 사실상 0. 단일거래 최악 -19% 선에서 자연 멈춤.
+            # 비용반영: Cal 3.26→3.33, MDD -26.7→-26.5%, WF min 1.37→1.47, SK 제외 robust.
+            # 운영: 연 SL 발동 4회→0회 (사용자 부담 가장 큰 항목 제거).
+            'STOP_LOSS': None,
+            'TRAILING_STOP': None,    # v80.21: TS 제거
+            'TS_COOLDOWN': 1,                                  # v80.8 잔존 (TS 제거로 무효)
             'USE_REV_ACCEL': False,
             # v80.12 (2026-05-18): QoQ 패널티 + 강한 boost (SG6)
             # 강한 boost (KOSPI > MA220 × 1.06) 일 때 영업이익 QoQ < +20% 종목 G × 0.7
@@ -219,8 +221,8 @@ def get_regime_params(mode):
             # 메커니즘: defense 거래 785건 평균 +0.5% (boost +4.6%의 1/10), 알파 거의 X
             # 약세장은 시스템 한계 인정 → 매수 안 하고 cash 보유가 정답
             'ENTRY_RANK': 0, 'EXIT_RANK': 8, 'MAX_SLOTS': 5,
-            'STOP_LOSS': -0.10,
-            'TRAILING_STOP': None,   # v80.21: TS 제거 (defense는 cash 100%라 원래 무효)
+            'STOP_LOSS': None,        # v80.22: SL 제거 (defense는 cash라 원래 무효)
+            'TRAILING_STOP': None,    # v80.21: TS 제거 (defense는 cash 100%라 원래 무효)
             'TS_COOLDOWN': 1,
             'USE_REV_ACCEL': False,
             'label': '방어 모드 (Momentum 40%)',

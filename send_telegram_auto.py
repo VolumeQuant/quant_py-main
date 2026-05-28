@@ -249,7 +249,7 @@ def calc_system_returns(regime_info=None):
         _entry_rank = rp['ENTRY_RANK']
         _exit_rank = rp['EXIT_RANK']
         _max_slots = rp['MAX_SLOTS']
-        _stop_loss = rp.get('STOP_LOSS', -0.10)  # v80.6: SL -10% 유지
+        _stop_loss = rp.get('STOP_LOSS', None)   # v80.22: SL=None이면 트리거 안 함
 
         # 국면 전환 시 포트폴리오 전량 청산
         if i >= 1:
@@ -269,8 +269,8 @@ def calc_system_returns(regime_info=None):
                     peak_prices[tk] = cp
             else:
                 peak_prices[tk] = max(cp, ep) if cp > 0 else ep
-            # 손절: 진입가 대비
-            if cp > 0 and ep > 0 and (cp / ep - 1) <= _stop_loss:
+            # 손절: 진입가 대비 (v80.22: _stop_loss=None이면 스킵)
+            if _stop_loss is not None and cp > 0 and ep > 0 and (cp / ep - 1) <= _stop_loss:
                 del portfolio[tk]
                 peak_prices.pop(tk, None)
             # 트레일링: 고점 대비 (v80.21: _trailing_stop=None이면 스킵)
@@ -699,9 +699,7 @@ def create_regime_switch_message(regime_mode, prev_mode=None):
             '공격 모드 매매 기준',
             '━━━━━━━━━━━━━━━',
             '매수: 3일 연속 ✅ 상위 3종목 (최대 3)',
-            '매도 (둘 중 하나):',
-            '• 3일 가중순위 4위 밖',
-            '• 매수가 대비 -10%',
+            '매도: 3일 가중순위 4위 밖',
             '',
             '━━━━━━━━━━━━━━━',
             '백테스트 (7년, 2019~2026)',
@@ -843,7 +841,7 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         lines.append('약세장 BT에서 시스템 알파가 거의 0이라 확인됨.')
         lines.append('cash 보유가 정답 (7년 BT: MDD 33%→21% 대폭 개선).')
         lines.append('')
-        lines.append('보유 종목은 매도 룰대로 자연 청산 (순위이탈/손절).')
+        lines.append('보유 종목은 매도 룰대로 자연 청산 (순위이탈).')
         lines.append('강세장(MA20 > MA80) 진입 시 자동 매수 재개 (5일 확인).')
     else:
         for i, pick in enumerate(picks):
@@ -950,9 +948,7 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
     else:
         lines.append(f'매수: 3일 연속 상위 {_rule_e}종목 (최대 {_rule_s}종목)')
         lines.append('')
-        lines.append('매도 (아래 둘 중 하나라도 해당 시)')
-        lines.append(f'• 3일 가중순위 {_rule_x}위 밖')
-        lines.append('• 매수가 대비 -10% 시')
+        lines.append(f'매도: 3일 가중순위 {_rule_x}위 밖 (단일 조건)')
         lines.append('')
         lines.append('시스템은 신호만, 매매는 본인 판단')
 
