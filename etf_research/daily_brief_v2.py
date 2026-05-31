@@ -15,6 +15,10 @@ names = json.loads((C/'names.json').read_text(encoding='utf-8'))
 def nm(t): return names.get(t, t)
 LEV = ['레버리지','인버스','2X','2x','곱버스']
 def is_lev(t): return any(k in nm(t) for k in LEV)
+# 괴리율 validated 알림용: 해외기초/합성/원자재 제외(시차 구조적 괴리=함정, 검증서 반등 약함)
+EXCL_OS = LEV + ['합성','(H)','미국','차이나','중국','인도','베트남','일본','유럽','글로벌','월드','선진국','신흥',
+                 '원유','WTI','금','은','구리','달러','엔','해외','나스닥','S&P','필라델피아','항셍','니케이']
+def domestic(t): return not any(k in nm(t) for k in EXCL_OS)
 
 oh = pd.read_parquet(C/'ohlcv_liquid.parquet')
 oh['stock'] = oh['etf'].astype(str)
@@ -34,6 +38,8 @@ top_surge = surge.sort_values(ascending=False).head(6)
 ohb2 = ohb[ohb.nav>0].copy(); ohb2['dev'] = ohb2['close']/ohb2['nav']-1
 dev = ohb2['dev'].sort_values()
 trap = pd.concat([dev.head(3), dev.tail(3)])
+# 괴리율 validated 기회: 국내기초 + 거래대금≥20억 + 음괴리 ≤-3% (검증 edge)
+opp = ohb2[(ohb2['dev']<=-0.03) & (ohb2['value']>=2e9) & (pd.Series(ohb2.index, index=ohb2.index).map(domestic))].sort_values('dev')
 
 # === B: 투자자 순매수 (레버리지 제외) ===
 inv = pd.read_parquet(C/'investor.parquet'); inv['etf']=inv['etf'].astype(str)
@@ -60,7 +66,15 @@ crowd = pd.read_parquet(C/'crowding.parquet') if (C/'crowding.parquet').exists()
 def won(x):
     x=float(x); return f"{x/1e8:,.0f}억" if abs(x)>=1e8 else f"{x/1e4:,.0f}만"
 
-L=[f"📊 ETF 스마트머니 데일리 v2 [{BASE}]",""]
+L=[f"📊 ETF 데일리 v2 [{BASE}]",""]
+L.append("💧 괴리율 반전 기회 (국내·유동·NAV대비 -3%↓) ★검증 edge")
+if len(opp):
+    for t in opp.head(5).index:
+        L.append(f"  • {nm(t)} 시장가 {opp.loc[t,'dev']*100:+.2f}% (NAV 대비)")
+    L.append("  (과거 5일 평균 반등, 승률 76~81% · 기대치이지 보장 아님)")
+else:
+    L.append("  • 오늘 조건 충족 없음 (정상 — 평소 드뭄)")
+L.append("")
 L.append("🔥 이례적 거래폭증 ETF (20일평균 대비, 레버리지 제외)")
 for t in top_surge.index:
     r = ret1.get(t, float('nan'))
@@ -72,17 +86,22 @@ L.append("")
 L.append("🌏 외국인 순매수")
 for t in foreign.head(5).index: L.append(f"  • {nm(t)} +{won(foreign[t])}")
 L.append("")
-L.append(f"🧭 액티브 운용자 합의 신규편입 ({sp}→{sc}, 운용자 수)")
+L.append(f"🧭 (참고) 운용자 합의 신규편입 ({sp}→{sc}) — 약신호, 매수권유 아님")
 shown=[x for x in consensus if x[1]>=2][:6]
 if shown:
-    for stk,n in shown: L.append(f"  • {sname.get(stk,stk)} : {n}개 운용자 동시 신규편입 ★")
+    for stk,n in shown: L.append(f"  • {sname.get(stk,stk)} : {n}개 운용자")
 else:
     for stk,n in consensus[:5]: L.append(f"  • {sname.get(stk,stk)} : {n}개 운용자")
 L.append("")
 if crowd is not None:
     L.append("👥 액티브 운용자 합의 보유 Top5 (쏠림)")
-    for stk,r in crowd.head(5).iterrows():
-        L.append(f"  • {sname.get(stk,stk)} : {int(r.n_holders)}개 ETF 보유")
+    shown_c = 0
+    for stk,r in crowd.iterrows():
+        sn = sname.get(stk,str(stk))
+        if any(k in sn for k in ['현금','원화','예금']): continue  # 현금성 제외
+        L.append(f"  • {sn} : {int(r.n_holders)}개 ETF 보유")
+        shown_c += 1
+        if shown_c >= 5: break
     L.append("")
 L.append("⚠️ 괴리율 함정 (시장가 vs NAV)")
 for t in trap.index: L.append(f"  • {nm(t)} {trap[t]*100:+.2f}%")
