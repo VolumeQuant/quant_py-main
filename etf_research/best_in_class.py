@@ -12,28 +12,32 @@ names = json.loads((C/'names.json').read_text(encoding='utf-8'))
 oh = pd.read_parquet(C/'ohlcv_liquid.parquet')
 oh['etf'] = oh['etf'].astype(str)
 
-# 동일지수 클러스터 (스타터 키워드맵; 본격화 시 KRX 기초지수 매핑 테이블로 대체)
+# 오염 제거: 동일지수 '순수' 추종만 (레버리지/인버스/커버드콜/채권혼합/환헤지/TR 등 변형 제외)
+CONTAM = ['레버리지','인버스','2X','2x','곱버스','커버드콜','데일리','채권혼합','채권','혼합','TR','(H)','합성','타겟','OTM','위클리']
+def pure(n): return not any(k in n for k in CONTAM)
 CLUSTERS = {
-    '미국 S&P500':   lambda n: ('S&P500' in n or 'S&P 500' in n) and '레버리지' not in n and '인버스' not in n,
-    '미국 나스닥100': lambda n: '나스닥100' in n and '레버리지' not in n and '인버스' not in n,
-    '코스피200':     lambda n: (n.endswith(' 200') or ' 200 ' in n or 'KOSPI200' in n) and all(k not in n for k in ['레버리지','인버스','IT','TR','선물']),
-    '미국 필라델피아반도체': lambda n: '필라델피아반도체' in n or '미국반도체' in n,
-    '2차전지':       lambda n: '2차전지' in n and '레버리지' not in n and '인버스' not in n,
-    'K-반도체':      lambda n: ('반도체' in n and 'K' in n.upper()) or 'Fn반도체' in n or 'K-반도체' in n,
-    '미국 빅테크/M7': lambda n: any(k in n for k in ['빅테크','M7','테크TOP10','매그니피센트']),
-    '인도 Nifty':    lambda n: '인도' in n and ('Nifty' in n or '니프티' in n),
-    '골드/금':       lambda n: ('골드' in n or '금' == n.replace(' ','')[-1:] or 'KRX금' in n) and '레버리지' not in n,
+    '미국 S&P500':   lambda n: ('S&P500' in n or 'S&P 500' in n) and pure(n),
+    '미국 나스닥100': lambda n: '나스닥100' in n and pure(n),
+    '코스피200':     lambda n: (n.split()[-1]=='200' if n.split() else False) and pure(n),  # 끝이 정확히 '200'(섹터 200 건설 등 제외)
+    '미국 필라델피아반도체': lambda n: ('필라델피아반도체' in n) and pure(n),
+    '2차전지':       lambda n: '2차전지' in n and pure(n),
+    '미국 빅테크/M7': lambda n: any(k in n for k in ['빅테크','M7','매그니피센트']) and pure(n),
+    '골드/금':       lambda n: ('골드' in n or 'KRX금' in n) and pure(n),
 }
 
+# 공통 윈도우(최근 120 거래일)로 NAV총수익 비교 = 공정 (신규상장 부분기간 왜곡 제거)
+all_dates = sorted(oh['date'].unique())
+WIN = all_dates[-120:] if len(all_dates) >= 120 else all_dates
+WIN0 = WIN[0]
 def metrics(etf):
-    d = oh[oh.etf==etf].sort_values('date')
-    if len(d) < 60: return None
+    d = oh[(oh.etf==etf) & (oh.date>=WIN0)].sort_values('date')
     d = d[d.nav>0]
-    nav0, nav1 = d['nav'].iloc[0], d['nav'].iloc[-1]
-    nret = nav1/nav0 - 1
+    if len(d) < 110: return None  # 공통 윈도우 거의 풀로 존재해야 (신규상장 제외)
+    nret = d['nav'].iloc[-1]/d['nav'].iloc[0] - 1
     dev = (d['close']/d['nav']-1)
     return {'nav_ret': nret*100, 'dev_std': dev.std()*100, 'dev_mean': dev.mean()*100,
             'liq': d['value'].tail(20).mean(), 'days': len(d)}
+print(f"(공통 윈도우: 최근 {len(WIN)}거래일, {WIN0}~{WIN[-1]})", flush=True)
 
 print(f"=== 동일지수 best-in-class (NAV총수익=저드래그 / 괴리율변동=체결 / 유동성) ===", flush=True)
 for label, fn in CLUSTERS.items():
