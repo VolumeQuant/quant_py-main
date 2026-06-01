@@ -596,6 +596,7 @@ def run_ntm_collection(config):
             current_price = None
             ma60_val = None
             ma120_val = None
+            high30_val = None  # v84 dd_30_25 이식: 30거래일 고점
 
             try:
                 if hist_all is not None:
@@ -609,6 +610,9 @@ def run_ntm_collection(config):
                     ma60_val = float(hist.rolling(window=60).mean().iloc[-1])
                     if len(hist) >= 120:
                         ma120_val = float(hist.rolling(window=120).mean().iloc[-1])
+                    # v84 dd_30_25: 최근 30거래일 고점 (급락 진입필터용)
+                    if len(hist) >= 20:
+                        high30_val = float(hist.tail(30).max())
                     hist_dt = hist.index.tz_localize(None) if hist.index.tz else hist.index
 
                     # 각 시점의 주가 찾기
@@ -718,6 +722,7 @@ def run_ntm_collection(config):
                 'price': current_price,
                 'ma60': ma60_val,
                 'ma120': ma120_val,
+                'high30': high30_val,  # v84 dd_30_25 진입필터용
             }
 
             # DB에 파생 데이터 업데이트
@@ -1266,6 +1271,15 @@ def get_part2_candidates(df, top_n=None, return_counts=False):
             details = [f"{r['ticker']}(↑{int(r.get('rev_up30',0))}↓{int(r.get('rev_down30',0))})" for _, r in high_down.iterrows()]
             log(f"하향 과다(>30%) 제외: {', '.join(details)}")
         filtered = filtered[~(down_ratio > 0.3)].copy()
+
+    # v84 dd_30_25 이식 (provisional, KR BT 미검증): 30거래일 고점 대비 -25%↓ 급락 종목 매수후보 제외.
+    # US 검증 (incl +8.73%p / excl +7.16%p). 추격·낙주 방지. high30 없으면 skip(guarded).
+    if 'high30' in filtered.columns and 'price' in filtered.columns:
+        _h = filtered['high30']; _p = filtered['price']
+        _crash = filtered[_h.notna() & (_h > 0) & _p.notna() & ((_p / _h - 1) <= -0.25)]
+        if len(_crash) > 0:
+            log(f"급락 제외(30일고점 -25%↓, v84 dd_30_25): {', '.join(_crash['ticker'].tolist())}")
+        filtered = filtered[~(_h.notna() & (_h > 0) & _p.notna() & ((_p / _h - 1) <= -0.25))].copy()
 
     # 구조적 저마진 필터: OpMargin < 10% AND GrossMargin < GM_THRESH → 제외
     # KR adapt 2026-06-01 (provisional, BT 미검증): GM 임계 0.30(US) → 0.15.
