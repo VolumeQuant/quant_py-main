@@ -82,11 +82,22 @@ jobs:
                   sys.exit(2)
               print(f'BUSINESS DAY: {today}')
           except ImportError:
-              # holidays 없으면 weekday만 (안전)
               if date.today().weekday() >= 5:
                   sys.exit(2)
           "
         continue-on-error: true
+
+      # 자율주행 6/1: production v80.22 안전망 패턴 — DB backup 자동화
+      - name: Backup DB before run (v83.2 패턴)
+        if: steps.bizday.outcome == 'success'
+        run: |
+          if [ -f kr_eps_momentum/eps_momentum_data_kr.db ]; then
+            DATE=$(TZ=Asia/Seoul date +%Y%m%d)
+            cp kr_eps_momentum/eps_momentum_data_kr.db "kr_eps_momentum/eps_momentum_data_kr.db.bak_${DATE}"
+            # 7일 이상 된 backup 삭제 (저장공간 관리)
+            find kr_eps_momentum/ -name 'eps_momentum_data_kr.db.bak_*' -mtime +7 -delete 2>/dev/null || true
+            echo "DB backup: bak_${DATE}"
+          fi
 
       - name: Run KR daily_runner (US 완전 모방, 5,178줄)
         if: steps.bizday.outcome == 'success'
@@ -95,11 +106,44 @@ jobs:
           python daily_runner.py
         continue-on-error: true
 
-      - name: Commit accumulated data (DB + cache)
+      # 자율주행 6/1: post-run 검증 (v80.22 _validate_ranking 패턴) — 매수후보 0건 시 알림
+      - name: Validate run output (production v80.22 안전망 패턴)
+        if: steps.bizday.outcome == 'success'
+        continue-on-error: true
         run: |
-          git add kr_eps_momentum/eps_momentum_data_kr.db yf_eps_workspace/data_cache_yf/ kr_eps_momentum/ticker_info_cache.json 2>/dev/null || true
-          # config_kr.json은 token 주입돼있으니 제외 (.gitignore 또는 revert)
+          # GHA 로그에서 "메인 N, 턴어라운드 M" 추출 → N+M < 10 시 비정상 의심
+          # 간단한 sqlite 검증으로 대체
+          python -c "
+          import sqlite3, os, requests, sys
+          db = 'kr_eps_momentum/eps_momentum_data_kr.db'
+          if not os.path.exists(db):
+              print('DB 없음 — 알림 발송')
+              sys.exit(1)
+          try:
+              conn = sqlite3.connect(db)
+              c = conn.cursor()
+              # 오늘 매수후보 수 (composite_rank IS NOT NULL = 메인 후보)
+              n = c.execute('SELECT COUNT(*) FROM ntm_screening WHERE date=(SELECT MAX(date) FROM ntm_screening) AND composite_rank IS NOT NULL').fetchone()[0]
+              print(f'오늘 매수후보: {n}건')
+              if n < 10:
+                  # 개인봇 알림
+                  tok = os.environ.get('TELEGRAM_BOT_TOKEN', '')
+                  pid = os.environ.get('TELEGRAM_PRIVATE_ID', '')
+                  if tok and pid:
+                      msg = f'⚠️ KR EPS 비정상 감지\n오늘 매수후보 {n}건 (정상: 100+)\n수동 점검 필요'
+                      requests.post(f'https://api.telegram.org/bot{tok}/sendMessage',
+                                    data={'chat_id': pid, 'text': msg}, timeout=15)
+                  sys.exit(1)
+          except Exception as e:
+              print(f'검증 실패: {e}')
+          "
+
+      - name: Commit accumulated data (DB + cache + backups)
+        run: |
+          # backup은 7일치 누적 → commit
+          git add kr_eps_momentum/eps_momentum_data_kr.db kr_eps_momentum/eps_momentum_data_kr.db.bak_* yf_eps_workspace/data_cache_yf/ kr_eps_momentum/ticker_info_cache.json 2>/dev/null || true
+          # config_kr.json은 token 주입돼있으니 제외
           git checkout -- kr_eps_momentum/config_kr.json 2>/dev/null || true
-          git diff --staged --quiet || git commit -m "KR EPS daily $(TZ=Asia/Seoul date +%Y-%m-%d)"
+          git diff --staged --quiet || git commit -m "KR EPS daily $(TZ=Asia/Seoul date +%Y-%m-%d) (+backup)"
           git pull --no-rebase -X ours origin main || true
           git push
