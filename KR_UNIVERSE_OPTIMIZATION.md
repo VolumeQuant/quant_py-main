@@ -86,3 +86,12 @@
 - `bt_autopilot_rough_grid.csv` (러프 grid)
 - `bt_autopilot_fine_grid.csv` (정밀 grid)
 - `logs/autopilot_kp200_kq150.log` (실행 로그)
+
+## ⚠️ 정정 (2026-06-01 집PC 재검증 — 본 보고서 권장 거부)
+
+autopilot 권장(KP200+KQ150 변경)을 IS/OOS + WF + leave-one-out + universe ON/OFF로 정식 재검증 → **거부**.
+- Cal 3.42 = 인접 CV 0.21 **과적합 spike** (이웃 평균 2.62, 최소 1.69). robust plateau는 V15Q0G65M20(CV 0.079).
+- **같은 가중치 universe ON vs OFF**(bt_kp_validate.py): 전체 Cal 2.15 vs 2.09(동일), OOS 4.25 vs 4.28(동일), **MDD A 36% > B 33%**(전체가 더 안정).
+- **올해 비교**: 2025 KP200+KQ150 +62.9%(MDD24.9) vs 전체 **+135.2%(MDD23.5)** / 2026YTD +133.8 vs **+183.3**. → **전체 유니버스가 수익·안정성 둘 다 우월**(소형주 폭발=production 알파를 KP200+KQ150이 버림).
+- Cal 3.42 허상 원인: 가중치 cherry-pick + TurboSim 실행모델 차이 + 생존편향(20260529 멤버십 전기간 적용).
+- **결론: universe 변경 거부, production raw(전체) 유지.** autopilot이 띄운 CV 0.21 WARN을 무시하면 안 됐던 케이스.

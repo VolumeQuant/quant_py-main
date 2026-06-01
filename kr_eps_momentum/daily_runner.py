@@ -2838,17 +2838,16 @@ def analyze_sector_momentum(results_df, today_str=None):
             log(f"섹터 전주 비교 실패: {e}", "WARN")
 
     # 메시지 생성
-    lines = ['📊 섹터 EPS 모멘텀']
+    # KR adapt 2026-06-01: US 섹터ETF 라벨(XLP/SMH 등) 제거 — 퍼센트는 이미 KR 종목 집계, ETF 태그만 혼란 유발
+    lines = ['📊 섹터 EPS 모멘텀 (KR 종목 집계)']
     for _, r in sector.head(5).iterrows():
         name = r['sector_group']
-        etf = SECTOR_ETF.get(name, '')
         pct = int(r['pct'])
         total = int(r['total'])
         upward = int(r['upward'])
         prev = prev_pcts.get(name)
         prev_str = f' (전주 {prev}%)' if prev is not None else ''
-        etf_str = f'({etf})' if etf else ''
-        lines.append(f'{name}{etf_str} {pct}% 상향 {upward}/{total}{prev_str}')
+        lines.append(f'{name} {pct}% 상향 {upward}/{total}{prev_str}')
 
     return '\n'.join(lines)
 
@@ -4509,34 +4508,25 @@ def create_ai_risk_message(config, selected, biz_day, risk_status, market_lines,
         elif idx_parts:
             lines.append(' · '.join(idx_parts))
 
-    # ── 📉 신용·변동성 (v64: 1줄 결론 + 개별 근거) ──
-    hy_data = risk_status.get('hy') if risk_status else None
-    vix_data = risk_status.get('vix') if risk_status else None
-
-    if hy_data or vix_data:
-        lines.append('')
-        lines.append('🏦 <b>신용·변동성 (US 데이터, 참고용)</b>')  # KR adapt 2026-06-01: KR 시스템엔 cosmetic 참고. KR EPS 알파와 직접 무관.
-
-        # 종합 판정 (HY×VIX 조합 수익률 기반, v65)
-        overall_icon, overall_msg, combined_ret = _credit_overall_status(hy_data, vix_data)
-        lines.append(f'<b>{overall_icon} {overall_msg}</b>')
-
-        # 개별 근거 (수치 + 퍼센타일)
-        if hy_data:
-            hy_pct = hy_data.get('hy_percentile', 50)
-            lines.append(f'  회사채 금리차(HY): {hy_data["hy_spread"]:.2f}% (상위 {100 - hy_pct:.0f}%)')
-
-        if vix_data:
-            vix_cur = vix_data.get('vix_current', 0)
-            vix_pct = vix_data.get('vix_percentile', 0)
-            lines.append(f'  변동성지수(VIX): {vix_cur:.1f} (상위 {100 - vix_pct:.0f}%)')
-
-        # 조합 과거 수익률
-        lines.append(f'  → (참고) 이 구간 과거 S&P500 연평균 {combined_ret:+.1f}% [US 데이터, KR EPS 시스템엔 cosmetic]')
-    elif not hy_data and not vix_data:
-        lines.append('')
-        lines.append('🏦 <b>신용·변동성 (US 데이터, 참고용)</b>')  # KR adapt 2026-06-01: KR 시스템엔 cosmetic 참고. KR EPS 알파와 직접 무관.
-        lines.append('⚠️ 시장 지표 수집 실패 — 보수적으로 접근하세요')
+    # ── 📈 시장 국면 (KR adapt 2026-06-01) ──
+    # 기존 US VIX/HY/S&P 블록 제거: KR EPS 매매를 gate 안 하던 cosmetic이고 한국 시장에 US 공포지수는 부적합.
+    # 대체: production KP_MA_CROSS 방식 (KOSPI MA20 vs MA80). 표시용 — 이 시스템 매매를 gate하진 않음.
+    lines.append('')
+    lines.append('📈 <b>시장 국면 (KOSPI 추세)</b>')
+    try:
+        import yfinance as yf
+        import pandas as pd
+        _ks = yf.download('^KS11', period='1y', progress=False, auto_adjust=True)
+        _kc = _ks['Close'].iloc[:, 0] if isinstance(_ks.columns, pd.MultiIndex) else _ks['Close']
+        _ma20 = float(_kc.rolling(20).mean().iloc[-1])
+        _ma80 = float(_kc.rolling(80).mean().iloc[-1])
+        if _ma20 > _ma80:
+            lines.append('  📈 공격 국면 (KOSPI 20일선 &gt; 80일선) — 추세 양호')
+        else:
+            lines.append('  📉 방어 국면 (KOSPI 20일선 &lt; 80일선) — 추세 주의')
+        lines.append('  <i>(참고: production은 5일 확인 후 전환. EPS 시스템 매매를 gate하진 않음)</i>')
+    except Exception:
+        lines.append('  국면 데이터 수집 실패 (참고용)')
 
     # ── 📰 시장 동향 (AI 해석) ──
     market_summary = ai_content.get('market_summary', '') if ai_content else ''
