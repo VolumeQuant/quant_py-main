@@ -2192,9 +2192,9 @@ def fetch_hy_quadrant():
 
         # HY 단독 상황 기술 (fallback용, 최종은 get_market_risk_status에서 결정)
         if quadrant == 'Q1':
-            action = '회복 구간 — 과거 30년 연평균 +14.3%'
+            action = '회복 구간 (US 30년 +14.3% 기준)'
         elif quadrant == 'Q2':
-            action = '안정 구간 — 과거 30년 연평균 +9.4%'
+            action = '안정 구간 (US 30년 +9.4% 기준)'
         elif quadrant == 'Q3':
             action = '과열 구간 — 수익률 둔화 경향'
         else:  # Q4
@@ -2488,13 +2488,13 @@ def get_market_risk_status():
         if q == 'Q1':
             # 봄(회복기) — 30년 평균: 연+14.3%
             if vix_ok:
-                final_action = '회복 구간 (과거 30년 연 +14.3%)'
+                final_action = '회복 구간 (US 30년 +14.3% 기준)'
             else:
                 final_action = '회복 구간, 변동성 높음'
         elif q == 'Q2':
             # 여름(성장기) — 30년 평균: 연+9.4%
             if vix_ok:
-                final_action = '성장 구간 (과거 30년 연 +9.4%)'
+                final_action = '성장 구간 (US 30년 +9.4% 기준)'
             else:
                 final_action = '성장 구간, 변동성 높음'
         elif q == 'Q3':
