@@ -12,7 +12,7 @@ KR_CACHE = Path(r'C:/dev/data_cache')
 UNIVERSE_CACHE = Path(__file__).resolve().parent.parent / 'yf_eps_workspace' / 'universe_kr.parquet'
 
 
-def fetch_dynamic_tickers(min_mcap=1e11):
+def fetch_dynamic_tickers(min_mcap=1e12):  # KR adapt 2026-06-01: 1천억→1조 (EDA: yfinance EPS forecast 시총 1조+만 제공, 그 이하 76% 무의미 fetch)
     """US daily_runner.fetch_dynamic_tickers 호환 — set of yf symbol 반환.
     KR universe symbol cache (.KS/.KQ 결정 완료) 우선 사용.
 

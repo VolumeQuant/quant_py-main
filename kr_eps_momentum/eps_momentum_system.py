@@ -280,7 +280,7 @@ INDUSTRY_MAP = {
 # NTM (Next Twelve Months) EPS 계산
 # ============================================================
 
-MIN_NTM_EPS = 1.0  # 턴어라운드 판별 기준 ($1.00)
+MIN_NTM_EPS = 500.0  # KR adapt 2026-06-01: KRW 단위 (US $1.00→약 1,300 KRW). KR 종목 NTM EPS 중앙값 4,228원의 약 12% = 500원이 적절. 턴어라운드 판별 기준.
 
 def calculate_ntm_eps(stock, today=None):
     """NTM EPS 계산 - endDate 기반 시간 가중 블렌딩
