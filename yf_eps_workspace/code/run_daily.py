@@ -1,12 +1,22 @@
 # -*- coding: utf-8 -*-
-"""KR EPS Momentum — Daily Runner (GHA + 로컬 통합)
+"""[DEPRECATED 2026-06-01] KR EPS Momentum — Minimal Daily Runner (v1, 200줄)
 
-흐름: probe (yfinance) → score (NTM) → telegram (개인봇)
-경로: 모두 workspace 상대경로. config는 env var.
+⚠️ 이 파일은 폐기됨. v2 (`C:/dev/kr_eps_momentum/daily_runner.py`, 5,178줄 US 완전 모방)이
+GHA workflow에서 사용 중.
 
-실행:
+이 파일이 만들어진 이유:
+- 2026-06-01 (사용자 화났을 때) 5/14 PoC가 17일 멈춤 상태에서 긴급 복구용으로 만듦
+- US와 다른 minimal 200줄 — 메시지 형식이 US와 안 맞아서 사용자가 거부
+- "전부 모방" 결정 후 daily_runner.py로 전환
+
+backup으로 유지. GHA workflow에서는 안 호출됨.
+
+이전 흐름: probe (yfinance) → score (NTM) → telegram (개인봇)
+이전 위치: 모두 workspace 상대경로. config는 env var.
+
+이전 실행:
   로컬: python yf_eps_workspace/code/run_daily.py [--date YYYYMMDD]
-  GHA: schedule cron (kr_eps_daily.yml)
+  GHA: (구) kr_eps_daily.yml — 6/1 변경됨
 
 환경변수 (GHA secrets):
   TELEGRAM_BOT_TOKEN  : 봇 토큰
