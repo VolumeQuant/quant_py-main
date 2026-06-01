@@ -15,19 +15,45 @@ UNIVERSE_CACHE = Path(__file__).resolve().parent.parent / 'yf_eps_workspace' / '
 def fetch_dynamic_tickers(min_mcap=1e11):
     """US daily_runner.fetch_dynamic_tickers 호환 — set of yf symbol 반환.
     KR universe symbol cache (.KS/.KQ 결정 완료) 우선 사용.
+
+    GHA 호환 (2026-06-01 fix): UNIVERSE_CACHE 정상 path → cwd 상대경로 fallback → KR_CACHE Linux 방어.
     """
-    if UNIVERSE_CACHE.exists():
-        df = pd.read_parquet(UNIVERSE_CACHE)
-        if 'symbol' in df.columns and 'mc_krw' in df.columns:
-            df = df[df.mc_krw >= min_mcap]
-            return set(df['symbol'].astype(str))
-    # fallback — production market_cap_ALL 즉석 생성 (.KS 기본)
-    files = sorted(KR_CACHE.glob('market_cap_ALL_*.parquet'))
-    df = pd.read_parquet(files[-1])
-    df.columns = ['close', 'mc', 'vol', 'val', 'shares']
-    df = df[df.mc >= min_mcap]
-    df = df[df.index.astype(str).str.endswith('0')]
-    return set(f'{str(t).zfill(6)}.KS' for t in df.index)
+    # 1) UNIVERSE_CACHE 정상 path (Path(__file__).parent.parent/'yf_eps_workspace'/...)
+    candidates = [UNIVERSE_CACHE]
+    # 2) cwd 상대경로 fallback (GHA working dir 다를 수 있음)
+    candidates.append(Path.cwd() / 'yf_eps_workspace' / 'universe_kr.parquet')
+    # 3) repo root 추정 (kr_eps_momentum 부모)
+    candidates.append(Path(__file__).resolve().parent.parent.parent / 'quant_py-main' / 'yf_eps_workspace' / 'universe_kr.parquet')
+
+    for cache in candidates:
+        if cache.exists():
+            try:
+                df = pd.read_parquet(cache)
+                if 'symbol' in df.columns and 'mc_krw' in df.columns:
+                    df = df[df.mc_krw >= min_mcap]
+                    tickers = set(df['symbol'].astype(str))
+                    if tickers:
+                        return tickers
+            except Exception:
+                pass
+
+    # 4) fallback — production market_cap_ALL (로컬 Windows only)
+    if KR_CACHE.exists():
+        files = sorted(KR_CACHE.glob('market_cap_ALL_*.parquet'))
+        if files:
+            df = pd.read_parquet(files[-1])
+            df.columns = ['close', 'mc', 'vol', 'val', 'shares']
+            df = df[df.mc >= min_mcap]
+            df = df[df.index.astype(str).str.endswith('0')]
+            return set(f'{str(t).zfill(6)}.KS' for t in df.index)
+
+    # 5) 모든 path 실패 — 명확한 에러
+    raise RuntimeError(
+        f'KR universe 데이터 없음. '
+        f'UNIVERSE_CACHE={UNIVERSE_CACHE} (exists={UNIVERSE_CACHE.exists()}), '
+        f'cwd={Path.cwd()}, '
+        f'KR_CACHE={KR_CACHE} (exists={KR_CACHE.exists()})'
+    )
 
 
 def get_kr_universe(min_mcap_krw=1e11, exclude_pref=True):
