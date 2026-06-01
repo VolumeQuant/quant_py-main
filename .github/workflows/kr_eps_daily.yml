@@ -2,9 +2,10 @@ name: KR EPS Momentum Daily
 
 on:
   schedule:
-    # KST 08:00 = UTC 23:00 전날 (월~금 KST = 일~목 UTC)
-    # 한국 장 시작 전 발송 가정. yfinance KR 종목 직접 호출(KS/KQ), KRX 로그인 불필요.
-    - cron: '0 23 * * 0-4'
+    # KST 16:00 = UTC 07:00 (월~금 KST = 월~금 UTC, KR 장 마감 15:30 직후)
+    # production v80.22(16:00)와 일관성. yfinance KR 종목 직접 호출(KS/KQ), KRX 로그인 불필요.
+    # 한국 공휴일은 daily_runner.py 안에서 자동 skip (holidays 라이브러리).
+    - cron: '0 7 * * 1-5'
   workflow_dispatch:
 
 # yfinance rate limit 회피 (US daily-screening과 동일 패턴, 5/2 US 사고 학습)

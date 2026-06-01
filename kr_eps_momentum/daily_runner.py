@@ -2630,8 +2630,18 @@ def git_commit_push(config):
 # 텔레그램 메시지 생성
 # ============================================================
 
+def _is_kr_holiday(d):
+    """한국 공휴일 체크 (holidays 라이브러리, optional)"""
+    try:
+        import holidays as _hd
+        kr = _hd.country_holidays('KR', years=[d.year])
+        return d in kr
+    except Exception:
+        return False
+
+
 def get_last_business_day():
-    """가장 최근 KR 영업일 날짜 (KR adapt 2026-06-01: US/Eastern → Asia/Seoul)"""
+    """가장 최근 KR 영업일 날짜 (KR adapt 2026-06-01: US/Eastern → Asia/Seoul + 한국 공휴일)"""
     if HAS_PYTZ:
         kst = pytz.timezone('Asia/Seoul')
         now_kst = datetime.now(kst)
@@ -2639,12 +2649,12 @@ def get_last_business_day():
         now_kst = datetime.now()  # 시스템이 KST 가정
 
     d = now_kst.date()
-    # 평일 장마감 후(16시 이후)면 오늘이 영업일
-    if d.weekday() < 5 and now_kst.hour >= 16:
+    # 평일 장마감 후(16시 이후) + 공휴일 아님 = 오늘이 영업일
+    if d.weekday() < 5 and now_kst.hour >= 16 and not _is_kr_holiday(d):
         return d
-    # 그 외: 전일로 가서 가장 최근 평일 찾기 (한국 공휴일 처리는 단순 weekday만, TODO)
+    # 그 외: 전일로 가서 가장 최근 평일 + 공휴일 아님
     d -= timedelta(days=1)
-    while d.weekday() >= 5:
+    while d.weekday() >= 5 or _is_kr_holiday(d):
         d -= timedelta(days=1)
     return d
 
@@ -3523,30 +3533,28 @@ def run_ai_analysis(config, selected, biz_day, risk_status=None, market_lines=No
             if idx_parts:
                 idx_ctx = f"[당일 지수 마감] {' / '.join(idx_parts)}"
 
-        market_prompt = f"""{biz_str} 미국 주식시장 마감 결과를 Google 검색해서 요약해줘.
+        market_prompt = f"""{biz_str} 한국 주식시장 마감 결과를 Google 검색해서 요약해줘.
 
 {idx_ctx}
 
-[중요] 이 요약은 {biz_str} 미국 시장 마감(16시 ET) 이후에 작성하는 거야.
-마감 시점까지 이미 발표된 경제지표(FOMC 결정, CPI, PPI, 고용 등)는 "결과"로 써.
+[중요] 이 요약은 {biz_str} 한국 시장 마감(15:30 KST) 이후에 작성하는 거야.
+마감 시점까지 이미 발표된 경제지표(한은 기준금리, 수출입동향, CPI 등)는 "결과"로 써.
 "향후 예정", "발표될 예정" 같은 표현은 마감 이후 일정에만 써.
-예: FOMC가 당일 14시에 금리 동결 발표 → "연준이 금리를 동결했습니다" (O) / "FOMC 결과가 예정되어 있습니다" (X)
 
 [구조] 3문단, 총 400~550자로 작성 (문단 사이 빈 줄):
-문단1. 당일 시장 흐름 — 상승/하락 원인과 핵심 이슈 (2~3문장)
-문단2. 지수 움직임 — 주요 종목/섹터 동향, 수급 흐름 (2~3문장)
+문단1. 당일 시장 흐름 — KOSPI/KOSDAQ 상승/하락 원인과 핵심 이슈 (2~3문장)
+문단2. 지수 움직임 — 주요 종목/섹터 동향, 외국인·기관 수급 흐름 (2~3문장)
 문단3. 업종별 강약 — 어떤 테마가 주도했는지 + 향후 주요 일정 (2~3문장)
 
 [규칙]
 - 400~550자. 3문단으로 나눠서 써. 문단 사이에 빈 줄 넣어.
 - 위 [당일 지수 마감] 데이터와 반드시 일치해야 해. 지수가 마이너스면 "하락", 플러스면 "상승".
-- 지수 수치(S&P, 나스닥 등)는 별도 표시하니 생략.
-- 구체적으로 써 — "관세 이슈" 대신 "트럼프 15% 글로벌 관세 발표에..." 같이.
-- 트럼프는 2025년 1월 재취임한 현직 대통령이야. "전 대통령"이라고 쓰지 마.
-- 섹터 동향도 구체적으로 — "기술주 약세" 대신 "AI·반도체주가 2% 넘게 하락" 같이.
+- 지수 수치(KOSPI, KOSDAQ 등)는 별도 표시하니 생략.
+- 구체적으로 써 — "AI 반도체 호조" 대신 "SK하이닉스 HBM3E 미국 빅테크 수주에..." 같이.
+- 섹터 동향도 구체적으로 — "반도체 강세" 대신 "삼성전자·SK하이닉스가 2% 넘게 상승" 같이.
 - 전일(어제) 이벤트를 당일 일처럼 쓰지 마. {biz_str} 당일 변동만.
 - 개별 종목 급등락은 당일 변동만 언급해.
-- 한국 투자자(서학개미) 동향은 쓰지 마. 미국 시장만.
+- 미국 주식시장(서학개미, 미국 지수 등) 동향은 쓰지 마. 한국 시장만.
 - 한국어, ~입니다 체. 번역투 금지. 자연스럽게.
 - 인사말/서두/맺음말 없이 바로 시작."""
 
@@ -4222,7 +4230,7 @@ def create_signal_message(selected, earnings_map, exit_reasons, biz_day, ai_cont
         if perf and perf['n_days'] >= 5:
             lines.append('')
             lines.append(f'📈 <b>시스템 누적 수익률 {perf["sys_cum"]:+.1f}% ({perf["n_days"]}거래일)</b>')
-            lines.append(f'    같은 기간 S&P500은 {perf["spy_cum"]:+.1f}%')
+            lines.append(f'    같은 기간 KOSPI는 {perf["spy_cum"]:+.1f}%')  # KR adapt: spy_cum 실제 데이터는 ^KS11
     except Exception:
         pass
 
@@ -4524,7 +4532,7 @@ def create_ai_risk_message(config, selected, biz_day, risk_status, market_lines,
             lines.append(f'  변동성지수(VIX): {vix_cur:.1f} (상위 {100 - vix_pct:.0f}%)')
 
         # 조합 과거 수익률
-        lines.append(f'  → 이 구간 과거 S&P500 연평균 {combined_ret:+.1f}%')
+        lines.append(f'  → (참고) 이 구간 과거 S&P500 연평균 {combined_ret:+.1f}% [US 데이터, KR EPS 시스템엔 cosmetic]')
     elif not hy_data and not vix_data:
         lines.append('')
         lines.append('🏦 <b>신용·변동성</b>')

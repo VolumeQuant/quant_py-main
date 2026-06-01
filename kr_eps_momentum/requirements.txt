@@ -3,3 +3,5 @@ pyarrow>=14.0.0
 yfinance>=0.2.36
 pytz>=2024.1
 google-genai>=1.0.0,<1.71.0
+holidays>=0.40    # KR adapt 2026-06-01: 한국 공휴일 자동 skip
+requests>=2.31    # KR adapt 2026-06-01: 텔레그램 발송
