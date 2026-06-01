@@ -2547,9 +2547,9 @@ def get_market_risk_status():
 
 
 def get_market_context(hist_all=None):
-    """미국 시장 지수 컨텍스트 — hist_all에서 추출 (추가 HTTP 호출 없음)"""
+    """KR 시장 지수 컨텍스트 (KR adapt 2026-06-01: US 4종 → KOSPI/KOSDAQ 2종)"""
     lines = []
-    for symbol, name in [("^GSPC", "S&P 500"), ("^IXIC", "나스닥"), ("^DJI", "다우"), ("^RUT", "러셀")]:
+    for symbol, name in [("^KS11", "KOSPI"), ("^KQ11", "KOSDAQ")]:
         try:
             # hist_all에서 지수 데이터 추출 (yf.download에 포함)
             if hist_all is not None and 'Close' in hist_all.columns.get_level_values(0):
