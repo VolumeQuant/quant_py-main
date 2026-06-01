@@ -4033,7 +4033,8 @@ def _get_system_performance():
             from datetime import datetime, timedelta
             # yfinance end는 exclusive → 하루 더 해야 all_dates[-1]까지 포함됨
             end_inclusive = (datetime.strptime(all_dates[-1], '%Y-%m-%d') + timedelta(days=1)).strftime('%Y-%m-%d')
-            spy_df = yf.download('^GSPC', start=all_dates[0], end=end_inclusive,
+            # KR adapt: ^GSPC → KR_INDEX (^KS11 KOSPI) — paper trade 누적 비교
+            spy_df = yf.download(KR_INDEX, start=all_dates[0], end=end_inclusive,
                                  auto_adjust=False, progress=False)
             spy_prices = {}
             # v80.7 (2026-05-02): row.iloc[3]은 Low(일중 최저가) — Close가 아님.
@@ -5125,7 +5126,8 @@ def main():
         # AI 내러티브에서 어닝서프/공매도를 자연어로 녹이기 위해 AI 호출 전에 수집
         try:
             watchlist_tickers = [t for t in today_tickers[:20]]
-            alpha_signals = _get_alpha_signals(watchlist_tickers, info_cache=info_cache)
+            # KR adapt: info_cache 변수 정의 누락 버그 fix — None으로 호출 (알파 시그널 일시 빈 dict)
+            alpha_signals = _get_alpha_signals(watchlist_tickers, info_cache=None)
             log(f"알파 시그널: {', '.join(f'{tk}' for tk, v in alpha_signals.items() if v.get('earnings_surp') and (v['earnings_surp'] > 0.3 or v['earnings_surp'] < 0))}")
         except Exception as e:
             log(f"알파 시그널 수집 실패: {e}", level="WARN")
