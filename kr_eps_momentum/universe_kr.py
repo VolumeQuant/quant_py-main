@@ -25,17 +25,23 @@ def fetch_dynamic_tickers(min_mcap=1e11):
     # 3) repo root 추정 (kr_eps_momentum 부모)
     candidates.append(Path(__file__).resolve().parent.parent.parent / 'quant_py-main' / 'yf_eps_workspace' / 'universe_kr.parquet')
 
+    import sys as _sys_dbg
     for cache in candidates:
         if cache.exists():
             try:
                 df = pd.read_parquet(cache)
+                print(f'[universe debug] cache={cache} shape={df.shape} cols={list(df.columns)}', file=_sys_dbg.stderr)
                 if 'symbol' in df.columns and 'mc_krw' in df.columns:
-                    df = df[df.mc_krw >= min_mcap]
-                    tickers = set(df['symbol'].astype(str))
+                    n_before = len(df)
+                    df_f = df[df['mc_krw'] >= min_mcap]
+                    tickers = set(df_f['symbol'].astype(str))
+                    print(f'[universe debug] before {n_before} → after mc_krw>={min_mcap}: {len(df_f)} → tickers {len(tickers)}', file=_sys_dbg.stderr)
                     if tickers:
                         return tickers
-            except Exception:
-                pass
+                else:
+                    print(f'[universe debug] required columns missing: symbol={"symbol" in df.columns} mc_krw={"mc_krw" in df.columns}', file=_sys_dbg.stderr)
+            except Exception as _ex:
+                print(f'[universe debug] cache={cache} read error: {_ex}', file=_sys_dbg.stderr)
 
     # 4) fallback — production market_cap_ALL (로컬 Windows only)
     if KR_CACHE.exists():
