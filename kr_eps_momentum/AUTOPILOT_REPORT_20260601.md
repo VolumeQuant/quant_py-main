@@ -80,11 +80,32 @@ db2767f04  feat(kr_eps): daily_runner.py 5,178줄 KR adapt — US 완전 모방
 
 origin/main과 동기화됨.
 
+## 🔄 트러블슈팅 진행 (6/1 자율주행)
+
+### GHA 1차 (run 26730674786, 8분, success but empty)
+- **로그**: "수집 완료: 메인 0, 턴어라운드 0, 에러 857"
+- **원인**: yf.download 일괄 1415종목 호출 → Rate Limit
+- **fix**: chunk 50종목 × 1.5s sleep (db2767f04)
+
+### GHA 2차 (run 26730954943, success but 다시 empty)
+- **로그**: "KR universe 수집 실패: list index out of range"
+- **원인**: universe_kr.py가 UNIVERSE_CACHE 못 찾으면 fallback에서 빈 list[-1] IndexError
+- **fix**: 3-candidate path try + IndexError 방어 + 명확한 에러 메시지 (b80087378)
+
+### GHA 3차 (run 26731205605, success but 또 empty)
+- **debug 로그**: `shape=(1430, 2) cols=['code', 'mc_krw']` ← **옛 universe parquet!**
+- **원인**: 6/1 두 번째 빌드에서 새 universe_kr.parquet (1415, symbol 포함) 만들었는데 git commit 안 함
+- **fix**: 강제 commit + push (32aa89864)
+
+### GHA 4차 (run 26731437616, 진행 중)
+- 이번엔 새 universe parquet (1415, ['ticker','symbol','market','mc_krw']) 로 GHA가 동작
+- 예상: 매수 후보 정상 (>0개), 한글 종목명, 4종 메시지
+
 ## 🚀 다음 액션 (사용자 결정)
 
-**GHA 진행 중 결과**:
-1. **성공 + 한글 메시지 정상** → Phase A 마저 진행 (VIX KR 처리, AI prompt 한글화 등)
-2. **여전히 Rate Limit** → chunk size 더 줄임 (50 → 20) 또는 yf.download 패턴 자체 변경 (daily_probe.py 식 individual call)
+**GHA 4차 진행 중 결과 보고 결정**:
+1. **성공 + 한글 메시지 + 매수 후보 정상** → Phase A 마저 진행 (VIX KR 처리, AI prompt 한글화 등)
+2. **여전히 매수 후보 0** → 더 깊은 fix 필요
 3. **다른 에러** → 에러별 fix
 
 병원에서 돌아오시면 GHA 결과 함께 보고 결정 가능합니다.
