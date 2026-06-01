@@ -1,5 +1,26 @@
 # KR EPS Momentum — Daily PoC
 
+## ⚠️ 2026-06-01 업데이트 — 두 가지 버전 운영
+
+**v1 (이 폴더, minimal): backup으로 유지, GHA에서는 미사용**
+- `code/run_daily.py` 200줄 minimal — 5/14 PoC 시작 시 만들었음
+- 5/14~5/31 17일 멈춤 사고 시 복구용으로 사용된 적 있음
+- 이후 v2(full 모방)로 GHA 전환
+
+**v2 (`C:/dev/kr_eps_momentum/daily_runner.py`, 5,178줄): US 완전 모방, GHA 활성**
+- US `eps-momentum-us/daily_runner.py` 통째 KR adapt
+- 4종 정교한 메시지 (Signal/AI Risk/Watchlist/시스템로그)
+- SQLite DB 누적 + paper trade portfolio
+- GHA cron `.github/workflows/kr_eps_daily.yml` 활성
+- 자세히: `C:/dev/kr_eps_momentum/KR_ADAPT_TODO.md`
+
+이 폴더(`yf_eps_workspace/`) 역할:
+- `data_cache_yf/`: 일별 누적 데이터 저장소 (v1, v2 둘 다 사용)
+- `universe_kr.parquet`: 1415 KR 종목 정적 cache (.KS/.KQ 결정)
+- `code/`: v1 minimal version (backup, 폐기 예정)
+
+---
+
 US `eps-momentum-us` 시스템(NTM EPS Revision Momentum)을 KR 종목 풀로 그대로 적용한 paper-trade PoC.
 
 **Production v80.22(quant_py-main)와 무관, 격리 운영.** paper trade만, 자본 X.

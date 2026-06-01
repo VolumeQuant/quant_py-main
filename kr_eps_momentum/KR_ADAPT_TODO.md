@@ -1,8 +1,44 @@
 # KR EPS Momentum — US 코드 KR adapt TODO
 
-**시작**: 2026-05-14
+**시작**: 2026-05-14 / **재개**: 2026-06-01 (17일 멈춤 후 GHA 자동화로 복구)
 **Base**: US 프로젝트 (`C:/dev/claude code/eps-momentum-us/`) 코드 복사본
-**원칙**: production v80.6 무관, yf 외부 API만 사용
+**원칙**: production v80.22 무관, yf 외부 API만 사용
+
+## 2026-06-01 진행 (자율주행 모드)
+
+### ✅ 완료
+- universe section (line 330~344): NASDAQ/S&P500 → `universe_kr.fetch_dynamic_tickers`
+- `CONFIG_PATH`: `config.json` → `config_kr.json`
+- SPY → `KR_INDEX` (^KS11 KOSPI Composite) yfinance 호출 3건
+- `_INDEX_SYMBOLS`: US 4종 → `['^KS11', '^KQ11']`
+- `get_last_business_day`: US/Eastern → Asia/Seoul
+- `yf.download` Rate Limit 회피: 일괄 → 50종목 chunk × 1.5s sleep
+- `ticker_info_cache.json` 한글 종목명 사전 빌드 (1415 symbol, production 한글 매핑 활용)
+- 영문 yfinance `.info shortName` 한글 cache 덮어쓰기 방어
+- `_get_alpha_signals` 호출 `info_cache` 변수 미정의 버그 fix
+- GHA workflow `.github/workflows/kr_eps_daily.yml`: minimal `run_daily.py` → `daily_runner.py` 호출
+- GHA secrets 활용: TELEGRAM_BOT_TOKEN, TELEGRAM_PRIVATE_ID, GEMINI_API_KEY
+- repo workflow permissions: read → write (quant_py-main + eps-momentum-us 둘 다)
+
+### 🔧 남은 작업 (사용자 확인 후 결정)
+
+#### Phase A — 핵심 KR 완성
+- [ ] line 2542 시장지수 4종 (^GSPC/^IXIC/^DJI/^RUT) 영역 → KOSPI/KOSDAQ
+- [ ] ^VIX (line 2267, 2375) → VKOSPI 또는 default 15
+- [ ] HY Spread (FRED) → KR 신용 spread or skip
+- [ ] AI 분석 prompt 한글화 (line 3404~ Gemini API call)
+- [ ] industry 매핑 (`INDUSTRY_MAP`) 한글화 (현재 영문 그대로)
+
+#### Phase B — 검증
+- [ ] 로컬 1회 full run 성공 (메인/턴어라운드 매수 후보 > 0)
+- [ ] GHA 1회 success + 텔레그램 메시지 4종 정상 (한글)
+- [ ] 60일 누적 후 BT 검증 (8월 초)
+
+#### Phase C — 정리
+- [ ] yf_eps_workspace/code/run_daily.py minimal version 처리 (deprecated mark or backup)
+- [ ] KR 별도 repo 분리 검토 (eps-momentum-us 패턴)
+
+---
 
 ---
 
