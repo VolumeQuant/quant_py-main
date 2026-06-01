@@ -41,7 +41,9 @@ if sys.platform == 'win32':
 # 프로젝트 루트
 PROJECT_ROOT = Path(__file__).parent
 DB_PATH = PROJECT_ROOT / 'eps_momentum_data.db'
-CONFIG_PATH = PROJECT_ROOT / 'config.json'
+CONFIG_PATH = PROJECT_ROOT / 'config_kr.json'  # KR adapt (2026-06-01): config_kr.json 사용
+# 인덱스 ticker: SPY → ^KS11 (KOSPI Composite)
+KR_INDEX = '^KS11'
 
 # 원자재/광업 제외 대상 — 금값·원자재 가격에 연동되는 업종
 # EPS 모멘텀이 구조적 성장이 아닌 commodity 가격 패스스루이므로 제외
@@ -320,28 +322,33 @@ def run_ntm_collection(config):
     today_str = os.environ.get('MARKET_DATE') or ''
     if not today_str:
         try:
-            spy_hist = yf.Ticker("SPY").history(period="5d")
+            spy_hist = yf.Ticker(KR_INDEX).history(period="5d")
             today_str = spy_hist.index[-1].strftime('%Y-%m-%d')
         except Exception:
             today_str = today.strftime('%Y-%m-%d')
     log(f"마켓 날짜: {today_str}")
 
     # 유니버스: 하드코딩 지수 + NASDAQ API 동적 수집 ($5B+)
-    base_tickers = set(t for tlist in INDICES.values() for t in tlist)
-    base_original = set(base_tickers)  # MA120 사전 필터용 원본 보존
-    log(f"기본 유니버스 (S&P500+400+NQ100): {len(base_tickers)}개")
+    # === KR adapt (2026-06-01) ===
+    # 정적 INDICES(S&P500+400+NQ100)는 KR과 무관 → 빈 set. KR universe 동적만.
+    import sys as _sys
+    _sys.path.insert(0, str(PROJECT_ROOT))
+    from universe_kr import fetch_dynamic_tickers as _kr_fetch_dynamic
+    base_tickers = set()
+    base_original = set()
+    log("KR universe — 정적 base 없음 (S&P500+400+NQ100 미사용)")
 
-    new_dynamic = set()  # 동적 신규 종목 (MA120 사전 필터 대상)
+    new_dynamic = set()
     try:
-        dynamic = fetch_dynamic_tickers(min_mcap=5_000_000_000)
+        dynamic = _kr_fetch_dynamic(min_mcap=1e11)  # 시총 1천억+ KRW
         new_dynamic = dynamic - base_original
         base_tickers |= dynamic
-        log(f"동적 확장 ($5B+): +{len(new_dynamic)}개 → 총 {len(base_tickers)}개")
+        log(f"KR universe (시총 1천억+): {len(base_tickers)}개")
     except Exception as e:
-        log(f"동적 수집 실패 (기본 유니버스로 진행): {e}", "WARN")
+        log(f"KR universe 수집 실패: {e}", "WARN")
 
-    # 시장 지수도 함께 다운로드 (별도 호출 시 rate limit 위험)
-    _INDEX_SYMBOLS = ['^GSPC', '^IXIC', '^DJI', '^RUT']
+    # KR 시장 지수: ^KS11 = KOSPI, ^KQ11 = KOSDAQ
+    _INDEX_SYMBOLS = ['^KS11', '^KQ11']
     all_tickers = sorted(base_tickers) + _INDEX_SYMBOLS
     log(f"유니버스: {len(base_tickers)}개 종목 + 지수 {len(_INDEX_SYMBOLS)}개")
 
@@ -356,13 +363,23 @@ def run_ntm_collection(config):
         except Exception:
             ticker_cache = {}
 
-    # Step 2: 가격 데이터 일괄 다운로드 (retry 1회)
-    log("가격 데이터 일괄 다운로드 중...")
+    # Step 2: 가격 데이터 chunk 다운로드 (KR adapt: Rate Limit 회피, 50종목씩 sleep)
+    log("가격 데이터 chunk 다운로드 중 (KR Rate Limit 회피)...")
     hist_all = None
+    import time as _t_dl
+    import pandas as _pd_dl
+    CHUNK = 50
     for _dl_attempt in range(2):
         try:
-            hist_all = yf.download(all_tickers, period='1y', threads=True, progress=False)
-            log("가격 다운로드 완료")
+            _parts = []
+            for _i_ck in range(0, len(all_tickers), CHUNK):
+                _chunk = all_tickers[_i_ck:_i_ck+CHUNK]
+                _h = yf.download(_chunk, period='1y', threads=False, progress=False, auto_adjust=False)
+                if _h is not None and len(_h):
+                    _parts.append(_h)
+                _t_dl.sleep(1.5)
+            hist_all = _pd_dl.concat(_parts, axis=1) if _parts else _pd_dl.DataFrame()
+            log(f"가격 다운로드 완료 ({len(_parts)} chunks × {CHUNK}종목)")
             break
         except Exception as e:
             if _dl_attempt == 0:
@@ -1150,7 +1167,10 @@ def fetch_revenue_growth(df, today_str):
         # 캐시에 플레이스홀더(shortName==티커)면 .info에서 갱신
         cached = ticker_cache.get(t, {})
         real_name = info.get('shortName') or info.get('longName')
-        if real_name and cached.get('shortName') == t and real_name != t:
+        # KR adapt: 한글 종목명이 이미 cache에 있으면 영문 yfinance .info로 덮지 않음
+        _existing = cached.get('shortName', '')
+        _has_korean = any('가' <= c <= '힣' for c in _existing)
+        if real_name and cached.get('shortName') == t and real_name != t and not _has_korean:
             cached['shortName'] = real_name
             cache_dirty = True
         if info.get('industry') and cached.get('industry') in ('기타', None):
@@ -1450,7 +1470,7 @@ def get_forward_test_summary(today_str):
         from datetime import datetime, timedelta
         start_dt = datetime.strptime(dates[0], '%Y-%m-%d')
         end_dt = datetime.strptime(dates[-1], '%Y-%m-%d') + timedelta(days=1)
-        spy = yf.download('SPY', start=start_dt.strftime('%Y-%m-%d'),
+        spy = yf.download(KR_INDEX, start=start_dt.strftime('%Y-%m-%d'),
                           end=end_dt.strftime('%Y-%m-%d'), progress=False)
         if len(spy) >= 2:
             spy_start = spy['Close'].iloc[0]
@@ -2611,18 +2631,18 @@ def git_commit_push(config):
 # ============================================================
 
 def get_last_business_day():
-    """가장 최근 미국 영업일 날짜"""
+    """가장 최근 KR 영업일 날짜 (KR adapt 2026-06-01: US/Eastern → Asia/Seoul)"""
     if HAS_PYTZ:
-        eastern = pytz.timezone('US/Eastern')
-        now_et = datetime.now(eastern)
+        kst = pytz.timezone('Asia/Seoul')
+        now_kst = datetime.now(kst)
     else:
-        now_et = datetime.now() - timedelta(hours=14)
+        now_kst = datetime.now()  # 시스템이 KST 가정
 
-    d = now_et.date()
+    d = now_kst.date()
     # 평일 장마감 후(16시 이후)면 오늘이 영업일
-    if d.weekday() < 5 and now_et.hour >= 16:
+    if d.weekday() < 5 and now_kst.hour >= 16:
         return d
-    # 그 외: 전일로 가서 가장 최근 평일 찾기
+    # 그 외: 전일로 가서 가장 최근 평일 찾기 (한국 공휴일 처리는 단순 weekday만, TODO)
     d -= timedelta(days=1)
     while d.weekday() >= 5:
         d -= timedelta(days=1)

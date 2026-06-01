@@ -2,7 +2,7 @@ name: KR EPS Momentum Daily
 
 on:
   schedule:
-    # KST 08:00 = UTC 23:00 전날 → 월~금 KST 08:00 = 일~목 UTC 23:00
+    # KST 08:00 = UTC 23:00 전날 (월~금 KST = 일~목 UTC)
     # 한국 장 시작 전 발송 가정. yfinance KR 종목 직접 호출(KS/KQ), KRX 로그인 불필요.
     - cron: '0 23 * * 0-4'
   workflow_dispatch:
@@ -13,11 +13,12 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write  # 데이터 commit + push 권한
+  contents: write
 
 env:
   TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
   TELEGRAM_PRIVATE_ID: ${{ secrets.TELEGRAM_PRIVATE_ID }}
+  GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
 jobs:
   kr-eps:
@@ -44,14 +45,38 @@ jobs:
       - name: Install deps
         run: |
           python -m pip install --upgrade pip
+          # daily_runner.py 의존성 (US와 동일)
+          pip install -r kr_eps_momentum/requirements.txt
+          # Optional google-genai (AI 분석) — 실패 시 무시 (없어도 run_daily 동작)
           pip install -r yf_eps_workspace/requirements.txt
 
-      - name: Run KR EPS daily
-        run: python yf_eps_workspace/code/run_daily.py
-
-      - name: Commit accumulated data
+      - name: Inject config (token + git_enabled for GHA)
         run: |
-          git add yf_eps_workspace/data_cache_yf/ yf_eps_workspace/logs/ 2>/dev/null || true
+          python -c "
+          import json
+          import os
+          with open('kr_eps_momentum/config_kr.json', encoding='utf-8') as f: cfg = json.load(f)
+          cfg['telegram_enabled'] = True
+          cfg['telegram_bot_token'] = os.environ.get('TELEGRAM_BOT_TOKEN', '')
+          cfg['telegram_private_id'] = os.environ.get('TELEGRAM_PRIVATE_ID', '')
+          cfg['gemini_api_key'] = os.environ.get('GEMINI_API_KEY', '')
+          cfg['git_enabled'] = False  # GHA가 별도 commit step 처리
+          cfg['is_github_actions'] = True
+          with open('kr_eps_momentum/config_kr.json', 'w', encoding='utf-8') as f: json.dump(cfg, f, indent=2, ensure_ascii=False)
+          print('config injected')
+          "
+
+      - name: Run KR daily_runner (US 완전 모방, 5,178줄)
+        run: |
+          cd kr_eps_momentum
+          python daily_runner.py
+        continue-on-error: true
+
+      - name: Commit accumulated data (DB + cache)
+        run: |
+          git add kr_eps_momentum/eps_momentum_data_kr.db yf_eps_workspace/data_cache_yf/ kr_eps_momentum/ticker_info_cache.json 2>/dev/null || true
+          # config_kr.json은 token 주입돼있으니 제외 (.gitignore 또는 revert)
+          git checkout -- kr_eps_momentum/config_kr.json 2>/dev/null || true
           git diff --staged --quiet || git commit -m "KR EPS daily $(TZ=Asia/Seoul date +%Y-%m-%d)"
           git pull --no-rebase -X ours origin main || true
           git push
