@@ -1267,17 +1267,21 @@ def get_part2_candidates(df, top_n=None, return_counts=False):
             log(f"하향 과다(>30%) 제외: {', '.join(details)}")
         filtered = filtered[~(down_ratio > 0.3)].copy()
 
-    # 구조적 저마진 필터: OpMargin < 10% AND GrossMargin < 30% → 제외
-    # + 영업이익률 극저 (v44): OP < 5% → 제외
-    # 주: .info 오류는 verify_info_with_stmt()에서 파이프라인 단계로 사전 교정 (v71.2)
+    # 구조적 저마진 필터: OpMargin < 10% AND GrossMargin < GM_THRESH → 제외
+    # KR adapt 2026-06-01 (provisional, BT 미검증): GM 임계 0.30(US) → 0.15.
+    #   사유: US GM<30%는 KR 하드웨어(반도체부품/장비 GM 15~25% 정상)를 '구조적 저마진'으로 오인 →
+    #         삼성전기(GM21)/두산(GM18)/LS일렉트릭(GM21) 등 핵심 대형주를 잘못 배제하던 것 완화.
+    #         GM<15(한화솔루션 GM11/BH GM10 등 진짜 thin)는 계속 제외. OM<5% 필터(아래)가 적자(삼성SDI) 별도 차단.
+    #   ⚠️ KR EPS forward 데이터 누적(~1-2개월) 후 정식 BT 재검증 필요. 되돌리려면 GM_THRESH=0.30.
+    GM_THRESH = 0.15
     if 'operating_margin' in filtered.columns and 'gross_margin' in filtered.columns:
         om = filtered['operating_margin']
         gm = filtered['gross_margin']
-        low_margin = filtered[om.notna() & gm.notna() & (om < 0.10) & (gm < 0.30)]
+        low_margin = filtered[om.notna() & gm.notna() & (om < 0.10) & (gm < GM_THRESH)]
         if len(low_margin) > 0:
             details = [f"{r['ticker']}(OM{r['operating_margin']*100:.0f}%/GM{r['gross_margin']*100:.0f}%)" for _, r in low_margin.iterrows()]
-            log(f"구조적 저마진 제외: {', '.join(details)}")
-        filtered = filtered[~(om.notna() & gm.notna() & (om < 0.10) & (gm < 0.30))].copy()
+            log(f"구조적 저마진 제외(GM<{GM_THRESH*100:.0f}%): {', '.join(details)}")
+        filtered = filtered[~(om.notna() & gm.notna() & (om < 0.10) & (gm < GM_THRESH))].copy()
 
     # 영업이익률 극저 제외 (v44): OP < 5% — 턴어라운드 초기 종목 과대평가 방지
     if 'operating_margin' in filtered.columns:
