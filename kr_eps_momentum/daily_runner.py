@@ -340,7 +340,7 @@ def run_ntm_collection(config):
 
     new_dynamic = set()
     try:
-        dynamic = _kr_fetch_dynamic(min_mcap=1e12)  # KR adapt 2026-06-01: 시총 1조+ (EDA로 1조 미만 76%가 yfinance EPS 무지원 확인)
+        dynamic = _kr_fetch_dynamic(min_mcap=1e11)  # 1천억 (1조 컷 롤백 — 검증 부족으로 30종목 잃었음)
         new_dynamic = dynamic - base_original
         base_tickers |= dynamic
         log(f"KR universe (시총 1천억+): {len(base_tickers)}개")
