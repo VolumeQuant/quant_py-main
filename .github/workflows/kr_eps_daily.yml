@@ -67,7 +67,29 @@ jobs:
           print('config injected')
           "
 
+      - name: Check KR business day (휴장일 skip)
+        id: bizday
+        run: |
+          python -c "
+          from datetime import date
+          import sys
+          try:
+              import holidays
+              kr = holidays.country_holidays('KR', years=[date.today().year])
+              today = date.today()
+              if today.weekday() >= 5 or today in kr:
+                  print(f'SKIP: {today} (weekday={today.weekday()}, holiday={today in kr})')
+                  sys.exit(2)
+              print(f'BUSINESS DAY: {today}')
+          except ImportError:
+              # holidays 없으면 weekday만 (안전)
+              if date.today().weekday() >= 5:
+                  sys.exit(2)
+          "
+        continue-on-error: true
+
       - name: Run KR daily_runner (US 완전 모방, 5,178줄)
+        if: steps.bizday.outcome == 'success'
         run: |
           cd kr_eps_momentum
           python daily_runner.py

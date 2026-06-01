@@ -4515,7 +4515,7 @@ def create_ai_risk_message(config, selected, biz_day, risk_status, market_lines,
 
     if hy_data or vix_data:
         lines.append('')
-        lines.append('🏦 <b>신용·변동성</b>')
+        lines.append('🏦 <b>신용·변동성 (US 데이터, 참고용)</b>')  # KR adapt 2026-06-01: KR 시스템엔 cosmetic 참고. KR EPS 알파와 직접 무관.
 
         # 종합 판정 (HY×VIX 조합 수익률 기반, v65)
         overall_icon, overall_msg, combined_ret = _credit_overall_status(hy_data, vix_data)
@@ -4535,7 +4535,7 @@ def create_ai_risk_message(config, selected, biz_day, risk_status, market_lines,
         lines.append(f'  → (참고) 이 구간 과거 S&P500 연평균 {combined_ret:+.1f}% [US 데이터, KR EPS 시스템엔 cosmetic]')
     elif not hy_data and not vix_data:
         lines.append('')
-        lines.append('🏦 <b>신용·변동성</b>')
+        lines.append('🏦 <b>신용·변동성 (US 데이터, 참고용)</b>')  # KR adapt 2026-06-01: KR 시스템엔 cosmetic 참고. KR EPS 알파와 직접 무관.
         lines.append('⚠️ 시장 지표 수집 실패 — 보수적으로 접근하세요')
 
     # ── 📰 시장 동향 (AI 해석) ──
