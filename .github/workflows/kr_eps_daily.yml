@@ -1,0 +1,57 @@
+name: KR EPS Momentum Daily
+
+on:
+  schedule:
+    # KST 08:00 = UTC 23:00 전날 → 월~금 KST 08:00 = 일~목 UTC 23:00
+    # 한국 장 시작 전 발송 가정. yfinance KR 종목 직접 호출(KS/KQ), KRX 로그인 불필요.
+    - cron: '0 23 * * 0-4'
+  workflow_dispatch:
+
+# yfinance rate limit 회피 (US daily-screening과 동일 패턴, 5/2 US 사고 학습)
+concurrency:
+  group: yfinance-data-fetch
+  cancel-in-progress: false
+
+permissions:
+  contents: write  # 데이터 commit + push 권한
+
+env:
+  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  TELEGRAM_PRIVATE_ID: ${{ secrets.TELEGRAM_PRIVATE_ID }}
+
+jobs:
+  kr-eps:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r yf_eps_workspace/requirements.txt
+
+      - name: Run KR EPS daily
+        run: python yf_eps_workspace/code/run_daily.py
+
+      - name: Commit accumulated data
+        run: |
+          git add yf_eps_workspace/data_cache_yf/ yf_eps_workspace/logs/ 2>/dev/null || true
+          git diff --staged --quiet || git commit -m "KR EPS daily $(TZ=Asia/Seoul date +%Y-%m-%d)"
+          git pull --no-rebase -X ours origin main || true
+          git push

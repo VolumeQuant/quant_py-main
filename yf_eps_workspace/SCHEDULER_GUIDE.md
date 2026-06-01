@@ -1,4 +1,14 @@
-# KR yf daily probe — Scheduler 가이드
+# ⚠️ [DEPRECATED] 이 가이드는 폐기됨 (2026-06-01)
+
+**대체**: `.github/workflows/kr_eps_daily.yml` (GHA cron, 매일 KST 08:00 자동 실행)
+- Windows Task Scheduler 로컬 의존 = 사용자 PC 종속 = 5/14~5/31 17일 멈춤 사고 원인
+- GHA 클라우드로 이전, PC 상태와 무관하게 자동
+
+상세: `yf_eps_workspace/README.md`
+
+---
+
+# (구) KR yf daily probe — Scheduler 가이드
 
 ## 1. 수동 실행
 
