@@ -35,9 +35,13 @@
 
 ---
 
-# 🇺🇸 US 전략 — eps-momentum-us (v84, 2026-05-30)
+# 🇺🇸 US 전략 — eps-momentum-us (v86 브랜치대기, v85 배포됨, 2026-06-02)
 
 > 경로: `C:\dev\claude code\eps-momentum-us`
+
+- **메가홀드 오버라이드 (v86, 브랜치 `v86-mega-hold` — master 미병합, 집PC 메시지확인 후 병합)**: 보유 종목이 메가 시그니처(**NTM EPS 추정치 상향 ntm_current/ntm_90d-1 ≥60% AND PEG<0.2**) 유지 시 part2_rank>10이어도 홀드(매도 스킵). min_seg<-2(EPS꺾임) 매도는 유지=펀더멘털 기반 홀드. 계기: MU(NTM+139%/PEG0.06)·SNDK(+147%/0.04)가 초저평가+EPS폭발 유지인데 fwd_pe_chg 식어 순위밀려 회전매도→큰상승 놓침(사용자 "MU 많이 놓침"). **구현(정석, hold_entries)**: `select_display_top5`에서 어제보유(portfolio_log) 메가를 selected에 우선 캐리오버→슬롯점유→신규는 남은슬롯만→성능/슬롯/이탈 자동정합. 메가홀드 포함 시 50/50 균등(저순위 메가가 2step gap으로 0% 되는 것 방지). `check_mega_hold`/`get_mega_hold_tickers` + watchlist 🔒섹션. **BT 100×3**: +81.5p(100/100), Calmar 8.9→10.3, 부분기간(전반+최근) 둘다 100/100(슬롯3 죽인 테스트 통과), LOWO 무해(MU/SNDK제외 시 0 음수아님), 인접성 평탄. 트레일링스탑은 휘프소로 edge파괴(-28p)→가격스탑 없음. **재최적화(메가홀드 ON에서 slots×exit 그리드)**: slot3 실패(-21p), exit12 +6p지만 LOWO -14/-15(MU/SNDK착시) → **v84 파라미터(슬롯2/진입≤3/이탈>10)가 메가홀드 버전에서도 최적, 추가변경 전부 과적합.** ⚠️ N=2 상승장 in-sample, 사이클천장 디레이팅 시 min_seg가 유일보호. 랭킹불변→DB재계산 불필요. research: `research/auto_bt_mega_hold*.py`, `auto_mega_signature.py`, `auto_reoptimize_mega.py`
+
+- **비성장 소비/미디어 업종 제외 (v85, 2026-06-02)**: `OFF_STRATEGY_INDUSTRIES = {엔터, 전문소매}` 블록리스트 (daily_runner.py, COMMODITY_INDUSTRIES와 동일 메커니즘 — eligible 필터 단계서 제거). 계기: WMG(음반, 6/1 첫 진입) 같은 catalyst형 소비재가 "압도적 성장기업만" 사용자 목적에 안 맞음. **숫자 필터 전부 실패 확인**: rev_growth≥25%(FORM 14%/TTMI 19% winner도 차단), PEG/fwd_PE(MU/SNDK 제외 시 -25~-67p 착시), MA20 가격모멘텀(MU/SNDK 착시), revision 집중도(WMG 77% < FORM 88% 분리불가). **WMG와 진짜 winner FORM이 숫자상 거의 동일** → 유일한 robust 분리축 = 업종(반도체 vs 음반사). BT: 300회 paired에서 winning trade 0개 차단, lift +0.00p (비용 0, WMG/FIVE만 제거). 본질은 통계 edge가 아니라 **가치판단**(원자재 제외와 동일 성격). ⚠️ 미래 폭발성장 미디어/소매 나와도 차단됨 (사용자 선호 명시적). 다음 GA 실행부터 적용. 롤백: 상수+필터 4줄 제거. research: `research/auto_bt_sector_exclude.py`, `auto_bt_value_growth.py`, `auto_diag_eda.py`
 
 - **국면 오버레이 (v84, 2026-05-27)**: S&P 500 < 200일선(15일 확인) OR VIX > 36(2일 확인) → **defense(방어)**. defense 시 주식 매수 중단 + 채권ETF(**IEF 기본 / BIL 안전**) 권장, 200일선 회복(15일) 시 자동 재개. KR v80.16(defense=현금) 참고. **26년(2000~) 시장데이터 EDA(QQQ 프록시)**: 4대 약세장 포착(dotcom 92/GFC 90/COVID 71(VIX)/2022 77%), MDD -83%→-29%(IEF), Cal 0.11→0.50. 인버스ETF는 탈락(52% 오발일+감쇠, Cal 0.20~0.25). 확인 15일 = 2026-04 얕은 dip 휘프소(-105%p) 거르며 진짜 약세장만 포착(버퍼/데드크로스보다 우월, 깊이 아닌 지속기간 판별). **현재 regime=boost → 배포 즉시 영향 0, 미래 약세장에만 발동.** ⚠️ 신호는 26년 검증, 전략 이득은 프록시 추정(약세장 종목데이터 없음). 구현: `get_market_regime`/`_detect_regime_transition`(regime_state.json)/`_get_system_performance` defense 시 IEF 반영. 킬스위치 `REGIME_OVERLAY_DISABLE=1`, 테스트 `REGIME_FORCE`. research: `research/regime_eda_*.py`
 
