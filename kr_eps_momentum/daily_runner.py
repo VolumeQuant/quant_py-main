@@ -40,7 +40,7 @@ if sys.platform == 'win32':
 
 # 프로젝트 루트
 PROJECT_ROOT = Path(__file__).parent
-DB_PATH = PROJECT_ROOT / 'eps_momentum_data.db'
+DB_PATH = PROJECT_ROOT / 'eps_momentum_data_kr.db'  # 2026-06-02 fix: GHA commit/config/backup이 _kr 이름 → 일치시켜 DB 누적 보존(이전엔 이름 불일치로 매 실행 cold start)
 CONFIG_PATH = PROJECT_ROOT / 'config_kr.json'  # KR adapt (2026-06-01): config_kr.json 사용
 # 인덱스 ticker: SPY → ^KS11 (KOSPI Composite)
 KR_INDEX = '^KS11'
