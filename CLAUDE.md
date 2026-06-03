@@ -35,9 +35,11 @@
 
 ---
 
-# 🇺🇸 US 전략 — eps-momentum-us (v86 브랜치대기, v85 배포됨, 2026-06-02)
+# 🇺🇸 US 전략 — eps-momentum-us (v86e++ 배포, 2026-06-03)
 
 > 경로: `C:\dev\claude code\eps-momentum-us`
+
+- **v86e++ 데이터 정합성·신뢰성·UX 수정 (2026-06-03, 배포)**: ① **carryover 버그**: 메가홀드 carryover가 `_get_prev_portfolio`(동결 portfolio_log, log_portfolio_trades 미호출로 2026-03-05 멈춤)를 읽어 라이브 메가홀드가 한번도 작동 안 했음(perf-sim만 동작). `select_display_top5(today_str)` 파라미터 추가 + **`_replay_holdings`(성능sim 동일 forward replay)로 보유 재구성** → BT==production 입증({KEYS,SNDK} 완전일치). ② **수집 건강성 가드(KR <150 이식)**: `_validate_collection_health`(수집<900 OR 에러율>30%) → 미달 시 30분 후 재수집→그래도 미달이면 랭킹 미기록+채널 차단(개인봇 알림). 2026-05-28~29 yfinance 대량실패(에러53%, 수집600/315 vs 정상1240)인데 가드 없어 망가진 신호 발송된 사고 재발 방지. ③ **핵심성장주 표시(고객 친화)**: "메가/PEG<0.22" 전문용어 전면 제거 → **"🌟핵심 성장주(성장 대비 저평가)"**. 매수후보 점수순 정렬(고확신 먼저). **메가 표시는 현재가치 기준**(PEG<0.22+성장≥25%+EPS안꺾임+최근상위권) — 보유이력 무관 → SNDK·MU 같은 메가는 같게 표시(데이터갭으로 보유끊긴 MU 부당누락 모순 해소). 저평가-조건부 보유임을 명시("저평가 해소되거나 실적 꺾이면 매도" — 무작정 홀드 아님). research: `research/auto_bt_unranked_mega.py`(옵션B 순위무관홀드 = MU 단일착시 +3.6p, 기각)
 
 - **메가홀드 오버라이드 (v86, 브랜치 `v86-mega-hold` — master 미병합, 집PC 메시지확인 후 병합)**: 보유 종목이 메가 시그니처(**NTM EPS 추정치 상향 ntm_current/ntm_90d-1 ≥60% AND PEG<0.2**) 유지 시 part2_rank>10이어도 홀드(매도 스킵). min_seg<-2(EPS꺾임) 매도는 유지=펀더멘털 기반 홀드. 계기: MU(NTM+139%/PEG0.06)·SNDK(+147%/0.04)가 초저평가+EPS폭발 유지인데 fwd_pe_chg 식어 순위밀려 회전매도→큰상승 놓침(사용자 "MU 많이 놓침"). **구현(정석, hold_entries)**: `select_display_top5`에서 어제보유(portfolio_log) 메가를 selected에 우선 캐리오버→슬롯점유→신규는 남은슬롯만→성능/슬롯/이탈 자동정합. 메가홀드 포함 시 50/50 균등(저순위 메가가 2step gap으로 0% 되는 것 방지). `check_mega_hold`/`get_mega_hold_tickers` + watchlist 🔒섹션. **BT 100×3**: +81.5p(100/100), Calmar 8.9→10.3, 부분기간(전반+최근) 둘다 100/100(슬롯3 죽인 테스트 통과), LOWO 무해(MU/SNDK제외 시 0 음수아님), 인접성 평탄. 트레일링스탑은 휘프소로 edge파괴(-28p)→가격스탑 없음. **재최적화(메가홀드 ON에서 slots×exit 그리드)**: slot3 실패(-21p), exit12 +6p지만 LOWO -14/-15(MU/SNDK착시) → **v84 파라미터(슬롯2/진입≤3/이탈>10)가 메가홀드 버전에서도 최적, 추가변경 전부 과적합.** ⚠️ N=2 상승장 in-sample, 사이클천장 디레이팅 시 min_seg가 유일보호. 랭킹불변→DB재계산 불필요. research: `research/auto_bt_mega_hold*.py`, `auto_mega_signature.py`, `auto_reoptimize_mega.py`
 
