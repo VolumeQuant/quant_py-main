@@ -2941,9 +2941,31 @@ def _build_portfolio_entry(row, status_map, earnings_map):
     }
 
 
+def _above_ma12(ticker, today_str=None, n=12):
+    """현재가 > MA12(최근 12일 종가 평균) = 상승추세 유지 여부 — US v111 MA12 추세홀드 이식.
+    데이터<6일(누적 부족/갭) → True 반환(carryover, v113 robust 계승)."""
+    try:
+        conn = sqlite3.connect(DB_PATH); cur = conn.cursor()
+        if today_str:
+            rows = [r[0] for r in cur.execute(
+                'SELECT price FROM ntm_screening WHERE ticker=? AND price IS NOT NULL AND date<=? ORDER BY date DESC LIMIT ?',
+                (ticker, today_str, n))]
+        else:
+            rows = [r[0] for r in cur.execute(
+                'SELECT price FROM ntm_screening WHERE ticker=? AND price IS NOT NULL ORDER BY date DESC LIMIT ?',
+                (ticker, n))]
+        conn.close()
+        if len(rows) < 6:
+            return True  # 데이터 부족 → carryover 유지
+        return rows[0] > sum(rows) / len(rows)
+    except Exception as e:
+        log(f"_above_ma12 {ticker} 오류: {e}", "WARN")
+        return True
+
+
 def select_display_top5(results_df, status_map=None, weighted_ranks=None,
                         earnings_map=None, risk_status=None, score_100_map=None,
-                        hist_all=None):
+                        hist_all=None, today_str=None):
     """Signal 메시지용 종목 선정 (w_gap 순위 Top3 + min_seg ≥ 0%, 최대 3종목)
 
     part2_rank(w_gap 기반) 상위 3종목 중 EPS 추세 건강(min_seg ≥ 0%) 종목만 진입.
@@ -2996,10 +3018,43 @@ def select_display_top5(results_df, status_map=None, weighted_ranks=None,
     # 근거: BT는 풀 슬롯 가정이고, ⏳/🆕 슬라이드 정책과 일관성 확보.
     MAX_SLOTS = 3
     selected = []
+
+    # v111 MA12 추세홀드 이식 (opt-in: KR_EPS_MA12_HOLD=1, 기본 OFF=기존 동작).
+    # 보유 종목이 순위 밖이어도 가격>MA12(상승추세)면 캐리오버=일찍 안 팔기. EPS꺾임(min_seg<-2)/MA12붕괴 시 매도.
+    # ⚠️ KR BT 미검증(cold start) + DB 12일치 price 누적 필요(현재 누적중, <6일이면 carryover-True).
+    #    데이터 충분(~6월중순) + sanity 확인 후 enable 권장. US 검증(baseline +33p/100). 롤백=env 제거.
+    if os.environ.get('KR_EPS_MA12_HOLD') == '1' and today_str:
+        try:
+            prev_held = _get_prev_portfolio(today_str) or []
+            cand_by_tk = {r['ticker']: r for _, r in candidates.iterrows()}
+            for t in prev_held:
+                if len(selected) >= MAX_SLOTS:
+                    break
+                if any(s['ticker'] == t for s in selected):
+                    continue
+                row = cand_by_tk.get(t)
+                if row is None:
+                    continue  # 데이터갭/eligible 이탈 — 보수적 스킵(KR은 _fetch_last_full_row 미구현)
+                segs = [float(row.get(c) or 0) for c in ('seg1', 'seg2', 'seg3', 'seg4')]
+                if segs and min(segs) < -2:
+                    log(f"  🔓 추세보유 해제 {t}: EPS꺾임(min_seg<-2) → 매도")
+                    continue
+                if not _above_ma12(t, today_str):
+                    log(f"  🔓 추세보유 해제 {t}: 가격<MA12(추세붕괴) → 매도")
+                    continue
+                entry = _build_portfolio_entry(row, status_map, earnings_map)
+                entry['_trend_hold'] = True
+                selected.append(entry)
+                log(f"  📈 추세보유 {t}: 순위 밀려도 가격>MA12 유지")
+        except Exception as e:
+            log(f"MA12 추세홀드 처리 오류(무시): {e}", "WARN")
+
     for _, row in candidates.iterrows():
         if len(selected) >= MAX_SLOTS:
             break
         t = row['ticker']
+        if any(s['ticker'] == t for s in selected):
+            continue  # MA12 캐리오버로 이미 선택됨
 
         # v71: 3일 검증(✅) 필수 — 🆕/⏳ 종목은 Signal에서 제외
         status = status_map.get(t, '🆕')
@@ -5124,7 +5179,7 @@ def main():
         # 디스플레이용 종목 선정 (v57b: adj_gap ≤ -4% + min_seg ≥ 1%, 최대 3종목)
         display_top5 = select_display_top5(
             results_df, status_map, weighted_ranks, earnings_map, risk_status,
-            score_100_map=score_100_map, hist_all=hist_all
+            score_100_map=score_100_map, hist_all=hist_all, today_str=today_str
         )
 
         # 이탈 종목 사유 분류
