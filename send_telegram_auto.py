@@ -1028,7 +1028,7 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
     lines = [
         '📋 <b>Top 20 종목 현황</b>',
         '상위 20종목과 순위 변동 현황입니다.',
-        (f'✅ 3일 검증 ⏳ 2일 관찰 🆕 신규 진입 | 손절 {int(rp_current["STOP_LOSS"]*100)}%' if rp_current and rp_current.get("STOP_LOSS") else '✅ 3일 검증 ⏳ 2일 관찰 🆕 신규 진입') if rp_current else '✅ 3일 검증 ⏳ 2일 관찰 🆕 신규 진입 | 손절 -10%',
+        (f'✅ 3일 검증 ⏳ 2일 관찰 🆕 신규 진입 | 손절 {int(rp_current["STOP_LOSS"]*100)}%' if rp_current and rp_current.get("STOP_LOSS") else '✅ 3일 검증 ⏳ 2일 관찰 🆕 신규 진입') if rp_current else '✅ 3일 검증 ⏳ 2일 관찰 🆕 신규 진입',
     ]
 
     if not pipeline:

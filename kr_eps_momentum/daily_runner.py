@@ -891,6 +891,7 @@ def run_ntm_collection(config):
                         'is_turnaround': is_turnaround,
                         'rev_up30': prev[5], 'rev_down30': prev[6], 'num_analysts': prev[7],
                         'price': p_now, 'ma60': ma60_val, 'ma120': ma120_val,
+                        'high30': None,  # carry-forward는 30일 고점 미계산 → 스키마 일관성(dd_30_25 필터는 None=스킵)
                     }
                     results.append(row)
                     _cf_inserted.append(ticker)
