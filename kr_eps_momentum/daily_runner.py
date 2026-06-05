@@ -2919,6 +2919,17 @@ def _get_cached_industry(ticker):
     return _get_cached_industry._cache.get(ticker, {}).get('industry', '')
 
 
+def _get_cached_name(ticker):
+    """ticker_info_cache.json에서 종목명 조회 (이탈 표시 등 티커코드 → 한글명).
+    캐시 미스/영문 shortName이면 _clean_company_name이 정리, 그래도 없으면 티커 그대로."""
+    # _get_cached_industry와 동일 캐시 재사용 (없으면 로드 트리거)
+    if not hasattr(_get_cached_industry, '_cache'):
+        _get_cached_industry(ticker)
+    info = _get_cached_industry._cache.get(ticker, {})
+    raw = info.get('shortName') or info.get('longName') or ticker
+    return _clean_company_name(raw, ticker)
+
+
 def _fmt_rev_growth(rev):
     """매출성장 표시 — yfinance 노이즈 과장 완화.
     지주/증권/반도체 등은 YoY가 저(低)베이스에서 폭증해 +319% 같은 가짜 정밀도가 뜸.
@@ -4597,7 +4608,7 @@ def create_signal_message(selected, earnings_map, exit_reasons, biz_day, ai_cont
             reason_groups[reason or '순위밀림'].append(t)
         parts = []
         for reason, tickers in reason_groups.items():
-            parts.append(f'{"·".join(tickers)}({reason})')
+            parts.append(f'{"·".join(_get_cached_name(t) for t in tickers)}({reason})')
         lines.append('')
         lines.append(f'⚠️ 이탈: {" ".join(parts)}')
         # MA120 이탈 + 어제 상위권 종목 → 반등 관심 대상
@@ -4942,7 +4953,7 @@ def create_watchlist_message(results_df, status_map, exit_reasons, today_tickers
             reason_groups[reason or '순위밀림'].append(t)
         parts = []
         for reason, tickers in reason_groups.items():
-            parts.append(f'{"·".join(tickers)}({reason})')
+            parts.append(f'{"·".join(_get_cached_name(t) for t in tickers)}({reason})')
         lines.append('')
         lines.append('━━━━━━━━━━━━━━━')
         lines.append(f'📉 이탈: {" ".join(parts)}')
