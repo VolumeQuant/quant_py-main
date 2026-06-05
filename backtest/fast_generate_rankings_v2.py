@@ -2065,6 +2065,39 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
         # 순위 재부여
         scored['멀티팩터_순위'] = scored['멀티팩터_점수'].rank(ascending=False, method='first', na_option='bottom')
 
+    # ============================================================
+    # 성장-밸류 괴리 과열 캡 (pen_cs) — 가격반응 earnings yield 기반 (boost only)
+    # 자기 PER = 시총(일별, 가격반응) / TTM 지배순이익(PIT). 단면 z 중 '비싼 쪽'만 감점.
+    # 사용자 의도: 가격 폭등 종목 자동 회피(추격매수 위험), 가격이 순위에 반영.
+    # 비대칭 설계: 싼 건 무보상(모멘텀 승자 보호), 초고평가만 감점(거품 회피).
+    # EDA(2023-24, 82일): top-3 평균수익 중립(+3.64 vs +3.59) + 승률 84% (vol_low形 일관성↑).
+    # 단면 cheap-tilt / 시계열 PE압축은 top-3 평균 악화 → 기각. pen_cs만 무해.
+    # 환경변수: FACTOR_OVERHEAT_W (기본 0 = 비활성, production 미배선 상태)
+    # ============================================================
+    OVERHEAT_W = float(os.environ.get('FACTOR_OVERHEAT_W', '0.0'))
+    # STORE_OVERHEAT_PEN=1: pen 계산·저장만 (score 미반영) — 1회 재생성으로 W 그리드 BT용
+    STORE_PEN = os.environ.get('STORE_OVERHEAT_PEN', '0') == '1'
+    if (OVERHEAT_W != 0 or STORE_PEN) and not scored.empty and '시가총액' in scored.columns:
+        # TTM 지배순이익(억원) — 지배주주당기순이익 우선, 당기순이익 폴백 (USE_SELF_PER와 동일 규칙)
+        if '지배주주당기순이익' in scored.columns:
+            ni_eok = scored['지배주주당기순이익'].fillna(scored.get('당기순이익', np.nan))
+        else:
+            ni_eok = scored.get('당기순이익', pd.Series(index=scored.index, dtype=float))
+        mcap = scored['시가총액']
+        ey = pd.Series(np.where((ni_eok > 0) & (mcap > 0), (ni_eok * 1e8) / mcap, np.nan),
+                       index=scored.index)
+        valid = ey.notna() & (ey > 0)
+        if valid.sum() >= 20:
+            log_ey = np.log(ey[valid])
+            m, s = log_ey.mean(), log_ey.std()
+            if s > 0:
+                ey_z = (np.log(ey.where(valid)) - m) / s        # 비싼=음수, 싼=양수, 무효=NaN
+                pen_cs = ey_z.clip(upper=0).fillna(0.0)         # 비싼 쪽만 감점, 싼 쪽/무효=0
+                scored['overheat_pen'] = pen_cs
+                if OVERHEAT_W != 0:                              # STORE 모드(W=0)에선 점수 미반영
+                    scored['멀티팩터_점수'] = scored['멀티팩터_점수'] + pen_cs * OVERHEAT_W
+                    scored['멀티팩터_순위'] = scored['멀티팩터_점수'].rank(ascending=False, method='first', na_option='bottom')
+
     # --- 9. Ranking JSON 저장 ---
     scored_sorted = scored.sort_values('멀티팩터_점수', ascending=False)
     rankings_list = []
@@ -2096,6 +2129,10 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
             val = row.get(col)
             if val is not None and pd.notna(val):
                 item[f'mom_{mp}_s'] = round(float(val), 4)
+        # 과열 캡 페널티 (FACTOR_OVERHEAT_W 활성 시) — 검증/디버깅용
+        _op = row.get('overheat_pen')
+        if _op is not None and pd.notna(_op):
+            item['overheat_pen'] = round(float(_op), 4)
         # v77.2: price NaN이면 가장 최근 유효 가격 사용 (ffill) — 거래정지 종목도 랭킹 포함
         if ticker in price_df.columns:
             ser = price_df[ticker]

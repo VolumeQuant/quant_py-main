@@ -233,6 +233,10 @@ def _build_mode_env(params):
         env['FACTOR_MOM_10_W'] = str(params['FACTOR_MOM_10_W'])
     if params.get('FACTOR_VOL_LOW_W'):
         env['FACTOR_VOL_LOW_W'] = str(params['FACTOR_VOL_LOW_W'])
+    # v80.23 (2026-06-05): 과열 캡 (성장-밸류 괴리, boost only)
+    # 가격반응 PER(시총/TTM순이익) 단면 z 중 비싼 쪽만 감점 → 과열 추격매수 회피
+    if params.get('FACTOR_OVERHEAT_W'):
+        env['FACTOR_OVERHEAT_W'] = str(params['FACTOR_OVERHEAT_W'])
     return env
 
 

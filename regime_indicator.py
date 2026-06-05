@@ -203,7 +203,14 @@ def get_regime_params(mode):
             # mom_10_z (2주 모멘텀) × 0.05 + vol_low_z (저변동성, 부호 반전) × 0.06
             'FACTOR_MOM_10_W': 0.05,
             'FACTOR_VOL_LOW_W': 0.06,
-            'label': '공격 모드 (Growth 55%, 3팩터, QoQ-D6-SG6, mom_10+vol)',
+            # v80.23 (2026-06-05): 과열 캡 (성장-밸류 괴리, pen_cs)
+            # 가격반응 PER(시총/TTM 지배순이익) 단면 z 중 '비싼 쪽'만 감점(싼 건 무보상).
+            # 사용자 의도(가격 폭등 종목 추격매수 회피, 가격 순위 반영) BT 검증 후 채택.
+            # 7.4년 BT: Cal 3.14→3.83(+22%), MDD 28.9→27.1%, WFmin 0.69→1.39,
+            # LOO(제룡전기·SK하이닉스 둘 다 제외) +0.7 robust, 인접 CV 0.044.
+            # 단면 cheap/시계열PE압축/순수가격이격/밸류교체 모두 BT 열등 → pen_cs(과열만)만 채택.
+            'FACTOR_OVERHEAT_W': 0.2,
+            'label': '공격 모드 (Growth 55%, 3팩터, QoQ-D6-SG6, mom_10+vol, 과열캡)',
             'icon': '📈',
         }
     else:  # defense
