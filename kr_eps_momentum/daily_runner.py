@@ -2515,51 +2515,6 @@ def _fetch_vix_yfinance_fallback():
         return None
 
 
-def get_market_regime():
-    """KR 시장 국면 — KOSPI MA20 vs MA80, 5일 확인 + 히스테리시스 (production KP_MA_CROSS 정합).
-
-    무상태 replay: ^KS11 1년치로 MA20<MA80 불린 시계열 → 5일 연속 확인으로 매일 처음부터
-    재생(state 파일 불필요, 결정론적). 약세장(MA20<MA80 확정)=defense=현금, 회복 확정 시 boost.
-    킬스위치 REGIME_OVERLAY_DISABLE=1 → 항상 boost. 테스트 REGIME_FORCE=boost|defense.
-    실패 시 boost 기본 (데이터 오류로 매수 중단하는 오작동 방지 = 운영 지속이 안전 기본값).
-    """
-    if os.environ.get('REGIME_OVERLAY_DISABLE') == '1':
-        return {'regime': 'boost', 'reason': 'overlay 비활성(킬스위치)', 'ma20': None, 'ma80': None}
-    forced = os.environ.get('REGIME_FORCE')
-    if forced in ('boost', 'defense'):
-        return {'regime': forced, 'reason': f'강제({forced})', 'ma20': None, 'ma80': None}
-    try:
-        import yfinance as yf
-        import pandas as pd
-        ks = yf.download('^KS11', period='1y', progress=False, auto_adjust=True)
-        close = ks['Close'].iloc[:, 0] if isinstance(ks.columns, pd.MultiIndex) else ks['Close']
-        ma20 = close.rolling(20).mean()
-        ma80 = close.rolling(80).mean()
-        df = pd.DataFrame({'ma20': ma20, 'ma80': ma80}).dropna()
-        if len(df) < 6:
-            return {'regime': 'boost', 'reason': '국면 데이터 부족', 'ma20': None, 'ma80': None}
-        raw = (df['ma20'] < df['ma80']).tolist()  # True = defense 신호
-        CONFIRM = 5
-        regime = 'defense' if raw[0] else 'boost'
-        cnt = 0
-        for sig in raw[1:]:
-            want = 'defense' if sig else 'boost'
-            if want != regime:
-                cnt += 1
-                if cnt >= CONFIRM:
-                    regime = want
-                    cnt = 0
-            else:
-                cnt = 0
-        m20, m80 = float(df['ma20'].iloc[-1]), float(df['ma80'].iloc[-1])
-        sign = '&lt;' if regime == 'defense' else '&gt;'
-        return {'regime': regime, 'reason': f'KOSPI 20일선 {sign} 80일선 (5일 확인)',
-                'ma20': m20, 'ma80': m80}
-    except Exception as e:
-        log(f"국면 판정 실패(boost 기본): {e}", "WARN")
-        return {'regime': 'boost', 'reason': '국면 데이터 수집 실패', 'ma20': None, 'ma80': None}
-
-
 def get_market_risk_status():
     """시장 위험 통합 상태 — KR production credit_monitor 기준 (HY + 한국 BBB- 신용 + VIX).
 
@@ -2606,15 +2561,13 @@ def get_market_risk_status():
     else:
         final_action = '변동성 높음' if (vix and vix_dir == 'warn') else ''
 
-    # portfolio_mode: KR 국면 오버레이 (2026-06-05) — KOSPI MA20<MA80(5일 확인)=defense=현금.
-    #   production v80.16 defense=cash 100% / US v84 regime 오버레이와 동일 컨셉. HY/VIX/신용은
-    #   정보성, 실제 매수 gate는 KOSPI 추세(get_market_regime)가 담당.
-    regime_info = get_market_regime()
-    portfolio_mode = 'defense' if regime_info['regime'] == 'defense' else 'normal'
+    # portfolio_mode: 항상 normal — 시장 경고는 정보성(AI 리스크 필터에서 별도 안내).
+    #   (credit_monitor의 action_max_picks 거래 게이팅은 KR EPS BT 미검증이라 미적용)
+    portfolio_mode = 'normal'
 
     kr_lbl = kr['regime_label'] if kr else ('미수집' if HAS_KR_CREDIT else 'N/A')
     log(f"Concordance: {concordance} (q_days={hy.get('q_days', 'N/A') if hy else 'N/A'}, "
-        f"KR신용={kr_lbl}) → {final_action} [regime: {regime_info['regime']}, portfolio: {portfolio_mode}]")
+        f"KR신용={kr_lbl}) → {final_action} [portfolio: {portfolio_mode}]")
 
     return {
         'hy': hy,
@@ -2623,7 +2576,6 @@ def get_market_risk_status():
         'concordance': concordance,
         'final_action': final_action,
         'portfolio_mode': portfolio_mode,
-        'regime': regime_info,
     }
 
 
@@ -3123,8 +3075,7 @@ def select_display_top5(results_df, status_map=None, weighted_ranks=None,
     if results_df is None or results_df.empty:
         return []
 
-    # 방어 국면(KOSPI MA20<MA80 5일 확인) = 현금 → 신규 매수 후보 없음 (메시지는 defense 블록)
-    if portfolio_mode in ('stop', 'defense'):
+    if portfolio_mode == 'stop':
         return []
 
     all_eligible = get_part2_candidates(results_df, top_n=None)
@@ -4428,23 +4379,6 @@ def create_signal_message(selected, earnings_map, exit_reasons, biz_day, ai_cont
         lines.append(final_action)
         return '\n'.join(lines)
 
-    # ── 방어 국면 (KOSPI MA20<MA80 5일 확인) = 현금 (2026-06-05) ──
-    if portfolio_mode == 'defense':
-        _rg = risk_status.get('regime') if risk_status else None
-        _reason = _rg.get('reason', 'KOSPI 추세 약화') if _rg else 'KOSPI 추세 약화'
-        biz_str = f'{biz_day.year}.{biz_day.month}.{biz_day.day}'
-        weekdays = ['월', '화', '수', '목', '금', '토', '일']
-        lines.append(f'📡 <b>AI 종목 브리핑 한국</b> · {biz_str}({weekdays[biz_day.weekday()]})')
-        lines.append('')
-        lines.append('🛡️ <b>방어 국면 — 신규 매수 중단, 현금 보유</b>')
-        lines.append(f'사유: {_reason}')
-        lines.append('')
-        lines.append('KOSPI 추세가 약세로 전환돼 신규 매수를 멈춥니다.')
-        lines.append('현금(또는 단기 예수금) 보유를 권장합니다.')
-        lines.append('보유 종목은 본인 매도 기준에 따라 정리하세요.')
-        lines.append('KOSPI 20일선이 80일선을 회복(5일 확인)하면 자동으로 매수를 재개합니다.')
-        return '\n'.join(lines)
-
     # ── 상위권 유지 종목 없음 ──
     if not selected:
         lines.append('')
@@ -4745,19 +4679,24 @@ def create_ai_risk_message(config, selected, biz_day, risk_status, market_lines,
         elif idx_parts:
             lines.append(' · '.join(idx_parts))
 
-    # ── 📈 시장 국면 (KR adapt 2026-06-01, 2026-06-05 매매 gate 연결) ──
-    # KOSPI MA20 vs MA80 (5일 확인). get_market_risk_status의 확정 국면(risk_status['regime'])
-    # 재사용 → 신규매수 gate와 동일 신호(표시·행동 정합). 방어=신규 매수 중단·현금.
+    # ── 📈 시장 국면 (KR adapt 2026-06-01) ──
+    # 기존 US VIX/HY/S&P 블록 제거: KR EPS 매매를 gate 안 하던 cosmetic이고 한국 시장에 US 공포지수는 부적합.
+    # 대체: production KP_MA_CROSS 방식 (KOSPI MA20 vs MA80). 표시용 — 이 시스템 매매를 gate하진 않음.
     lines.append('')
     lines.append('📈 <b>시장 국면 (KOSPI 추세)</b>')
-    _rg = risk_status.get('regime') if risk_status else None
-    if _rg and _rg.get('ma20') is not None:
-        if _rg['regime'] == 'defense':
-            lines.append('  🛡️ 방어 국면 (KOSPI 20일선 &lt; 80일선, 5일 확인) — 신규 매수 중단·현금')
+    try:
+        import yfinance as yf
+        import pandas as pd
+        _ks = yf.download('^KS11', period='1y', progress=False, auto_adjust=True)
+        _kc = _ks['Close'].iloc[:, 0] if isinstance(_ks.columns, pd.MultiIndex) else _ks['Close']
+        _ma20 = float(_kc.rolling(20).mean().iloc[-1])
+        _ma80 = float(_kc.rolling(80).mean().iloc[-1])
+        if _ma20 > _ma80:
+            lines.append('  📈 공격 국면 (KOSPI 20일선 &gt; 80일선) — 추세 양호')
         else:
-            lines.append('  📈 공격 국면 (KOSPI 20일선 &gt; 80일선, 5일 확인) — 추세 양호')
-        lines.append('  <i>(production KP_MA_CROSS와 동일 기준. 방어 시 신규 매수를 멈춥니다)</i>')
-    else:
+            lines.append('  📉 방어 국면 (KOSPI 20일선 &lt; 80일선) — 추세 주의')
+        lines.append('  <i>(참고: production은 5일 확인 후 전환. EPS 시스템 매매를 gate하진 않음)</i>')
+    except Exception:
         lines.append('  국면 데이터 수집 실패 (참고용)')
 
     # ── 📰 시장 동향 (AI 해석) ──
