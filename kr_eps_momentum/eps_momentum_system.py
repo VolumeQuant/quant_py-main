@@ -129,6 +129,15 @@ INDICES = {
     ],
 }
 
+# 티커별 섹터 오버라이드 — yfinance가 한국 대형주를 미국식으로 오분류하는 케이스 교정.
+# yfinance industry는 대부분 정확(게임/반도체장비/전자부품 등)하나, 일부 대형주만 틀림.
+# KRX 섹터 대조로 확인된 명백한 오분류만 등록 (표시 전용, 매매 무영향). 발견 시 추가.
+TICKER_SECTOR_OVERRIDE = {
+    '005930': '반도체',   # 삼성전자 (yf 'Consumer Electronics'→가전 오분류; 실적은 반도체 중심, KRX=전기전자)
+    '329180': '조선',     # HD현대중공업 (yf 'Aerospace & Defense'→방산 오분류; 실제 조선, KRX=운수장비)
+    '402340': '지주',     # SK스퀘어 (yf '반도체' 오분류; 실제 투자지주, KRX=통신)
+}
+
 # 업종 한글 매핑 (yfinance industry → 한글 축약)
 INDUSTRY_MAP = {
     # Technology

@@ -1209,6 +1209,17 @@ def fetch_revenue_growth(df, today_str):
     if updated_ind:
         log(f"Industry 보정: {updated_ind}종목 ('기타' → 실제 업종)")
 
+    # 티커별 섹터 오버라이드 — yfinance 대형주 오분류 교정 (삼성전자=가전→반도체 등)
+    from eps_momentum_system import TICKER_SECTOR_OVERRIDE
+    ov_n = 0
+    for idx, row in df.iterrows():
+        ovr = TICKER_SECTOR_OVERRIDE.get(row['ticker'])
+        if ovr and row.get('industry') != ovr:
+            df.at[idx, 'industry'] = ovr
+            ov_n += 1
+    if ov_n:
+        log(f"섹터 오버라이드: {ov_n}종목 (yfinance 오분류 교정)")
+
     return df, earnings_map, results  # results = {ticker: info_dict} for alpha signal reuse
 
 
@@ -2727,6 +2738,12 @@ def create_system_log_message(stats, elapsed, config):
         if error_tickers:
             lines.append(f'실패: {", ".join(error_tickers[:10])}')
 
+    # 저커버리지 소프트 경고 — 하드 차단(floor 100)은 통과해도 평소(180~210)보다
+    # 낮으면 후보 누락 가능성 알림. 데이터 사고(차단)와 단순 저커버리지(정보) 구분.
+    low_cov = int(os.environ.get('KR_EPS_LOW_COVERAGE', '170'))
+    if collected < low_cov:
+        lines.append(f'⚠️ 저커버리지 (평소 180~210) — 후보 누락 가능, 참고만')
+
     # DB 데이터 범위
     try:
         conn = sqlite3.connect(config.get('db_path', 'eps_momentum_data.db'))
@@ -2895,7 +2912,25 @@ def _get_cached_industry(ticker):
                 _get_cached_industry._cache = json.load(f)
         except Exception:
             _get_cached_industry._cache = {}
+    from eps_momentum_system import TICKER_SECTOR_OVERRIDE
+    ovr = TICKER_SECTOR_OVERRIDE.get(ticker)
+    if ovr:
+        return ovr
     return _get_cached_industry._cache.get(ticker, {}).get('industry', '')
+
+
+def _fmt_rev_growth(rev):
+    """매출성장 표시 — yfinance 노이즈 과장 완화.
+    지주/증권/반도체 등은 YoY가 저(低)베이스에서 폭증해 +319% 같은 가짜 정밀도가 뜸.
+    ±100% 초과는 '100%↑/↓'로 캡(점수엔 이미 50% cap 적용, 표시만 보정). 매매 무영향."""
+    if rev is None or rev != rev:   # None 또는 NaN (NaN != NaN)
+        return None
+    pct = rev * 100
+    if pct > 100:
+        return '매출성장 +100%↑'
+    if pct < -100:
+        return '매출성장 -100%↓'
+    return f'매출성장 {int(round(pct)):+d}%'
 
 
 def _get_prev_portfolio(today_str=None):
@@ -4523,8 +4558,9 @@ def create_signal_message(selected, earnings_map, exit_reasons, biz_day, ai_cont
         growth_parts = []
         if eps_chg:
             growth_parts.append(f'EPS 전망 {int(round(eps_chg)):+d}%')
-        if rev:
-            growth_parts.append(f'매출성장 {int(round(rev * 100)):+d}%')
+        _rev_str = _fmt_rev_growth(rev) if rev else None
+        if _rev_str:
+            growth_parts.append(_rev_str)
         lines.append(' · '.join(growth_parts))
 
         # L2: 안정성 (순위 · 의견 · 저평가 streak)
@@ -4843,11 +4879,16 @@ def create_watchlist_message(results_df, status_map, exit_reasons, today_tickers
                     break
         ind_tag = f' · {industry}' if industry else ''
         caution_tag = ' ⚠️' if ticker in caution_tickers else ''
+        # 주가 선반영 태그 — EPS추이는 양호(☀️/🔥)인데 점수 바닥(≤10): 주가가 EPS보다
+        # 더 올라 이미 비싸짐(저평가 갭 소진). "EPS 좋은데 0점" 모순 표시 설명.
+        _sc = score_display_map.get(ticker) if score_display_map else None
+        _pos_eps = bool(lights) and ('☀️' in lights or '🔥' in lights)
+        overpriced_tag = ' 🔺주가선반영' if (_sc is not None and _sc <= 10 and _pos_eps) else ''
         # v80.10c (2026-05-11): ⏸️ 매도 유예 표시 제거 — v80.10 장기 가중치 전환 후
         # BT 검증 결과 유예 룰 N=0이 모든 N>0보다 우월 (paired 100/100). 단기 가중치
         # 체제의 노이즈 완충 알파였던 ⏸️ 룰이 v80.10 환경에선 -5.37%p 손해.
         # check_breakout_hold 함수는 코드에 유지 (참고/회귀용).
-        lines.append(f'{marker} <b>{rank}. {short_name}({ticker})</b>{ind_tag}{caution_tag}')
+        lines.append(f'{marker} <b>{rank}. {short_name}({ticker})</b>{ind_tag}{caution_tag}{overpriced_tag}')
 
         # L1: EPS추이 아이콘 + 설명
         if lights and desc:
@@ -4859,8 +4900,9 @@ def create_watchlist_message(results_df, status_map, exit_reasons, today_tickers
         growth_parts = []
         if eps_90d is not None and pd.notna(eps_90d):
             growth_parts.append(f'EPS 전망 {int(round(eps_90d)):+d}%')
-        if rev_g is not None and pd.notna(rev_g):
-            growth_parts.append(f'매출성장 {int(round(rev_g * 100)):+d}%')
+        _rev_str = _fmt_rev_growth(rev_g)
+        if _rev_str:
+            growth_parts.append(_rev_str)
         if score_display_map and ticker in score_display_map:
             growth_parts.append(f'{score_display_map[ticker]}점')
         lines.append(' · '.join(growth_parts))
