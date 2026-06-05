@@ -4099,11 +4099,16 @@ def _build_score_100_map(today_str=None):
             ws += score * weights[i]
         w_score_map[tk] = ws
 
-    # v79.1: 1위=100 환산 점수 (종목 간 격차 반영)
-    # w_gap 최대값 기준으로 전체를 0~100 스케일로 환산
-    # → "2위 60점, 3위 59점 = 거의 동점, 역전 가능" 직관적
-    max_wgap = max(w_score_map.values()) if w_score_map else 1
-    score_display_map = {tk: round(ws / max_wgap * 100, 1) for tk, ws in w_score_map.items()}
+    # v112 이식 (US 정합, 2026-06-05): 고정 스케일 — 날짜 안정 + 강도 보존.
+    # 기존 ws/max*100(v79.1)은 분모가 "그날 최댓값"이라 1위는 항상 100점으로 박제됨
+    # → 식어가는(⚠️) 1위도 100점 뜨는 착시(NH투자 사례). 같은 종목도 그날 1등이
+    # 누구냐에 따라 점수 출렁(US v112 EDA: 일별 최댓값 83~112 변동).
+    # 고정 앵커: ws 30(하한/missing)→0, ws 100(+2.3σ 괴물주)→100 → 점수가 절대 강도를 담음.
+    # 표시 전용(매매는 w_score_map 순위로 별개) → 매매·DB·BT 영향 0.
+    score_display_map = {
+        tk: round(max(0.0, min(100.0, (ws - 30) / 70 * 100)), 1)
+        for tk, ws in w_score_map.items()
+    }
 
     conn.close()
     return w_score_map, score_display_map
@@ -4385,8 +4390,8 @@ def create_signal_message(selected, earnings_map, exit_reasons, biz_day, ai_cont
     biz_str = f'{biz_day.year}.{biz_day.month}.{biz_day.day}'
     weekdays = ['월', '화', '수', '목', '금', '토', '일']
     weekday = weekdays[biz_day.weekday()]
-    lines.append(f'📡 <b>AI 종목 브리핑 US</b> · {biz_str}({weekday})')
-    lines.append('월가 애널리스트의 이익 전망 변화를 추적해')
+    lines.append(f'📡 <b>AI 종목 브리핑 한국</b> · {biz_str}({weekday})')
+    lines.append('증권사 애널리스트의 이익 전망 변화를 추적해')
     lines.append('유망 종목을 매일 선별해 드립니다.')
 
     # ━━ 시스템 성과 ━━
@@ -4482,7 +4487,7 @@ def create_signal_message(selected, earnings_map, exit_reasons, biz_day, ai_cont
     lines.append('')
     lines.append('📋 선정 과정')
     uni = universe_size or 959
-    lines.append(f'미국 대형·중형주 {uni}종목')
+    lines.append(f'한국 대형·중형주 {uni}종목')
     if eps_screened:
         lines.append(f'→ 애널리스트 이익 전망 상향 {eps_screened}종목')
     if filter_count:
@@ -4533,7 +4538,7 @@ def create_signal_message(selected, earnings_map, exit_reasons, biz_day, ai_cont
             rank_str = f'{r2_s}→{r1_s}→{r0}위'
         else:
             rank_str = f'-→-→?위'
-        rank_parts = [f'순위 {rank_str}']
+        rank_parts = [f'일별 {rank_str}']
         if rev_up or rev_down:
             rank_parts.append(f'의견 ↑{rev_up}↓{rev_down}')
         # 어닝 서프/공매도는 AI 내러티브에서 자연어로 표현 (v69)
@@ -4875,7 +4880,7 @@ def create_watchlist_message(results_df, status_map, exit_reasons, today_tickers
                 rank_str = f'{r2_s}→{r1_s}→{r0}위'
         else:
             rank_str = f'-→-→{rank}위'
-        rank_parts = [f'순위 {rank_str}', f'의견 ↑{rev_up}↓{rev_down}']
+        rank_parts = [f'일별 {rank_str}', f'의견 ↑{rev_up}↓{rev_down}']
         # 어닝 서프/공매도는 Signal 메시지의 AI 내러티브에서 표현 (v69)
         lines.append(' · '.join(rank_parts))
 
