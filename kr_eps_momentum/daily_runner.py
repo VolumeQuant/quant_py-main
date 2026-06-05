@@ -45,6 +45,20 @@ CONFIG_PATH = PROJECT_ROOT / 'config_kr.json'  # KR adapt (2026-06-01): config_k
 # 인덱스 ticker: SPY → ^KS11 (KOSPI Composite)
 KR_INDEX = '^KS11'
 
+# KR production 신용시장 모듈 재사용 (같은 repo 루트, GHA co-checkout) — "KR 기준" 시장위험 분석.
+# KR EPS는 US 복사본이라 US HY/VIX만 있었으나, KR production credit_monitor는
+# US HY 4분면 + 한국 BBB- 신용스프레드(ECOS) + VIX + KR 에스컬레이션으로 KR 주식 위험을 분석함.
+# 키 없으면(ECOS) kr=None로 graceful degrade. 모듈 부재 시 KR EPS 자체 로직 fallback.
+try:
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from credit_monitor import fetch_kr_credit_spread as _kr_credit_spread, \
+        _synthesize_action as _kr_synthesize_action
+    HAS_KR_CREDIT = True
+except Exception as _kr_imp_e:
+    HAS_KR_CREDIT = False
+    _kr_credit_spread = None
+    _kr_synthesize_action = None
+
 # 원자재/광업 제외 대상 — 금값·원자재 가격에 연동되는 업종
 # EPS 모멘텀이 구조적 성장이 아닌 commodity 가격 패스스루이므로 제외
 COMMODITY_INDUSTRIES = {
@@ -1751,6 +1765,32 @@ def is_cold_start():
     return count < 3
 
 
+def _validate_collection_health(stats):
+    """수집 건강성 가드 — yfinance 대량 실패 시 망가진 랭킹 채널 발송 방지.
+    (US v86e++ / KR production B검증 패턴 이식. yfinance 기반이라 KR EPS에 특히 필요.)
+
+    반환: (healthy: bool, reason: str)
+    불건강 판정:
+      ① 수집 종목 수 < KR_EPS_MIN_COLLECTED (기본 100) — 정상 ~180-210 대비 절반 이하
+      ② 에러율(error_count / universe) > KR_EPS_MAX_ERR_RATE (기본 0.30) — US와 동일 30%
+    근거: 2026-05-28~29 US yfinance 대량실패(에러53%, 수집 정상1240→315) 같은 사고 재발 방지.
+    킬스위치: KR_EPS_HEALTH_DISABLE=1.
+    """
+    if os.environ.get('KR_EPS_HEALTH_DISABLE') == '1':
+        return True, 'guard disabled'
+    universe = int(stats.get('universe', 0) or 0)
+    collected = int(stats.get('total_collected', 0) or 0)
+    errors = int(stats.get('error_count', 0) or 0)
+    min_collected = int(os.environ.get('KR_EPS_MIN_COLLECTED', '100'))
+    max_err_rate = float(os.environ.get('KR_EPS_MAX_ERR_RATE', '0.30'))
+    err_rate = errors / universe if universe > 0 else 0.0
+    if collected < min_collected:
+        return False, f'수집 {collected} < {min_collected} (universe={universe}, err={errors})'
+    if err_rate > max_err_rate:
+        return False, f'에러율 {err_rate:.0%} > {max_err_rate:.0%} (err={errors}/{universe}, 수집={collected})'
+    return True, f'정상 (수집={collected}, 에러율={err_rate:.0%})'
+
+
 def _get_recent_dates(cursor, rank_col='part2_rank', today_str=None, limit=3):
     """공통 헬퍼: 최근 N개 distinct date 조회 (rank_col이 NOT NULL인 날짜만)"""
     if today_str:
@@ -2476,13 +2516,26 @@ def _fetch_vix_yfinance_fallback():
 
 
 def get_market_risk_status():
-    """시장 위험 통합 상태 (HY + VIX + Concordance)
+    """시장 위험 통합 상태 — KR production credit_monitor 기준 (HY + 한국 BBB- 신용 + VIX).
+
+    "KR 기준" (2026-06-05): US 복사본의 US-only HY/VIX → KR production과 동일하게
+      ① US HY 4분면(글로벌 신용 방향타) + ② 한국 BBB- 신용스프레드(ECOS, 국내 신용) +
+      ③ VIX(글로벌 변동성 속도계) 를 _synthesize_action(KR 에스컬레이션)으로 종합.
+    ECOS_API_KEY 없거나 credit_monitor 부재 시 kr=None로 graceful degrade(US HY×VIX 종합만).
 
     Returns:
-        dict {hy, vix, concordance, final_action}
+        dict {hy, kr, vix, concordance, final_action, portfolio_mode}
     """
     hy = fetch_hy_quadrant()
     vix = fetch_vix_data()
+
+    # 한국 BBB- 신용스프레드 (ECOS) — KR production credit_monitor 재사용
+    kr = None
+    if HAS_KR_CREDIT:
+        try:
+            kr = _kr_credit_spread(os.environ.get('ECOS_API_KEY'))
+        except Exception as e:
+            log(f"KR 신용스프레드 수집 실패(무시): {e}", "WARN")
 
     # Concordance Check
     hy_dir = 'warn' if hy and hy['quadrant'] in ('Q3', 'Q4') else 'stable'
@@ -2497,66 +2550,28 @@ def get_market_risk_status():
     else:
         concordance = 'both_stable'
 
-    # Concordance 기반 행동 권장 (계절 × 지표 × q_days 조합, 30년 EDA 기반)
-    if hy:
-        q = hy['quadrant']
-        q_days = hy.get('q_days', 1)
-        vix_ok = vix_dir == 'stable'
-
-        if q == 'Q1':
-            # 봄(회복기) — 30년 평균: 연+14.3%
-            if vix_ok:
-                final_action = '회복 구간 (US 30년 +14.3% 기준)'
-            else:
-                final_action = '회복 구간, 변동성 높음'
-        elif q == 'Q2':
-            # 여름(성장기) — 30년 평균: 연+9.4%
-            if vix_ok:
-                final_action = '성장 구간 (US 30년 +9.4% 기준)'
-            else:
-                final_action = '성장 구간, 변동성 높음'
-        elif q == 'Q3':
-            # 가을(과열기) — 60일 기준 2단계
-            if q_days < 60:
-                if vix_ok:
-                    final_action = f'과열 초기 ({q_days}일째)'
-                else:
-                    final_action = f'과열 초기 ({q_days}일째), 변동성 높음'
-            else:
-                if vix_ok:
-                    final_action = f'과열 지속 ({q_days}일째)'
-                else:
-                    final_action = f'과열 지속 ({q_days}일째), 변동성 높음'
-        else:
-            # 겨울(Q4) — 20일/60일 기준 3단계
-            if q_days <= 20:
-                if vix_ok:
-                    final_action = f'침체 초기 ({q_days}일째)'
-                else:
-                    final_action = f'⚠️ 침체 초기 ({q_days}일째), 변동성 높음'
-            elif q_days <= 60:
-                if vix_ok:
-                    final_action = f'침체 지속 ({q_days}일째)'
-                else:
-                    final_action = f'⚠️ 침체 지속 ({q_days}일째), 변동성 높음'
-            else:
-                if vix_ok:
-                    final_action = f'침체 후기 ({q_days}일째) — 회복 가능성'
-                else:
-                    final_action = f'침체 후기 ({q_days}일째), 변동성 높음'
+    # 행동 권장 — KR production _synthesize_action (HY 분면 × VIX 방향 × KR BBB- 에스컬레이션)
+    if hy and HAS_KR_CREDIT:
+        final_action, _ = _kr_synthesize_action(hy, kr, vix)
+    elif hy:
+        # credit_monitor 부재 fallback — 간이 (KR 신용 에스컬레이션 없음)
+        final_action = f"{hy.get('quadrant_label', '')} ({hy.get('q_days', 1)}일째)"
+        if vix_dir == 'warn':
+            final_action += ', 변동성 높음'
     else:
-        if vix and vix_dir == 'warn':
-            final_action = '변동성 높음'
-        else:
-            final_action = ''
+        final_action = '변동성 높음' if (vix and vix_dir == 'warn') else ''
 
-    # portfolio_mode: 항상 normal (TOP 5) — 시장 경고는 AI 리스크 필터에서 별도 안내
+    # portfolio_mode: 항상 normal — 시장 경고는 정보성(AI 리스크 필터에서 별도 안내).
+    #   (credit_monitor의 action_max_picks 거래 게이팅은 KR EPS BT 미검증이라 미적용)
     portfolio_mode = 'normal'
 
-    log(f"Concordance: {concordance} (q_days={hy.get('q_days', 'N/A') if hy else 'N/A'}) → {final_action} [portfolio: {portfolio_mode}]")
+    kr_lbl = kr['regime_label'] if kr else ('미수집' if HAS_KR_CREDIT else 'N/A')
+    log(f"Concordance: {concordance} (q_days={hy.get('q_days', 'N/A') if hy else 'N/A'}, "
+        f"KR신용={kr_lbl}) → {final_action} [portfolio: {portfolio_mode}]")
 
     return {
         'hy': hy,
+        'kr': kr,
         'vix': vix,
         'concordance': concordance,
         'final_action': final_action,
@@ -2963,6 +2978,83 @@ def _above_ma12(ticker, today_str=None, n=12):
         return True
 
 
+def _replay_holdings(before_date=None):
+    """forward replay 보유 재구성 (US v86e++/v111 MA12-hold 이식, 무상태, BT==production).
+
+    ★ portfolio_log는 KR EPS에서 한 번도 기록된 적 없음(log_portfolio_trades 미호출) →
+      _get_prev_portfolio가 항상 [] 반환하던 버그를 대체. ntm_screening DB만으로 결정론적 재구성.
+    규칙(KR 파라미터): 진입 part2_rank≤3 (빈 슬롯), MAX 3슬롯.
+      보유 유지: rank≤10 OR (rank>10 이지만 가격>MA12, 상승추세 지속)
+      이탈: min_seg<-2(EPS꺾임) OR (rank>10 AND 가격≤MA12, 추세 붕괴) OR 데이터셋 이탈
+      데이터 fetch 실패(가격 None)시 carryover (v113 robust 계승)
+    ⚠️ KR cold-start: price<6일이면 _ma12=None → 가격>MA12 판정 불가 → carryover 유지(보수적).
+    """
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        # 전체 가격 캘린더 (MA12용 — 순위 밖 종목도 가격 필요)
+        alld = [r[0] for r in cur.execute(
+            'SELECT DISTINCT date FROM ntm_screening WHERE price IS NOT NULL ORDER BY date')]
+        didx = {d: i for i, d in enumerate(alld)}
+        pxh = {}
+        for tk, d, p in cur.execute(
+                'SELECT ticker,date,price FROM ntm_screening WHERE price IS NOT NULL'):
+            pxh.setdefault(tk, {})[d] = p
+
+        def _ma12(tk, d):
+            i = didx.get(d)
+            if i is None or i - 11 < 0:
+                return None
+            v = [pxh.get(tk, {}).get(alld[j]) for j in range(i - 11, i + 1)]
+            v = [x for x in v if x]
+            return sum(v) / len(v) if len(v) >= 6 else None
+
+        if before_date:
+            dts = [r[0] for r in cur.execute(
+                'SELECT DISTINCT date FROM ntm_screening WHERE part2_rank IS NOT NULL AND date < ? ORDER BY date',
+                (before_date,))]
+        else:
+            dts = [r[0] for r in cur.execute(
+                'SELECT DISTINCT date FROM ntm_screening WHERE part2_rank IS NOT NULL ORDER BY date')]
+        port = set()
+        for d in dts:
+            rows = cur.execute(
+                'SELECT ticker,part2_rank,ntm_current,ntm_7d,ntm_30d,ntm_60d,ntm_90d '
+                'FROM ntm_screening WHERE date=? AND part2_rank IS NOT NULL', (d,)).fetchall()
+            info = {}
+            for tk, p2, nc, n7, n30, n60, n90 in rows:
+                segs = []
+                for a, b in [(nc, n7), (n7, n30), (n30, n60), (n60, n90)]:
+                    segs.append((a - b) / abs(b) * 100 if b and abs(b) > 0.01 else 0)
+                info[tk] = dict(p2=p2, minseg=min(segs) if segs else 0)
+            # 이탈 (MA12-hold): EPS꺾임(min_seg<-2) 즉시매도 OR (rank>10 AND 가격≤MA12)
+            for tk in list(port):
+                it = info.get(tk)
+                if it is not None and it['minseg'] < -2:
+                    port.discard(tk); continue  # EPS 꺾임 = 즉시 매도
+                p2 = it['p2'] if it else None
+                if p2 is None or p2 > 10:
+                    cp = pxh.get(tk, {}).get(d)
+                    if cp is None:
+                        continue  # 데이터 fetch 실패 → carryover (v113)
+                    m = _ma12(tk, d)
+                    if m is None or cp > m:
+                        continue  # MA12 산출 불가(cold-start) 또는 가격>MA12 → 보유
+                    port.discard(tk)  # 추세 붕괴 → 매도
+            # 진입 (빈 슬롯, rank≤3)
+            if len(port) < 3:
+                for tk, p2 in sorted([(tk, it['p2']) for tk, it in info.items()
+                                      if tk not in port and it['p2'] <= 3], key=lambda x: x[1]):
+                    if len(port) >= 3:
+                        break
+                    port.add(tk)
+        conn.close()
+        return port
+    except Exception as e:
+        log(f"_replay_holdings 오류: {e}", "WARN")
+        return set()
+
+
 def select_display_top5(results_df, status_map=None, weighted_ranks=None,
                         earnings_map=None, risk_status=None, score_100_map=None,
                         hist_all=None, today_str=None):
@@ -3025,7 +3117,9 @@ def select_display_top5(results_df, status_map=None, weighted_ranks=None,
     #    데이터 충분(~6월중순) + sanity 확인 후 enable 권장. US 검증(baseline +33p/100). 롤백=env 제거.
     if os.environ.get('KR_EPS_MA12_HOLD') == '1' and today_str:
         try:
-            prev_held = _get_prev_portfolio(today_str) or []
+            # ★ _get_prev_portfolio(빈 portfolio_log) 대신 forward-replay로 보유 재구성
+            #   (US v86e++ 버그 fix 이식 — portfolio_log 미기록으로 carryover가 영구 미작동하던 문제 해결)
+            prev_held = list(_replay_holdings(today_str))
             cand_by_tk = {r['ticker']: r for _, r in candidates.iterrows()}
             for t in prev_held:
                 if len(selected) >= MAX_SLOTS:
@@ -3034,10 +3128,9 @@ def select_display_top5(results_df, status_map=None, weighted_ranks=None,
                     continue
                 row = cand_by_tk.get(t)
                 if row is None:
-                    continue  # 데이터갭/eligible 이탈 — 보수적 스킵(KR은 _fetch_last_full_row 미구현)
-                segs = [float(row.get(c) or 0) for c in ('seg1', 'seg2', 'seg3', 'seg4')]
-                if segs and min(segs) < -2:
-                    log(f"  🔓 추세보유 해제 {t}: EPS꺾임(min_seg<-2) → 매도")
+                    # candidates에서 빠짐 = EPS꺾임(min_seg<-2)/eligible 이탈/데이터갭.
+                    # EPS꺾임은 _replay_holdings exit + candidates min_seg≥-2 필터에서 이미 제거됨
+                    # → 여기서 별도 min_seg<-2 체크는 불필요(dead). KR은 _fetch_last_full_row 미구현이라 보수적 스킵.
                     continue
                 if not _above_ma12(t, today_str):
                     log(f"  🔓 추세보유 해제 {t}: 가격<MA12(추세붕괴) → 매도")
@@ -5131,12 +5224,15 @@ def main():
     risk_status = get_market_risk_status()
     hy_data = risk_status['hy']
     vix_data = risk_status['vix']
+    kr_data = risk_status.get('kr')
     if hy_data:
         log(f"HY Spread: {hy_data['hy_spread']:.2f}% | 분면: {hy_data['quadrant']} {hy_data['quadrant_label']} ({hy_data['q_days']}일째)")
         log(f"  {hy_data['action']}")
         if hy_data['signals']:
             for sig in hy_data['signals']:
                 log(f"  해빙 신호: {sig}")
+    if kr_data:
+        log(f"KR 신용(BBB-): 스프레드 {kr_data['spread']:.2f}%p (BBB- {kr_data['bbb_rate']:.2f}% - 국고3년 {kr_data['ktb_3y']:.2f}%) | {kr_data['regime_icon']} {kr_data['regime_label']}")
     if vix_data:
         log(f"VIX: {vix_data['vix_current']:.1f} (252일 {vix_data.get('vix_percentile', 0):.0f}th) | slope {vix_data['vix_slope']:+.1f} ({vix_data['vix_slope_dir']}) | {vix_data['regime_label']}")
     log(f"일치도: {risk_status['concordance']} | {risk_status['final_action']}")
@@ -5159,7 +5255,24 @@ def main():
 
         # cold start: 3일 미만 데이터 → 채널 전송 안함 (개인봇만)
         cold_start = is_cold_start()
-        send_to_channel = is_github and channel_id and not cold_start
+
+        # 수집 건강성 가드 — yfinance 대량실패 시 망가진 랭킹 채널 차단 (개인봇엔 경고)
+        health_ok, health_reason = _validate_collection_health(stats)
+        if not health_ok:
+            log(f"⚠️ 수집 건강성 미달 — 채널 발송 차단: {health_reason}", "ERROR")
+            try:
+                _pid = config.get('telegram_private_id') or config.get('telegram_chat_id')
+                if _pid:
+                    send_telegram_long(
+                        f"🚨 <b>KR EPS 수집 건강성 경보</b>\n채널 발송 차단됨.\n사유: {health_reason}\n"
+                        f"yfinance 대량실패 의심 — 망가진 랭킹 발송 방지. 재실행/원인 확인 필요.",
+                        config, chat_id=_pid)
+            except Exception as _e:
+                log(f"건강성 경보 전송 실패: {_e}", "WARN")
+        else:
+            log(f"수집 건강성: {health_reason}")
+
+        send_to_channel = is_github and channel_id and not cold_start and health_ok
         if cold_start:
             log(f"Cold start — 채널 전송 비활성화 (3일 데이터 축적 전)")
 
