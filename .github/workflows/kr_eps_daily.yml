@@ -71,18 +71,18 @@ jobs:
         id: bizday
         run: |
           python -c "
-          from datetime import date
+          from datetime import datetime, timezone, timedelta
           import sys
+          today = (datetime.now(timezone.utc) + timedelta(hours=9)).date()  # KST (UTC 새벽 수동 트리거 오스킵 방지)
           try:
               import holidays
-              kr = holidays.country_holidays('KR', years=[date.today().year])
-              today = date.today()
+              kr = holidays.country_holidays('KR', years=[today.year])
               if today.weekday() >= 5 or today in kr:
                   print(f'SKIP: {today} (weekday={today.weekday()}, holiday={today in kr})')
                   sys.exit(2)
-              print(f'BUSINESS DAY: {today}')
+              print(f'BUSINESS DAY (KST): {today}')
           except ImportError:
-              if date.today().weekday() >= 5:
+              if today.weekday() >= 5:
                   sys.exit(2)
           "
         continue-on-error: true
