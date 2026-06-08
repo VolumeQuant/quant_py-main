@@ -4861,7 +4861,7 @@ def create_watchlist_message(results_df, status_map, exit_reasons, today_tickers
             sec_parts.append(f'기타 {etc_count}')
         lines.append(' | '.join(sec_parts))
 
-    lines.append('✅ 검증완료 ⏳ 관찰중 🆕 신규 ⚠️ 추세주의')
+    lines.append('✅검증 ⏳관찰 🆕신규 ⚠️추세주의 🔺주가선반영')
     lines.append('EPS추이(90→60→30→7일 변화율)')
     lines.append('🔥&gt;20% ☀️5~20% 🌤️1~5% ☁️±1% 🌧️&lt;-1%')
     lines.append('━━━━━━━━━━━━━━━')
