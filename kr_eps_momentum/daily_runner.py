@@ -5242,6 +5242,25 @@ def main():
     config = load_config()
     log(f"설정 로드 완료: {CONFIG_PATH}")
 
+    # ── DB 보호 모드 — 로컬/테스트 재실행이 authoritative 순위를 덮어쓰는 것 방지 ──
+    # 문제: 같은 날 재실행 시 INSERT ON CONFLICT + save_part2_ranks가 그날 cr/part2_rank를
+    #   덮어씀. yfinance eps_trend(호출시점값) + 수집수 변동(120~210)으로 순위가 매번 바뀜
+    #   → 테스트가 그날 공식 기록 오염 + 미래 3일가중(T-1/T-2)까지 전파.
+    # 해결: GHA cron(하루1회)만 진짜 DB에 기록. 로컬/테스트는 임시 사본에 쓰고 버림.
+    #   강제 기록(로컬 부트스트랩 등): KR_EPS_FORCE_DB_WRITE=1.
+    global DB_PATH
+    _is_gha = config.get('is_github_actions', False)
+    _force_write = os.environ.get('KR_EPS_FORCE_DB_WRITE') == '1'
+    _no_write = os.environ.get('KR_EPS_NO_DB_WRITE') == '1' or (not _is_gha and not _force_write)
+    if _no_write:
+        import shutil
+        _tmp_db = PROJECT_ROOT / 'eps_momentum_data_kr_TEST.db'
+        if DB_PATH.exists():
+            shutil.copy(str(DB_PATH), str(_tmp_db))
+        DB_PATH = _tmp_db
+        log(f"🛡️ DB 보호 모드 — 임시 사본({_tmp_db.name}) 사용, authoritative DB 미변경. "
+            f"(실제 기록은 GHA cron 또는 KR_EPS_FORCE_DB_WRITE=1)")
+
     # 1. NTM 데이터 수집 + DB 적재 (MA60, price 포함)
     log("=" * 60)
     log("NTM EPS 데이터 수집 시작")
