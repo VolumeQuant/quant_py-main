@@ -20,6 +20,7 @@ env:
   TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
   TELEGRAM_PRIVATE_ID: ${{ secrets.TELEGRAM_PRIVATE_ID }}
   GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+  KR_EPS_PRINT_MSG: '1'  # 전송 메시지를 CI 로그에도 출력 (디버그/확인용, 전송 동작 무영향)
 
 jobs:
   kr-eps:

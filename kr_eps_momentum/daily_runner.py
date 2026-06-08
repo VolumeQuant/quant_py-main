@@ -5393,6 +5393,8 @@ def main():
             alpha_signals=alpha_signals, hist_all=hist_all,
         )
         if msg_signal:
+            if os.environ.get('KR_EPS_PRINT_MSG') == '1':
+                print('\n<<<MSG:SIGNAL>>>\n' + msg_signal + '\n<<<MSG:END>>>', flush=True)
             if send_to_channel:
                 send_telegram_long(msg_signal, config, chat_id=channel_id)
             send_telegram_long(msg_signal, config, chat_id=private_id)
@@ -5404,6 +5406,8 @@ def main():
             earnings_map, ai_content
         )
         if msg_ai_risk:
+            if os.environ.get('KR_EPS_PRINT_MSG') == '1':
+                print('\n<<<MSG:AIRISK>>>\n' + msg_ai_risk + '\n<<<MSG:END>>>', flush=True)
             if send_to_channel:
                 send_telegram_long(msg_ai_risk, config, chat_id=channel_id)
             send_telegram_long(msg_ai_risk, config, chat_id=private_id)
@@ -5416,6 +5420,8 @@ def main():
             score_display_map=score_display_map, alpha_signals=alpha_signals
         )
         if msg_watchlist:
+            if os.environ.get('KR_EPS_PRINT_MSG') == '1':
+                print('\n<<<MSG:WATCHLIST>>>\n' + msg_watchlist + '\n<<<MSG:END>>>', flush=True)
             if send_to_channel:
                 send_telegram_long(msg_watchlist, config, chat_id=channel_id)
             send_telegram_long(msg_watchlist, config, chat_id=private_id)
