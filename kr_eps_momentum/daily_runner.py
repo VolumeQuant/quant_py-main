@@ -2890,15 +2890,17 @@ def analyze_sector_momentum(results_df, today_str=None):
 
     # 메시지 생성
     # KR adapt 2026-06-01: US 섹터ETF 라벨(XLP/SMH 등) 제거 — 퍼센트는 이미 KR 종목 집계, ETF 태그만 혼란 유발
-    lines = ['📊 섹터 EPS 모멘텀 (KR 종목 집계)']
+    lines = ['📊 업종별 EPS 상향 비율']
     for _, r in sector.head(5).iterrows():
         name = r['sector_group']
         pct = int(r['pct'])
         total = int(r['total'])
         upward = int(r['upward'])
         prev = prev_pcts.get(name)
-        prev_str = f' (전주 {prev}%)' if prev is not None else ''
-        lines.append(f'{name} {pct}% 상향 {upward}/{total}{prev_str}')
+        detail = f'{upward}/{total}개'
+        if prev is not None:
+            detail += f', 전주 {prev}%'
+        lines.append(f'{name} {pct}% 상향 ({detail})')
 
     return '\n'.join(lines)
 
@@ -4743,7 +4745,7 @@ def create_ai_risk_message(config, selected, biz_day, risk_status, market_lines,
             lines.append('  📈 공격 국면 (KOSPI 20일선 &gt; 80일선) — 추세 양호')
         else:
             lines.append('  📉 방어 국면 (KOSPI 20일선 &lt; 80일선) — 추세 주의')
-        lines.append('  <i>(참고: production은 5일 확인 후 전환. EPS 시스템 매매를 gate하진 않음)</i>')
+        lines.append('  <i>(참고용 — 매매엔 미반영)</i>')
     except Exception:
         lines.append('  국면 데이터 수집 실패 (참고용)')
 

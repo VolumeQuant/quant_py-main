@@ -943,13 +943,10 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
     if _mode_for_rule == 'defense':
         lines.append('🛡️ 방어 모드 — 현금 100% 보유 권장')
         lines.append('약세장 진입: 신규 매수 X')
-        lines.append('')
         lines.append('시스템은 신호만, 매매는 본인 판단')
     else:
         lines.append(f'매수: 3일 연속 상위 {_rule_e}종목 (최대 {_rule_s}종목)')
-        lines.append('')
         lines.append(f'매도: 3일 가중순위 {_rule_x}위 밖 (단일 조건)')
-        lines.append('')
         lines.append('시스템은 신호만, 매매는 본인 판단')
 
     return '\n'.join(lines)
