@@ -167,6 +167,22 @@ def _validate_ranking(base_date, state_dir, threshold=320, logfile=None):
         return False, 0
 
 
+def _get_collection_count(base_date, logfile=None):
+    """오늘 전종목 수집 수 (market_cap → fundamental 폴백). 행수만.
+    데이터 사고(pykrx 대량실패 → 급감/누락) vs 시장 breadth 붕괴(수집 정상, 필터만 적음) 구분용.
+    정상 ~2700-3000. v80.25(2026-06-08) 도입."""
+    import pandas as pd
+    cache = SCRIPT_DIR / 'data_cache'
+    for prefix in ('market_cap_ALL_', 'fundamental_batch_ALL_'):
+        p = cache / f'{prefix}{base_date}.parquet'
+        if p.exists():
+            try:
+                return len(pd.read_parquet(p))
+            except Exception as e:
+                if logfile: log(f"수집수 읽기 오류({prefix}): {e}", logfile)
+    return 0
+
+
 def _send_personal_warning(msg, logfile=None):
     """개인봇 DM만 발송 (채널 X) — 데이터 정합성 사고 알림용"""
     try:
@@ -710,39 +726,54 @@ def main():
         state_dir = SCRIPT_DIR / 'state'
         ok_val, n_stocks = _validate_ranking(today, state_dir, threshold=150, logfile=logfile)
         if not ok_val:
-            log(f"⚠️ ranking 검증 미달: {n_stocks}종목 < 150 — 채널 발송 차단, 30분 후 재시도", logfile)
-            _send_personal_warning(
-                f"⚠️ <b>ranking 검증 미달</b>\n\n"
-                f"종목 수: <b>{n_stocks}</b> (임계: 150, wholesale 사고 감지선)\n\n"
-                f"채널 발송 보류. 30분 후 재시도 예정.\n"
-                f"데이터 정합성 점검 필요할 수 있음.",
-                logfile=logfile,
-            )
-            import time
-            time.sleep(1800)  # 30분
-            log("재시도: ranking 재생성", logfile)
-            try:
-                ok_retry = run_fg_pipeline(today, regime_env, regime['mode'], logfile)
-            except Exception as e:
-                log(f"재시도 ranking 재생성 오류: {e}", logfile)
-                ok_retry = False
-            if not ok_retry:
+            # v80.25 (2026-06-08): 수집 vs 필터 구분.
+            #   수집 정상(1500+)인데 필터 통과만 적음 = 시장 breadth 붕괴(폭락 등) → 발송 (데이터 사고 아님)
+            #   수집 자체도 적음 = wholesale 데이터 사고 → 차단 + 30분 후 재시도
+            coll_n = _get_collection_count(today, logfile)
+            COLL_MIN = 1500
+            if coll_n >= COLL_MIN:
+                log(f"ℹ️ ranking {n_stocks}종목<150 이나 수집 {coll_n}종목 정상 → 시장 breadth(폭락) 판단, 정상 발송", logfile)
                 _send_personal_warning(
-                    f"❌ <b>재시도 ranking 재생성 실패</b>\n\n오늘 채널 발송 보류. 수동 점검 필요.",
+                    f"ℹ️ <b>유니버스 축소 — 시장 breadth</b>\n\n"
+                    f"필터 통과: <b>{n_stocks}</b>종목 (임계 150 미달)\n"
+                    f"전종목 수집: <b>{coll_n}</b>종목 (정상)\n\n"
+                    f"수집 정상 → 데이터 사고 아님. 폭락 등으로 120일선 위 종목이 적은 것 → <b>정상 발송 진행.</b>",
                     logfile=logfile,
                 )
-                return
-            ok_val, n_stocks = _validate_ranking(today, state_dir, threshold=150, logfile=logfile)
-            if not ok_val:
-                log(f"⚠️ 재시도 후에도 미달: {n_stocks}종목 — 발송 보류", logfile)
+                # ok_val 미달이어도 발송 로직으로 자연 진행 (차단·재시도 안 함)
+            else:
+                log(f"⚠️ ranking {n_stocks}종목 + 수집 {coll_n}종목 둘 다 미달 — 데이터 사고 의심, 채널 차단·재시도", logfile)
                 _send_personal_warning(
-                    f"❌ <b>재시도 후에도 검증 미달</b>\n\n"
-                    f"종목 수: <b>{n_stocks}</b> (임계: 150)\n\n"
-                    f"오늘 채널 발송 보류. 수동 점검 필요.",
+                    f"⚠️ <b>데이터 사고 의심 — 채널 차단</b>\n\n"
+                    f"필터 통과: {n_stocks}종목 / 전종목 수집: <b>{coll_n}</b>종목 (임계 {COLL_MIN} 미달)\n\n"
+                    f"수집 자체가 적음 = wholesale 사고 가능성. 채널 발송 보류, 30분 후 재시도.",
                     logfile=logfile,
                 )
-                return
-            log(f"✅ 재시도 검증 통과: {n_stocks}종목 → 정상 발송 진행", logfile)
+                import time
+                time.sleep(1800)  # 30분
+                log("재시도: ranking 재생성", logfile)
+                try:
+                    ok_retry = run_fg_pipeline(today, regime_env, regime['mode'], logfile)
+                except Exception as e:
+                    log(f"재시도 ranking 재생성 오류: {e}", logfile)
+                    ok_retry = False
+                if not ok_retry:
+                    _send_personal_warning(
+                        f"❌ <b>재시도 ranking 재생성 실패</b>\n\n오늘 채널 발송 보류. 수동 점검 필요.",
+                        logfile=logfile,
+                    )
+                    return
+                ok_val, n_stocks = _validate_ranking(today, state_dir, threshold=150, logfile=logfile)
+                coll_n = _get_collection_count(today, logfile)
+                if coll_n < COLL_MIN:
+                    log(f"⚠️ 재시도 후에도 수집 {coll_n}종목 미달 — 데이터 사고 지속, 발송 보류", logfile)
+                    _send_personal_warning(
+                        f"❌ <b>재시도 후에도 수집 미달({coll_n}종목)</b>\n\n"
+                        f"wholesale 사고 지속 의심. 오늘 채널 발송 보류, 수동 점검 필요.",
+                        logfile=logfile,
+                    )
+                    return
+                log(f"✅ 재시도: 수집 {coll_n}종목 정상화 (필터 {n_stocks}종목) → 정상 발송 진행", logfile)
 
         # 2. 텔레그램 전송
         # v77.1: 타임아웃 3분→10분 확장 + Popen 실시간 스트리밍 (멈춘 지점 추적)
