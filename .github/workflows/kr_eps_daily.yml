@@ -1,11 +1,12 @@
 name: KR EPS Momentum Daily
 
 on:
-  schedule:
-    # KST 16:00 = UTC 07:00 (월~금 KST = 월~금 UTC, KR 장 마감 15:30 직후)
-    # production v80.22(16:00)와 일관성. yfinance KR 종목 직접 호출(KS/KQ), KRX 로그인 불필요.
-    # 한국 공휴일은 daily_runner.py 안에서 자동 skip (holidays 라이브러리).
-    - cron: '0 7 * * 1-5'
+  # 2026-06-09: GA cron 비활성화 — GitHub Actions가 예약을 매번 3.5~5.5h 지연시켜
+  #   16:00 예약이 실제 19:35~21:31(저녁)에 실행됨. 로컬 Task Scheduler로 이전(production처럼 정시).
+  #   로컬: kr_eps_momentum/run_kr_eps_scheduled.bat (16:30 KST, production 16:00 push 후 stagger).
+  #   GA는 수동 트리거(workflow_dispatch)용으로만 유지. 재활성화 시 아래 schedule 주석 해제.
+  # schedule:
+  #   - cron: '0 7 * * 1-5'   # 07:00 UTC = 16:00 KST (지연 문제로 비활성)
   workflow_dispatch:
 
 # yfinance rate limit 회피 (US daily-screening과 동일 패턴, 5/2 US 사고 학습)
