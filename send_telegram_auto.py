@@ -895,10 +895,8 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         r0 = t0_cr_sig.get(ticker, '-')
         r1 = t1_cr_sig.get(ticker, '-')
         r2 = t2_cr_sig.get(ticker, '-')
-        # 100 - (wr - 1위_wr) × 5: wr 차이가 그대로 점수 차이로 (선형, 하한 5점)
-        wr_val = pick.get('weighted_rank', pick.get('rank', i + 1))
-        min_wr = picks[0].get('weighted_rank', picks[0].get('rank', 1)) if picks else 1
-        score_100 = max(5.0, min(100.0, 100.0 - (wr_val - min_wr) * 5))
+        # v80.26: 표시점수 = 3일가중 멀티팩터점수 고정앵커(weighted_score_100). 순위(wr)와 동일 가중치라 정합. 매매 영향 0.
+        score_100 = weighted_score_100(ticker, rankings_t0, rankings_t1, rankings_t2)
         lines.append(f'순위 {r2}→{r1}→{r0}위 · {score_100:.1f}점')
 
         # L2: AI 내러티브 (fallback: _get_buy_rationale)
@@ -1104,7 +1102,8 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
         r1 = s.get('_r1', '-')  # T-1 cr-rank
         r2 = s.get('_r2', '-')  # T-2 cr-rank
         w_rank_val = s.get('weighted_rank', idx)
-        score_100 = max(5.0, min(100.0, 100.0 - (w_rank_val - _min_wr) * 5))
+        # v80.26: 표시점수 = 3일가중 멀티팩터점수 고정앵커(weighted_score_100). 순위(wr)와 정합. 매매 영향 0.
+        score_100 = weighted_score_100(s['ticker'], rankings_t0, rankings_t1, rankings_t2)
         score_disp = f'{score_100:.1f}'
 
         # 매도 기준선: 3일 가중순위 > EXIT_RANK 첫 종목 직전 (룰은 footer에 명시)

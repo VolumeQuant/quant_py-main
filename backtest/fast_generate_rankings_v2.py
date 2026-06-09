@@ -1925,6 +1925,63 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
             print(f'    계절성 패널티: {seas_applied}종목 (ratio>{SEAS_RATIO_THRESH}, ×{SEAS_PENALTY})')
 
     # ============================================================
+    # v80.25 (2026-06-09): 일회성 이익 페널티 — accruals + 분기쏠림
+    # 한 분기 일회성 이익으로 TTM 뻥튀기된 스캠(에스에이엠티/삼지전자 등) 차단.
+    # B = (당기순이익TTM - 영업현금흐름TTM)/자산 ×100  (이익이 현금으로 안 들어옴 = 가짜)
+    # C = max(최근4분기 영업이익) / 영업이익TTM            (한 분기 쏠림 = 일회성)
+    # B>25 AND C>0.7 → 성장_점수 × 0.24 (소프트 페널티; 하드컷/진입차단은 winner 학살로 기각)
+    # 7.4y BT(X6 production-replay) 강도스윕: 0.30~0.22 무해평탄(Cal~4.48, 2026 +284%) / 0.20부터 절벽(-39p). 하드·진입차단 2026 -25.8p.
+    # 0.24 채택 — 에스에이엠티를 삼성전자 아래(wr 5위)로 밀되 BT는 0.30과 동급. MDD 강도무관 동일(분산+순위이탈이 공매도 tail 흡수).
+    # 약세장(2022) 무해, 인접 CV 0.014, LOWO 견고. 제주반도체(B21<25)·엑시콘(B20<25) 보존.
+    # 일괄 규칙(종목 예외 없음). 계절성 패널티와 동일 패턴(PIT: rcept_dt<=base_ts). 환경변수: ONEOFF_DISABLE=1로 비활성화
+    # ============================================================
+    if os.environ.get('ONEOFF_DISABLE') != '1':
+        ONEOFF_B = float(os.environ.get('ONEOFF_B_THRESH', '25'))
+        ONEOFF_C = float(os.environ.get('ONEOFF_C_THRESH', '0.7'))
+        ONEOFF_PENALTY = float(os.environ.get('ONEOFF_PENALTY', '0.24'))
+        V_W = float(os.environ.get('FACTOR_V_W', '0.20'))
+        Q_W = float(os.environ.get('FACTOR_Q_W', '0.20'))
+        G_W = float(os.environ.get('FACTOR_G_W', '0.30'))
+        M_W = float(os.environ.get('FACTOR_M_W', '0.30'))
+        fs_dict_oneoff = preloaded.get('fs', {})
+        def _ttm_last4(fs_tk, acct, base_ts):
+            q = fs_tk[(fs_tk['공시구분'] == 'q') & (fs_tk['계정'] == acct)]
+            if 'rcept_dt' not in q.columns: return None
+            q = q[q['rcept_dt'].notna() & (q['rcept_dt'] <= base_ts)]
+            if len(q) == 0: return None
+            q = q.sort_values('rcept_dt').drop_duplicates('기준일', keep='last').sort_values('기준일')
+            return q['값'].astype(float).values
+        oneoff_applied = 0
+        for idx, row in scored.iterrows():
+            tk = row.get('종목코드')
+            if not tk or tk not in fs_dict_oneoff: continue
+            fs_tk = fs_dict_oneoff[tk]
+            opv = _ttm_last4(fs_tk, '영업이익', base_ts)
+            niv = _ttm_last4(fs_tk, '당기순이익', base_ts)
+            cfv = _ttm_last4(fs_tk, '영업활동으로인한현금흐름', base_ts)
+            asv = _ttm_last4(fs_tk, '자산', base_ts)
+            if opv is None or niv is None or cfv is None or asv is None: continue
+            if len(opv) < 4 or len(niv) < 4 or len(cfv) < 4 or len(asv) < 1: continue
+            op4 = opv[-4:]
+            op_ttm = float(op4.sum()); asset = float(asv[-1])
+            if op_ttm <= 0 or asset <= 0: continue
+            B = (float(niv[-4:].sum()) - float(cfv[-4:].sum())) / asset * 100
+            C = float(op4.max()) / op_ttm
+            if B > ONEOFF_B and C > ONEOFF_C:
+                new_g = (row.get('성장_점수', 0) or 0) * ONEOFF_PENALTY
+                scored.at[idx, '성장_점수'] = new_g
+                scored.at[idx, '멀티팩터_점수'] = (
+                    (row.get('밸류_점수', 0) or 0) * V_W +
+                    (row.get('퀄리티_점수', 0) or 0) * Q_W +
+                    new_g * G_W +
+                    (row.get('모멘텀_점수', 0) or 0) * M_W
+                )
+                oneoff_applied += 1
+        if oneoff_applied > 0:
+            scored['멀티팩터_순위'] = scored['멀티팩터_점수'].rank(ascending=False, method='first', na_option='bottom')
+            print(f'    일회성이익 패널티: {oneoff_applied}종목 (B>{ONEOFF_B}&C>{ONEOFF_C}, ×{ONEOFF_PENALTY})')
+
+    # ============================================================
     # v80.12 (2026-05-18): QoQ 패널티 — base 효과 종목 차단
     # 사용자 통찰: 보성파워텍처럼 25Q1 base 작아서 26Q1 OP YoY +285%이지만 QoQ +11% 미미
     # 옵션: A (qoq_op<-10%→0.5x), B (qoq_op<-5%→0.5x), C (AND-Gate)
@@ -2133,6 +2190,11 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
         _op = row.get('overheat_pen')
         if _op is not None and pd.notna(_op):
             item['overheat_pen'] = round(float(_op), 4)
+        # v80.20 mom_10_z / vol_low_z (가중치 그리드 BT용 — z 저장, score 재계산 가능)
+        for _zc, _zk in [('mom_10_z', 'mom_10_z'), ('vol_low_z', 'vol_low_z')]:
+            _zv = row.get(_zc)
+            if _zv is not None and pd.notna(_zv):
+                item[_zk] = round(float(_zv), 6)
         # v77.2: price NaN이면 가장 최근 유효 가격 사용 (ffill) — 거래정지 종목도 랭킹 포함
         if ticker in price_df.columns:
             ser = price_df[ticker]

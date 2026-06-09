@@ -352,8 +352,9 @@ def get_stock_status(rankings_t0, rankings_t1=None, rankings_t2=None, top_n=20, 
 
 
 def weighted_score_100(ticker, rankings_t0, rankings_t1=None, rankings_t2=None):
-    """원본 멀티팩터 점수 가중(T0×0.5+T1×0.3+T2×0.2) → 100점 환산.
-    원본 점수 기반이라 실제 격차가 반영됨. (표시용, 진입/퇴출은 순위 기반)
+    """원본 멀티팩터 점수 3일가중 → 100점 환산. (표시용, 진입/퇴출은 순위 기반)
+    v80.26: 가중치 wr과 일치(T0×0.4+T1×0.35+T2×0.25) → 순위-점수 정합(어긋남 제거).
+    앵커 1.9(괴물주=100, 평범=0). 1등 고정 100 제거 → 실제 강도 반영.
     """
     DEFAULT_MISSING_RANK = 50
 
@@ -373,10 +374,9 @@ def weighted_score_100(ticker, rankings_t0, rankings_t1=None, rankings_t2=None):
     s0 = t0_map.get(ticker, 0)
     s1 = t1_map.get(ticker, t1_fallback)
     s2 = t2_map.get(ticker, t2_fallback)
-    ws = s0 * 0.5 + s1 * 0.3 + s2 * 0.2
-    # v69: 4팩터 동일가중 score 분포에 맞춘 환산
-    # score 범위 0.6~1.5 → (ws+0.7)/2.4*100 → 약 54~92점
-    return max(0.0, min(100.0, (ws + 1.5) / 4.0 * 100))
+    ws = s0 * 0.4 + s1 * 0.35 + s2 * 0.25  # v80.26: wr(v80.13) 가중치 일치 → 순위-점수 정합
+    # v80.26 고정앵커: ws/1.9×100 clip 0~100 (1.9=괴물주 앵커, score 0=0점)
+    return max(0.0, min(100.0, ws / 1.9 * 100))
 
 
 def cleanup_old_rankings(keep_days: int = 30):
