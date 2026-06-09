@@ -1,66 +1,36 @@
-# 다음 세션 작업 브리핑 (2026-04-15 → 집PC 이어받기)
+# 다음 세션 작업 브리핑 (2026-06-09 회사PC → 집PC 이어받기)
 
-## 현재 상태 요약
+> 집PC: `git pull` 하면 코드 + CLAUDE.md(자동로드) 동기화됨. 이 파일이 인계 핵심.
+> ⚠️ 메모리(`.claude/projects`)는 git 밖이라 집PC로 자동 안 감 → 이 브리핑에 다 담음.
 
-**v77.1 → v79 전환 완료 + FnGuide PIT 보강 완료.**
+## 이번 세션 완료 — 전부 commit·push됨 (KR commit 59422b8)
 
-2026-04-15 회사PC에서 수행:
-1. Phase 3~8 전수 재탐색 → v79 확정
-   - 공격: V15Q5G50M30 3f_gp(0.5/0.3/0.2) 12m E3X6S3
-   - 방어: V30Q15G15M40 2f_rev_oca(0.7) 6m-1m E3X6S7
-   - 국면: KP_MA200_7d (v77.1의 5d → 7d)
-   - Crash Cash 제거 (방어 자체로 충분 견고)
-2. 코드 수정 커밋 `c34a86390`: regime_indicator.py + send_telegram_auto.py + run_daily.py + SYSTEM_MAP.md + state 재생성 스크립트
-3. **FnGuide rcept_dt 역추적** (DART 기반, 약 130만 건 매칭) → PIT 정확도 강화
-4. **FnGuide 매일 증분 로직** `run_daily.py` Step 0.1에 추가
-5. **state/ + bt_extended/ 전체 재생성** (FnGuide PIT 반영, 4워커 병렬)
-6. Phase 8 재측정 + Top 10~15 재검증 + 인접 안정성 + WF 재확인
-7. 공지/전환 메시지 금융 컨설팅 리라이트 적용
+### KR v80.25 일회성이익 페널티 (배포, 오늘 16:00부터 자동)
+- **문제**: 에스에이엠티(031330)·삼지전자(037460) 같은 IT유통주가 **한 분기 일회성 이익으로 TTM 뻥튀기** → 06-04~08 에스에이엠티 시스템 **1위**(진입3·슬롯3라 시스템이 매수). 사용자 실제 매수 후 손실.
+- **해결**: `B=(당기순이익TTM−영업현금흐름TTM)/자산×100` (현금 안 들어오는 가짜이익) **AND** `C=max(최근4분기 영업이익)/영업이익TTM` (한 분기 쏠림). **B>25 & C>0.7 → 성장_점수 ×0.24** (일괄, 종목 예외 없음).
+- **BT (7.4y, X6 production-replay)**: 강도 0.30~0.22 무해평탄(Cal~4.48, 2026 +284%), 0.20부터 절벽(−39p). hard·진입차단 2026 −25.8p. **0.24 채택** = 에스에이엠티 삼성전자 아래(wr 5위)로 밀되 BT 0.30과 동급. MDD 강도무관(분산+순위이탈이 공매도 tail 흡수), 약세장(2022) 무해, 인접 CV 0.014, LOWO(제주반도체·엑시콘 제외) 견고. **제주반도체(B21<25)·엑시콘(B20<25) 보존**.
+- **파일**: `backtest/fast_generate_rankings_v2.py` (계절성 패널티 옆 블록, PIT rcept_dt≤base_date, `ONEOFF_DISABLE=1` 킬스위치). research: `backtest/_oneoff_*.py` (eda/dist/bt/strength/verify).
+- **롤백**: `ONEOFF_DISABLE=1` 또는 `git revert 59422b8`.
 
-**프로덕션 상태**: v79 작동 중. 스케줄러 `QuanT_DailyPipeline` 평일 16:00 자동.
+### KR v80.26 표시점수 고정앵커 (배포)
+- **1등=100 박제 제거** → 멀티팩터_점수 **3일가중 ws/1.9×100** clip 0~100. 순위(wr)와 **동일 가중치(0.4/0.35/0.25)**라 순위-점수 정합(어긋남 0). 1등도 강도 반영(약세날 50점대, 보통날 80+, 괴물주 100). **매매 영향 0**.
+- **파일**: `ranking_manager.py weighted_score_100`(가중치+앵커), `send_telegram_auto.py` 점수표시 2곳(Signal L901·Watchlist L1108) → 함수 호출. + **footer 줄간격 compact**(매수/매도/시스템 빈 줄 제거).
+- 사용자 "점수는 솔직하게"(앵커 1.9 유지).
 
-## 반드시 먼저 읽을 문서
+### 06-08 채널 재발송 완료
+- 페널티 적용 정정본 **채널+개인봇 발송 완료**(에스에이엠티 매수후보서 빠짐 → 브이엠·제주반도체·SK하이닉스). **조용히 재발송**(정정 문구 없이).
+- `state/ranking_2026060[4,5,8].json` 페널티 적용본으로 재생성(백업 `.bak_pre_oneoff` 보존).
 
-1. **`C:\dev\SYSTEM_MAP.md`** — 영구 지도. 파일별 하드코딩 위치, 파이프라인, 데이터 경로, 외부 의존성, 체크리스트. **전략 교체 시 반드시 이 문서 기반으로 맹점 제로 확인**.
-2. `C:\dev\CLAUDE.md` — v79 전략 + FnGuide PIT 섹션 + (d)(d')(e) 필터 설명
-3. `C:\Users\user\.claude\projects\C--dev\memory\project_v79_final.md` — v79 확정 경위
-4. `C:\Users\user\.claude\projects\C--dev\memory\feedback_blindspot_elimination.md` — 7라운드 맹점 제거 프로토콜
-5. `C:\dev\backtest\PHASE8_REPORT.md` — Phase 8 상세 분석
+### US (eps-momentum-us) — 코드 변경 0, BT 재확인만 (US 메모리에 상세)
+- 진입/이탈/슬롯: 미탐색축(entry 2/4·exit 8/15·slot 1/3) 확장BT도 **현 config(슬롯2/진입part2≤3/이탈rank>10/50-50) 최적 재확인** → 변경 안 함.
+- 재진입 쿨다운: −18~47p 손해 → 즉시 재진입(현행) 최적.
+- 국면 오버레이 신호지수: **SP500 최적**(GFC 90% vs NDX100 79%, DOW30 기각) → 변경 안 함.
 
-## 이어서 할 수 있는 작업 (선택)
+## 현재 운영 상태
+- **KR = v80.26** (일회성 페널티 + 점수앵커 + v80.24 이탈X6 + v80.23 과열캡). 오늘 16:00 정기실행(이 PC)부터 자동 적용.
+- 집PC에서 `git pull` 하면 동기화 완료. (단 working tree에 다른 작업 uncommitted 多 — data_cache/서브모듈/`_liq_*` 등은 내 작업 아니라 안 건드림)
 
-### A. FnGuide PIT 추가 검증
-- 역추적 기본값(연 90일/분기 45일) 적용 비율 확인
-- DART 미매칭 종목 리스트 분석
-
-### B. 잔여 이슈 정리 (fc29095d4의 6개 미해결)
-- MA120 필터 주석-동작 불일치 (이슈 1)
-- 지주사 NaN 대체 로직 (이슈 2)
-- 멀티팩터 스코어링 내부 NaN 드롭 (이슈 5)
-- final 저장 시 price 조건 탈락 (이슈 6)
-- (e) 필터 섹터 의존성 (이슈 7)
-- universe_count 메타데이터 MA120 전 값 (이슈 8)
-
-### C. ranking_manager.py wr 재계산 중복 제거 (경미)
-
-### D. kospi_yf 첫 컬럼 NaN fallback (send_telegram line 339, 경미)
-
-## 주의사항
-
-- **채널 전송 금지** — 모든 테스트는 `TEST_MODE=1` 개인봇 (`TELEGRAM_PRIVATE_ID=7580571403`). 채널 전송은 사용자 명시 지시만.
-- **base_date 명시 필수** — `run_daily.py` 수동 실행 시 오늘 기준 아닌 당일 종가 확인 후. 장중 실행 금지 (4/15 사고 교훈).
-- **push 전 사용자 승인** — 자동 커밋/푸시 이미 발생한 이력 있음 (run_daily.py 말미). 수동 작업 시 확인.
-- **스케줄러** — `schtasks /Change /TN "QuanT_DailyPipeline" /DISABLE` 으로 임시 비활성, 작업 후 `/ENABLE` 재활성.
-- **7라운드 맹점 제거** — 프로덕션 변경 계획 제시 전 반드시 수행 (feedback_blindspot_elimination.md).
-
-## 환경
-
-- Python: `C:/Users/user/miniconda3/envs/volumequant/python.exe`
-- 경로: `C:\dev\` (git root), 백테스트 `C:\dev\backtest\`, 데이터 `C:\dev\data_cache\`, 프로덕션 ranking `C:\dev\state\` + `C:\dev\state\defense\`
-- 집PC도 동일 경로 가정. 다르면 확인 (feedback_cross_pc_validation.md).
-
-## 커밋 상태 (집PC 이어받기 직전)
-
-- `c34a86390` feat(v79): v79 코드 전환 커밋
-- 추가 일괄 커밋: state 재생성본 + bt_extended 재생성본 + DART/FnGuide 증분 + FnGuide rcept_dt 이식 + 문서
-- **집PC에서 git pull 먼저** 하고 작업 시작.
+## 다음 할 것 (선택)
+1. 신규종목(🆕/⏳) 일회성 페널티 점수 정합 점검 — 06-08은 전부 ✅라 미검증.
+2. 점수 앵커 1.9 모니터링 — 강한 날 80+, 괴물주 100 제대로 나오는지.
+3. 임시 검증물 정리됨. BT 스크립트 `backtest/_oneoff_*.py` + 백업 `.bak_pre_oneoff` 보존.
