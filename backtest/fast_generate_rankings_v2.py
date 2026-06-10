@@ -1277,6 +1277,11 @@ def rank_zscore_sector(series, sectors, ascending=True, min_sector=10):
     return result
 
 
+# 밸류 -1.5σ 필터로 제외된 종목 기록 (date → [종목코드]). 이탈 사유 정확 라벨링용.
+# 급등으로 PER/PBR 폭등해 밸류_점수 < -1.5 된 종목 = '밸류 과열'(거래부족 아님).
+_VALUE_OVERHEAT_BY_DATE = {}
+
+
 def calculate_multifactor_fast(multifactor_df, price_df, sector_map, base_date,
                                 growth_lookup, mom_period='6m'):
     """인라인 멀티팩터 계산 — disk I/O 없음
@@ -1563,6 +1568,10 @@ def calculate_multifactor_fast(multifactor_df, price_df, sector_map, base_date,
         # 기본 (v77 원본)
         EXTREME_THRESHOLD = -1.5
         extreme_mask = (data[cat_cols_4] < EXTREME_THRESHOLD).any(axis=1)
+        # 밸류 과열 기록: 밸류_점수 < -1.5 로 제외되는 종목 (이탈 사유 라벨용)
+        if '밸류_점수' in data.columns and '종목코드' in data.columns:
+            _vo = data.loc[data['밸류_점수'] < EXTREME_THRESHOLD, '종목코드'].astype(str).tolist()
+            _VALUE_OVERHEAT_BY_DATE[base_date] = _vo
         if extreme_mask.any():
             data = data[~extreme_mask].copy()
 
@@ -2222,6 +2231,7 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
             'generator': 'fast_generate_rankings_v2',
             'correlation_60d': corr_60d,
             'ma120_failed': ma120_fail,
+            'value_overheat': _VALUE_OVERHEAT_BY_DATE.get(date_str, []),
         },
     }
     out_path = state_dir / f'ranking_{date_str}.json'

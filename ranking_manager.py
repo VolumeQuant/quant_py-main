@@ -232,6 +232,7 @@ def get_daily_changes(
     meta = rankings_t0.get('metadata') or {}
     ma120_failed = set(meta.get('ma120_failed', []))
     has_ma120_data = 'ma120_failed' in meta
+    value_overheat = set(str(t).zfill(6) for t in meta.get('value_overheat', []))
     exited = []
     for t in exited_tickers:
         item = t1_map[t].copy()
@@ -241,6 +242,10 @@ def get_daily_changes(
             item['t0_rank'] = t0_item.get('composite_rank')
         elif has_ma120_data and t in ma120_failed:
             item['exit_reason'] = '120일선하락'
+            item['t0_rank'] = None
+        elif str(t).zfill(6) in value_overheat:
+            # 급등으로 PER/PBR 폭등 → 밸류_점수 < -1.5 로 제외 (거래부족 아님)
+            item['exit_reason'] = '밸류과열'
             item['t0_rank'] = None
         elif has_ma120_data and t not in ma120_failed:
             item['exit_reason'] = '거래부족'
