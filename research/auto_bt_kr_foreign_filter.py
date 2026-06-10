@@ -79,7 +79,7 @@ def _zmap(vals):
 
 def cr_map(d,exclude,mode,fw,cmap):
     """mode: 'base'(무결합) / 'filter'(순매수>0만) / 'score'(점수 += fw×z(순매수))."""
-    f=fac.get(d,{}); fl=cmap.get(d,{}); sc=[]
+    f=fac.get(d,{}); fl=(cmap.get(d,{}) if cmap else {}); sc=[]
     zf=_zmap({t:fl.get(t,np.nan) for t in f}) if mode=='score' else {}
     for t,(vs,qs,gs,ms) in f.items():
         if t in exclude: continue
@@ -125,11 +125,10 @@ isd=[d for d in dates if d<='20231231']; oosd=[d for d in dates if d>='20240101'
 reg=cross(dates); regi=cross(isd); rego=cross(oosd)
 
 configs = [('baseline','base',0,None),
-           ('외국인 필터>0','filter',0,fcm),
-           ('외국인 점수+0.05','score',0.05,fcm),
+           ('외국인 점수+0.08','score',0.08,fcm),
            ('외국인 점수+0.10','score',0.10,fcm),
-           ('외국인 점수+0.20','score',0.20,fcm),
-           ('기관 점수+0.10','score',0.10,icm)]
+           ('외국인 점수+0.12','score',0.12,fcm),
+           ('외국인 점수+0.15','score',0.15,fcm)]
 print(f'\n{"config":>16} | {"Cal":>5} {"CAGR":>5} {"MDD":>5} | {"IS":>5} {"OOS":>5} | {"WFmin":>5} | {"LOO3":>5}', flush=True)
 print('-'*74, flush=True)
 base=None
