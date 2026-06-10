@@ -42,8 +42,13 @@ def main():
     env['GEMINI_API_KEY'] = getattr(C, 'GEMINI_API_KEY', '') or ''
     env.pop('TELEGRAM_CHAT_ID', None)   # 채널 전송 방지
     env.pop('GITHUB_ACTIONS', None)     # is_github_actions=False
+    # ★ 이 스케줄 실행은 GA cron을 대체하는 authoritative 일일 실행 → 진짜 DB에 기록해야 함.
+    #   daily_runner의 DB 보호모드는 'is_github 아니면 임시DB'라 GITHUB_ACTIONS pop 시
+    #   임시DB로 새 → 6/9 미누적 사고(2026-06-09). FORCE로 진짜 DB 기록 강제.
+    #   (수동 테스트 _send_official.py는 KR_EPS_NO_DB_WRITE=1로 여전히 보호됨)
+    env['KR_EPS_FORCE_DB_WRITE'] = '1'
     env['PYTHONIOENCODING'] = 'utf-8'
-    log('env 설정: 개인봇 전용 (TELEGRAM_CHAT_ID/GITHUB_ACTIONS 미설정)')
+    log('env 설정: 개인봇 전용 + DB 강제기록(authoritative 일일 실행)')
 
     # 3. DB 백업
     if os.path.exists(DB):
