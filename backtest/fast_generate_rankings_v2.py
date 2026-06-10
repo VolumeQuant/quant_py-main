@@ -1838,6 +1838,23 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
         return False, 'scoring failed'
 
     # ============================================================
+    # 얇은 밸류트랩 제외 (대덕류) — 2026-06-10
+    # 지주사/밸류트랩이 PBR 낮아(자회사 장부가) -1.5σ 밸류필터 통과 → 추천되던 문제.
+    # 시그니처: PER>40 & PBR<1.5 & 거래대금<50억(단일일). 대덕(184/1.08/19억) 제거,
+    # 브이엠(PBR 11.8=고PBR)은 안 건드림. 7년 BT 수익 무해(+0.08, MDD/WF/OOS/LOO 비악화),
+    # 제거 카테고리(7년 6종목 32건 fwd -5.55%/승률28% vs 나머지 +3.73%/49%) 일관 열위.
+    # 알파 아닌 '거래 곤란한 얇은 밸류트랩 제거' 품질필터. 환경변수: THIN_VTRAP_DISABLE=1.
+    # ============================================================
+    if os.environ.get('THIN_VTRAP_DISABLE') != '1' and 'PER' in scored.columns and 'PBR' in scored.columns:
+        _tvmap = (mcap_df['거래대금'] / 1e8).to_dict() if '거래대금' in mcap_df.columns else {}
+        _tv = scored['종목코드'].map(_tvmap)
+        _vtrap = (scored['PER'] > 40) & (scored['PBR'] > 0) & (scored['PBR'] < 1.5) & _tv.notna() & (_tv < 50)
+        _n_vt = int(_vtrap.sum())
+        if _n_vt > 0:
+            print(f'  얇은 밸류트랩 제외: {_n_vt}종목 (고PER>40+저PBR<1.5+거래<50억)')
+            scored = scored[~_vtrap].copy()
+
+    # ============================================================
     # v80.7 (2026-05-16): 계절성 패널티
     # Q2+Q4 매출 / Q1+Q3 매출 > 1.4 인 종목 → 성장_점수 × 0.5
     # 효과: 7.4y Cal 2.90 → 3.29 (+0.39, MDD 개선)
