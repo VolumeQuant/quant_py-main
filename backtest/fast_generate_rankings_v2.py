@@ -80,10 +80,56 @@ for _bad in ('241560', '003410', '079160', '011170'):
     TICKER_SECTOR_OVERRIDE.pop(_bad, None)
 
 
+# ── KSIC(DART 표준산업분류) 기반 정확 섹터 (2026-06-11) ──
+# KRX 24개 대분류('의료·정밀기기'에 반도체검사장비/카메라/실제의료기기 혼재)가 부정확.
+# DART induty_code(5자리)로 정확 분류. 표시 전용, 매매 무관.
+def ksic_to_sector(code):
+    """KSIC induty_code → 표시섹터. 매핑 안 되면 None(→ KRX맵 폴백)."""
+    if code is None:
+        return None
+    c = str(code)
+    # 반도체: 칩제조(261) + 반도체 제조용 기계(29271) + 정밀계측/검사장비(272, 사용자 선택)
+    if c.startswith('261') or c.startswith('29271') or c.startswith('272'):
+        return '반도체'
+    if c.startswith('271'):           # 의료용 기기 (진짜 의료기기)
+        return '의료기기'
+    if c.startswith('273') or c.startswith('274'):  # 광학/카메라/시계
+        return '전기전자'
+    if c.startswith('26') or c.startswith('28'):    # 기타 전자부품/PCB/통신/전기장비
+        return '전기전자'
+    if c.startswith('29'):            # 비반도체 기계
+        return '기계'
+    return None                        # 그 외는 KRX 대분류 맵에 위임
+
+
+def _load_ksic_sector_map():
+    """ksic_sector_map.parquet → {ticker: 표시섹터}. 없으면 빈 dict."""
+    import os
+    path = 'data_cache/ksic_sector_map.parquet'
+    if not os.path.exists(path):
+        path = os.path.join(os.path.dirname(__file__), '..', 'data_cache', 'ksic_sector_map.parquet')
+    try:
+        import pandas as _pd
+        df = _pd.read_parquet(path)
+        out = {}
+        for t, code in zip(df['ticker'].astype(str).str.zfill(6), df['induty_code']):
+            s = ksic_to_sector(code)
+            if s:
+                out[t] = s
+        return out
+    except Exception:
+        return {}
+
+KSIC_SECTOR_MAP = _load_ksic_sector_map()
+
+
 def get_sector_with_override(ticker: str, krx_sector: str) -> str:
-    """ticker 기반 매핑 우선 → 없으면 KRX 분류."""
+    """수동 override 우선 → KSIC(정확) → KRX 대분류 폴백."""
     if ticker in TICKER_SECTOR_OVERRIDE:
         return TICKER_SECTOR_OVERRIDE[ticker]
+    s = KSIC_SECTOR_MAP.get(ticker)
+    if s:
+        return s
     return get_broad_sector(krx_sector)
 
 EXCLUDE_KEYWORDS = ['금융', '은행', '증권', '보험', '캐피탈', '카드', '저축',
