@@ -1851,7 +1851,12 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
         _vtrap = (scored['PER'] > 40) & (scored['PBR'] > 0) & (scored['PBR'] < 1.5) & _tv.notna() & (_tv < 50)
         _n_vt = int(_vtrap.sum())
         if _n_vt > 0:
-            print(f'  얇은 밸류트랩 제외: {_n_vt}종목 (고PER>40+저PBR<1.5+거래<50억)')
+            # v80.27 검증/감사: 제거 종목명+지표 로그 (forward 오제거 모니터링용 — N=1 forward 리스크 가시화)
+            _rm = scored[_vtrap]
+            _names = ' / '.join(
+                f"{r.get('종목명', r['종목코드'])}(PER{r['PER']:.0f}/PBR{r['PBR']:.1f}/{_tvmap.get(r['종목코드'], 0):.0f}억)"
+                for _, r in _rm.iterrows())
+            print(f'  얇은 밸류트랩 제외: {_n_vt}종목 — {_names} (고PER>40+저PBR<1.5+거래<50억)')
             scored = scored[~_vtrap].copy()
 
     # ============================================================
