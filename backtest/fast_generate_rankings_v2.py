@@ -1173,7 +1173,7 @@ def _backadjust_corpaction(price_df):
     if not bool(ca.to_numpy().any()):
         return price_df, 0
     factor = (rets + 1.0).where(ca)
-    factor = factor.where((factor >= 0.1) & (factor <= 10.0))  # sanity: 데이터오류(-90%↓/+900%↑) 제외
+    factor = factor.where((factor >= 0.02) & (factor <= 50.0))  # sanity: 데이터오류 제외 (1:50 병합·98%감자까지 보정, 미래산업 1:18 등)
     has_ca = ca & factor.notna()
     if not bool(has_ca.to_numpy().any()):
         return price_df, 0
