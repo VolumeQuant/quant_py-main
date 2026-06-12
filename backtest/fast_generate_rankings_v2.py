@@ -1159,6 +1159,34 @@ def vectorized_ma120_filter(price_df, universe_tickers, base_ts):
     return passed, failed
 
 
+def _backadjust_corpaction(price_df):
+    """권리락(무상증자/액면분할/병합) 자동보정 — 가격팩터(모멘텀/mom_10/저변동성) 왜곡 제거.
+    KR 일일 가격제한 ±30% → 하루 수익률 <-33% 또는 >+45% = corporate action(권리락).
+    각 권리락 비율을 이전 주가에 누적 곱으로 스티칭. price_df가 base_date까지 슬라이스돼
+    있으면 point-in-time 안전(미래 권리락 미반영). 킬스위치 CORPACTION_ADJ_DISABLE=1.
+    Returns: (adjusted_df, 보정된_종목수)
+    """
+    if price_df is None or price_df.empty or len(price_df) < 2:
+        return price_df, 0
+    rets = price_df.pct_change(fill_method=None)
+    ca = (rets < -0.33) | (rets > 0.45)
+    if not bool(ca.to_numpy().any()):
+        return price_df, 0
+    factor = (rets + 1.0).where(ca)
+    factor = factor.where((factor >= 0.1) & (factor <= 10.0))  # sanity: 데이터오류(-90%↓/+900%↑) 제외
+    has_ca = ca & factor.notna()
+    if not bool(has_ca.to_numpy().any()):
+        return price_df, 0
+    f = pd.DataFrame(1.0, index=price_df.index, columns=price_df.columns)
+    f = f.mask(has_ca, factor)
+    R = f[::-1].cumprod()[::-1]          # R[t] = prod(f[s] for s>=t)
+    mult = R.shift(-1)                   # mult[t] = prod(f[s] for s>t) = 그 날짜 '이후' 권리락 곱
+    mult.iloc[-1] = 1.0
+    adjusted = price_df * mult
+    n_stocks = int(has_ca.any(axis=0).sum())
+    return adjusted, n_stocks
+
+
 def vectorized_momentum(price_df, tickers, mom_period='6m'):
     """모멘텀 + K_ratio 벡터화 계산
 
@@ -1765,6 +1793,9 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
     mcap_tickers = set(mcap_df.index)
     ohlcv_cols = [c for c in ohlcv.columns if c in mcap_tickers]
     price_df = ohlcv.loc[ohlcv.index <= base_ts, ohlcv_cols]
+    # 권리락(무상증자/분할/병합) 자동보정 — 가격팩터 왜곡 제거 (point-in-time, 킬스위치 CORPACTION_ADJ_DISABLE=1)
+    if os.environ.get('CORPACTION_ADJ_DISABLE') != '1':
+        price_df, _n_corpadj = _backadjust_corpaction(price_df)
 
     ma120_fail = []
     if preloaded.get('no_ma120', False):

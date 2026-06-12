@@ -228,6 +228,7 @@ score = V × 0.15 + G × 0.55 + M × 0.30 + mom_10_z × 0.05 + vol_low_z × 0.06
 - **(d)** DART 분기보고서 8개(2년) 미만 제외 / **(d')** PIT 버전 (rcept_dt ≤ base_date 분기만 카운트)
 - **(e)** G 서브팩터 5개 이상 동일값(|v|>1.5) = capped 종목 제외
 - **-1.5σ 단일팩터 바닥 필터**: V/Q/G/M 4팩터 중 하나라도 -1.5σ 미만이면 제외. baseline(유지)이 BT 최선 (완화/제거 모두 성과 하락). **부작용**: 주가 급등으로 PER/PBR 비싸진 대형 전력주(HD현대일렉트릭, 제룡전기 등)가 V -1.5 미만으로 탈락. `EXTREME_MODE` env로 A/B/C/D 실험 가능 (미설정=baseline)
+- **권리락 자동보정 (무상증자/분할/병합, 2026-06-12 배포)**: OHLCV의 corporate action 불연속(하루 수익률 <-33% 또는 >+45% = KR 가격제한 ±30% 초과 → 권리락 확정) 자동감지 → 이전 주가에 권리락 비율 누적 곱으로 스티칭. **`price_df` 생성 직후 적용**(point-in-time, 미래 권리락 미반영) → 모멘텀·mom_10·저변동성 전 가격팩터 일괄 정확화. 킬스위치 `CORPACTION_ADJ_DISABLE=1`. **계기**: 디바이스(4/28 무상증자 권리락 −46%)가 가짜 급락으로 12m 모멘텀 저평가(수익률↓+변동성↑ 이중), 재영솔루텍(4/30 병합 +484%)이 과대평가. **검증(6/10 boost OFF/ON)**: 디바이스 cr 4→3, 재영솔루텍 랭킹이탈, 비츠로셀 76→40, **매수 top3(제주·SK·디바이스) 불변·종목수 111/111 무에러**. 다음 16:00 run부터 자동적용(state 점진 갱신, wr 3일창 2일 전환). research: `backtest/_corpaction_*.py`. 구현: `fast_generate_rankings_v2.py` `_backadjust_corpaction`
 
 ## DART + FnGuide 데이터 수집
 - 재무제표: DART + FnGuide 보충 (누락 계정 자동 합침). PER/PBR/ROE는 pykrx (KRX 공식)
