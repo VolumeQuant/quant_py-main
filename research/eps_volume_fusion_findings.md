@@ -60,3 +60,17 @@ EPS score 공식: `seg1+seg2+seg3+seg4` (NTM 인접스냅샷 %변화 합) × `(1
 **미검증 리스크**: 융합이 SK(볼륨#1)를 #5로 내리는 게 맞는지 forward로만 판정. w0.2·min8·winsor±2는 BT 없이 정한 값(forward 튜닝 필요). 커버 47종목(대형 한정).
 
 **다음**: forward 추적기로 매일 volume-top3 vs fused-top3 + 각 forward수익 누적 → 60일+ 후 융합>볼륨 여부 판정. 실자본 전.
+
+## Step 4: FnGuide 컨센서스 검증 + 제2소스 구축 (2026-06-13)
+
+**계기(사용자)**: yfinance 부실하면 FnGuide로 교차검증하면 되지 않나 → 연쇄 성과.
+
+1. **FnGuide get_consensus_data 버그 수정** (commit): analyst_count=1 하드코딩 → 실제 '추정기관수' 컬럼(table[7]) 파싱. 검증: 티에스이 yf2=FnG2 일치.
+2. **yfinance 데이터 검증됨**: 예상EPS가 FnGuide와 ±14% 일치(정의차이) → yfinance 입력 신뢰 가능. 티에스이 12k는 가짜 아님(FnG도 10.8k).
+3. **티에스이 저커버리지(2명) 양 소스 확정** → 노이즈 필터 우려 데이터 근거 확보.
+4. ⭐ **FnGuide 커버리지 = yfinance의 2배**: 샘플 25종목서 FnG 68% vs yf 35%(168/474). KR 네이티브라 당연.
+5. **fnguide_consensus_snapshot.py 구축**: 시총≥2000억 943종목 일별 FnGuide 컨센서스(fwd_eps/per/추정기관수/목표가) 스냅샷 → data_cache/fnguide_consensus_history.parquet 누적. 표본20 100%커버·애널수정상 검증. 매일 쌓으면 yfinance보다 나은 NTM revision history(향후 BT용).
+
+**정정 기록(투명)**: Step3에서 티에스이를 "stale, 안 변했다"고 보고했으나 오류 — 실제 NTM은 6175→12149(2배) 변함. 점수 요약만 보고 원천(NTM값) 미확인한 careless error. 사용자 지적으로 정정. 교훈: money-critical 주장은 요약 아닌 원천데이터까지 확인.
+
+**다음**: ① FnGuide 일별 스냅샷 스케줄러 등록(history 축적) ② 충분히 쌓이면 yfinance→FnGuide 소스전환/블렌드 ③ forward 추적기에 필터/무필터/애널가중 3버전 비교.
