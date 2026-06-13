@@ -555,11 +555,19 @@ def get_consensus_data(ticker):
                             pass
                         break
 
-                break
+                # 추정기관수(=애널리스트 커버리지) 추출 — 컨센서스 테이블 '추정기관수' 컬럼
+                # (2026-06-13 fix: 기존엔 1로 하드코딩 버그 → 실제 컬럼 파싱)
+                for col in tbl.columns:
+                    if '추정기관수' in str(col) or '기관수' in str(col):
+                        try:
+                            an_str = str(tbl[col].iloc[0]).replace(',', '').strip()
+                            if an_str and an_str not in ['nan', '-', '']:
+                                result['analyst_count'] = int(float(an_str))
+                        except Exception:
+                            pass
+                        break
 
-        # 애널리스트 수 추출 시도
-        if result['has_consensus'] and result['analyst_count'] is None:
-            result['analyst_count'] = 1  # 기본값
+                break
 
     except Exception as e:
         pass
