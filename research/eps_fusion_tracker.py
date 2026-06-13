@@ -40,12 +40,15 @@ def run_date(date):
     vol = pd.DataFrame([dict(tk=x['ticker'], name=x['name'], score=x['score'])
                         for x in json.load(open(vf, encoding='utf-8'))['rankings']])
     con = sqlite3.connect(DB)
-    eps = pd.read_sql(f"SELECT ticker,adj_score,num_analysts FROM ntm_screening WHERE date='{date[:4]}-{date[4:6]}-{date[6:]}'", con)
+    eps = pd.read_sql(f"SELECT ticker,adj_score,num_analysts,ntm_90d,ntm_60d,ntm_30d,ntm_7d,ntm_current FROM ntm_screening WHERE date='{date[:4]}-{date[4:6]}-{date[6:]}'", con)
     con.close()
     if len(eps) == 0: return None
     eps['tk'] = eps['ticker'].str.replace('.KS', '', regex=False).str.replace('.KQ', '', regex=False)
-    m = vol.merge(eps[['tk', 'adj_score', 'num_analysts']], on='tk', how='left')
-    rel = m['adj_score'].notna() & (m['num_analysts'].fillna(0) >= MIN_AN)
+    ntm_cols = ['ntm_90d', 'ntm_60d', 'ntm_30d', 'ntm_7d', 'ntm_current']
+    m = vol.merge(eps[['tk', 'adj_score', 'num_analysts'] + ntm_cols], on='tk', how='left')
+    # 0 글리치 필터: NTM 스냅샷 중 0 있으면 revision 신뢰불가(SK 케이스) → 중립
+    no_zero = (m[ntm_cols] > 0).all(axis=1)
+    rel = m['adj_score'].notna() & (m['num_analysts'].fillna(0) >= MIN_AN) & no_zero
     if rel.sum() < 5: return None
     mu, sd = m.loc[rel, 'adj_score'].mean(), m.loc[rel, 'adj_score'].std()
     m['ntm_z'] = np.where(rel, np.clip((m['adj_score']-mu)/sd, -CLIP, CLIP), 0.0)
@@ -69,8 +72,15 @@ else:
 
 rows = [r for d in dates if (r := run_date(d))]
 df = pd.DataFrame(rows)
+# 누적: 기존 CSV에 append + date 중복제거 (overwrite 버그 수정 2026-06-13)
+if os.path.exists(OUT) and len(df):
+    old = pd.read_csv(OUT, dtype={'date': str})
+    df['date'] = df['date'].astype(str)
+    old = old[~old['date'].isin(df['date'])]
+    df = pd.concat([old, df], ignore_index=True)
+df = df.sort_values('date').reset_index(drop=True)
 df.to_csv(OUT, index=False)
-print(f'[저장] {OUT} ({len(df)}일)')
+print(f'[저장] {OUT} ({len(df)}일 누적)')
 print(df[['date', 'n_reliable', 'same', 'vol_fwd3', 'fused_fwd3']].to_string(index=False))
 valid = df.dropna(subset=['vol_fwd3', 'fused_fwd3'])
 if len(valid):
