@@ -276,8 +276,12 @@ score = V × 0.15 + G × 0.55 + M × 0.30 + mom_10_z × 0.05 + vol_low_z × 0.06
 # 스케줄러
 - 일일 파이프라인: 평일(월~금) **16:00** (장 마감 후, 휴장일 자동 스킵, run_daily.py)
 - 종목명 캐시: 매주 일요일 10:00 (refresh_ticker_names.py)
+- **EPS×볼륨 융합 데이터 축적: QuanT_EPS_Fusion_Daily 평일 17:30** (research/eps_fusion_daily.py = FnGuide 컨센서스 스냅샷 + 융합 추적기). **연구용 데이터 축적만, 매매 무관.**
 - DART/FnGuide subprocess timeout: 5시간 (분기마감일 폭주 대비), FnGuide 종목당 30초 (hang 보호)
 - 스케줄러 변경 시 구 스케줄러 `schtasks //Query`로 확인 후 삭제
+
+## EPS×볼륨 융합 연구 (2026-06-13, 연구단계 — 매매 미적용)
+> 결론: **signal-fusion 부적합**(두 시스템 다른 유니버스 — 볼륨=무커버 소부장 소형/EPS=커버 대형, 교집합 1종목). factor-fusion은 가중치 검증불가. **답=포트폴리오 분리 sleeve**(섞지 말고 볼륨 주력 + EPS 별도 관찰). EPS는 BT0 미검증 → 실자본 전. FnGuide 커버리지 yfinance 2배(애널수 버그수정 `fnguide_crawler.get_consensus_data`). 일별 자동축적 중(60~90일 후 EPS sleeve 검증). 상세: `research/eps_volume_fusion_findings.md`.
 
 # 백테스트 도구
 - TurboSimulator: 5ms/run (56x 가속), turbo_simulator.py
