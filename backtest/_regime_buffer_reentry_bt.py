@@ -70,7 +70,7 @@ def metrics(rets):
 # ===== BT#1: 버퍼 크기 =====
 print('\n========== BT#1: 메타 버퍼 크기 (시스템 + 현금4%/yr 블렌드) ==========')
 sys_r = np.array(regime_bt(calc_reg(5, 5))['_daily_rets'], dtype=float)
-cash_d = 1.04**(1/252) - 1
+cash_d = 1.03**(1/252) - 1
 print(f"{'버퍼(현금%)':>10}{'시스템%':>8}{'Calmar':>8}{'CAGR':>8}{'MDD':>8}")
 for b in [0.0, 0.10, 0.15, 0.20, 0.30, 0.40, 0.50]:
     blend = (1-b)*sys_r + b*cash_d

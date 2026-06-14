@@ -119,3 +119,14 @@ for nm, lo, hi in [('2019-21', '20190102', '20211231'), ('2022-23', '20220101', 
     w532 = metrics(replay(re, dsub, weights=[5, 3, 2]))[2]
     w112 = metrics(replay(re, dsub, weights=[1, 1, 2]))[2]
     print(f"   {nm}: 균등 {eq:.2f} | 5:3:2 {w532:.2f}(Δ{w532-eq:+.2f}) | 1:1:2 {w112:.2f}(Δ{w112-eq:+.2f})")
+
+# ★인접안정성: 1:1:2 주변 (1:1:2만 튄건가, plateau인가)
+print('\n  [인접안정성] 역가중 주변 (3위 비중 1.0~3.0) — 1:1:2가 spike인가 plateau인가')
+reg5 = calc_reg(5, 5)
+cals = []
+for w3 in [1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0]:
+    cal = metrics(replay(reg5, weights=[1, 1, w3]))[2]
+    cals.append(cal)
+    print(f"   1:1:{w3}: Cal {cal:.3f}")
+cv = np.std(cals) / np.mean(cals)
+print(f"   → 인접 CV {cv:.3f} (CLAUDE 기준 <0.10~0.30 = 안정), 단조증가면 plateau")
