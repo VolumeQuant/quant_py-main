@@ -73,6 +73,43 @@ def load_regime_state():
     return {'mode': 'defense', 'breadth': None, 'streak': 0, 'rule': ''}
 
 
+def build_regime_alert_lines(state=None):
+    """국면 전환 조기경보 (v80.28, 2026-06-14) — 표시 전용.
+
+    매매 룰(5일 확인 후 전환)은 검증된 최적이라 불변. 사용자가 '5일째 알면 대비
+    못한다' → MA20이 MA80을 넘기/내려가기 시작한 1일째부터 카운트다운을 표시만 함.
+
+    regime_state.json의 streak_mode(당일 raw 신호 방향)가 mode(확정 국면)와 다르면
+    전환 진행 중 → streak=경과일, CONFIRM_DAYS-streak=잔여일.
+
+    Returns: 메시지 라인 리스트 (전환 진행 중 아니면 []).
+    """
+    try:
+        from regime_indicator import _load_state as _ls2, CONFIRM_DAYS as _CD2
+        rs = state if state is not None else _ls2()
+        sm = rs.get('streak_mode')
+        sn = int(rs.get('streak', 0) or 0)
+        smode = rs.get('mode')
+        # 전환 진행 중 조건: 당일 신호 방향(streak_mode)이 확정 국면(mode)과 다름
+        if not (sm and smode) or sm == smode or sn < 1:
+            return []
+        left = max(0, _CD2 - sn)
+        if sm == 'defense':  # 공격→방어 진행 중
+            return [
+                f'⚠️ <b>방어 전환 경보</b> — MA20 &lt; MA80 {sn}일째 (확인 {_CD2}일 중)',
+                f'   앞으로 {left}일 더 지속되면 현금 전환 — 미리 대비하세요',
+                '',
+            ]
+        else:  # 방어→공격 진행 중
+            return [
+                f'📈 <b>공격 전환 대기</b> — MA20 &gt; MA80 {sn}일째 (확인 {_CD2}일 중)',
+                f'   앞으로 {left}일 더 지속되면 재진입 신호',
+                '',
+            ]
+    except Exception:
+        return []
+
+
 def load_ranking_for_regime(date_str: str, regime_mode: str):
     """국면에 맞는 랭킹 파일 로드 (v79: boost=state/, defense=state/defense/).
     (v77.1의 cash 모드는 v79에서 제거됨)
@@ -938,6 +975,8 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         pass
     lines.append('')
     lines.append('━━━━━━━━━━━━━━━')
+    # 국면 전환 조기경보 (v80.28): 매매룰 5일확인 불변, 1일째부터 카운트다운 표시만
+    lines.extend(build_regime_alert_lines())
     if _mode_for_rule == 'defense':
         lines.append('🛡️ 방어 모드 — 현금 100% 보유 권장')
         lines.append('약세장 진입: 신규 매수 X')
