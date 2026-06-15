@@ -120,6 +120,9 @@ class TurboSimulator:
 
         # ---- Pre-extract rankings into arrays (one-time cost) ----
         self._preextracted = {}
+        self._overlay_pre = {}      # date → 오버레이(0.2*과열캡+0.05*mom10+0.06*vol_low) array
+        self._use_overlay = False   # True면 score에 오버레이 가산 (production 정합)
+        self._use_stored_growth = False  # True면 growth 재계산 대신 저장된 growth_s(페널티 포함) 사용
         tk_to_col = self._ticker_to_col
         for date in dates:
             rankings = all_rankings.get(date, [])
@@ -137,6 +140,7 @@ class TurboSimulator:
                       ['rev_z', 'oca_z', 'rev_accel_z', 'gp_growth_z', 'op_margin_z', 'cfo_growth_z']}
             r_prices = np.empty(n, dtype=np.float64)
             col_indices = np.empty(n, dtype=np.int32)
+            overlay_arr = np.empty(n, dtype=np.float64)  # 0.2*과열캡 + 0.05*mom10 + 0.06*vol_low
 
             # 4종 모멘텀 배열
             mom_6m_s = np.empty(n, dtype=np.float64)
@@ -160,7 +164,11 @@ class TurboSimulator:
                 mom_6m1m_s[j] = s.get('mom_6m1m_s') or 0.0
                 mom_12m_s[j] = s.get('mom_12m_s') or 0.0
                 mom_12m1m_s[j] = s.get('mom_12m1m_s') or 0.0
+                overlay_arr[j] = (0.2 * (s.get('overheat_pen') or 0.0)
+                                  + 0.05 * (s.get('mom_10_z') or 0.0)
+                                  + 0.06 * (s.get('vol_low_z') or 0.0))
 
+            self._overlay_pre[date] = overlay_arr
             self._preextracted[date] = (tickers, value_s, quality_s, growth_s,
                                         momentum_s, g_subs, r_prices, col_indices,
                                         mom_6m_s, mom_6m1m_s, mom_12m_s, mom_12m1m_s)
@@ -188,6 +196,9 @@ class TurboSimulator:
          g_subs, r_prices, col_indices,
          mom_6m_s, mom_6m1m_s, mom_12m_s, mom_12m1m_s) = pre
         n = len(tickers)
+        if self._use_stored_growth:  # 페널티 포함된 저장 growth_s 그대로 사용 (production 정확 일치)
+            partial = v_w * value_s + q_w * quality_s + g_w * growth_s
+            return (tickers, partial, r_prices, col_indices, mom_6m_s, mom_6m1m_s, mom_12m_s, mom_12m1m_s)
         sub1_arr = g_subs.get(g_sub1, g_subs.get('rev_z'))
         sub2_arr = g_subs.get(g_sub2, g_subs.get('oca_z'))
         if g_sub3 is not None and g_w1 is not None:
@@ -472,7 +483,7 @@ class TurboSimulator:
                       use_score_wr=False, quality_gate=0.0,
                       g_sub4=None, g_w4=None):
         """Build optimized cache — V+Q+G 부분합 재사용, G 서브팩터 2/3/4팩터 선택 가능."""
-        key = (v_w, q_w, g_w, m_w, g_rev, top_n, mom_type, g_sub1, g_sub2, g_sub3, g_w1, g_w2, g_w3, use_score_wr, quality_gate, g_sub4, g_w4)
+        key = (v_w, q_w, g_w, m_w, g_rev, top_n, mom_type, g_sub1, g_sub2, g_sub3, g_w1, g_w2, g_w3, use_score_wr, quality_gate, g_sub4, g_w4, self._use_overlay, self._use_stored_growth)
         if self._cached_key == key:
             return
         self._cached_key = key
@@ -482,7 +493,7 @@ class TurboSimulator:
         n_cols = self._n_cols
 
         # Step 0: V+Q+G 부분합 캐싱 (G 서브팩터 + 비율이 같으면 재사용)
-        base_key = (v_w, q_w, g_w, g_rev, g_sub1, g_sub2, g_sub3, g_w1, g_w2, g_w3, quality_gate, g_sub4, g_w4)
+        base_key = (v_w, q_w, g_w, g_rev, g_sub1, g_sub2, g_sub3, g_w1, g_w2, g_w3, quality_gate, g_sub4, g_w4, self._use_stored_growth)
         if self._cached_base_key != base_key:
             self._cached_partials = [None] * n_dates
             for i in range(n_dates):
@@ -502,6 +513,10 @@ class TurboSimulator:
             tickers, partial, r_prices, col_indices = p[0], p[1], p[2], p[3]
             use_momentum = p[mi]
             new_scores = partial + m_w * use_momentum
+            if self._use_overlay:
+                ovl = self._overlay_pre.get(dates[i])
+                if ovl is not None:
+                    new_scores = new_scores + ovl
             sort_idx = np.argsort(-new_scores)
             new_ranks = np.empty(len(tickers), dtype=np.int32)
             new_ranks[sort_idx] = np.arange(1, len(tickers) + 1)

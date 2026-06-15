@@ -1491,3 +1491,24 @@ baseline 대비 **Cal +87%**, CAGR +30.6%p, MDD -12.4%p
 - fast_generate_rankings_v2.py: DART+FnGuide 합침, per-account dates
 - grid_search_final.py: 3워커 병렬, Calmar 기준, 안정성 필터
 - ProcessPoolExecutor 기반 Windows 호환 병렬
+
+---
+
+# TTM PER/ROE 밸류 팩터 조사 — 기각, 현행 annual 유지 (2026-06-15)
+
+**계기 (사용자):** "밸류 팩터의 PER만 연간(pykrx)이고 PCR/PSR은 TTM(DART 4분기 가중합)이라 짝이 안 맞는다(버그성). TTM으로 통일 + 가중치 재최적화하면 더 낫지 않나? 유일하게 연간인 ROE도 TTM으로."
+
+**조사:** `USE_SELF_PER`(PER=시총/지배주주순이익TTM, 기존 코드존재) + 신규 `USE_SELF_ROE`(ROE=DART TTM 우선) 플래그. _sp0(annual=현행) vs _sp2(완전TTM=PER+ROE) **7.4년(2019-2026, 1826일) 재생성** 후 TurboSim(저장growth_s+overlay, **production 랭킹 100% 일치 검증**) 풀그리드653 재최적 + 연도별WF + 인접CV + LOWO.
+
+**결과 (Calmar, 정확 entry_fixed sim):**
+- annual: production V15Q0G55M30 = **3.59** = 재최적 best(현행이 이미 최적), 인접CV 0.178
+- 완전TTM: production 2.52 / 재최적 best(V10Q5G50M35) 3.01, 인접CV 0.182
+- **best-vs-best annual 3.59 > TTM 3.01 (−16%).** 연도별 2023(+44 vs +37, 미미)만 빼고 전부 annual 승, 강세장 압도(2026 +895% vs +450%). LOWO(SK하이닉스·제주반도체·디바이스·한미반도체 각 제외) **전부 annual 승 = 단일종목 착시 아님.**
+
+**기각 이유 (메커니즘):** TTM PER은 최근 실적에 민감→최근 급성장주를 싸게 보이게→그 종목은 이미 G/M이 포착→밸류 팩터가 G/M과 중복→진짜 승자 희석(특히 강세장). annual PER은 stale해서 G/M과 독립적→밸류 본연의 가격수준 체크 유지→우월. **"PER만 연간"은 버그처럼 보였으나 실제론 기능**(annual=가격수준 / 과열캡v80.23=TTM변화, 역할분담; 둘 다 TTM이면 중복 손해). v80.23("밸류 변형은 top-3 수익 악화")과 일치.
+
+**조치:** **프로덕션 무변경.** `USE_SELF_PER`/`USE_SELF_ROE` 플래그 default off 유지(재실험용). TurboSim `_use_overlay`/`_use_stored_growth` opt-in default off 추가(BT 정확화용, production 무영향).
+
+**⚠️ 과정 사고(정직):** 초기 hand-rolled sim이 **daily-rebalance로 수익 부풀린 버그**(US v83.3과 동일 실수 재발) → 사용자 "맹점 체크" 지적으로 발견 → TurboSim(저장growth+overlay, 랭킹 100% 일치)으로 정확화. 절대 Calmar 3.59는 연구harness(권리락보정 prices)라 운영BT(4.43)와 차이나나, **상대비교(annual vs TTM, 동일 harness)는 유효.** 약세장(2022)은 defense=cash라 PER 영향 거의 0.
+
+**research:** `backtest/_sp_final.py`(7.4년 풀스윕+연도별+인접CV), `_sp_lowo.py`(LOWO), `_sp_turbo.py`/`_sp_overheat.py`/`_sp_sweep.py`/`_sp_optsweep.py`/`_sp_simcheck.py`(sim검증·재최적), `_sp_orchestrator.py`(자율 regen 오케스트레이터). 결과파일: `_sp_final_result.txt`, `_sp_lowo_result.txt`. ⚠️ _sp0/_sp1/_sp2 대용량 폴더는 미커밋(재생성 가능).

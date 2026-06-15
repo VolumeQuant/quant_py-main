@@ -1401,29 +1401,36 @@ def calculate_multifactor_fast(multifactor_df, price_df, sector_map, base_date,
         data['PSR'] = np.where(data['매출액'] > 0, data['시가총액'] / data['매출액'], np.nan)
 
     # --- Quality 팩터 ---
-    # ROE: pykrx EPS > 0이면 pykrx 사용, EPS=0이면 DART TTM 폴백
+    # ROE: 기본(=0) pykrx EPS/BPS(연간) 우선 + DART TTM 폴백.
+    # USE_SELF_ROE=1: DART TTM(지배순이익/자본) 우선 + pykrx 폴백 → PER과 일관된 TTM 기준
+    USE_SELF_ROE = os.environ.get('USE_SELF_ROE', '0') == '1'
     data['ROE'] = np.nan
-    if 'pykrx_EPS' in data.columns and 'pykrx_BPS' in data.columns:
-        pykrx_valid = (data['pykrx_EPS'] != 0) & (data['pykrx_BPS'] > 0)
-        data.loc[pykrx_valid, 'ROE'] = data.loc[pykrx_valid, 'pykrx_EPS'] / data.loc[pykrx_valid, 'pykrx_BPS'] * 100
 
-    # DART TTM 폴백: pykrx ROE가 NaN인 종목 (EPS=0 등)
-    roe_missing = data['ROE'].isna()
-    if roe_missing.any():
+    def _dart_ttm_roe():
         # 1순위: 지배주주당기순이익 TTM / 지배주주자본 (분자분모 기준 일치)
         if '지배주주당기순이익' in data.columns and '지배주주자본' in data.columns:
-            dart_parent = roe_missing & data['지배주주당기순이익'].notna() & (data['지배주주자본'] > 0)
-            data.loc[dart_parent, 'ROE'] = data.loc[dart_parent, '지배주주당기순이익'] / data.loc[dart_parent, '지배주주자본'] * 100
-        # 2순위: 지배주주당기순이익 TTM / 자본 (지배주주자본 없을 때 차선 — 과소계상 가능하나 당기NI/자본보다 정확)
-        roe_still_missing = data['ROE'].isna()
-        if roe_still_missing.any() and '지배주주당기순이익' in data.columns and '자본' in data.columns:
-            dart_parent_fallback = roe_still_missing & data['지배주주당기순이익'].notna() & (data['자본'] > 0)
-            data.loc[dart_parent_fallback, 'ROE'] = data.loc[dart_parent_fallback, '지배주주당기순이익'] / data.loc[dart_parent_fallback, '자본'] * 100
+            m = data['ROE'].isna() & data['지배주주당기순이익'].notna() & (data['지배주주자본'] > 0)
+            data.loc[m, 'ROE'] = data.loc[m, '지배주주당기순이익'] / data.loc[m, '지배주주자본'] * 100
+        # 2순위: 지배주주당기순이익 TTM / 자본
+        if '지배주주당기순이익' in data.columns and '자본' in data.columns:
+            m = data['ROE'].isna() & data['지배주주당기순이익'].notna() & (data['자본'] > 0)
+            data.loc[m, 'ROE'] = data.loc[m, '지배주주당기순이익'] / data.loc[m, '자본'] * 100
         # 3순위: 당기순이익 TTM / 자본 (별도재무제표 — 당기순이익=지배주주순이익)
-        roe_still_missing = data['ROE'].isna()
-        if roe_still_missing.any() and '당기순이익' in data.columns and '자본' in data.columns:
-            dart_ni = roe_still_missing & data['당기순이익'].notna() & (data['자본'] > 0)
-            data.loc[dart_ni, 'ROE'] = data.loc[dart_ni, '당기순이익'] / data.loc[dart_ni, '자본'] * 100
+        if '당기순이익' in data.columns and '자본' in data.columns:
+            m = data['ROE'].isna() & data['당기순이익'].notna() & (data['자본'] > 0)
+            data.loc[m, 'ROE'] = data.loc[m, '당기순이익'] / data.loc[m, '자본'] * 100
+
+    def _pykrx_roe():
+        if 'pykrx_EPS' in data.columns and 'pykrx_BPS' in data.columns:
+            m = data['ROE'].isna() & (data['pykrx_EPS'] != 0) & (data['pykrx_BPS'] > 0)
+            data.loc[m, 'ROE'] = data.loc[m, 'pykrx_EPS'] / data.loc[m, 'pykrx_BPS'] * 100
+
+    if USE_SELF_ROE:
+        _dart_ttm_roe()  # TTM 우선
+        _pykrx_roe()     # pykrx 폴백
+    else:
+        _pykrx_roe()     # pykrx 우선 (기존 동작)
+        _dart_ttm_roe()  # DART TTM 폴백 (기존 동작)
 
     if '매출총이익' in data.columns and '자산' in data.columns:
         data['GPA'] = data['매출총이익'] / data['자산'] * 100
