@@ -1503,9 +1503,15 @@ baseline 대비 **Cal +87%**, CAGR +30.6%p, MDD -12.4%p
 **결과 (Calmar, 정확 entry_fixed sim):**
 - annual: production V15Q0G55M30 = **3.59** = 재최적 best(현행이 이미 최적), 인접CV 0.178
 - 완전TTM: production 2.52 / 재최적 best(V10Q5G50M35) 3.01, 인접CV 0.182
-- **best-vs-best annual 3.59 > TTM 3.01 (−16%).** 연도별 2023(+44 vs +37, 미미)만 빼고 전부 annual 승, 강세장 압도(2026 +895% vs +450%). LOWO(SK하이닉스·제주반도체·디바이스·한미반도체 각 제외) **전부 annual 승 = 단일종목 착시 아님.**
+- **best-vs-best annual 3.59 > TTM 3.01 (−16%)** ← ⚠️ **이 비교 자체가 max-selection 편향 (아래 ★정정 참조, 무효).**
 
-**기각 이유 (메커니즘):** TTM PER은 최근 실적에 민감→최근 급성장주를 싸게 보이게→그 종목은 이미 G/M이 포착→밸류 팩터가 G/M과 중복→진짜 승자 희석(특히 강세장). annual PER은 stale해서 G/M과 독립적→밸류 본연의 가격수준 체크 유지→우월. **"PER만 연간"은 버그처럼 보였으나 실제론 기능**(annual=가격수준 / 과열캡v80.23=TTM변화, 역할분담; 둘 다 TTM이면 중복 손해). v80.23("밸류 변형은 top-3 수익 악화")과 일치.
+**★ 정정 (2026-06-16, 집PC 밤샘 끝장검증 — `research/TTM_INVESTIGATION_2026_06.md`):** 위 회사PC 1차의 "−16%/G·M중복" 결론은 **과대해석이었다.**
+- ① **best-vs-best = max-selection 편향**: 밸류강제+최적화 시 TTM이 +0.61 우위로 보였으나 **가격파일만 바꿔도 +0.61→+0.05로 붕괴.** 각자 best-of-653끼리 비교 = 우연히 높은 게 골라짐.
+- ② **고정 운영config(공정 비교)에선 annual이 −0.2~0.25 일관 우위** — 작지만 일관. 이게 annual 유지의 진짜 근거.
+- ③ **annual ≈ TTM 동등** (IC 0.030 ≈ 0.028 @20d, 차이는 3종목 노이즈 ±0.3~0.5).
+- ④ **"TTM이 G/M과 중복" 측정상 틀림** — TTM이 오히려 더 직교 (corr -0.069 vs annual -0.146).
+- ⑤ 진짜 비대칭 = **과열캡(시총/TTM순이익)이 annual value에 +0.94 시너지, TTM엔 ~0** (TTM끼리 중복).
+- **결론(annual 유지)은 동일하나 강도(−16%)·메커니즘(G/M중복)은 정정본이 정확.** 교훈: 팩터비교는 **고정config + OOS(다른 prices/기간) + IC**로. best-vs-best 금지. (메모리: [[feedback_max_selection_bias_factor_compare]])
 
 **조치:** **프로덕션 무변경.** `USE_SELF_PER`/`USE_SELF_ROE` 플래그 default off 유지(재실험용). TurboSim `_use_overlay`/`_use_stored_growth` opt-in default off 추가(BT 정확화용, production 무영향).
 
