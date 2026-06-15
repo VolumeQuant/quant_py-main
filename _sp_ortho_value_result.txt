@@ -1,0 +1,12 @@
+annual baseline = 3.79 (과열0.2 V15Q0G55M30)
+
+[검증] annual 원본 best: V15Q0G55M30 Cal 3.677 (3.79 재현되면 하니스 OK)
+
+[TTM(_sp3) value 변형 — 과열캡0.2, 멀티팩터 풀그리드 best]
+  원본 균등TTM              : best V0Q20G70M10 Cal 2.765
+  평균회귀(자기과거대비)          : best V0Q20G70M10 Cal 2.765
+  G/M 잔차(직교화)           : best V0Q20G70M10 Cal 2.765
+  과열캡 잔차(직교화)           : best V0Q20G70M10 Cal 2.765
+  winsor ±1             : best V0Q20G70M10 Cal 2.765
+
+→ 3.79 넘는 변형 있으면 형이 옳음(fresh-orthogonal 밸류 작동). 없으면 기각 확정.
