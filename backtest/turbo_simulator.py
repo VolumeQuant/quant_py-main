@@ -92,7 +92,7 @@ class TurboSimulator:
     3. All pipeline data is plain Python tuples/lists for fastest iteration
     """
 
-    def __init__(self, all_rankings, dates, prices, bench=None):
+    def __init__(self, all_rankings, dates, prices, bench=None, overheat_w=0.2):
         self.all_rankings = all_rankings
         self.dates = dates
         self._n_cols = prices.shape[1]
@@ -122,6 +122,7 @@ class TurboSimulator:
         self._preextracted = {}
         self._overlay_pre = {}      # date → 오버레이(0.2*과열캡+0.05*mom10+0.06*vol_low) array
         self._use_overlay = False   # True면 score에 오버레이 가산 (production 정합)
+        self._overheat_w = overheat_w  # 과열캡 가중치 (default 0.2=production. 0으로 끄면 과열캡 OFF 테스트, __init__ precompute 전 설정 필수)
         self._use_stored_growth = False  # True면 growth 재계산 대신 저장된 growth_s(페널티 포함) 사용
         tk_to_col = self._ticker_to_col
         for date in dates:
@@ -164,7 +165,7 @@ class TurboSimulator:
                 mom_6m1m_s[j] = s.get('mom_6m1m_s') or 0.0
                 mom_12m_s[j] = s.get('mom_12m_s') or 0.0
                 mom_12m1m_s[j] = s.get('mom_12m1m_s') or 0.0
-                overlay_arr[j] = (0.2 * (s.get('overheat_pen') or 0.0)
+                overlay_arr[j] = (self._overheat_w * (s.get('overheat_pen') or 0.0)
                                   + 0.05 * (s.get('mom_10_z') or 0.0)
                                   + 0.06 * (s.get('vol_low_z') or 0.0))
 

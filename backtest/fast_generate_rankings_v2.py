@@ -686,7 +686,8 @@ def _compute_ticker_ttm_events(ticker, fs_df):
     if not q_mask.any() and not y_mask.any():
         return events
 
-    base_weights = [1.6, 1.2, 0.8, 0.4]
+    # TTM_FUND_EQUAL=1: 균등 TTM(진짜 trailing 12M, 4분기 1:1:1:1). default=최근가중(1.6/1.2/0.8/0.4)
+    base_weights = [1.0, 1.0, 1.0, 1.0] if os.environ.get('TTM_FUND_EQUAL') == '1' else [1.6, 1.2, 0.8, 0.4]
     has_rcept = 'rcept_dt' in fs_df.columns
 
     if q_mask.any():
