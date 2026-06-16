@@ -1164,7 +1164,7 @@ def _backadjust_corpaction(price_df):
     """권리락(무상증자/액면분할/병합) 자동보정 — 가격팩터(모멘텀/mom_10/저변동성) 왜곡 제거.
     KR 일일 가격제한 ±30% → 하루 수익률 <-33% 또는 >+45% = corporate action(권리락).
     각 권리락 비율을 이전 주가에 누적 곱으로 스티칭. price_df가 base_date까지 슬라이스돼
-    있으면 point-in-time 안전(미래 권리락 미반영). 킬스위치 CORPACTION_ADJ_DISABLE=1.
+    있으면 point-in-time 안전(미래 권리락 미반영). 2026-06-16 기본 OFF로 전환(호출부 참조); 켜려면 CORPACTION_ADJ_ENABLE=1.
     Returns: (adjusted_df, 보정된_종목수)
     """
     if price_df is None or price_df.empty or len(price_df) < 2:
@@ -1801,8 +1801,12 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
     mcap_tickers = set(mcap_df.index)
     ohlcv_cols = [c for c in ohlcv.columns if c in mcap_tickers]
     price_df = ohlcv.loc[ohlcv.index <= base_ts, ohlcv_cols]
-    # 권리락(무상증자/분할/병합) 자동보정 — 가격팩터 왜곡 제거 (point-in-time, 킬스위치 CORPACTION_ADJ_DISABLE=1)
-    if os.environ.get('CORPACTION_ADJ_DISABLE') != '1':
+    # 권리락(무상증자/분할/병합) 자동보정 — 기본 OFF (2026-06-16 제거).
+    # 7.4년 격리BT: 보정 ON이 Calmar 4.31→1.74로 반토막. 원인규명(_ca_why.py): 권리락 가짜폭락이
+    # 모멘텀(수익률/변동성)을 ~12개월 깔아뭉개 "권리락 직후 부실주(fwd250d −13%)"를 자동회피시키던
+    # 우연한 알파를, 보정이 제거 → 부실주 매수(픽당 −6.15%p). WF 전블록·LOWO 전부 OFF우위(_ca_validate.py).
+    # 켜려면 CORPACTION_ADJ_ENABLE=1. (구 킬스위치 CORPACTION_ADJ_DISABLE → ENABLE 게이트로 전환)
+    if os.environ.get('CORPACTION_ADJ_ENABLE') == '1':
         price_df, _n_corpadj = _backadjust_corpaction(price_df)
 
     ma120_fail = []
