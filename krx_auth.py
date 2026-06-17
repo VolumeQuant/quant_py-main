@@ -72,11 +72,20 @@ def login(user_id: str = None, password: str = None) -> bool:
             result = resp.json()
 
             error_code = result.get('_error_code', '')
-            if error_code in ('CD001', 'CD011'):
+            if error_code == 'CD001':
                 _patch_pykrx()
                 _logged_in = True
-                print(f"[KRX] login OK ({error_code})")
+                print("[KRX] login OK (CD001)")
                 return True
+            elif error_code == 'CD011':
+                # 중복 로그인: 다른 세션(브라우저/고아 세션)이 살아있어 데이터 API가 차단됨.
+                # (구버전은 CD011을 성공 처리 → 빈 데이터를 받아 "휴장일"로 오판하는 사고 발생)
+                print(f"[KRX 인증] 중복 로그인(CD011) — 다른 KRX 세션 활성 (attempt {attempt}/{max_retries})")
+                if attempt < max_retries:
+                    time.sleep(20)
+                    continue
+                print("[KRX 인증] 로그인 실패: 중복 로그인 지속 — data.krx.co.kr 다른 세션(브라우저 등) 로그아웃 후 재시도 필요")
+                return False
             else:
                 msg = result.get('_error_message', str(result)[:200])
                 print(f"[KRX 인증] 로그인 실패: {msg}")
