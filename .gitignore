@@ -195,3 +195,29 @@ state_extreme_*/
 # v80.23 과열캡 BT 스크래치 (재생성 가능, home PC 불필요)
 backtest/state_peg_bt/
 kr_eps_momentum/eps_momentum_data_kr_TEST.db
+
+# TTM/수정주가 연구 scratch state 폴더 (재생성 가능, 원래 untracked — home PC 불필요)
+_sp*/
+
+# 2026-06-18 수정주가 작업 중간 산출물 (재생성 가능, 로그)
+_var_adj/
+_var_vdown/
+_var_vup/
+_prod_boost/
+_prod_def/
+_sample_vall/
+_sample_pen/
+fetch_adjusted.log
+_regen_adj.out
+_regen_vdown.out
+_regen_vup.out
+_regen_prod.out
+_prod_boost.log
+_prod_def.log
+_var_adj.log
+_var_vdown.log
+_var_vup.log
+_sample_vall.log
+_sample_pen.log
+_full_boost.log
+_full_def.log

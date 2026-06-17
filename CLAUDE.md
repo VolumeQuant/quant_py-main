@@ -37,9 +37,29 @@
 
 > 🇺🇸 **US 전략 노트는 US 레포에서 관리**: `C:\dev\claude code\eps-momentum-us\CLAUDE.md` (US 작업 시 Claude가 자동 로드). 이 파일엔 공통 작업원칙 + KR만.
 
-# 🇰🇷 KR 전략 — quant_py-main (v80.27 얇은 밸류트랩 필터, 2026-06-10)
+# 🇰🇷 KR 전략 — quant_py-main (수정주가 전환 + 최근 CA 페널티, 2026-06-18 배포)
 
 > 코드 진실: `regime_indicator.py` `get_regime_params()`. 아래는 그 코드 기준 현재 production 파라미터. 변경 이력은 CHANGELOG.md.
+
+## ★ 수정주가 전환 + 최근 CA 페널티 (2026-06-18, 배포·state 전체 재생성됨)
+
+> 배포: ①FG momentum/MA/mom_10/vol_low = **KRX 수정주가**(`OHLCV_FILE=data_cache/all_ohlcv_adj_*`, `CORPACTION_ADJ_DISABLE=1`로 자작보정 OFF). ②boost에 **최근 CA 페널티**(`FACTOR_RECENT_CA_W=0.3, FACTOR_RECENT_CA_K=126`): 최근 126영업일내 무상증자/분할/병합(raw>33%/+45% 갭=`ca_events.json`) 종목 점수 −0.3. state/(boost)+state/defense/ **7.4년 전체 재생성 완료**. 배선: `run_daily._run_fg_single`(OHLCV_FILE 주입)+`_build_mode_env`(페널티 전달)+`regime_indicator` boost params+`data_refresher._refresh_adjusted_ohlcv`(수정주가+ca_events 일일 유지, 실패시 raw 폴백)+FG 페널티 블록. **롤백: `FACTOR_RECENT_CA_W=0`(페널티만 OFF=2.76) 또는 OHLCV_FILE 제거(raw 복귀) 또는 git revert.**
+
+**계기/문제:** 2026-06-16 "corp-OFF(원주가, Calmar 4.31) > corp-ON(자작보정 1.74)이라 corp 제거" 결론이 ★측정오류 두 겹. ①4.31은 **원주가(가격왜곡)로 모멘텀을 계산해 권리락 직후 종목을 우연히 회피한 착시** — 디바이스(무상증자 4/28, 가짜 −46%)를 부당배제. 왜곡가격으로 종목 고른 성과는 못 씀(사용자 지적). ②자작 ±33/45% 임계보정(1.74)은 **진짜 CA와 잡것(거래정지·오류) 160종목을 다 뭉뚱그려 과보정**한 오염. **정답=KRX 공식 수정주가**(pykrx `get_market_ohlcv_by_date(adjusted=True)`, 999 CA후보 fetch, genuine CA 839종목만 보정·잡것 160 무보정).
+
+**CA 타입 분해 BT (7.4년, 매매수익률=항상 수정주가 고정, 신호가격만 변형):**
+| 신호 | Calmar | 보정 |
+|---|---|---|
+| V_none 원주가 | 4.31 | 착시(왜곡) |
+| V_up 병합만보정 | 4.23 | 무상증자/분할 raw 유지 |
+| V_down 무상증자/분할만보정 | 3.30 | 병합 raw |
+| V_all 전부보정(정직) | 2.76 | — |
+
+→ **무상증자/분할 보정 −1.01(주범), 병합 보정 −0.08(무관)**. 즉 4.31 알파는 "무상증자/분할 직후 부실주(fwd20d −6%/fwd250d −13%) 회피"에 집중. (★사용자·구 corpaction노트의 "병합이 주범" 가설은 데이터상 반대.)
+
+**해결=수정주가(정직 2.76) + 명시 페널티로 회피알파 깨끗이 복원 → Calmar 3.98**(MDD 25.9%로 회복, 4.31 착시와 거의 동급이나 정직·robust). 페널티 스윕 plateau W0.3~0.5·K126~252, dir=all/down 강력(4.0~4.1)·dir=up(병합) 무용(2.8). **검증 전부 통과:** WF 약세장(22-23) +0.41(제일 중요)·강세장 소폭비용(보험특성), LOWO 3대장(SK하이닉스·제주반도체·디바이스) 전부제외 +0.56(broad), 인접 CV 0.095, raw-갭감지=genuine동일(3.99 vs 3.99 → production은 raw갭 자체완결 PIT감지). 검증 state Calmar **3.978** 재현.
+
+**디바이스:** 수정주가로 펀더멘털 정당 cr3 → 최근 무상증자라 페널티로 **wr4.8/cr5(관심권)**. 옛 원주가의 "가짜폭락 부당배제"가 아니라 "강하지만 최근CA 일시감점"(~2026-10 만료, 3슬롯 분산이 개별예외 흡수). research: `backtest/_decomp_bt.py`·`_penalty_bt.py`·`_penalty_robust.py`·`_penalty_rawgap.py`·`_prod_verify.py`, fetch/build: `fetch_adjusted_ohlcv.py`·`build_variants.py`·`_ca_events.py`.
 
 ## 현재 운영 파라미터 종합 (v80.23 기준, 코드 검증됨)
 
@@ -234,7 +254,8 @@ score = V × 0.15 + G × 0.55 + M × 0.30 + mom_10_z × 0.05 + vol_low_z × 0.06
   - **집PC 심층 재검증 (2026-06-15, 사용자 "버그 아니냐" 의심)**: 회사PC 결과를 독립 재확인 + 더 깊게. ①누적→분기 차분은 정상(dart_collector Q4=연간−Q3누적, 버그 아님) ②TTM이 균등합 아닌 **최근가중(1.6/1.2/0.8/0.4)** 발견 → `TTM_FUND_EQUAL=1` 플래그로 **진짜 균등TTM** 재생성해 재검증 ③과열캡 **on/off 둘 다** + 멀티팩터 풀그리드 + **진입/이탈/슬롯까지** 전부 재최적. **결과: 균등TTM 완전최적 3.07 < annual 3.79~3.87 (과열0.2). ★결정적: 균등TTM 최적이 V0Q20G70M10 = 옵티마이저가 밸류가중 0으로 버림 = TTM밸류 무용 확증**(annual은 V15 유지). 과열캡은 annual에 **+0.94**(3.79 vs 2.84) 기여 — TTM정보 이미 활용중. 버그2개 잡음(TurboSim `_overheat_w` __init__ precompute 후 설정 무효→생성자 param화 / 재생성 시 `STORE_OVERHEAT_PEN=1` 누락→overheat_pen 0). research: `backtest/_sp_ttm_final.py`·`_sp_ttm_battery.py`·`_sp_overheat_annual.py`, `_sp2`(가중TTM)·`_sp3`(균등TTM) 재생성본 보존
   - **★중대 정정 (2026-06-16 밤샘, 사용자 "납득 안 간다" 재의심)**: "TTM 기각"은 **과대해석**. 정확히는 **annual value ≈ TTM value (동등), 차이가 노이즈 안**. ①IC(노이즈없는 예측력) annual 0.030 ≈ TTM 0.028 동등 ②3종목 집중BT가 미세 데이터차(재생성 비결정성·growth_s 0.029)를 증폭→Calmar 슬롯3 +0.20/슬롯5 −0.42/슬롯10 −0.48/슬롯20 −0.12 **부호까지 뒤집힘=노이즈** ③회사PC −0.58도 노이즈범위 안. 내 설명 4개(G/M중복·예측력·outlier·과열중복) 측정상 다 깨짐. **실전: annual 유지(TTM 개선0), 단 TTM이 나쁜것도 아님(동등)**. fresh-orthogonal 밸류(평균회귀·잔차)도 노이즈 아래라 승자없음. ★교훈: **3종목 집중=미세 팩터비교 불가(노이즈±0.3~0.5), 작은 BT차이는 노이즈로 간주**. research: `backtest/_sp_clean_final2.py`·`_sp_ortho_value.py`, `_sp0b`(annual재생성)·`_sp2b`(TTM재생성) 같은배치
   - **★최종확정 (2026-06-16, 사용자 "제대로 최적화해 비교하라")**: 밸류 강제사용(V≥10)+멀티팩터×슬롯 최적화하니 TTM이 +0.61(WF 약세장도 +0.98~1.09)로 잠깐 우위 보였으나 — **`_sp_validate.py` 견고성검증서 가격파일만 바꿔도 +0.61→+0.05 붕괴**. ★**고정 운영config(V15Q0G55M30)에선 annual이 −0.2/−0.25 일관 승(가격파일 2개 모두)** = 회사PC(annual>TTM)와 일치. 즉 "TTM 우위"는 **max-selection 편향**(145 config 중 운좋은 best 골라 부풀림)이었음. 인접CV 0.234 들쭉날쭉, LOWO 노이즈. **결론: annual 유지 확정.** ★교훈: **팩터비교는 "각자 best끼리" 금지(편향) → 고정config + out-of-sample(다른 prices/기간) 검증**. 전체 인수인계: `research/TTM_INVESTIGATION_2026_06.md`. research: `_sp_proper_opt.py`·`_sp_wf_value.py`·`_sp_validate.py`
-- **권리락 자동보정 — ★제거됨 (2026-06-16, 기본 OFF 배포)**: 2026-06-12 도입(무상증자/분할/병합 불연속 <-33%|>+45% back-adjust)했으나, **7.4년 격리BT에서 7.4년 Calmar를 4.31→1.74로 반토막** 내는 주범으로 판명 → `fast_generate_rankings_v2.py` 호출부 **기본 OFF**(`CORPACTION_ADJ_ENABLE=1`로만 켬, 구 킬스위치 CORPACTION_ADJ_DISABLE 폐지). **원인 규명(명백):** 권리락 가짜폭락(−46%)이 모멘텀(수익률/변동성)을 분자↓+분모↑로 ~12개월 깔아뭉개 → 보정 안 하면 "권리락 직후 종목"을 자동회피. 그런데 그 종목들이 실제로 강하게 부진(트리거 후 fwd20d **−6.1%**/fwd250d **−12.8%**, 승률 22~25% vs 전체평균 +1%/+10%, 승률 44% — 555건). 즉 **그 모멘텀 왜곡이 버그가 아니라 "권리락 부실주 회피" 알파**였고, 보정이 이걸 제거 → 매일 top3에서 corp-ON만 매수 종목 +2.51% vs corp-OFF만 매수 +8.66%(**−6.15%p/픽 20일**). **검증:** WF 3블록 전부 OFF우위(19-21 +1.25, 22-23약세장 +0.03무해, 24-26 +8.62), **LOWO 6종목(SK하이닉스·제주반도체·디바이스·한미반도체·제룡전기·이오테크닉스) 전부 OFF +1.85~2.57**(단일종목 착시 아님). 6/12 도입 검증은 "최근6주 매수결정 0건변경=무해"만 봤고 7.4년 Calmar 미측정이 사고. ⚠️ 빼면 디바이스처럼 권리락 후 진짜 오르는 종목은 놓침(드묾, 평균 −6%p라 빼는 게 맞음). **전문가 자문(독립 재현·검증) 보강:** ①'가짜 트리거만 거르는 정밀화'는 **기각** — 빈발(5건+) 트리거 종목이 오히려 fwd20d **−16.7%(승률 0%)**로 더 부실 = 노이즈가 아니라 진짜 패자(내 초안 "5건+ 50종목 가짜" 숫자는 오류, 실제 한쪽5건+ 14종목). ②대신 후속으로 **명시적 음의 팩터 `recent_rights`(최근 K영업일내 하락트리거→감점)** 검증·도입 권고(더미 fwd60d IC K126 **−4.3%p**/K252 −2.9%p) — 제거만 하면 알파가 '모멘텀왜곡'이라는 부서지기 쉬운 채널에 남아 미래 모멘텀 파라미터 변경 시 소실 위험([[project_yf_staleness_alpha]] 교훈). ③corpaction 제거 후 **oneoff·vtrap을 corp-OFF(4.31) baseline에서 재검증 필요**(격리 초가법성: all-ON 1.74 기준 평가는 기여 부풀려짐, corp 끄면 그 둘은 net 유익 −0.17). research: `backtest/_ca_why.py`(원인)·`_ca_validate.py`(WF/LOWO)·`_sp_iso.py`(격리). **롤백:** `CORPACTION_ADJ_ENABLE=1` 또는 git revert. 구현: `_backadjust_corpaction`(보존)
+- **권리락 자동보정 — ★★대체됨 (2026-06-18, 수정주가+CA페널티로 교체 — 위 최상단 엔트리 참조)**: 아래 "corp-OFF(4.31)" 결론은 ★측정오류로 폐기. 4.31은 원주가 왜곡으로 무상증자/분할 직후 종목을 우연히 회피한 착시였고(왜곡가격 사용=부정직), 정직한 KRX 수정주가는 2.76, 거기에 명시 CA페널티로 회피알파 깨끗이 복원 → **3.98 배포**. 분해BT로 "병합 주범" 가설도 반증(무상증자/분할이 −1.01 주범, 병합 −0.08 무관). 전문가 권고한 `recent_rights` 명시팩터를 `FACTOR_RECENT_CA_W`로 구현·검증·배포함. 아래는 역사적 기록(폐기):
+  - **(구) 권리락 자동보정 — 제거됨 (2026-06-16, 기본 OFF 배포)**: 2026-06-12 도입(무상증자/분할/병합 불연속 <-33%|>+45% back-adjust)했으나, **7.4년 격리BT에서 7.4년 Calmar를 4.31→1.74로 반토막** 내는 주범으로 판명 → `fast_generate_rankings_v2.py` 호출부 **기본 OFF**(`CORPACTION_ADJ_ENABLE=1`로만 켬, 구 킬스위치 CORPACTION_ADJ_DISABLE 폐지). **원인 규명(명백):** 권리락 가짜폭락(−46%)이 모멘텀(수익률/변동성)을 분자↓+분모↑로 ~12개월 깔아뭉개 → 보정 안 하면 "권리락 직후 종목"을 자동회피. 그런데 그 종목들이 실제로 강하게 부진(트리거 후 fwd20d **−6.1%**/fwd250d **−12.8%**, 승률 22~25% vs 전체평균 +1%/+10%, 승률 44% — 555건). 즉 **그 모멘텀 왜곡이 버그가 아니라 "권리락 부실주 회피" 알파**였고, 보정이 이걸 제거 → 매일 top3에서 corp-ON만 매수 종목 +2.51% vs corp-OFF만 매수 +8.66%(**−6.15%p/픽 20일**). **검증:** WF 3블록 전부 OFF우위(19-21 +1.25, 22-23약세장 +0.03무해, 24-26 +8.62), **LOWO 6종목(SK하이닉스·제주반도체·디바이스·한미반도체·제룡전기·이오테크닉스) 전부 OFF +1.85~2.57**(단일종목 착시 아님). 6/12 도입 검증은 "최근6주 매수결정 0건변경=무해"만 봤고 7.4년 Calmar 미측정이 사고. ⚠️ 빼면 디바이스처럼 권리락 후 진짜 오르는 종목은 놓침(드묾, 평균 −6%p라 빼는 게 맞음). **전문가 자문(독립 재현·검증) 보강:** ①'가짜 트리거만 거르는 정밀화'는 **기각** — 빈발(5건+) 트리거 종목이 오히려 fwd20d **−16.7%(승률 0%)**로 더 부실 = 노이즈가 아니라 진짜 패자(내 초안 "5건+ 50종목 가짜" 숫자는 오류, 실제 한쪽5건+ 14종목). ②대신 후속으로 **명시적 음의 팩터 `recent_rights`(최근 K영업일내 하락트리거→감점)** 검증·도입 권고(더미 fwd60d IC K126 **−4.3%p**/K252 −2.9%p) — 제거만 하면 알파가 '모멘텀왜곡'이라는 부서지기 쉬운 채널에 남아 미래 모멘텀 파라미터 변경 시 소실 위험([[project_yf_staleness_alpha]] 교훈). ③corpaction 제거 후 **oneoff·vtrap을 corp-OFF(4.31) baseline에서 재검증 필요**(격리 초가법성: all-ON 1.74 기준 평가는 기여 부풀려짐, corp 끄면 그 둘은 net 유익 −0.17). research: `backtest/_ca_why.py`(원인)·`_ca_validate.py`(WF/LOWO)·`_sp_iso.py`(격리). **롤백:** `CORPACTION_ADJ_ENABLE=1` 또는 git revert. 구현: `_backadjust_corpaction`(보존)
 
 ## DART + FnGuide 데이터 수집
 - 재무제표: DART + FnGuide 보충 (누락 계정 자동 합침). PER/PBR/ROE는 pykrx (KRX 공식)

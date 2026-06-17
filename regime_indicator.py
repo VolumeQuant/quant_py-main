@@ -211,7 +211,14 @@ def get_regime_params(mode):
             # LOO(제룡전기·SK하이닉스 둘 다 제외) +0.7 robust, 인접 CV 0.044.
             # 단면 cheap/시계열PE압축/순수가격이격/밸류교체 모두 BT 열등 → pen_cs(과열만)만 채택.
             'FACTOR_OVERHEAT_W': 0.2,
-            'label': '공격 모드 (Growth 55%, 3팩터, QoQ-D6-SG6, mom_10+vol, 과열캡)',
+            # 2026-06-17: 수정주가 전환 + 최근 CA 페널티 (post-CA 부실주 회피, boost only)
+            # 수정주가로 가격왜곡 제거 시 사라지는 회피알파를 가격왜곡 없이 명시 포착.
+            # 최근 K영업일내 무상증자/분할/병합(raw>33%/+45% 갭) 종목 → 점수 -W.
+            # 7.4년 BT(수정주가 momentum 기반): Calmar 2.76→4.10, WF 약세장 +0.41,
+            # LOWO 3대장제외 +0.56(broad), 인접 CV 0.095. 끄려면 W=0.
+            'FACTOR_RECENT_CA_W': 0.3,
+            'FACTOR_RECENT_CA_K': 126,
+            'label': '공격 모드 (Growth 55%, 3팩터, QoQ-D6-SG6, mom_10+vol, 과열캡, 수정주가+CA페널티)',
             'icon': '📈',
         }
     else:  # defense

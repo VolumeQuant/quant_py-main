@@ -109,6 +109,64 @@ def _select_best_ohlcv(base_date: str):
     return best_file or sorted(ohlcv_files)[-1]
 
 
+def _refresh_adjusted_ohlcv(raw_df: pd.DataFrame) -> None:
+    """수정주가(all_ohlcv_adj) + ca_events.json 유지 — 2026-06-17 수정주가 전환.
+    momentum/MA는 수정주가, CA페널티는 raw 갭(ca_events) 기반.
+    ① ca_events.json 갱신(raw 갭, fetch 불필요) ② 수정주가: 새 거래일/신규종목 raw로 채우고
+    (비CA 종목은 raw=수정주가), 최근 5거래일내 CA발생 종목만 KRX 수정주가 재fetch.
+    실패해도 raw로 폴백 — 파이프라인 절대 안 깨짐(try/except)."""
+    import json
+    try:
+        raw_df = raw_df.replace(0, np.nan)
+        # ① ca_events.json (raw >33%/+45% 갭 = 당일 관측가능 PIT)
+        ca = {}
+        for tk in raw_df.columns:
+            r = raw_df[tk].pct_change(fill_method=None)
+            ds = [d.strftime('%Y%m%d') for d in r.index[(r < -0.33) | (r > 0.45)]]
+            if ds:
+                ca[tk] = ds
+        with open(CACHE_DIR / 'ca_events.json', 'w', encoding='utf-8') as f:
+            json.dump({'ca_by_ticker': ca, 'method': 'raw_gap_-0.33_+0.45'}, f, ensure_ascii=True)
+        print(f"[수정주가] ca_events.json 갱신: {len(ca)}종목")
+        # ② all_ohlcv_adj
+        adj_files = sorted(CACHE_DIR.glob('all_ohlcv_adj_*.parquet'))
+        if not adj_files:
+            print("[수정주가] all_ohlcv_adj 없음 — 최초 build_variants 필요. 스킵(FG가 raw 폴백).")
+            return
+        adj = pd.read_parquet(adj_files[-1]).replace(0, np.nan)
+        # 새 거래일/신규종목을 raw로 병합(수정주가 있는 칸은 보존, 나머지=raw)
+        adj2 = adj.reindex(index=raw_df.index, columns=raw_df.columns)
+        adj2 = adj2.where(adj2.notna(), raw_df)
+        # 최근 5거래일내 CA(갭) 발생 종목만 전체 수정주가 재fetch (보통 0~3종목)
+        recent = raw_df.index[-5:]
+        ca_recent = [tk for tk in raw_df.columns
+                     if ((raw_df[tk].pct_change(fill_method=None).loc[recent] < -0.33) |
+                         (raw_df[tk].pct_change(fill_method=None).loc[recent] > 0.45)).any()]
+        if ca_recent:
+            fromd, tod = raw_df.index[0].strftime('%Y%m%d'), raw_df.index[-1].strftime('%Y%m%d')
+            n_ok = 0
+            for tk in ca_recent:
+                try:
+                    d = pykrx_stock.get_market_ohlcv_by_date(fromd, tod, tk, adjusted=True)
+                    if d is not None and len(d) and '종가' in d.columns:
+                        s = d['종가'].replace(0, np.nan); s.index = pd.to_datetime(s.index)
+                        adj2[tk] = s.reindex(adj2.index)
+                        n_ok += 1
+                except Exception:
+                    pass
+                time.sleep(1.0)
+            print(f"[수정주가] 최근 CA {len(ca_recent)}종목 중 {n_ok} 재조정 fetch")
+        a_s, a_e = adj2.index[0].strftime('%Y%m%d'), adj2.index[-1].strftime('%Y%m%d')
+        newp = CACHE_DIR / f'all_ohlcv_adj_{a_s}_{a_e}.parquet'
+        adj2.to_parquet(newp)
+        for old in adj_files:
+            if old != newp:
+                old.unlink()
+        print(f"[수정주가] all_ohlcv_adj 갱신: {newp.name} ({adj2.shape[1]}종목 {adj2.shape[0]}일)")
+    except Exception as e:
+        print(f"[수정주가] 갱신 실패 — raw 폴백(파이프라인 정상): {type(e).__name__}: {e}")
+
+
 def refresh_ohlcv_incremental(base_date: str, market_cap_df: pd.DataFrame = None) -> None:
     """OHLCV 캐시 증분 갱신 — 당일 갭 채우기 + 신규 종목 추가
 
@@ -193,11 +251,12 @@ def refresh_ohlcv_incremental(base_date: str, market_cap_df: pd.DataFrame = None
         ohlcv_df.to_parquet(new_cache)
         new_span = int(new_end) - int(new_start)
         # 짧은 범위 캐시 정리, 긴 파일 보존
+        # ★ all_ohlcv_adj/vdown/vup 등 날짜가 아닌 태그 파일은 건드리지 않음(int 크래시·오염 방지, 2026-06-17)
         for old_f in CACHE_DIR.glob('all_ohlcv_*.parquet'):
             if old_f == new_cache:
                 continue
             parts = old_f.stem.split('_')
-            if len(parts) >= 4:
+            if len(parts) >= 4 and parts[2].isdigit() and parts[3].isdigit():
                 old_span = int(parts[3]) - int(parts[2])
                 if old_span <= new_span:
                     old_f.unlink()
@@ -206,6 +265,9 @@ def refresh_ohlcv_incremental(base_date: str, market_cap_df: pd.DataFrame = None
         for other_f in CACHE_DIR.glob('all_ohlcv_*.parquet'):
             if other_f == new_cache:
                 continue
+            _op = other_f.stem.split('_')
+            if not (len(_op) >= 4 and _op[2].isdigit() and _op[3].isdigit()):
+                continue  # 수정주가(all_ohlcv_adj 등) 동기화 제외 — 전용 루틴이 관리
             try:
                 other_df = pd.read_parquet(other_f)
                 other_end = other_df.index[-1]
@@ -224,6 +286,9 @@ def refresh_ohlcv_incremental(base_date: str, market_cap_df: pd.DataFrame = None
             except Exception:
                 pass
         print(f"[OHLCV] 캐시 저장: {new_cache.name}")
+
+    # 2026-06-17: 수정주가(all_ohlcv_adj) + ca_events.json 유지 (updated 무관, 항상 최신화)
+    _refresh_adjusted_ohlcv(ohlcv_df)
 
 
 def refresh_index(base_date: str) -> None:

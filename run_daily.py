@@ -8,6 +8,7 @@ Windows Task Scheduler에서 호출.
 import subprocess
 import sys
 import os
+import glob
 from datetime import datetime
 from pathlib import Path
 
@@ -208,6 +209,12 @@ def _run_fg_single(base_date, env_vars, state_dir, logfile):
     fg_cmd = [PYTHON, '-u', fg_script, base_date, base_date, f'--state-dir={state_dir}']
     env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PRODUCTION_MODE": "1"}
     env.update(env_vars)
+    # 2026-06-17: 수정주가 전환 — momentum/MA는 수정주가(all_ohlcv_adj), 자작 권리락보정 OFF.
+    # CA 페널티는 raw 갭 기반 ca_events.json(FG 기본값). 수정주가 없으면 FG가 raw로 자동 폴백.
+    _adj = sorted(glob.glob(str(SCRIPT_DIR / 'data_cache' / 'all_ohlcv_adj_*.parquet')))
+    if _adj:
+        env['OHLCV_FILE'] = _adj[-1]
+        env['CORPACTION_ADJ_DISABLE'] = '1'
     result = subprocess.run(
         fg_cmd, cwd=str(SCRIPT_DIR), capture_output=True,
         text=True, timeout=600, encoding="utf-8", errors="replace", env=env,
@@ -253,6 +260,10 @@ def _build_mode_env(params):
     # 가격반응 PER(시총/TTM순이익) 단면 z 중 비싼 쪽만 감점 → 과열 추격매수 회피
     if params.get('FACTOR_OVERHEAT_W'):
         env['FACTOR_OVERHEAT_W'] = str(params['FACTOR_OVERHEAT_W'])
+    # 2026-06-17: 최근 CA 페널티 (수정주가 전환 동반, boost only)
+    if params.get('FACTOR_RECENT_CA_W'):
+        env['FACTOR_RECENT_CA_W'] = str(params['FACTOR_RECENT_CA_W'])
+        env['FACTOR_RECENT_CA_K'] = str(params.get('FACTOR_RECENT_CA_K', 126))
     return env
 
 

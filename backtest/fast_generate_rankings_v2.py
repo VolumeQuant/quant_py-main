@@ -837,13 +837,17 @@ def preload_all_data(start_str, end_str, trading_dates=None, use_rev_accel=False
         mc_files = [f for f in mc_files if f.stem.split('_')[-1] <= end_str]
         mc_recent = mc_files[-30:] if len(mc_files) > 30 else mc_files
 
-    # 1. OHLCV — _full 파일 우선 (전종목 3,237+)
-    ohlcv_files = sorted(CACHE_DIR.glob('all_ohlcv_*.parquet'))
-    full_files = [f for f in ohlcv_files if '_full' in f.stem]
-    if full_files:
-        ohlcv_files = full_files
-    ohlcv_files.sort(key=lambda f: f.stem.split('_')[2])
-    ohlcv_file = ohlcv_files[0]
+    # 1. OHLCV — OHLCV_FILE env 오버라이드(수정주가 BT용) 우선, 없으면 _full 파일
+    _ohlcv_override = os.environ.get('OHLCV_FILE', '')
+    if _ohlcv_override and Path(_ohlcv_override).exists():
+        ohlcv_file = Path(_ohlcv_override)
+    else:
+        ohlcv_files = sorted(CACHE_DIR.glob('all_ohlcv_*.parquet'))
+        full_files = [f for f in ohlcv_files if '_full' in f.stem]
+        if full_files:
+            ohlcv_files = full_files
+        ohlcv_files.sort(key=lambda f: f.stem.split('_')[2])
+        ohlcv_file = ohlcv_files[0]
     print(f'  OHLCV: {ohlcv_file.name}')
     data['ohlcv'] = pd.read_parquet(ohlcv_file).replace(0, np.nan)
     print(f'    {data["ohlcv"].shape[0]}거래일 × {data["ohlcv"].shape[1]}종목 (0→NaN 변환 완료)')
@@ -1801,12 +1805,13 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
     mcap_tickers = set(mcap_df.index)
     ohlcv_cols = [c for c in ohlcv.columns if c in mcap_tickers]
     price_df = ohlcv.loc[ohlcv.index <= base_ts, ohlcv_cols]
-    # 권리락(무상증자/분할/병합) 자동보정 — 기본 OFF (2026-06-16 제거).
-    # 7.4년 격리BT: 보정 ON이 Calmar 4.31→1.74로 반토막. 원인규명(_ca_why.py): 권리락 가짜폭락이
-    # 모멘텀(수익률/변동성)을 ~12개월 깔아뭉개 "권리락 직후 부실주(fwd250d −13%)"를 자동회피시키던
-    # 우연한 알파를, 보정이 제거 → 부실주 매수(픽당 −6.15%p). WF 전블록·LOWO 전부 OFF우위(_ca_validate.py).
-    # 켜려면 CORPACTION_ADJ_ENABLE=1. (구 킬스위치 CORPACTION_ADJ_DISABLE → ENABLE 게이트로 전환)
-    if os.environ.get('CORPACTION_ADJ_ENABLE') == '1':
+    # 권리락(무상증자/분할/병합) 자동보정 — 기본 ON (표준 total-return 방식, 가격왜곡 보정).
+    # ★2026-06-17 재복원: 06-16에 "corp-OFF가 7.4년 Calmar 4.31>1.74로 우월"이라며 껐으나 ★측정오류.
+    # 그 4.31은 분할 미보정(왜곡) 가격으로 모멘텀(신호)을 계산해 권리락 직후 부실주를 우연히 회피한 artifact.
+    # 왜곡 가격으로 신호 만드는 건 부적절(표준=분할보정 모멘텀), honest(보정) 성과는 ~1.74. 깨끗히 잡히는
+    # 권리락회피 알파는 명시팩터로 +0.41뿐. 디바이스(무상증자 후 정상종목) 부당제외 부작용도 있었음.
+    # → 보정 ON 복원. 끄려면 CORPACTION_ADJ_DISABLE=1.
+    if os.environ.get('CORPACTION_ADJ_DISABLE') != '1':
         price_df, _n_corpadj = _backadjust_corpaction(price_df)
 
     ma120_fail = []
@@ -2281,6 +2286,31 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
                     scored['멀티팩터_점수'] = scored['멀티팩터_점수'] + pen_cs * OVERHEAT_W
                     scored['멀티팩터_순위'] = scored['멀티팩터_점수'].rank(ascending=False, method='first', na_option='bottom')
 
+    # ============================================================
+    # 최근 CA 페널티 (recent_ca) — 무상증자/분할/병합 직후 부실주 회피 (boost)
+    # 2026-06-17: 수정주가 전환 시 사라지는 'post-CA 회피 알파'를 가격왜곡 없이 명시 포착.
+    # CA_EVENTS_FILE(raw>33%/+45% 갭 종목·날짜=당일 관측가능 PIT)의 CA가 최근 K영업일내면 감점.
+    # BT(7.4년, 수정주가 momentum 기반): Calmar 2.76→4.10(W0.3 K126), WF 약세장 +0.41,
+    # LOWO 3대장제외 +0.56(broad), 인접 CV 0.095, raw-갭=genuine 동일(3.99). env FACTOR_RECENT_CA_W(기본 0).
+    # ============================================================
+    RECENT_CA_W = float(os.environ.get('FACTOR_RECENT_CA_W', '0.0'))
+    RECENT_CA_K = int(os.environ.get('FACTOR_RECENT_CA_K', '126'))
+    _ca_file = os.environ.get('CA_EVENTS_FILE', str(CACHE_DIR / 'ca_events.json'))
+    if RECENT_CA_W != 0 and os.path.exists(_ca_file) and not scored.empty and price_df is not None:
+        import json as _json
+        _ca_by_tk = _json.load(open(_ca_file, encoding='utf-8')).get('ca_by_ticker', {})
+        _nonempty = price_df.notna().sum(axis=1) >= (price_df.shape[1] * 0.5)
+        _biz = price_df.loc[_nonempty].index
+        if len(_biz) >= 1:
+            _cut = (_biz[-(RECENT_CA_K + 1)] if len(_biz) > RECENT_CA_K else _biz[0]).strftime('%Y%m%d')
+            _base = base_ts.strftime('%Y%m%d')
+            def _recent_ca(tk):
+                ds = _ca_by_tk.get(tk)
+                return 1 if ds and any(_cut < d <= _base for d in ds) else 0
+            scored['recent_ca'] = scored['종목코드'].map(_recent_ca)
+            scored['멀티팩터_점수'] = scored['멀티팩터_점수'] - scored['recent_ca'] * RECENT_CA_W
+            scored['멀티팩터_순위'] = scored['멀티팩터_점수'].rank(ascending=False, method='first', na_option='bottom')
+
     # --- 9. Ranking JSON 저장 ---
     scored_sorted = scored.sort_values('멀티팩터_점수', ascending=False)
     rankings_list = []
@@ -2316,6 +2346,10 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
         _op = row.get('overheat_pen')
         if _op is not None and pd.notna(_op):
             item['overheat_pen'] = round(float(_op), 4)
+        # 최근 CA 페널티 발동 여부 (recent_ca=1 → 최근 K영업일내 무상증자/분할/병합)
+        _rc = row.get('recent_ca')
+        if _rc is not None and pd.notna(_rc) and int(_rc) != 0:
+            item['recent_ca'] = int(_rc)
         # v80.20 mom_10_z / vol_low_z (가중치 그리드 BT용 — z 저장, score 재계산 가능)
         for _zc, _zk in [('mom_10_z', 'mom_10_z'), ('vol_low_z', 'vol_low_z')]:
             _zv = row.get(_zc)
