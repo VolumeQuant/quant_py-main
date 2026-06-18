@@ -118,16 +118,20 @@ def _refresh_adjusted_ohlcv(raw_df: pd.DataFrame) -> None:
     import json
     try:
         raw_df = raw_df.replace(0, np.nan)
-        # ① ca_events.json (raw >33%/+45% 갭 = 당일 관측가능 PIT)
+        # ① ca_events.json (raw <-33% 하락갭 = 당일 관측가능 PIT)
+        # 2026-06-18 down-only 전환: 페널티 트리거를 하락CA(무상증자/분할/유상증자)만으로 한정.
+        # 병합(>+45% 상승갭)은 제외 — 7.4년 방향분해 BT에서 병합 페널티 기여 -0.072(소폭 해로움),
+        # up-only 페널티는 Calmar 2.608<무페널티 2.797. 하락CA-only=4.050>both 3.978. (_v6_blockers.py)
+        # 가격보정(all_ohlcv_adj)은 병합 포함 전부 유지(왜곡 방지) — 아래 ②의 fetch flag는 양방향 유지.
         ca = {}
         for tk in raw_df.columns:
             r = raw_df[tk].pct_change(fill_method=None)
-            ds = [d.strftime('%Y%m%d') for d in r.index[(r < -0.33) | (r > 0.45)]]
+            ds = [d.strftime('%Y%m%d') for d in r.index[r < -0.33]]
             if ds:
                 ca[tk] = ds
         with open(CACHE_DIR / 'ca_events.json', 'w', encoding='utf-8') as f:
-            json.dump({'ca_by_ticker': ca, 'method': 'raw_gap_-0.33_+0.45'}, f, ensure_ascii=True)
-        print(f"[수정주가] ca_events.json 갱신: {len(ca)}종목")
+            json.dump({'ca_by_ticker': ca, 'method': 'raw_gap_down_-0.33'}, f, ensure_ascii=True)
+        print(f"[수정주가] ca_events.json 갱신(down-only): {len(ca)}종목")
         # ② all_ohlcv_adj
         adj_files = sorted(CACHE_DIR.glob('all_ohlcv_adj_*.parquet'))
         if not adj_files:

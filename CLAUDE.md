@@ -37,13 +37,13 @@
 
 > 🇺🇸 **US 전략 노트는 US 레포에서 관리**: `C:\dev\claude code\eps-momentum-us\CLAUDE.md` (US 작업 시 Claude가 자동 로드). 이 파일엔 공통 작업원칙 + KR만.
 
-# 🇰🇷 KR 전략 — quant_py-main (수정주가 전환 + 최근 CA 페널티, 2026-06-18 배포)
+# 🇰🇷 KR 전략 — quant_py-main (수정주가 전환 + 최근 CA 페널티 down-only, 2026-06-18 배포)
 
 > 코드 진실: `regime_indicator.py` `get_regime_params()`. 아래는 그 코드 기준 현재 production 파라미터. 변경 이력은 CHANGELOG.md.
 
 ## ★ 수정주가 전환 + 최근 CA 페널티 (2026-06-18, 배포·state 전체 재생성됨)
 
-> 배포: ①FG momentum/MA/mom_10/vol_low = **KRX 수정주가**(`OHLCV_FILE=data_cache/all_ohlcv_adj_*`, `CORPACTION_ADJ_DISABLE=1`로 자작보정 OFF). ②boost에 **최근 CA 페널티**(`FACTOR_RECENT_CA_W=0.3, FACTOR_RECENT_CA_K=126`): 최근 126영업일내 무상증자/분할/병합(raw>33%/+45% 갭=`ca_events.json`) 종목 점수 −0.3. state/(boost)+state/defense/ **7.4년 전체 재생성 완료**. 배선: `run_daily._run_fg_single`(OHLCV_FILE 주입)+`_build_mode_env`(페널티 전달)+`regime_indicator` boost params+`data_refresher._refresh_adjusted_ohlcv`(수정주가+ca_events 일일 유지, 실패시 raw 폴백)+FG 페널티 블록. **롤백: `FACTOR_RECENT_CA_W=0`(페널티만 OFF=2.76) 또는 OHLCV_FILE 제거(raw 복귀) 또는 git revert.**
+> 배포: ①FG momentum/MA/mom_10/vol_low = **KRX 수정주가**(`OHLCV_FILE=data_cache/all_ohlcv_adj_*`, `CORPACTION_ADJ_DISABLE=1`로 자작보정 OFF). ②boost에 **최근 CA 페널티 (down-only, 2026-06-18 정련)**(`FACTOR_RECENT_CA_W=0.3, FACTOR_RECENT_CA_K=126`): 최근 126영업일내 **하락CA=무상증자/분할/유상증자(raw<-33% 하락갭만, `ca_events.json` method=`raw_gap_down_-0.33`)** 종목 점수 −0.3. **병합(+45% 상승갭)은 제외**(방향분해 BT: 병합 기여 −0.072 해로움, 하락CA-only 4.05 > both 3.98). state/(boost)+state/defense/ **7.4년 전체 재생성 완료**. 배선: `run_daily._run_fg_single`(OHLCV_FILE 주입)+`_build_mode_env`(페널티 전달)+`regime_indicator` boost params+`data_refresher._refresh_adjusted_ohlcv`(수정주가+ca_events down-only 일일 유지, 실패시 raw 폴백)+FG 페널티 블록. **롤백: `FACTOR_RECENT_CA_W=0`(페널티만 OFF=2.76) 또는 OHLCV_FILE 제거(raw 복귀) 또는 git revert.**
 
 **계기/문제:** 2026-06-16 "corp-OFF(원주가, Calmar 4.31) > corp-ON(자작보정 1.74)이라 corp 제거" 결론이 ★측정오류 두 겹. ①4.31은 **원주가(가격왜곡)로 모멘텀을 계산해 권리락 직후 종목을 우연히 회피한 착시** — 디바이스(무상증자 4/28, 가짜 −46%)를 부당배제. 왜곡가격으로 종목 고른 성과는 못 씀(사용자 지적). ②자작 ±33/45% 임계보정(1.74)은 **진짜 CA와 잡것(거래정지·오류) 160종목을 다 뭉뚱그려 과보정**한 오염. **정답=KRX 공식 수정주가**(pykrx `get_market_ohlcv_by_date(adjusted=True)`, 999 CA후보 fetch, genuine CA 839종목만 보정·잡것 160 무보정).
 
@@ -59,7 +59,17 @@
 
 **해결=수정주가(정직 2.76) + 명시 페널티로 회피알파 깨끗이 복원 → Calmar 3.98**(MDD 25.9%로 회복, 4.31 착시와 거의 동급이나 정직·robust). 페널티 스윕 plateau W0.3~0.5·K126~252, dir=all/down 강력(4.0~4.1)·dir=up(병합) 무용(2.8). **검증 전부 통과:** WF 약세장(22-23) +0.41(제일 중요)·강세장 소폭비용(보험특성), LOWO 3대장(SK하이닉스·제주반도체·디바이스) 전부제외 +0.56(broad), 인접 CV 0.095, raw-갭감지=genuine동일(3.99 vs 3.99 → production은 raw갭 자체완결 PIT감지). 검증 state Calmar **3.978** 재현.
 
-**디바이스:** 수정주가로 펀더멘털 정당 cr3 → 최근 무상증자라 페널티로 **wr4.8/cr5(관심권)**. 옛 원주가의 "가짜폭락 부당배제"가 아니라 "강하지만 최근CA 일시감점"(~2026-10 만료, 3슬롯 분산이 개별예외 흡수). research: `backtest/_decomp_bt.py`·`_penalty_bt.py`·`_penalty_robust.py`·`_penalty_rawgap.py`·`_prod_verify.py`, fetch/build: `fetch_adjusted_ohlcv.py`·`build_variants.py`·`_ca_events.py`.
+**디바이스:** 수정주가로 펀더멘털 정당 cr3 → 최근 무상증자(하락CA)라 페널티로 **wr4.8/cr5(관심권)**. 옛 원주가의 "가짜폭락 부당배제"가 아니라 "강하지만 최근CA 일시감점"(~2026-10 만료, 3슬롯 분산이 개별예외 흡수). research: `backtest/_decomp_bt.py`·`_penalty_bt.py`·`_penalty_robust.py`·`_penalty_rawgap.py`·`_prod_verify.py`, fetch/build: `fetch_adjusted_ohlcv.py`·`build_variants.py`·`_ca_events.py`.
+
+### ★ down-only 정련 + 배포차단급 재검증 (2026-06-18, 사용자 6항목 비판 → 전부 측정)
+> 사용자가 배포 신뢰 전 검증리스트 제기 → 전부 측정. **결론: 배포 견고, 단 병합 제외(down-only)가 유일 실개선.** 하니스 정합 확인(W0.3/K126 저장flag=재유도 트리거 99.98% 일치, **3.978 정확 재현**). research: `_v1_sweep.py`·`_v1_wf.py`·`_v2_misfire.py`·`_v6_blockers.py`·`_v6b_coverage.py`·`_v3fold_wf.py`·`_v3_leak.py`.
+- **[병합 제외=down-only 채택]** 방향분해 BT(state base, W0.3 K126): W0 2.797 / 현행both 3.978 / **down-only 4.050** / up-only(병합만) 2.608(<무페널티=병합감점 해로움). 병합 기여 **−0.072**, 하락CA 기여 **+1.253**(알파 전부). 병합은 포워드 부진 증거 0 + 시총≥1000억 필터가 이미 부실 마이크로캡 제외 → 무근거 컴포넌트라 제거. ca_events.json을 `raw<-33%`(하락갭)만으로 변경(병합 +45% 상승갭 제외), 가격보정(all_ohlcv_adj)은 병합 포함 유지(왜곡방지).
+- **[강건성 V1]** W{0~0.7}×K{63,126,189} 그리드: K≥126·W0.3~0.7 **고원(4.0~4.18)**, 약한쪽(K63·W≤0.1)만 절벽=실효과의 정상 shape(고립스파이크 아님). W0.3은 보수적 어깨(W0.4가 peak 4.18).
+- **[워크포워드 V1+차단3]** 2-fold: fold1(19-22)선택W0.7→fold2 OOS +1.18 / fold2(23-26)선택W0.4→fold1 OOS +0.41. 3-fold: 약세폴드 B(22-23)를 OOS로, W를 A(코로나)·C(강세) 어디서 골라도 **B효과 +0.498 동일**. 배포 W0.3 각폴드: A −0.007(무해) B **+0.414**(약세) C **+3.357**(강세). → 약세 n=1 우려 기각, 효과는 전국면 광범위(강세서 더 큼).
+- **[혼동행렬 V2+차단6]** FP(잡것 거래정지·오류) raw갭 617건이나 **BT발동 0.4%(29/6753)=무해**, genuine-only 재실행 Calmar 차이 **0.000**. FN(놓친 작은CA) 있으나 ★**임계둔감: down트리거 dlog≥0.10~0.40 전부 Calmar 4.072 동일** → 33/45 임계 무관.
+- **[보유종목 강제매도 누수 V3]** 7.4년 rank-exit 108건 중 페널티원인 강제매도 **단 1건**(fwd20d +3.4%, 1/3슬롯)=누수 무시가능. 페널티는 주로 *진입차단*, 보유강자(top3) 토해냄 거의 없음.
+- **[생존편향 차단5]** raw OHLCV에 상폐주 524/3405 포함(PIT, 연도균등) → classic 생존편향 아님. 병합 −0.08은 생존편향 아니라 size필터(시총≥1000억)가 부실 마이크로캡을 의도적으로 거른 결과.
+- **[유상증자 분리 차단1]** `build_variants.py`(L39 `is_down=dl>0`)는 가격하락 방향이라 **유상증자도 V_down에 이미 포함** → "−1.01(무상/분할)"은 실은 무상+분할+유상 합산, 잔차 −0.46은 유상이 아니라 up×down 보정 상호작용. 유상을 무상/분할과 *분리* 측정하려면 가격불가→**DART 이벤트타입 필요(후속, 차단 아님)**. down-only 페널티가 유상(하락CA)을 통째로 포착중.
 
 ## 현재 운영 파라미터 종합 (v80.23 기준, 코드 검증됨)
 

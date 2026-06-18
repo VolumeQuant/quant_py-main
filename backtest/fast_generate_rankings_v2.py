@@ -2287,11 +2287,12 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
                     scored['멀티팩터_순위'] = scored['멀티팩터_점수'].rank(ascending=False, method='first', na_option='bottom')
 
     # ============================================================
-    # 최근 CA 페널티 (recent_ca) — 무상증자/분할/병합 직후 부실주 회피 (boost)
+    # 최근 CA 페널티 (recent_ca) — 하락CA(무상증자/분할/유상증자) 직후 부실주 회피 (boost)
     # 2026-06-17: 수정주가 전환 시 사라지는 'post-CA 회피 알파'를 가격왜곡 없이 명시 포착.
-    # CA_EVENTS_FILE(raw>33%/+45% 갭 종목·날짜=당일 관측가능 PIT)의 CA가 최근 K영업일내면 감점.
-    # BT(7.4년, 수정주가 momentum 기반): Calmar 2.76→4.10(W0.3 K126), WF 약세장 +0.41,
-    # LOWO 3대장제외 +0.56(broad), 인접 CV 0.095, raw-갭=genuine 동일(3.99). env FACTOR_RECENT_CA_W(기본 0).
+    # 2026-06-18 down-only: CA_EVENTS_FILE(raw<-33% 하락갭=당일 관측가능 PIT)의 CA가 최근 K영업일내면 감점.
+    #   병합(+45% 상승갭) 제외 — 방향분해 BT(_v6_blockers.py): 병합 페널티 기여 -0.072(해로움),
+    #   하락CA-only Calmar 4.050>both 3.978. WF 3폴드 약세 OOS +0.498(W를 타폴드서 선택해도), 임계둔감(dlog0.1~0.4 다 4.07).
+    # BT(7.4년, 수정주가 momentum 기반): Calmar 2.76→4.05(W0.3 K126 down-only). env FACTOR_RECENT_CA_W(기본 0).
     # ============================================================
     RECENT_CA_W = float(os.environ.get('FACTOR_RECENT_CA_W', '0.0'))
     RECENT_CA_K = int(os.environ.get('FACTOR_RECENT_CA_K', '126'))
