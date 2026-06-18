@@ -123,15 +123,27 @@ def _refresh_adjusted_ohlcv(raw_df: pd.DataFrame) -> None:
         # 병합(>+45% 상승갭)은 제외 — 7.4년 방향분해 BT에서 병합 페널티 기여 -0.072(소폭 해로움),
         # up-only 페널티는 Calmar 2.608<무페널티 2.797. 하락CA-only=4.050>both 3.978. (_v6_blockers.py)
         # 가격보정(all_ohlcv_adj)은 병합 포함 전부 유지(왜곡 방지) — 아래 ②의 fetch flag는 양방향 유지.
-        ca = {}
+        # ★2026-06-18 버그fix: 전체 재계산 금지 → append-only.
+        # (사고: raw all_ohlcv가 sync루프로 adjusted에 오염되면, 전체 재계산 시 과거 CA갭이
+        #  매끈해져 사라짐 → 742→246종목, 디바이스 등 페널티 소실. 과거 CA는 고정 사실이라
+        #  영구 ca_events.json(git추적)을 유지하고 최근 신규 하락갭만 추가하면 오염에 강건.)
+        ca_path = CACHE_DIR / 'ca_events.json'
+        try:
+            ca = json.load(open(ca_path, encoding='utf-8')).get('ca_by_ticker', {})
+        except Exception:
+            ca = {}
+        recent = raw_df.index[-6:]  # 최근 ~5거래일 신규 갭만 (당일 raw는 Part1서 정상 수집됨)
+        n_new = 0
         for tk in raw_df.columns:
-            r = raw_df[tk].pct_change(fill_method=None)
-            ds = [d.strftime('%Y%m%d') for d in r.index[r < -0.33]]
-            if ds:
-                ca[tk] = ds
-        with open(CACHE_DIR / 'ca_events.json', 'w', encoding='utf-8') as f:
+            r = raw_df[tk].loc[recent].pct_change(fill_method=None)
+            for d in r.index[r < -0.33]:
+                ds = d.strftime('%Y%m%d')
+                ca.setdefault(tk, [])
+                if ds not in ca[tk]:
+                    ca[tk].append(ds); n_new += 1
+        with open(ca_path, 'w', encoding='utf-8') as f:
             json.dump({'ca_by_ticker': ca, 'method': 'raw_gap_down_-0.33'}, f, ensure_ascii=True)
-        print(f"[수정주가] ca_events.json 갱신(down-only): {len(ca)}종목")
+        print(f"[수정주가] ca_events.json append-only: {len(ca)}종목 (신규 {n_new})")
         # ② all_ohlcv_adj
         adj_files = sorted(CACHE_DIR.glob('all_ohlcv_adj_*.parquet'))
         if not adj_files:

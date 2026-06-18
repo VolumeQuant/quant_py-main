@@ -41,6 +41,15 @@
 
 > 코드 진실: `regime_indicator.py` `get_regime_params()`. 아래는 그 코드 기준 현재 production 파라미터. 변경 이력은 CHANGELOG.md.
 
+## ★★ 6/18 사고: raw 오염 → ca_events/페널티 붕괴 (수정·재발방지 배포됨)
+
+> **증상**: 수정주가+페널티 배포 후 첫 라이브(6/18)에서 `ca_events.json` 742→**246종목**, 디바이스 등 recent_ca 1→0(페널티 소실) → 디바이스 잘못된 #3.
+> **원인**: data_refresher Part3 sync 루프가 (방어픽스 활성화 전 실행에서) `all_ohlcv_adj`를 `all_ohlcv_{날짜}`로 개명·덮어써 **raw all_ohlcv가 adjusted로 오염**(디바이스 4/28 −46%갭이 매끈해짐). 그 상태에서 `_refresh_adjusted_ohlcv`가 **매일 ca_events를 전체 재계산**하니, 오염된 raw(갭 사라짐)에서 과거 CA를 못 찾아 명단 붕괴.
+> **수정(배포완료)**: ①ca_events git복구(742) ②`_refresh_adjusted_ohlcv`의 ca_events를 **전체재계산 → append-only**(영구파일 유지 + 최근 신규갭만 추가 → raw 오염에 강건) ③sync/cleanup 루프 방어(날짜아닌 all_ohlcv_* 스킵, 기배포) ④6/18 state 재생성(디바이스 #6 페널티복원) + 채널·개인봇 재전송.
+> **영향**: 매수신호(제주/SK/타이거)는 무관·정상. 페널티만 일시 무력(디바이스 표시순위만 흔들림).
+> **★교훈(재발방지)**: ①raw/adjusted **파일명 충돌**(`all_ohlcv_*` glob이 adj까지 매칭) — 파생 가격파일은 glob 안 걸리게 명명 or 모든 루프에 날짜검증. ②**매일 전체 재계산은 입력오염에 취약** → "고정 사실"(과거 CA)은 append-only 누적(재계산 금지). ③**배포 후 첫 라이브 산출물(ca_events 수·penalty 발동수·핵심종목 순위) 반드시 검수.**
+> **+ Gemini 503(Google 장애)로 그날 AI 분석 누락**(재시도3+lite폴백 후에도 503 → graceful skip, 메시지는 발송). 외부 API 장애는 우리 버그 아님(폴백 정상). 재전송 시 Gemini 복구돼 AI 포함. 진단: `logs/daily_20260618.log`.
+
 ## ★ 수정주가 전환 + 최근 CA 페널티 (2026-06-18, 배포·state 전체 재생성됨)
 
 > 배포: ①FG momentum/MA/mom_10/vol_low = **KRX 수정주가**(`OHLCV_FILE=data_cache/all_ohlcv_adj_*`, `CORPACTION_ADJ_DISABLE=1`로 자작보정 OFF). ②boost에 **최근 CA 페널티 (down-only, 2026-06-18 정련)**(`FACTOR_RECENT_CA_W=0.3, FACTOR_RECENT_CA_K=126`): 최근 126영업일내 **하락CA=무상증자/분할/유상증자(raw<-33% 하락갭만, `ca_events.json` method=`raw_gap_down_-0.33`)** 종목 점수 −0.3. **병합(+45% 상승갭)은 제외**(방향분해 BT: 병합 기여 −0.072 해로움, 하락CA-only 4.05 > both 3.98). state/(boost)+state/defense/ **7.4년 전체 재생성 완료**. 배선: `run_daily._run_fg_single`(OHLCV_FILE 주입)+`_build_mode_env`(페널티 전달)+`regime_indicator` boost params+`data_refresher._refresh_adjusted_ohlcv`(수정주가+ca_events down-only 일일 유지, 실패시 raw 폴백)+FG 페널티 블록. **롤백: `FACTOR_RECENT_CA_W=0`(페널티만 OFF=2.76) 또는 OHLCV_FILE 제거(raw 복귀) 또는 git revert.**
