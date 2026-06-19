@@ -1,0 +1,20 @@
+[20190102~20260612 1827일]  A=annual-균등(corpOFF)(_sp0c_co)  B=TTM-균등(corpOFF)(_sp3_co)
+
+=== ① 고정 운영config V15Q0G55M30 12m E3X6S3 (★편향無 핵심지표) ===
+  annual-균등(corpOFF) Calmar 3.171  CAGR 9375.0%  MDD 2957.0%
+  TTM-균등(corpOFF)  Calmar 3.539  CAGR 10055.0%  MDD 2841.0%
+  Δ(B-A) Calmar +0.368
+
+=== ② WF 3블록 고정config Calmar (강건성) ===
+  19-21: annual-균등(corpOFF) 2.52  vs  TTM-균등(corpOFF) 1.87   Δ -0.65
+  22-23: annual-균등(corpOFF) 0.43  vs  TTM-균등(corpOFF) 1.44   Δ +1.01
+  24-26: annual-균등(corpOFF) 10.52  vs  TTM-균등(corpOFF) 10.70   Δ +0.18
+
+=== ③ 밸류팩터 IC (value_s vs fwd20d, boost일; 노이즈無 예측력) ===
+  annual-균등(corpOFF) -0.0070  vs  TTM-균등(corpOFF) -0.0092
+
+=== ④ full-grid best (V>=10) — ⚠️max-selection 편향 있음, 참고용 ===
+  annual-균등(corpOFF) best 3.697 @ V20Q0G55M25 12m S3(E3X6)
+  TTM-균등(corpOFF) best 3.632 @ V10Q0G60M30 12m S3(E3X6)   Δ -0.065  (1038s)
+
+→ 판정: ①고정config Δ가 결론. ②WF 블록 부호 일관성. ③IC 동등이면 차이는 노이즈. ④best-vs-best는 편향이라 ①과 어긋나면 무시.

@@ -1,0 +1,20 @@
+[기간 20190102~20260611 1826일] grid=145w × 4mom × 3slot = 1740/base
+  [annual] 373초
+  [TTM] 370초
+
+======================================================================
+★ 고정 운영config (V15Q0G55M30 12m E3X6S3) — 공정비교(편향無):
+   annual 2.596  vs  TTM 1.589   Δ(TTM-ann) -1.007
+
+전체 best (V>=10 강제, full grid):
+   annual best: V25Q0G45M30 12m S3(E3X6) = 3.109
+   TTM    best: V10Q10G50M30 12m S5(E5X10) = 2.702   Δ(TTM-ann best-vs-best) -0.407
+
+모멘텀별 best (annual vs TTM):
+mom     annual best                   TTM best                            Δ
+6m      V20Q0G40M40 6m S3(E3X6)=2.43  V10Q10G60M20 6m S5(E5X10)=2.48  +0.06
+6m-1m   V15Q5G45M35 6m-1m S3(E3X6)=2.45V10Q10G65M15 6m-1m S5(E5X10)=2.25  -0.20
+12m     V25Q0G45M30 12m S3(E3X6)=3.11 V10Q10G50M30 12m S5(E5X10)=2.70  -0.41
+12m-1m  V20Q5G50M25 12m-1m S3(E3X6)=2.71V15Q0G55M30 12m-1m S5(E5X10)=2.38  -0.32
+
+→ 판정: 고정config Δ가 핵심(편향無). best-vs-best Δ만 크고 고정config Δ 작으면 = max-selection 편향(어제 함정). 둘 다 TTM>annual이면 진짜 우위.
