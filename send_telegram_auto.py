@@ -977,6 +977,15 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
     lines.append('━━━━━━━━━━━━━━━')
     # 국면 전환 조기경보 (v80.28): 매매룰 5일확인 불변, 1일째부터 카운트다운 표시만
     lines.extend(build_regime_alert_lines())
+    # 섹터 브레드스 50%-스케일 advisory (2026-06-20, US검증 조기방어): 시그널 불변, 노출축소 권고만
+    # 킬스위치 REGIME_BREADTH_DISABLE=1. 수집실패시 빈문자열(안전).
+    try:
+        from breadth_diagnostic import build_breadth_line as _bbl
+        _bline = _bbl()
+        if _bline:
+            lines.append(_bline)
+    except Exception:
+        pass
     if _mode_for_rule == 'defense':
         lines.append('🛡️ 방어 모드 — 현금 100% 보유 권장')
         lines.append('약세장 진입: 신규 매수 X')
