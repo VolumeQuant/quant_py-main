@@ -128,9 +128,10 @@ def build_breadth_line():
         # 헤드라인 = 종목기준(정직). 트리거는 섹터지수 신호.
         head_pct = (tb * 100) if tb is not None else s['value'] * 100
         if s['defense_on']:
-            return (f"📐 <b>시장 참여폭 {head_pct:.0f}%</b>{bests} — 🔴 광범위 약세\n"
-                    f"  ⚠️ 섹터 절반↑ 200일선 붕괴 {s['streak_below']}일 → <b>시스템 노출 50% 축소 권고</b>\n"
-                    f"  ※ 보험성(US검증): 약세장 MDD 24.7→19.2%. 현금버퍼로 조절. 매매시그널 불변.")
+            return (f"📐 <b>시장 참여폭 {head_pct:.0f}%</b>{bests} — 🟠 협소장 경보\n"
+                    f"  ⚠️ 섹터 참여폭 약화 {s['streak_below']}일 → <b>시스템 노출 50%로 축소 권고</b> (보험)\n"
+                    f"  ※ 약세장 '확정' 아님(그건 코스피 게이트 몫). 헛방어 잦아 *절반만* 줄이는 신호.\n"
+                    f"  약세장 MDD 24.7→19.2%(검증). 현금버퍼로 조절, 매매시그널 불변.")
         elif head_pct < 30:
             return (f"📐 <b>시장 참여폭 {head_pct:.0f}%</b>{bests} — 🔴 협소장(소수 섹터만 강세)\n"
                     f"  ※ 섹터지수 {s['value']*100:.0f}%, <35% 3일 지속 시 노출 50% 축소 권고. 아직 미발동.")
