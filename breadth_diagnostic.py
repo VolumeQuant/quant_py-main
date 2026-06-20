@@ -39,18 +39,39 @@ def _sector_breadth_series(ohlcv_path=None, sector_path=None):
     return ((sdf > ma) & valid).sum(axis=1) / valid.sum(axis=1).replace(0, np.nan)
 
 
+def true_breadth():
+    """진짜 시장 참여폭 — 전종목 중 자기 200일선 위 비율(섹터지수 착시 보정).
+    섹터'지수'는 연초급등 잔상으로 속이 병들어도 위로 보임(바이오 +33%인데 내부 8%) → 종목기준이 정직.
+    returns (pct, healthy_sector). 실패시 (None, '')."""
+    try:
+        prices = pd.read_parquet(sorted(glob.glob(os.path.join(CACHE, 'all_ohlcv_adj_*.parquet')))[-1]).replace(0, np.nan)
+        ma = prices.rolling(200, min_periods=150).mean()
+        valid = prices.notna() & ma.notna()
+        pct = float(((prices > ma) & valid).iloc[-1].sum() / valid.iloc[-1].sum())
+        # 내부breadth 가장 건강한 섹터 1개
+        sec = pd.read_parquet(sorted(glob.glob(os.path.join(CACHE, 'krx_sector_*.parquet')))[-1])
+        sec = sec.rename(columns={sec.columns[0]: 'ticker', sec.columns[1]: 'sector'})
+        best = ('', 0)
+        for s, g in sec.groupby('sector')['ticker']:
+            cols = [t for t in g if t in valid.columns and valid[t].iloc[-1]]
+            if len(cols) < 5: continue
+            w = sum(1 for t in cols if (prices[t] > ma[t]).iloc[-1]) / len(cols)
+            if w > best[1]: best = (s, w)
+        return pct, f"{best[0]}({best[1]*100:.0f}%)"
+    except Exception:
+        return None, ''
+
+
 def sector_breadth_status():
-    """현재 섹터브레드스 + 3일확인 발동여부. dict(value, defense_on, hist_mean, streak_below)."""
+    """섹터지수 브레드스(트리거용) + 3일확인 발동여부. dict(value, defense_on, hist_mean, streak_below)."""
     bs = _sector_breadth_series().dropna()
     cur = float(bs.iloc[-1])
-    # 3일확인 상태머신 (BT와 동일)
     md = True; stk = 0; ss = None
     for v in bs.values:
         s = v > THRESH
         stk = stk + 1 if s == ss else 1; ss = s
         if stk >= CONFIRM and md != s:
             md = s
-    # 최근 연속 <임계 일수 (카운트다운 표시용)
     below = 0
     for v in bs.values[::-1]:
         if v < THRESH:
@@ -93,16 +114,23 @@ def build_breadth_line():
         return ''
     try:
         s = sector_breadth_status()
-        v = s['value'] * 100; mean = s['hist_mean'] * 100
+        tb, best = true_breadth()  # 진짜 참여폭(종목기준, 착시보정) + 건강섹터
+        tbs = f" · 종목기준 {tb*100:.0f}%" if tb is not None else ""
+        bests = f" · 건강 {best}" if best else ""
+        # 헤드라인 = 종목기준(정직). 트리거는 섹터지수 신호.
+        head_pct = (tb * 100) if tb is not None else s['value'] * 100
         if s['defense_on']:
-            return (f"📐 <b>섹터 참여폭 {v:.0f}%</b> (평균 {mean:.0f}%) — 🔴 광범위 약세\n"
+            return (f"📐 <b>시장 참여폭 {head_pct:.0f}%</b>{bests} — 🔴 광범위 약세\n"
                     f"  ⚠️ 섹터 절반↑ 200일선 붕괴 {s['streak_below']}일 → <b>시스템 노출 50% 축소 권고</b>\n"
-                    f"  ※ 보험성(US검증): 약세장 MDD 24.7→19.2%. 현금버퍼로 조절. 매매시그널은 불변.")
-        elif v < mean * 0.7:
-            return (f"📐 <b>섹터 참여폭 {v:.0f}%</b> (평균 {mean:.0f}%) — 🟡 약화(감시)\n"
-                    f"  ※ <35% 3일 지속 시 노출 50% 축소 권고. 아직 미발동.")
+                    f"  ※ 보험성(US검증): 약세장 MDD 24.7→19.2%. 현금버퍼로 조절. 매매시그널 불변.")
+        elif head_pct < 30:
+            return (f"📐 <b>시장 참여폭 {head_pct:.0f}%</b>{bests} — 🔴 협소장(소수 섹터만 강세)\n"
+                    f"  ※ 섹터지수 {s['value']*100:.0f}%, <35% 3일 지속 시 노출 50% 축소 권고. 아직 미발동.")
+        elif head_pct < 45:
+            return (f"📐 시장 참여폭 {head_pct:.0f}%{bests} — 🟡 약화(감시)\n"
+                    f"  ※ <35%(섹터지수) 3일 지속 시 노출 50% 축소 권고.")
         else:
-            return f"📐 섹터 참여폭 {v:.0f}% (평균 {mean:.0f}%) — 🟢 정상"
+            return f"📐 시장 참여폭 {head_pct:.0f}%{bests} — 🟢 정상"
     except Exception:
         return ''
 
