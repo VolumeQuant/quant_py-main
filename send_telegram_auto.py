@@ -259,6 +259,15 @@ def calc_system_returns(regime_info=None):
     start_date = None
     equity_history = {}  # date → equity
 
+    # 섹터 브레드스 50%-스케일 (2026-06-20, US검증 조기방어): 발동일은 노출 절반(보유유지·절반현금)
+    # production==BT 정합 — 추적수익률이 50%스케일 전략 반영. 킬스위치/실패시 전부 1.0(무영향).
+    try:
+        from breadth_diagnostic import breadth_scale_by_date as _bsbd
+        _breadth_scale = _bsbd(list(dates))
+    except Exception:
+        _breadth_scale = {}
+    _cash_daily = 0.03 / 252
+
     for i in range(len(dates)):
         d0 = dates[i]
         d1 = dates[i - 1] if i >= 1 else None
@@ -274,6 +283,10 @@ def calc_system_returns(regime_info=None):
                     daily_rets.append(cp / pp - 1)
             if daily_rets:
                 avg_ret = sum(daily_rets) / len(daily_rets)
+                # 섹터브레드스 발동일 = 노출 50%(절반 현금). boost인 날만(defense는 이미 현금).
+                _sc = _breadth_scale.get(d0, 1.0)
+                if _sc != 1.0 and regime_by_date.get(d0, True):
+                    avg_ret = _sc * avg_ret + (1 - _sc) * _cash_daily
                 equity *= (1 + avg_ret)
         equity_history[d0] = equity
 

@@ -61,6 +61,32 @@ def sector_breadth_status():
             'streak_below': below, 'date': str(bs.index[-1].date())}
 
 
+def breadth_scale_by_date(dates):
+    """각 date의 노출 스케일 {date_str: 1.0(정상) or SCALE(0.5, 브레드스 발동)}.
+    3일확인 상태머신을 전체 시계열에 적용(BT와 동일). 킬스위치/실패시 전부 1.0(무영향).
+    calc_system_returns·run_daily 공용 — production==BT 정합용."""
+    if os.environ.get('REGIME_BREADTH_DISABLE') == '1':
+        return {d: 1.0 for d in dates}
+    try:
+        bs = _sector_breadth_series().dropna()
+        # 전체 시계열에 3일확인 상태머신 → date별 defense여부
+        defmap = {}
+        md = True; stk = 0; ss = None
+        for ts, v in bs.items():
+            s = v > THRESH
+            stk = stk + 1 if s == ss else 1; ss = s
+            if stk >= CONFIRM and md != s:
+                md = s
+            defmap[ts.strftime('%Y%m%d')] = (not md)  # True=브레드스 방어(축소)
+        out = {}
+        for d in dates:
+            ds = d if (isinstance(d, str) and len(d) == 8) else pd.Timestamp(d).strftime('%Y%m%d')
+            out[d] = SCALE if defmap.get(ds, False) else 1.0
+        return out
+    except Exception:
+        return {d: 1.0 for d in dates}
+
+
 def build_breadth_line():
     """텔레그램 푸터용 — 섹터 참여폭 + 발동시 50% 축소 권고. 정보·권고용(매매 시그널 아님)."""
     if os.environ.get('REGIME_BREADTH_DISABLE') == '1':
