@@ -15,7 +15,12 @@ import numpy as np, pandas as pd
 
 CACHE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data_cache')
 THRESH = 0.35
-CONFIRM = 3
+# ★비대칭 확인일 (2026-06-20): 발동 빠르게(3) / 복귀 신중하게(5).
+# 복귀 3일은 국면의존(약세·협소 유리·코로나 불리)·표본얇아 중간신뢰 → 5일로 보수화(사용자 결정).
+# 7.4년 검증: 3/5 Calmar 4.280(3/3 4.358과 노이즈내), 전환 32→26↓, 코로나서 덜다침.
+CONFIRM_FIRE = 3
+CONFIRM_RECOVER = 5
+CONFIRM = CONFIRM_FIRE  # 호환
 SCALE = 0.5  # 발동시 권고 노출 (50%)
 
 
@@ -74,13 +79,14 @@ def sector_breadth_status():
     """섹터지수 브레드스(트리거용) + 3일확인 발동여부 + 전일대비 전환(발동/복귀 알림용)."""
     bs = _sector_breadth_series().dropna()
     cur = float(bs.iloc[-1])
-    md = True; stk = 0; ss = None
+    # ★비대칭: 발동 CONFIRM_FIRE(3)일 아래, 복귀 CONFIRM_RECOVER(5)일 위
+    md = True; below = 0; above = 0
     state_hist = []  # 각 날의 발동여부(not md) 기록 → 마지막 2일로 전환 감지
     for v in bs.values:
-        s = v > THRESH
-        stk = stk + 1 if s == ss else 1; ss = s
-        if stk >= CONFIRM and md != s:
-            md = s
+        if v < THRESH: below += 1; above = 0
+        else: above += 1; below = 0
+        if md and below >= CONFIRM_FIRE: md = False        # 발동
+        elif (not md) and above >= CONFIRM_RECOVER: md = True  # 복귀
         state_hist.append(not md)  # True=방어발동
     defense_on = state_hist[-1]
     defense_prev = state_hist[-2] if len(state_hist) >= 2 else defense_on
@@ -104,14 +110,14 @@ def breadth_scale_by_date(dates):
         return {d: 1.0 for d in dates}
     try:
         bs = _sector_breadth_series().dropna()
-        # 전체 시계열에 3일확인 상태머신 → date별 defense여부
+        # ★비대칭 상태머신(발동 3일/복귀 5일) → date별 defense여부 (BT==production)
         defmap = {}
-        md = True; stk = 0; ss = None
+        md = True; below = 0; above = 0
         for ts, v in bs.items():
-            s = v > THRESH
-            stk = stk + 1 if s == ss else 1; ss = s
-            if stk >= CONFIRM and md != s:
-                md = s
+            if v < THRESH: below += 1; above = 0
+            else: above += 1; below = 0
+            if md and below >= CONFIRM_FIRE: md = False
+            elif (not md) and above >= CONFIRM_RECOVER: md = True
             defmap[ts.strftime('%Y%m%d')] = (not md)  # True=브레드스 방어(축소)
         out = {}
         for d in dates:
@@ -135,7 +141,7 @@ def build_breadth_line():
         head_pct = (tb * 100) if tb is not None else s['value'] * 100
         # ★전환 명시 알림 (발동/복귀)
         if s.get('just_recovered'):
-            return (f"✅ <b>섹터 참여폭 회복</b> (섹터지수 35% 위 3일) — <b>시스템 노출 100% 복귀</b>\n"
+            return (f"✅ <b>섹터 참여폭 회복</b> (섹터지수 35% 이상 5거래일) — <b>시스템 노출 100% 복귀</b>\n"
                     f"  📐 시장 참여폭 {head_pct:.0f}%{bests}. 조기방어 해제.")
         if s.get('just_fired'):
             return (f"🚨 <b>섹터 참여폭 발동</b> (섹터지수 35% 미만 3일) — <b>시스템 노출 50%로 축소 권고</b>\n"
