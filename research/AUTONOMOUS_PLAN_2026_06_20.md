@@ -32,3 +32,9 @@
 - **B2 변동성계열** (`_vol_regime_bt.py`): RV term-structure(RV5/RV60)·하방반편차·signed-jump·단면분산 전부 게이트로 baseline 열위(발동시 Cal 2.7~3.7) 또는 무효(SJ>-0.5는 4.13이나 13일만 발동=노이즈). 기각.
 - **B3 soft 슬롯축소 overlay** (`_soft_overlay_bt.py`, flagship): ★고정3슬롯=4.077/25.9% baseline 재현 검증 후 — b200약세시 3→2→1 축소하면 Calmar↓ AND **MDD 오히려 악화(29~43%)**. 이유: 슬롯축소=집중도↑=분산효과 상실, 약세장 1종목몰빵이 더 위험. ★3슬롯 분산 자체가 리스크컨트롤. 기각.
 - **중간결론**: 모든 조기방어(브레드스 하드/소프트·드로다운·빠른MA·변동성)가 실패. 약세 MDD는 줄여도 강세 수익을 더 잃거나(불참) 집중도로 MDD 악화. MA20/80+3슬롯이 최적점. 유일 작동 레버=현금버퍼(메타).
+
+### ★자율주행 1차 완료 (2026-06-20)
+- **최종결론**: 조기방어 신호 전부 기각(baseline MA20/80/5+3슬롯 최적 확정). 유일 레버=현금버퍼(70/30 Cal4.14/MDD19.2%). 브레드스는 진단지표로만.
+- **산출물**: `EARLY_WARNING_FINDINGS_2026_06_20.md`(종합), BT 6계열(`_breadth_gate_bt`·`_vol_regime_bt`·`_soft_overlay_bt`·`_regime_early_defense`·`_regime_oos_decide`·`_regime_kospi200_test`), 회수후보(`_ew_recovered.json`), 진단지표 모듈(`breadth_diagnostic.py`, 미배포). CLAUDE.md+메모리 갱신. 전부 커밋·푸쉬. 개인봇 중간보고 발송.
+- **미완(외부데이터)**: KR 회사채-국고채 신용스프레드(ECOS 한은 API 필요, KRX probe는 서버타임아웃). 크로스에셋(DXY/KRW). HMM/ruptures(미설치). → 동일 defend-on-weakness 구조라 극복 가능성 낮음, 후속과제.
+- **배포 대기(복귀 후 승인)**: breadth_diagnostic 푸터 wire(표시전용). 그 외 프로덕션 무변경.
