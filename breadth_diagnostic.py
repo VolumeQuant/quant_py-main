@@ -36,7 +36,15 @@ def _sector_breadth_series(ohlcv_path=None, sector_path=None):
     sdf = pd.DataFrame(idx)
     ma = sdf.rolling(200, min_periods=150).mean()
     valid = sdf.notna() & ma.notna()
-    return ((sdf > ma) & valid).sum(axis=1) / valid.sum(axis=1).replace(0, np.nan)
+    b = ((sdf > ma) & valid).sum(axis=1) / valid.sum(axis=1).replace(0, np.nan)
+    # ★거래일만 (all_ohlcv_adj는 주말 carry 포함 → 3일확인이 달력일 카운트되는 버그).
+    # kospi_yf(거래일만)로 reindex해 BT(거래일 기준)와 정합. 2026-06-20 사용자 지적 fix.
+    try:
+        kidx = pd.read_parquet(os.path.join(CACHE, 'kospi_yf.parquet')).index
+        b = b.reindex(kidx).dropna()
+    except Exception:
+        b = b[b.index.dayofweek < 5]  # 폴백: 주말만 제거
+    return b
 
 
 def true_breadth():
