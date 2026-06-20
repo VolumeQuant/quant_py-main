@@ -38,3 +38,8 @@
 - **산출물**: `EARLY_WARNING_FINDINGS_2026_06_20.md`(종합), BT 6계열(`_breadth_gate_bt`·`_vol_regime_bt`·`_soft_overlay_bt`·`_regime_early_defense`·`_regime_oos_decide`·`_regime_kospi200_test`), 회수후보(`_ew_recovered.json`), 진단지표 모듈(`breadth_diagnostic.py`, 미배포). CLAUDE.md+메모리 갱신. 전부 커밋·푸쉬. 개인봇 중간보고 발송.
 - **미완(외부데이터)**: KR 회사채-국고채 신용스프레드(ECOS 한은 API 필요, KRX probe는 서버타임아웃). 크로스에셋(DXY/KRW). HMM/ruptures(미설치). → 동일 defend-on-weakness 구조라 극복 가능성 낮음, 후속과제.
 - **배포 대기(복귀 후 승인)**: breadth_diagnostic 푸터 wire(표시전용). 그 외 프로덕션 무변경.
+
+### 하트비트 (KRX throttle 지속)
+- data.krx.co.kr 여전히 ReadTimeout(throttle) — KR 신용스프레드 후보 시도 불가(KRX/ECOS 필요). busywork 안 함.
+- ★자율주행 핵심성과: 섹터브레드스 50%스케일 발견·검증·배포 완료(commit b7a15b008~dfe4c8a45). Cal 4.08→4.36, 약세 24.7→19.2%. advisory + 추적수익률 기계반영.
+- 신용스프레드는 KRX 쿨다운 후 1회 시도(저우선). 사용자 복귀·재개입 상태.
