@@ -947,7 +947,7 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         r2 = t2_cr_sig.get(ticker, '-')
         # v80.26: 표시점수 = 3일가중 멀티팩터점수 고정앵커(weighted_score_100). 순위(wr)와 동일 가중치라 정합. 매매 영향 0.
         score_100 = weighted_score_100(ticker, rankings_t0, rankings_t1, rankings_t2)
-        lines.append(f'순위 {r2}→{r1}→{r0}위 · {score_100:.1f}점')
+        lines.append(f'당일 순위 {r2}→{r1}→{r0}위 · {score_100:.1f}점')
 
         # L2: AI 내러티브 (fallback: _get_buy_rationale)
         narrative = ''
@@ -1174,7 +1174,7 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
             exit_line_shown = True
 
         # 궤적: cr-rank 그대로 표시 (없으면 "-")
-        lines.append(f'{status} {idx}. {name}({sector}) {r2}→{r1}→{r0}위 · {score_disp}점')
+        lines.append(f'{status} {idx}. {name}({sector}) 당일{r2}→{r1}→{r0}위 · {score_disp}점')
 
     # ── 이탈 섹션 (사유별 묶기, 20위 다음 빈 줄 없이 바로) ──
     if exited:
@@ -1202,7 +1202,8 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
 
     # ── Watchlist footer: 면책 (간결, 빈 줄 없이 붙임) ──
     lines.append('━━━━━━━━━━━━━━━')
-    lines.append('순위 표기: 3일 가중순위 (2일전 → 1일전 → 오늘)')
+    lines.append('앞 번호=매매순위(3일가중 wr) · 화살표=당일순위(cr, 그날 강도일 뿐 매매기준 아님)')
+    lines.append('매도 기준선 아래 = 가중순위 6위 밖 = 매도/매수금지 (당일순위 높아도 매수 아님)')
     lines.append('투자 손실 책임은 투자자 본인에게 있습니다.')
 
     return '\n'.join(lines)
