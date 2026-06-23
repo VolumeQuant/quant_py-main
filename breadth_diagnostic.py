@@ -128,40 +128,39 @@ def breadth_scale_by_date(dates):
         return {d: 1.0 for d in dates}
 
 
-def build_breadth_line():
-    """텔레그램 푸터용 — 섹터 참여폭 + 발동시 50% 축소 권고. 정보·권고용(매매 시그널 아님)."""
+def build_breadth_advisory():
+    """텔레그램용 — (문구, is_alert) 반환. is_alert(발동/지속/복귀=행동필요)면 메시지 상단,
+    평소(정상/감시/협소)면 footer 배치용. 아이콘은 상태표시 1개(🚨🟠✅🟢🟡🔴)만 — 장식 기호 안 씀.
+    문구는 쉬운 말(전문용어/BT숫자 뺌). head_pct=종목기준(전체 종목 중 200일선 위 비율=상승추세)."""
     if os.environ.get('REGIME_BREADTH_DISABLE') == '1':
-        return ''
+        return '', False
     try:
         s = sector_breadth_status()
-        tb, best = true_breadth()  # 진짜 참여폭(종목기준, 착시보정) + 건강섹터
-        tbs = f" · 종목기준 {tb*100:.0f}%" if tb is not None else ""
-        bests = f" · 건강 {best}" if best else ""
-        # 헤드라인 = 종목기준(정직). 트리거는 섹터지수 신호.
+        tb, _best = true_breadth()  # 종목기준 참여폭(전체 종목 중 200일선 위 비율 = 상승추세)
         head_pct = (tb * 100) if tb is not None else s['value'] * 100
-        # ★전환 명시 알림 (발동/복귀)
+        note = "  ※ 종목 신호는 그대로, 비중만 조절"  # 짧게(폰 1줄)
         if s.get('just_recovered'):
-            return (f"✅ <b>섹터 참여폭 회복</b> (섹터지수 35% 이상 5거래일) — <b>시스템 노출 100% 복귀</b>\n"
-                    f"  📐 시장 참여폭 {head_pct:.0f}%{bests}. 조기방어 해제.")
+            return (f"✅ <b>방어 해제 — 주식 100% 복귀 OK</b>\n"
+                    f"  상승 추세 종목 {head_pct:.0f}%로 회복", True)
         if s.get('just_fired'):
-            return (f"🚨 <b>섹터 참여폭 발동</b> (섹터지수 35% 미만 3일) — <b>시스템 노출 50%로 축소 권고</b>\n"
-                    f"  📐 시장 참여폭 {head_pct:.0f}%{bests}. 보험: 약세장 MDD 24.7→19.2%(검증).\n"
-                    f"  ※ 약세장 확정 아님(코스피 게이트 몫). 헛방어 잦아 *절반만*. 현금버퍼로 조절, 매매시그널 불변.")
+            return (f"🚨 <b>시장 방어 — 주식 50% 현금화 권고</b>\n"
+                    f"  상승 추세 종목 {head_pct:.0f}%뿐 (대부분 약세)\n{note}", True)
         if s['defense_on']:
-            return (f"📐 <b>시장 참여폭 {head_pct:.0f}%</b>{bests} — 🟠 협소장 경보\n"
-                    f"  ⚠️ 섹터 참여폭 약화 {s['streak_below']}일 → <b>시스템 노출 50%로 축소 권고</b> (보험)\n"
-                    f"  ※ 약세장 '확정' 아님(그건 코스피 게이트 몫). 헛방어 잦아 *절반만* 줄이는 신호.\n"
-                    f"  약세장 MDD 24.7→19.2%(검증). 현금버퍼로 조절, 매매시그널 불변.")
-        elif head_pct < 30:
-            return (f"📐 <b>시장 참여폭 {head_pct:.0f}%</b>{bests} — 🔴 협소장(소수 섹터만 강세)\n"
-                    f"  ※ 섹터지수 {s['value']*100:.0f}%. 섹터지수 35% 미만 3일 지속 시 노출 50% 축소 권고. 아직 미발동.")
-        elif head_pct < 45:
-            return (f"📐 시장 참여폭 {head_pct:.0f}%{bests} — 🟡 약화(감시)\n"
-                    f"  ※ 섹터지수 35% 미만 3일 지속 시 노출 50% 축소 권고.")
-        else:
-            return f"📐 시장 참여폭 {head_pct:.0f}%{bests} — 🟢 정상"
+            return (f"🟠 <b>방어 지속 — 현금 50% 유지</b> ({s['streak_below']}일째)\n"
+                    f"  상승 추세 종목 {head_pct:.0f}%\n{note}", True)
+        if head_pct < 30:
+            return (f"🔴 상승 추세 종목 {head_pct:.0f}%뿐 — 소수만 강세\n"
+                    f"  3일 지속 시 비중 절반 권고 (아직 아님)", False)
+        if head_pct < 45:
+            return (f"🟡 상승 추세 종목 {head_pct:.0f}% — 약화(감시 중)", False)
+        return (f"🟢 상승 추세 종목 {head_pct:.0f}% — 정상", False)
     except Exception:
-        return ''
+        return '', False
+
+
+def build_breadth_line():
+    """하위호환 — 문구만 반환(위치 무관 호출처용)."""
+    return build_breadth_advisory()[0]
 
 
 if __name__ == '__main__':

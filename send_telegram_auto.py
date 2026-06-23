@@ -749,7 +749,7 @@ def create_regime_switch_message(regime_mode, prev_mode=None):
             '공격 모드 매매 기준',
             '━━━━━━━━━━━━━━━',
             '매수: 3일 연속 ✅ 상위 3종목 (최대 3)',
-            '매도: 3일 가중순위 6위 밖',
+            '매도: 순위 6위 밖으로 밀리면',
             '',
             '━━━━━━━━━━━━━━━',
             '백테스트 (7년, 2019~2026)',
@@ -825,6 +825,16 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         f'📡 AI 종목 브리핑 KR · {date_str}',
         regime_label,
     ]
+
+    # 섹터 브레드스 advisory — 한 번 계산 후 위치 결정: 발동/지속/복귀(행동필요)=상단, 평소=footer
+    _breadth_line, _breadth_alert = '', False
+    try:
+        from breadth_diagnostic import build_breadth_advisory as _bba
+        _breadth_line, _breadth_alert = _bba()
+    except Exception:
+        pass
+    if _breadth_line and _breadth_alert:
+        lines.append(_breadth_line)
 
     lines += [
         '국내 전 종목을 매일 자동 분석한',
@@ -947,7 +957,7 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         r2 = t2_cr_sig.get(ticker, '-')
         # v80.26: 표시점수 = 3일가중 멀티팩터점수 고정앵커(weighted_score_100). 순위(wr)와 동일 가중치라 정합. 매매 영향 0.
         score_100 = weighted_score_100(ticker, rankings_t0, rankings_t1, rankings_t2)
-        lines.append(f'당일 순위 {r2}→{r1}→{r0}위 · {score_100:.1f}점')
+        lines.append(f'순위 {r2}→{r1}→{r0}위 · {score_100:.1f}점')
 
         # L2: AI 내러티브 (fallback: _get_buy_rationale)
         narrative = ''
@@ -990,22 +1000,17 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
     lines.append('━━━━━━━━━━━━━━━')
     # 국면 전환 조기경보 (v80.28): 매매룰 5일확인 불변, 1일째부터 카운트다운 표시만
     lines.extend(build_regime_alert_lines())
-    # 섹터 브레드스 50%-스케일 advisory (2026-06-20, US검증 조기방어): 시그널 불변, 노출축소 권고만
+    # 섹터 브레드스 advisory (2026-06-20): 평소(미발동)면 footer. 발동/지속/복귀는 이미 상단에 표시함.
     # 킬스위치 REGIME_BREADTH_DISABLE=1. 수집실패시 빈문자열(안전).
-    try:
-        from breadth_diagnostic import build_breadth_line as _bbl
-        _bline = _bbl()
-        if _bline:
-            lines.append(_bline)
-    except Exception:
-        pass
+    if _breadth_line and not _breadth_alert:
+        lines.append(_breadth_line)
     if _mode_for_rule == 'defense':
         lines.append('🛡️ 방어 모드 — 현금 100% 보유 권장')
         lines.append('약세장 진입: 신규 매수 X')
         lines.append('시스템은 신호만, 매매는 본인 판단')
     else:
         lines.append(f'매수: 3일 연속 상위 {_rule_e}종목 (최대 {_rule_s}종목)')
-        lines.append(f'매도: 3일 가중순위 {_rule_x}위 밖 (단일 조건)')
+        lines.append(f'매도: 순위 {_rule_x}위 밖으로 밀리면')
         lines.append('시스템은 신호만, 매매는 본인 판단')
 
     return '\n'.join(lines)
@@ -1082,9 +1087,9 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
     rank 순 정렬 (✅/⏳/🆕 인라인 마커)
     """
     lines = [
-        '📋 <b>Top 20 종목 현황</b>',
+        '📋 <b>상위 20종목 현황</b>',
         '상위 20종목과 순위 변동 현황입니다.',
-        (f'✅ 3일 검증 ⏳ 2일 관찰 🆕 신규 진입 | 손절 {int(rp_current["STOP_LOSS"]*100)}%' if rp_current and rp_current.get("STOP_LOSS") else '✅ 3일 검증 ⏳ 2일 관찰 🆕 신규 진입') if rp_current else '✅ 3일 검증 ⏳ 2일 관찰 🆕 신규 진입',
+        (f'✅ 3일 연속 상위 ⏳ 2일째 🆕 오늘 처음 | 손절 {int(rp_current["STOP_LOSS"]*100)}%' if rp_current and rp_current.get("STOP_LOSS") else '✅ 3일 연속 상위 ⏳ 2일째 🆕 오늘 처음') if rp_current else '✅ 3일 연속 상위 ⏳ 2일째 🆕 오늘 처음',
     ]
 
     if not pipeline:
@@ -1174,7 +1179,7 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
             exit_line_shown = True
 
         # 궤적: cr-rank 그대로 표시 (없으면 "-")
-        lines.append(f'{status} {idx}. {name}({sector}) 당일{r2}→{r1}→{r0}위 · {score_disp}점')
+        lines.append(f'{status} {idx}. {name}({sector}) {r2}→{r1}→{r0}위 · {score_disp}점')
 
     # ── 이탈 섹션 (사유별 묶기, 20위 다음 빈 줄 없이 바로) ──
     if exited:
@@ -1202,8 +1207,9 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
 
     # ── Watchlist footer: 면책 (간결, 빈 줄 없이 붙임) ──
     lines.append('━━━━━━━━━━━━━━━')
-    lines.append('앞 번호=매매순위(3일가중 wr) · 화살표=당일순위(cr, 그날 강도일 뿐 매매기준 아님)')
-    lines.append('매도 기준선 아래 = 가중순위 6위 밖 = 매도/매수금지 (당일순위 높아도 매수 아님)')
+    lines.append('앞 번호 = 매매 순위 (이 순위로 사고팔아요)')
+    lines.append('화살표 = 날짜별 순위 (참고용, 매매 기준 아님)')
+    lines.append('매도선 아래 = 순위 6위 밖 → 매도·신규매수 X')
     lines.append('투자 손실 책임은 투자자 본인에게 있습니다.')
 
     return '\n'.join(lines)
