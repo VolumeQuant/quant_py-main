@@ -234,6 +234,11 @@ def _build_mode_env(params):
         # 자작 ±33/45% 보정이 추가로 잡는 630건은 진짜 CA가 아니라 거래정지/정리매매/감자/폭락(잘못된 보정).
         # BT는 ON +0.209였으나 대상이 전부 미보유 부실주라 노이즈(진짜알파 아님). 잘못된 보정은 제거가 정석.
         'CORPACTION_ADJ_DISABLE': '1',
+        # 2026-06-25: 계절성(Q2/Q4) 페널티 OFF — lumpiness(v80.29)와 완전 중복.
+        # 계절성 발동조건(min/max≤0.2, 면제선)이 lumpiness 발동(min/max<0.25)의 부분집합 →
+        # 계절성 걸리는 종목 전부 lumpiness가 잡음(7.4년 반례 0건). WF 전블록 무해(±0.01), MDD 동일.
+        # 영익lump(-1.6 우량주학살)·면제선풀기(-0.4 정상주죽임)는 기각, 계절성제거(중복정리)만 채택.
+        'SEASONALITY_DISABLE': '1',
         'FACTOR_V_W': str(params['V_W']),
         'FACTOR_Q_W': str(params['Q_W']),
         'FACTOR_G_W': str(params['G_W']),
