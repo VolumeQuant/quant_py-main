@@ -230,6 +230,10 @@ def _run_fg_single(base_date, env_vars, state_dir, logfile):
 def _build_mode_env(params):
     """regime params → FG env vars dict"""
     env = {
+        # 2026-06-24: 자작 권리락보정(corpaction) OFF. 가격은 이미 KRX 수정주가(무상증자/분할 반영됨).
+        # 자작 ±33/45% 보정이 추가로 잡는 630건은 진짜 CA가 아니라 거래정지/정리매매/감자/폭락(잘못된 보정).
+        # BT는 ON +0.209였으나 대상이 전부 미보유 부실주라 노이즈(진짜알파 아님). 잘못된 보정은 제거가 정석.
+        'CORPACTION_ADJ_DISABLE': '1',
         'FACTOR_V_W': str(params['V_W']),
         'FACTOR_Q_W': str(params['Q_W']),
         'FACTOR_G_W': str(params['G_W']),

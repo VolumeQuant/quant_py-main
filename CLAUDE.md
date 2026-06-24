@@ -50,6 +50,17 @@
 > **★교훈(재발방지)**: ①raw/adjusted **파일명 충돌**(`all_ohlcv_*` glob이 adj까지 매칭) — 파생 가격파일은 glob 안 걸리게 명명 or 모든 루프에 날짜검증. ②**매일 전체 재계산은 입력오염에 취약** → "고정 사실"(과거 CA)은 append-only 누적(재계산 금지). ③**배포 후 첫 라이브 산출물(ca_events 수·penalty 발동수·핵심종목 순위) 반드시 검수.**
 > **+ Gemini 503(Google 장애)로 그날 AI 분석 누락**(재시도3+lite폴백 후에도 503 → graceful skip, 메시지는 발송). 외부 API 장애는 우리 버그 아님(폴백 정상). 재전송 시 Gemini 복구돼 AI 포함. 진단: `logs/daily_20260618.log`.
 
+## ★ 자작 corpaction 보정 OFF 배포 + 가격배선 진실 (2026-06-24)
+
+> **결판**: 사용자 "무상증자 가격보정이 유리했나, 안 하는 게 나아서 안 했나" → 코드/데이터 정밀 검증.
+> **확인된 진실 4개:**
+> 1. **현재 production 가격 = raw `all_ohlcv_20170601_*`** (의도했던 `all_ohlcv_adj_*` 아님). 단 ★**raw == adj 완전 동일**(3406종목 중 1개만 차이) = raw가 이미 KRX 수정주가화돼 있음 → 무상증자/분할 다 반영됨. 즉 "수정주가 배선이 죽은코드(line 142)"지만 **가격은 실질적으로 수정주가** = 무해.
+> 2. **자작 corpaction 보정이 코드 기본 ON이었음**(FG L1815 `CORPACTION_ADJ_DISABLE != '1'`). 재생성 스크립트 주석은 "OFF"라 적었으나 실제 ON으로 생성됨(인식·실제 불일치).
+> 3. **자작이 추가로 보정하던 630건/275종목 = 진짜 CA 0건**(ca_events 미등록). 전부 거래정지 후 재개·정리매매·감자·진짜 폭락 = ★**잘못된 보정**(진짜 가치하락을 무상증자로 착각해 매끈하게 펴버림). 6/18 "자작 ±33/45%는 잡것까지 과보정" 확증.
+> 4. **OFF vs ON 7.4년 BT**: ON 4.515 vs OFF 4.306(+0.209)였으나 ★대상이 전부 **미보유 부실주**(거래정지·상폐직전)라 매수권 영향은 cross-sectional z 재배열 부산물 = **노이즈**(진짜 알파 아님, ON/OFF state 다른배치 생성차도 섞임).
+>
+> **조치(사용자 결정 "잘못된 건 안 하는 게 맞다")**: 자작보정 **OFF 배포**. `run_daily._build_mode_env`에 `CORPACTION_ADJ_DISABLE='1'` 추가(boost/defense 모든 FG 경로 통과). state/(boost)+state/defense/ 2019~6/19 OFF 재생성·배포(_corpoff), 6/22~24 wr 재계산. 검증: OFF Calmar 4.306, ON 대비 매수권 0% 다름(배포 후 동일). research: `backtest/_corpoff_compare.py`, 재생성 `_regen_corpoff.py`. 롤백: `CORPACTION_ADJ_DISABLE` 제거 + git revert.
+
 ## ★ 수정주가 전환 + 최근 CA 페널티 (2026-06-18, 배포·state 전체 재생성됨)
 
 > 배포: ①FG momentum/MA/mom_10/vol_low = **KRX 수정주가**(`OHLCV_FILE=data_cache/all_ohlcv_adj_*`, `CORPACTION_ADJ_DISABLE=1`로 자작보정 OFF). ②boost에 **최근 CA 페널티 (down-only, 2026-06-18 정련)**(`FACTOR_RECENT_CA_W=0.3, FACTOR_RECENT_CA_K=126`): 최근 126영업일내 **하락CA=무상증자/분할/유상증자(raw<-33% 하락갭만, `ca_events.json` method=`raw_gap_down_-0.33`)** 종목 점수 −0.3. **병합(+45% 상승갭)은 제외**(방향분해 BT: 병합 기여 −0.072 해로움, 하락CA-only 4.05 > both 3.98). state/(boost)+state/defense/ **7.4년 전체 재생성 완료**. 배선: `run_daily._run_fg_single`(OHLCV_FILE 주입)+`_build_mode_env`(페널티 전달)+`regime_indicator` boost params+`data_refresher._refresh_adjusted_ohlcv`(수정주가+ca_events down-only 일일 유지, 실패시 raw 폴백)+FG 페널티 블록. **롤백: `FACTOR_RECENT_CA_W=0`(페널티만 OFF=2.76) 또는 OHLCV_FILE 제거(raw 복귀) 또는 git revert.**
