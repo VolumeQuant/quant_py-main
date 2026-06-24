@@ -1147,15 +1147,16 @@ def vectorized_ma120_filter(price_df, universe_tickers, base_ts):
     full_valid = price_df[valid].notna().sum()
     too_short = full_valid < 126
 
-    prices_slice = price_df[valid].iloc[-120:]
-    if len(prices_slice) < 120:
+    _ma_days = int(os.environ.get('MA_FILTER_DAYS', '120'))  # 기본 120(현행 불변), MA60 BT용 env 오버라이드
+    prices_slice = price_df[valid].iloc[-_ma_days:]
+    if len(prices_slice) < _ma_days:
         return valid, []
 
     # 현재가 (마지막 행)
     current = prices_slice.iloc[-1]
-    # MA120
+    # MA(기본 120)
     ma120 = prices_slice.mean()
-    # 필터: 현재가 >= MA120 AND 126일 이상
+    # 필터: 현재가 >= MA AND 126일 이상
     mask = current >= ma120
     mask = mask.fillna(False) & ~too_short
 
@@ -2054,6 +2055,54 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
             # 순위 재부여
             scored['멀티팩터_순위'] = scored['멀티팩터_점수'].rank(ascending=False, method='first', na_option='bottom')
             print(f'    계절성 패널티: {seas_applied}종목 (ratio>{SEAS_RATIO_THRESH}, ×{SEAS_PENALTY})')
+
+    # ============================================================
+    # v80.29 (2026-06-24): 일회성 분기(lumpiness) 페널티 — 방향무관 매출 변동성
+    # 디바이스(187870)·선익형 = 대형 프로젝트 선적되는 분기만 반짝, 사이엔 텅 빈 회사.
+    # 한 분기 블록버스터가 TTM 뻥튀기→성장2σ→진입권. 다음분기 꺼지면 -50%.
+    # 계절성('curr' Q2/Q4 방향)이 못 잡는 Q1/Q3 산발 lumpiness를 잡음.
+    # 척도: min(최근4분기 매출)/max(최근4분기 매출) < 0.25 → "가장 약한 분기가 센 분기의 25% 미만"
+    #   = 어느 분기가 텅 빔 = 프로젝트 회사. → 성장_점수 × 0.3
+    # PIT(rcept_dt<=base_ts), 8분기 이상·전부 양수 필요. 환경변수 LUMPINESS_DISABLE=1로 비활성.
+    # 검증(7.4년): 진입 5505건 중 min/max<0.25 코호트 fwd60 -0.15%/승률28%(전체 +10%/50%).
+    #   WF 전구간 ≥baseline(약세장 무해), 디바이스 매수일 전부 매수권밖(1→11위 등), 제주반도체 보존,
+    #   LOWO(디바이스·선익 제외) +0.28=광범위. 계절성/일회성(accruals)과 별개 ADD.
+    # ============================================================
+    if os.environ.get('LUMPINESS_DISABLE') != '1':
+        LUMP_THRESH = float(os.environ.get('LUMPINESS_MINMAX_THRESH', '0.25'))
+        LUMP_PENALTY = float(os.environ.get('LUMPINESS_PENALTY', '0.3'))
+        fs_dict_lump = preloaded.get('fs', {})
+        lump_applied = 0
+        for idx, row in scored.iterrows():
+            tk = row.get('종목코드')
+            if not tk or tk not in fs_dict_lump: continue
+            fs_tk = fs_dict_lump[tk]
+            q_tk = fs_tk[(fs_tk['공시구분'] == 'q') & (fs_tk['계정'] == '매출액')]
+            if 'rcept_dt' not in q_tk.columns: continue
+            q_avail = q_tk[q_tk['rcept_dt'].notna() & (q_tk['rcept_dt'] <= base_ts)]
+            if len(q_avail) < 8: continue
+            vals = q_avail.sort_values('rcept_dt').tail(8)['값'].astype(float).values
+            if (vals <= 0).any(): continue
+            last4 = vals[-4:]
+            mx = float(last4.max())
+            if mx <= 0: continue
+            if (float(last4.min()) / mx) < LUMP_THRESH:
+                V_W = float(os.environ.get('FACTOR_V_W', '0.20'))
+                Q_W = float(os.environ.get('FACTOR_Q_W', '0.20'))
+                G_W = float(os.environ.get('FACTOR_G_W', '0.30'))
+                M_W = float(os.environ.get('FACTOR_M_W', '0.30'))
+                new_g = (row.get('성장_점수', 0) or 0) * LUMP_PENALTY
+                scored.at[idx, '성장_점수'] = new_g
+                scored.at[idx, '멀티팩터_점수'] = (
+                    (row.get('밸류_점수', 0) or 0) * V_W +
+                    (row.get('퀄리티_점수', 0) or 0) * Q_W +
+                    new_g * G_W +
+                    (row.get('모멘텀_점수', 0) or 0) * M_W
+                )
+                lump_applied += 1
+        if lump_applied > 0:
+            scored['멀티팩터_순위'] = scored['멀티팩터_점수'].rank(ascending=False, method='first', na_option='bottom')
+            print(f'    일회성분기(lumpiness) 패널티: {lump_applied}종목 (min/max<{LUMP_THRESH}, ×{LUMP_PENALTY})')
 
     # ============================================================
     # v80.25 (2026-06-09): 일회성 이익 페널티 — accruals + 분기쏠림
