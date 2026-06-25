@@ -9,6 +9,27 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 STATE = os.path.join(HERE, 'kr_eps_momentum', 'fusion_state.json')
 
 
+def get_conviction_weights():
+    """매수 후보 종목 옆에 표시할 ticker별 비중 dict. {ticker: {'w':71,'conf':True,'fp':8.0}}.
+    킬스위치/실패 시 빈 dict(안전). 매수 후보 라인에 '💡권고비중 NN%' 붙이는 용도."""
+    if os.environ.get('FUSION_CONVICTION_DISABLE') == '1':
+        return {}
+    try:
+        if not os.path.exists(STATE):
+            return {}
+        st = json.load(open(STATE, encoding='utf-8'))
+        held = st.get('held') or []
+        wpct = st.get('weights_pct') or []
+        if not held or len(held) != len(wpct):
+            return {}
+        out = {}
+        for h, w in zip(held, wpct):
+            out[h.get('ticker')] = {'w': w, 'conf': bool(h.get('confirmed')), 'fp': h.get('fwd_per')}
+        return out
+    except Exception:
+        return {}
+
+
 def build_conviction_line():
     if os.environ.get('FUSION_CONVICTION_DISABLE') == '1':
         return ''
