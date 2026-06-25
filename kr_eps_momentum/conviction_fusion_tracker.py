@@ -28,7 +28,7 @@ CW = 3.0             # (구) binary 확신가중 배수
 # BT(look-ahead 상한): binary×3 Calmar 4.35 → grow비례 k2cap5 4.57(+0.22). 사용자 "강할수록 더".
 # ⚠️ 이득은 집중(cap↑)에서 — 한 종목 비중↑로 3슬롯 분산 약화. 표시제안만(사이징 본인판단).
 CONV_K = float(os.environ.get('FUSION_CONV_K', '2.0'))    # grow 비례 기울기
-CONV_CAP = float(os.environ.get('FUSION_CONV_CAP', '5.0'))  # 최대 배수
+CONV_CAP = float(os.environ.get('FUSION_CONV_CAP', '3.0'))  # 최대 배수
 FETCH_DELAY = 1.2
 
 px = pd.read_parquet(sorted(glob.glob(ROOT + '/data_cache/all_ohlcv_adj_*.parquet'))[-1]).replace(0, np.nan)
