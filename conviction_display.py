@@ -35,7 +35,7 @@ def build_conviction_line():
             '💡 확신가중 제안 (선행성장 이중확인 → 비중↑)',
             ' · '.join(tags),
             f'권고 비중: {wline}',
-            f'※ 시장 기대성장(컨센) 상위 확인종목 ×{cw:.0f} 제안 · 검증 누적중 · 사이징은 본인 판단',
+            f'※ 기대성장 강할수록 비중↑(최대 ×{cw:.0f}) · 검증 누적중 · 사이징은 본인 판단',
         ]
         return '\n'.join(lines)
     except Exception:

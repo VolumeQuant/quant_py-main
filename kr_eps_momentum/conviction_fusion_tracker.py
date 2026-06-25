@@ -23,7 +23,12 @@ CACHE = os.path.join(HERE, 'fusion_consensus_cache.csv')
 COVERED = os.path.join(HERE, 'fusion_covered_universe.json')
 STATE = os.path.join(HERE, 'fusion_state.json')
 TOPN_CONFIRM = 100   # cross-sec 상위N = 확인셋
-CW = 3.0             # 확신가중 배수 (look-ahead 스위트스팟, cross-sec 기준)
+CW = 3.0             # (구) binary 확신가중 배수
+# 2026-06-25 강도 차등: 확인종목 비중 = 1 + K_STR×(기대성장-1), CAP 상한. grow 강할수록 더 비중.
+# BT(look-ahead 상한): binary×3 Calmar 4.35 → grow비례 k2cap5 4.57(+0.22). 사용자 "강할수록 더".
+# ⚠️ 이득은 집중(cap↑)에서 — 한 종목 비중↑로 3슬롯 분산 약화. 표시제안만(사이징 본인판단).
+CONV_K = float(os.environ.get('FUSION_CONV_K', '2.0'))    # grow 비례 기울기
+CONV_CAP = float(os.environ.get('FUSION_CONV_CAP', '5.0'))  # 최대 배수
 FETCH_DELAY = 1.2
 
 px = pd.read_parquet(sorted(glob.glob(ROOT + '/data_cache/all_ohlcv_adj_*.parquet'))[-1]).replace(0, np.nan)
@@ -121,7 +126,12 @@ def main():
     held_info, raw_w = [], []
     for i, t in enumerate(held3, 1):
         g = grow.get(t); isc = t in confirm
-        w = CW if isc else 1.0; raw_w.append(w)
+        # 강도 차등: 확인종목이면 1+K×(기대성장-1) cap CONV_CAP, 미확인 1
+        if isc:
+            w = min(1.0 + CONV_K * max((g or 1.0) - 1.0, 0.0), CONV_CAP)
+        else:
+            w = 1.0
+        raw_w.append(w)
         held_info.append({'ticker': t, 'name': name(t), 'rank': i, 'confirmed': int(isc),
                           'grow': round(g, 4) if g else None, 'has_consensus': int(fwd_eps.get(t) is not None)})
     tot = sum(raw_w); wpct = [round(w / tot * 100, 1) for w in raw_w]
@@ -130,7 +140,7 @@ def main():
         gs = f"+{(g-1)*100:.0f}% ({g:.2f}x)" if g else ('NA(컨센없음)' if not hi['has_consensus'] else 'NA(TTM없음)')
         print(f"{hi['rank']}. {hi['name'][:12]:12s} {'✅확인' if hi['confirmed'] else '  미확인':7s} {gs:18s} → 비중 {wp}%")
     # 상태파일(메시지용)
-    json.dump({'prod_date': pbd, 'method': f'cross-sec top{TOPN_CONFIRM} x{CW:.0f}', 'cw': CW,
+    json.dump({'prod_date': pbd, 'method': f'cross-sec top{TOPN_CONFIRM} grow비례(k{CONV_K:.0f}cap{CONV_CAP:.0f})', 'cw': CONV_CAP,
                'held': held_info, 'weights_pct': wpct, 'n_covered': len(covered), 'n_grow': len(grow)},
               open(STATE, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
     # 로그 누적(OOS)

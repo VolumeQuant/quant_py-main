@@ -795,6 +795,20 @@ def main():
                     return
                 log(f"✅ 재시도: 수집 {coll_n}종목 정상화 (필터 {n_stocks}종목) → 정상 발송 진행", logfile)
 
+        # 1.9 확신가중 fusion 갱신 (2026-06-25, 메시지 전 = 그날 보유 기준 lag0).
+        # ★기존: 별도 스케줄 없어 자동갱신 0(stale). 여기서 그날 state 보유 기준 컨센 수집 → fusion_state 갱신.
+        # 네트워크(fnguide) 실패해도 무해 — 전날 fusion_state 폴백, 메시지 정상. 타임아웃 15분.
+        try:
+            _conv = SCRIPT_DIR / "kr_eps_momentum" / "conviction_fusion_tracker.py"
+            if _conv.exists():
+                log("확신가중 fusion 갱신 (conviction_fusion_tracker, 그날 보유 기준)", logfile)
+                _cr = subprocess.run([PYTHON, str(_conv)], cwd=str(SCRIPT_DIR), timeout=900,
+                                     env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+                                     capture_output=True, text=True, encoding="utf-8", errors="replace")
+                log(f"확신가중 fusion: rc={_cr.returncode}", logfile)
+        except Exception as e:
+            log(f"확신가중 fusion 갱신 실패 (전날 fusion 폴백, 무해): {e}", logfile)
+
         # 2. 텔레그램 전송
         # v77.1: 타임아웃 3분→10분 확장 + Popen 실시간 스트리밍 (멈춘 지점 추적)
         try:
