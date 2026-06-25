@@ -59,6 +59,14 @@ def main():
     r = subprocess.run([PY, 'daily_runner.py'], cwd=KRD, env=env)
     log(f'daily_runner.py 종료코드 {r.returncode}')
 
+    # 4b. 융합(확신가중) forward 추적기 — NTM 수집 직후 (production state는 16:00 이미 생성됨).
+    #     read-only(DB/state) → CSV append. 실패해도 일일 파이프라인 무영향(검증 트래커일 뿐).
+    try:
+        rf = subprocess.run([PY, 'conviction_fusion_tracker.py'], cwd=KRD, env=env, timeout=300)
+        log(f'conviction_fusion_tracker.py 종료코드 {rf.returncode}')
+    except Exception as e:
+        log(f'fusion_tracker 실패(무시): {e}')
+
     # 5. 7일+ 백업 삭제
     for f in glob.glob(f'{DB}.bak_*'):
         if os.path.getmtime(f) < time.time() - 7 * 86400:
@@ -71,7 +79,9 @@ def main():
     subprocess.run(['git', '-C', ROOT, 'add',
                     'kr_eps_momentum/eps_momentum_data_kr.db',
                     'yf_eps_workspace/data_cache_yf/',
-                    'kr_eps_momentum/ticker_info_cache.json'])
+                    'kr_eps_momentum/ticker_info_cache.json',
+                    'kr_eps_momentum/conviction_fusion_log.csv',
+                    'kr_eps_momentum/fusion_consensus_cache.csv'])
     subprocess.run('git -C "{}" add kr_eps_momentum/eps_momentum_data_kr.db.bak_*'.format(ROOT), shell=True)
     if subprocess.run(['git', '-C', ROOT, 'diff', '--staged', '--quiet']).returncode != 0:
         subprocess.run(['git', '-C', ROOT, 'commit', '-m', f'KR EPS daily {today:%Y-%m-%d} (+backup, local)'])
