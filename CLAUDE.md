@@ -158,11 +158,10 @@
 
 **검증(7.4년, 배포 게이트 전부 통과):**
 - **진입 5505건 forward-return**: min/max<0.25 코호트 fwd60 **-0.15%·승률 28%** vs 나머지 +10.5%·50% (Δ-10.7%p). 단 IC는 tail-only(전체 -0.011=둔감) → **꼬리 함정필터**(스무스 팩터 아님). 임계 0.35는 너무 넓어 무용(Δ-2.7%p), **0.25가 칼날**. (★초기에 0.3~0.4만 돌려 "제주 죽여서 못함" 오판 → 사용자가 한계 긋지 말라 밀어붙여 0.25 발견.)
-- **워크포워드(gold-standard 재생성 state)**: 전체 Calmar 2.71→**3.25**(+0.54), 19-21 +0.89, **22-23약세 +0.02(무해)**, 24-26 +1.89. **전 구간 ≥baseline**, MDD도 개선(-32.6→-31.8%).
-- **디바이스 2026 진입 20일→0일**(5/12~6/05 전부 31~87위로 강등, growth 0.33~0.62), **제주반도체 22→22 보존**, 브이엠 2026 75→74 보존.
-- **LOWO(디바이스·선익 유니버스서 제외) +0.28** = 한 종목 끼워맞춤 아닌 광범위 효과. 표본 1일 실증: 디바이스 growth_s 2.0→0.6·순위 3→46위.
-- ★baseline Calmar 2.71(문서 4.05 아님)은 가격파일 재fetch(0616→0624)로 BT 절대값 변동 — **상대 WF/LOWO/진입테스트가 전부 같은 방향이라 신호는 견고**(절대값은 추후 클린 재확인).
-- research: `backtest/_oneoff_entry_test.py`(forward-return 결판)·`_lumpiness_bt.py`(sweep)·`_lump_wf.py`(WF+디바이스)·`_lump_lowo.py`(LOWO)·`_validate_lump.py`(배포검증), 재생성 `_regen_lump.py`.
+- **★결판: lumpiness ON vs OFF 둘 다 풀재생성**(production-faithful harness=adj가격+recent_ca 오버레이, 2026-06-25): 전체 OFF **3.58→ON 4.24 (+0.66)**, 19-21 +0.37, **22-23약세 +0.24(방어까지 개선)**, 24-26 +0.18. **전 구간 ON 우위**, MDD **-29.0→-25.9%**. 디바이스 2024+ 매수권 진입 **OFF 16일→ON 0일**, 제주반도체 22→22 보존. (`_regen_lumpoff.py`로 LUMPINESS_DISABLE=1 풀재생성, `_lumpcompare.py` 비교.)
+- 표본 1일 실증: 디바이스 growth_s 2.0→0.6·순위 3→46위. LOWO(디바이스·선익 유니버스 제외)도 +0.28=광범위.
+- ★**정정(2026-06-25)**: 초기 검증의 "baseline 2.71·24-26 +1.89/+0.54·전구간≥baseline"은 **틀린 harness 두 겹**이었음 — ①production의 recent_ca(-0.3) 오버레이 누락 ②baseline을 풀재생성 대신 `growth_s/0.3` 편법복원(유니버스 z재배열 못 살림). 둘이 24-26을 실제 +0.18인데 -0.33으로 뒤집음. **교훈: 페널티 효과 측정은 편법 un-apply 금지, 반드시 `*_DISABLE=1` 풀재생성 + recent_ca 포함 harness.** 위 ON/OFF 표가 정답.
+- research: `backtest/_oneoff_entry_test.py`(forward-return 결판)·`_lumpiness_bt.py`(sweep)·`_lump_wf.py`(WF+디바이스)·`_lump_lowo.py`(LOWO)·`_lumpcompare.py`(★ON/OFF 풀재생성 결판)·`_validate_lump_auth.py`(recent_ca harness), 재생성 `_regen_lump.py`·`_regen_lumpoff.py`.
 
 > ⚠️ **별개 발견 맹점 (후속 점검 필요, 이번 배포와 미혼합):** CLAUDE.md 상단 "수정주가(adj) 전환 배포됨(2026-06-18)"의 배선 `run_daily._run_fg_single`(OHLCV_FILE=adj 설정)이 **호출처 없는 죽은 코드**. 실제 production(`run_fg_pipeline`)은 OHLCV_FILE 미설정 → FG 기본값 **raw**(`all_ohlcv_*` glob sort[0])로 동작. 라이브 로그 `OHLCV: all_ohlcv_20170601_..` 확인. 즉 수정주가/최근CA 페널티 체계가 production에 실제 활성인지 재검증 필요. (lumpiness 검증·재생성도 production과 동일 raw 기준이라 정합.)
 
