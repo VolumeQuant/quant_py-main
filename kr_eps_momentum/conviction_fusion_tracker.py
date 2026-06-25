@@ -23,6 +23,7 @@ LOG = os.path.join(HERE, 'conviction_fusion_log.csv')
 CACHE = os.path.join(HERE, 'fusion_consensus_cache.csv')
 CONTEXT_N = 20   # production top-N 까지 컨센 수집(랭킹 기준셋) — 보유 top3는 항상 포함
 FETCH_DELAY = 1.2  # FnGuide 순차 딜레이(초)
+CONFIRM_GROW = 1.30  # 확인 기준: 기대성장(선행/후행) >= 1.3 = 시장이 EPS 30%+ 성장 기대 (절대기준, 표본 무관)
 
 px = pd.read_parquet(sorted(glob.glob(ROOT + '/data_cache/all_ohlcv_adj_*.parquet'))[-1]).replace(0, np.nan)
 pcol = {c: i for i, c in enumerate(px.columns)}; parr = px.values
@@ -101,21 +102,20 @@ def main():
     for t in ctx:
         fe = fwd_eps.get(t); te = ttm_eps(t)
         if fe and te and te > 0: grow[t] = fe / te
-    med = float(np.median(list(grow.values()))) if grow else None
     print(f"\n=== 융합 forward 추적기 (독립 NTM 수집) ===")
-    print(f"production 기준일 {pbd} / 컨텍스트 top{CONTEXT_N} 중 기대성장 계산 {len(grow)}종목 / 중앙값 {('%.2fx'%med) if med else 'NA'}\n")
-    print(f"{'보유 top3':16s}{'rank':>5s}{'확인':>5s}{'기대성장':>10s}  (확인=중앙값 {('%.2fx'%med) if med else ''} 이상)")
+    print(f"production 기준일 {pbd} / 컨텍스트 top{CONTEXT_N} 중 기대성장 계산 {len(grow)}종목\n")
+    print(f"{'보유 top3':16s}{'rank':>5s}{'확인':>5s}{'기대성장':>12s}  (확인=기대성장 {CONFIRM_GROW:.2f}x 이상=EPS {(CONFIRM_GROW-1)*100:.0f}%+ 성장기대)")
     newrows = []
     for i, t in enumerate(held3, 1):
         g = grow.get(t)
-        isc = (g is not None and med is not None and g >= med)
+        isc = (g is not None and g >= CONFIRM_GROW)
         if g is not None: gs = f"{(g-1)*100:+.0f}% ({g:.2f}x)"
         elif fwd_eps.get(t) is None: gs = "NA(컨센없음)"
         else: gs = "NA(TTM없음)"
-        print(f"{i}. {name(t)[:12]:12s}{'':2s}{i:>3d}{'✅' if isc else '  ':>5s}{gs:>10s}")
+        print(f"{i}. {name(t)[:12]:12s}{'':2s}{i:>3d}{'✅' if isc else '  ':>5s}{gs:>12s}")
         newrows.append({'run_date': pbd, 'prod_date': pbd, 'ticker': t, 'name': name(t), 'rank': i,
                         'has_consensus': int(fwd_eps.get(t) is not None), 'grow': round(g, 4) if g else '',
-                        'confirmed': int(isc), 'median_grow': round(med, 4) if med else '',
+                        'confirmed': int(isc), 'confirm_bar': CONFIRM_GROW,
                         'entry_px': price_on(t, pbd)})
     log = pd.DataFrame()
     if os.path.exists(LOG):
