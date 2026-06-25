@@ -41,6 +41,19 @@
 
 > 코드 진실: `regime_indicator.py` `get_regime_params()`. 아래는 그 코드 기준 현재 production 파라미터. 변경 이력은 CHANGELOG.md.
 
+## ★ 선행성장 확신가중 융합 — 표시제안 배포 (2026-06-25, 페이퍼/forward검증 단계)
+
+> 사용자 알파: **기대성장 = 컨센 선행EPS / TTM 후행EPS**(=trailing PER / forward PER, 클수록 좋음). 직교 검증 진짜(모멘텀과 corr +0.015, 독립 IC +0.170). **적용은 선택이 아니라 비중으로만 유효**(확신가중).
+>
+> **방식:** production 기계 **100% 불변**(선택/진입rank≤3/이탈rank>6/3슬롯/국면게이트). 보유 3종목 중 **컨센 기대성장 cross-sec 상위100(이중확인)에 ×3 비중, 미확인 ×1, 정규화.** 확인정의는 BT로 결정: cross-sec 상위100 = **Calmar 5.52** > 절대컷1.3x 5.05 > 연속 4.97 (rank기반이라 컨센 낙관편향에 robust).
+> **성과(매일갱신 풀BT, ★look-ahead 상한):** ×1(동일=기존) 3.92 → ×3 5.52, MDD −28.4→−25.2%. LOWO(SK·한미·브이엠) 견고.
+> **★기각된 적용법:** ①점수 보너스 가산(재랭킹) = best +0.14후 급락(선택오염: forward만 높은 잡주 끌어올림) ②G블렌드 −0.6~1.5 ③**커버 안 되는 중소형 제외 = Calmar 4.24→2.03·MDD−38%**(제주 같은 승자도 빠짐, 제외 금지).
+> **★정직한 한계:** look-ahead(미래이익 컨닝)+in-sample(OOS 0)+기간불안정(×3은 24-26 폭등 지배, 약세장은 국면게이트가 방어). **믿을 건 방향(확인>동일)뿐, 배수 미검증.** 실신호 NTM은 production top20 절반만 커버(중소형 애널0=평가불가, ×1 보유).
+>
+> **배포(표시 제안만, 자동매매 X):** `conviction_display.build_conviction_line()` → Signal footer "확신가중 제안: 종목✅/— + 권고비중%". **매매신호(3종목)·시스템수익률 불변, 사이징은 사용자 메타영역.** 킬스위치 `FUSION_CONVICTION_DISABLE=1`, 실패시 빈문자열(안전). 다음 16:00부터.
+> **독립 NTM 수집(kr eps `ntm_screening` 의존 0** — 그 테이블 degrading 210→90·top20 절반미커버·FnGuide 실제커버종목도 누락**):** `fusion_universe_scan.py`(1회 시총≥1000억 상위700 컨센스캔→`fusion_covered_universe.json`) + `conviction_fusion_tracker.py`(매일 커버셋 컨센 순차수집[병렬금지]→cross-sec 상위100→`fusion_state.json`[메시지용]+`conviction_fusion_log.csv`[OOS누적]). TTM분모 지배순이익→당기순이익 폴백(브이엠 버그수정). `run_local_scheduled.py` 16:30 배선.
+> **★실배포(자동가중) 판단은 look-ahead BT 아니라 forward 누적 60일+로** (corpaction 사고=look-ahead 단기검증 배포 금지 교훈). 롤백: `FUSION_CONVICTION_DISABLE=1` 또는 footer try블록 제거. research: `backtest/_conviction*.py`·`_confirm_def_compare.py`·`_mf_forward.py`. 상세: 메모리 `project_conviction_fusion_2026_06_25.md`.
+
 ## ★★ 6/18 사고: raw 오염 → ca_events/페널티 붕괴 (수정·재발방지 배포됨)
 
 > **증상**: 수정주가+페널티 배포 후 첫 라이브(6/18)에서 `ca_events.json` 742→**246종목**, 디바이스 등 recent_ca 1→0(페널티 소실) → 디바이스 잘못된 #3.

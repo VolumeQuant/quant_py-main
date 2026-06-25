@@ -1012,6 +1012,16 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         lines.append(f'매수: 3일 연속 상위 {_rule_e}종목 (최대 {_rule_s}종목)')
         lines.append(f'매도: 순위 {_rule_x}위 밖으로 밀리면')
         lines.append('시스템은 신호만, 매매는 본인 판단')
+        # 확신가중 제안 (선행성장 융합, 2026-06-25). 표시 전용·사이징 제안.
+        # 매매신호(3종목)·시스템 수익률 불변. 킬스위치 FUSION_CONVICTION_DISABLE=1. 실패시 빈문자열(안전).
+        try:
+            from conviction_display import build_conviction_line as _bcl
+            _cl = _bcl()
+            if _cl:
+                lines.append('')
+                lines.append(_cl)
+        except Exception:
+            pass
 
     return '\n'.join(lines)
 
