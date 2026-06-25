@@ -2,8 +2,10 @@
 """융합 커버 유니버스 1회 스캔 (2026-06-25). production 유니버스(시총상위 N)에 FnGuide 컨센 보유 여부 스캔.
 애널 커버는 끈적해서(거의 안 변함) 1회 파악 후 그 셋만 매일 수집 → cross-sec 상위100 확인에 사용.
 외부 API 안전: get_consensus_data 순차(delay), 병렬 금지.
-실행: python kr_eps_momentum/fusion_universe_scan.py [N]   (N=시총상위, 기본 700)
-출력: fusion_covered_universe.json (covered=컨센보유 티커) + fusion_consensus_cache.csv 시드"""
+실행: python kr_eps_momentum/fusion_universe_scan.py [N]   (N 생략=전종목, 시총≥1000억 보통주 전체)
+출력: fusion_covered_universe.json (covered=컨센보유 티커) + fusion_consensus_cache.csv 시드
+★2026-06-25: 기본 N=전종목(구 700은 시총 3055억 컷 위만 봐 661종목 누락 → 컨센 있는 중소형 빠짐).
+  애널 커버는 끈적해 월1회만 재스캔하면 충분(run_daily 매월 첫 거래일 자동). 전종목 ~27분, 월1회라 OK."""
 import sys, io, os, glob, json, time
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 import numpy as np, pandas as pd
@@ -12,17 +14,19 @@ sys.path.insert(0, ROOT); sys.path.insert(0, HERE)
 import fnguide_crawler as fc
 OUT = os.path.join(HERE, 'fusion_covered_universe.json')
 CACHE = os.path.join(HERE, 'fusion_consensus_cache.csv')
-N = int(sys.argv[1]) if len(sys.argv) > 1 else 700
+N = int(sys.argv[1]) if len(sys.argv) > 1 else None  # None=전종목
 DELAY = 1.2
 
 mc = pd.read_parquet(sorted(glob.glob(ROOT + '/data_cache/market_cap_ALL_*.parquet'))[-1])
 f = sorted(glob.glob(ROOT + '/state/ranking_*.json'))[-1]
 scan_day = os.path.basename(f)[8:16]
-# ★유니버스 = market_cap_ALL (state ranking은 필터후 생존자라 너무 좁음). 시총≥1000억(production 플로어) 상위 N.
+# ★유니버스 = market_cap_ALL (state ranking은 필터후 생존자라 너무 좁음). 시총≥1000억(production 플로어) 보통주 전체.
 cap = mc[mc['시가총액'] >= 1e11].copy().sort_values('시가총액', ascending=False)
 # 우선주(끝자리!=0)·스팩 제외
-scan = [t for t in cap.index if isinstance(t, str) and len(t) == 6 and t[-1] == '0'][:N]
-print(f"[융합 커버 스캔] 시총≥1000억 {len(cap)}종목 중 상위 {len(scan)} 스캔 (~{len(scan)*DELAY/60:.0f}분)", flush=True)
+scan = [t for t in cap.index if isinstance(t, str) and len(t) == 6 and t[-1] == '0']
+if N:
+    scan = scan[:N]
+print(f"[융합 커버 스캔] 시총≥1000억 보통주 {len([t for t in cap.index if isinstance(t,str) and len(t)==6 and t[-1]=='0'])}종목 → {len(scan)} 스캔 (~{len(scan)*DELAY/60:.0f}분)", flush=True)
 
 covered, rows = [], []
 for i, t in enumerate(scan, 1):

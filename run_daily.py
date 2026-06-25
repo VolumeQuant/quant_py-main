@@ -795,6 +795,28 @@ def main():
                     return
                 log(f"✅ 재시도: 수집 {coll_n}종목 정상화 (필터 {n_stocks}종목) → 정상 발송 진행", logfile)
 
+        # 1.85 융합 커버 유니버스 월1회 전종목 재스캔 (2026-06-25).
+        # ★애널 커버셋은 끈적하나 신규상장/커버개시로 종목 추가됨 → 매월 첫 거래일 전종목(시총≥1000억) 재스캔.
+        # scan_date의 月이 오늘 月과 다르면 실행(=그 달 첫 거래일 1회). ~27분, fnguide 네트워크라 집/회사 무관.
+        # 실패해도 무해(기존 covered 유지). 매일 도는 conviction_tracker(1.9)는 covered만 보므로 가벼움.
+        try:
+            import json as _json
+            _ymd = datetime.now().strftime("%Y%m%d")
+            _cov = SCRIPT_DIR / "kr_eps_momentum" / "fusion_covered_universe.json"
+            _need_rescan = True
+            if _cov.exists():
+                _sd = _json.load(open(_cov, encoding="utf-8")).get("scan_date", "")
+                _need_rescan = len(_sd) >= 6 and _sd[:6] != _ymd[:6]  # 다른 달이면 재스캔
+            _scan = SCRIPT_DIR / "kr_eps_momentum" / "fusion_universe_scan.py"
+            if _need_rescan and _scan.exists():
+                log("융합 커버 유니버스 월1회 전종목 재스캔 (fusion_universe_scan, ~27분)", logfile)
+                _sr = subprocess.run([PYTHON, str(_scan)], cwd=str(SCRIPT_DIR), timeout=2400,
+                                     env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+                                     capture_output=True, text=True, encoding="utf-8", errors="replace")
+                log(f"커버 재스캔: rc={_sr.returncode}", logfile)
+        except Exception as e:
+            log(f"커버 유니버스 재스캔 실패 (기존 covered 유지, 무해): {e}", logfile)
+
         # 1.9 확신가중 fusion 갱신 (2026-06-25, 메시지 전 = 그날 보유 기준 lag0).
         # ★기존: 별도 스케줄 없어 자동갱신 0(stale). 여기서 그날 state 보유 기준 컨센 수집 → fusion_state 갱신.
         # 네트워크(fnguide) 실패해도 무해 — 전날 fusion_state 폴백, 메시지 정상. 타임아웃 15분.
