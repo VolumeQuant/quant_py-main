@@ -154,6 +154,15 @@ def main():
     latest_px = latest_prices(pbd)
     def cur_price(t6):
         return latest_px.get(t6) or price_on(t6, pbd) or price_on(t6, ptd[-1])
+    # ★컨센 추정치 리비전 (2026-06-26, US 핸드오프 수용): 캐시 누적 forward_eps의 변화율.
+    #   US "revision>level" 주장은 KR 15일 데이터선 미지지(레벨 IC 0.124≥리비전 0.098)나, 둘 다 modest-real →
+    #   레벨과 함께 60일+ 누적해 KR 시장이 직접 판정(priced-in 함정 섞임 여부). 비중엔 미반영, 로깅만.
+    _rc = load_cache()
+    def est_rev(t6):
+        h = _rc[(_rc['ticker'] == t6) & (_rc['forward_eps'].notna()) & (_rc['forward_eps'] > 0)].sort_values('date')
+        if len(h) < 2 or str(h.iloc[0]['date']) >= pbd: return None
+        cur, past = h.iloc[-1]['forward_eps'], h.iloc[0]['forward_eps']
+        return round(cur / past - 1, 4) if past > 0 else None
     grow = {}; fwdper = {}
     for t in targets:
         fe = fwd_eps.get(t); te = ttm_eps(t); p0 = cur_price(t)
@@ -177,7 +186,7 @@ def main():
         raw_w.append(w)
         held_info.append({'ticker': t, 'name': name(t), 'rank': i, 'confirmed': int(isc),
                           'grow': round(g, 4) if g else None, 'fwd_per': round(fper, 1) if fper else None,
-                          'has_consensus': int(fwd_eps.get(t) is not None)})
+                          'revision': est_rev(t), 'has_consensus': int(fwd_eps.get(t) is not None)})
     tot = sum(raw_w); wpct = [round(w / tot * 100, 1) for w in raw_w]
     for hi, wp in zip(held_info, wpct):
         g = hi['grow']; fp = hi['fwd_per']
@@ -191,6 +200,7 @@ def main():
     # 로그 누적(OOS)
     newrows = [{'run_date': pbd, 'prod_date': pbd, 'ticker': h['ticker'], 'name': h['name'], 'rank': h['rank'],
                 'has_consensus': h['has_consensus'], 'grow': h['grow'] if h['grow'] else '',
+                'fwd_per': h['fwd_per'] if h['fwd_per'] else '', 'revision': h['revision'] if h['revision'] is not None else '',
                 'confirmed': h['confirmed'], 'weight_pct': wp, 'entry_px': cur_price(h['ticker'])}
                for h, wp in zip(held_info, wpct)]
     log = pd.read_csv(LOG, dtype={'ticker': str, 'run_date': str, 'prod_date': str}) if os.path.exists(LOG) else pd.DataFrame()
