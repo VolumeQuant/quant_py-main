@@ -1,7 +1,8 @@
 {
  "prod_date": "20260625",
- "method": "cross-sec top100 grow비례(k2cap5)",
+ "method": "forward PER<20 자격 + 기대성장 비례(k2cap5)",
  "cw": 5.0,
+ "fwd_per_gate": 20.0,
  "held": [
   {
    "ticker": "000660",
@@ -9,6 +10,7 @@
    "rank": 1,
    "confirmed": 1,
    "grow": 2.9184,
+   "fwd_per": 9.0,
    "has_consensus": 1
   },
   {
@@ -17,6 +19,7 @@
    "rank": 2,
    "confirmed": 0,
    "grow": 1.61,
+   "fwd_per": 27.4,
    "has_consensus": 1
   },
   {
@@ -25,6 +28,7 @@
    "rank": 3,
    "confirmed": 0,
    "grow": null,
+   "fwd_per": null,
    "has_consensus": 0
   }
  ],

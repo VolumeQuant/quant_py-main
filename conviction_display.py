@@ -23,19 +23,29 @@ def build_conviction_line():
         cw = st.get('cw', 3.0)
         tags = []
         for h in held:
-            g = h.get('grow')
+            g = h.get('grow'); fp = h.get('fwd_per')
+            # fwd_per 신호등: <20 싸서 잘오름 🟢 / 20~25 🟡 / >25 비쌈 🔴
+            if fp is None:
+                fptxt = ''
+            elif fp < 20:
+                fptxt = f" 🟢fwPER{fp:.0f}"
+            elif fp < 25:
+                fptxt = f" 🟡fwPER{fp:.0f}"
+            else:
+                fptxt = f" 🔴fwPER{fp:.0f}"
             if h.get('confirmed'):
                 gtxt = f"+{(g - 1) * 100:.0f}%" if g else ''
-                tags.append(f"{h.get('name', '?')[:8]} ✅{gtxt}")
+                tags.append(f"{h.get('name', '?')[:8]} ✅{gtxt}{fptxt}")
             else:
-                tags.append(f"{h.get('name', '?')[:8]} —")
+                tags.append(f"{h.get('name', '?')[:8]} —{fptxt}")
         wline = ' / '.join(f"{w:.0f}%" for w in wpct)
+        gate = st.get('fwd_per_gate', 20)
         lines = [
             '━━━━━━━━━━━━━━━',
-            '💡 확신가중 제안 (선행성장 이중확인 → 비중↑)',
+            f'💡 확신가중 제안 (선행PER<{gate:.0f} 자격 → 기대성장 비례 비중)',
             ' · '.join(tags),
             f'권고 비중: {wline}',
-            f'※ 기대성장 강할수록 비중↑(최대 ×{cw:.0f}) · 검증 누적중 · 사이징은 본인 판단',
+            f'※ 선행PER<{gate:.0f}(미래기준 쌈)이 자격, 기대성장 강할수록↑(최대 ×{cw:.0f}) · 검증중 · 사이징 본인판단',
         ]
         return '\n'.join(lines)
     except Exception:
