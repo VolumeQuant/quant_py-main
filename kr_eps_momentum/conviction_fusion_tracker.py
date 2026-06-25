@@ -25,10 +25,12 @@ STATE = os.path.join(HERE, 'fusion_state.json')
 TOPN_CONFIRM = 100   # cross-sec 상위N = 확인셋
 CW = 3.0             # (구) binary 확신가중 배수
 # 2026-06-25 강도 차등: 확인종목 비중 = 1 + K_STR×(기대성장-1), CAP 상한. grow 강할수록 더 비중.
-# BT(look-ahead 상한): binary×3 Calmar 4.35 → grow비례 k2cap5 4.57(+0.22). 사용자 "강할수록 더".
-# ⚠️ 이득은 집중(cap↑)에서 — 한 종목 비중↑로 3슬롯 분산 약화. 표시제안만(사이징 본인판단).
+# ★2026-06-26 CAP 5→3 (선행PER<20 자격으로 재스윕): 구 cap5는 cross-sec 자격 기준 스윕이라 stale.
+#   선행PER<20 설계서 재스윕(_conviction_cap_validate.py): cap3 Calmar 4.92>cap5 4.56 + MDD -26<-29%.
+#   WF 전구간(약세 동일·24-26 우위, 19-21만 소폭양보) + LOWO 6종목 전부 cap3≥cap5 = robust.
+#   ⚠️ look-ahead 상한 기준 — 표시제안만(사이징 본인판단). 실검증은 forward 누적.
 CONV_K = float(os.environ.get('FUSION_CONV_K', '2.0'))    # grow 비례 기울기
-CONV_CAP = float(os.environ.get('FUSION_CONV_CAP', '5.0'))  # 최대 배수
+CONV_CAP = float(os.environ.get('FUSION_CONV_CAP', '3.0'))  # 최대 배수 (2026-06-26 5→3 재스윕)
 FETCH_DELAY = 1.2
 
 # 2026-06-25 ★확인 자격 = forward PER < FWD_PER_GATE (구 'cross-sec 상위100' 폐기).
