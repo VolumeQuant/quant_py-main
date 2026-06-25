@@ -80,34 +80,63 @@ def latest_production():
 def load_cache():
     if os.path.exists(CACHE):
         return pd.read_csv(CACHE, dtype={'ticker': str, 'date': str})
-    return pd.DataFrame(columns=['date', 'ticker', 'forward_eps', 'analyst_count', 'has_consensus'])
+    return pd.DataFrame(columns=['date', 'ticker', 'forward_eps', 'eps_cy', 'eps_ny', 'analyst_count', 'has_consensus'])
 
 def collect_consensus(tickers, day8):
-    """커버셋에 FnGuide 컨센 순차 수집(당일 캐시 재사용). forward_eps dict 반환."""
+    """커버셋에 FnGuide 컨센 순차 수집(당일 캐시 재사용). eps_cy(당해)/eps_ny(차기)도 저장 → NTM 합성용.
+    재수집 조건: 당일치 없거나 eps_ny 결측(구버전 캐시)."""
     cache = load_cache()
-    have = set(cache[cache['date'] == day8]['ticker'])
+    cur0 = cache[cache['date'] == day8]
+    have = set(cur0[cur0['eps_ny'].notna()]['ticker']) if 'eps_ny' in cur0.columns else set()
     todo = [t for t in tickers if t not in have]
     if todo:
+        # 구버전 당일 행(eps_ny 없음) 제거 후 재수집
+        cache = cache[~((cache['date'] == day8) & (cache['ticker'].isin(todo)))]
         print(f"  FnGuide 컨센 수집 {len(todo)}종목 (순차, ~{len(todo)*FETCH_DELAY/60:.0f}분)...", flush=True)
         new = []
         for i, t in enumerate(todo, 1):
             try:
                 d = fc.get_consensus_data(t)
                 new.append({'date': day8, 'ticker': t, 'forward_eps': d.get('forward_eps') if d else None,
+                            'eps_cy': d.get('eps_cy') if d else None, 'eps_ny': d.get('eps_ny') if d else None,
                             'analyst_count': d.get('analyst_count') if d else None,
                             'has_consensus': int(bool(d and d.get('has_consensus')))})
             except Exception:
-                new.append({'date': day8, 'ticker': t, 'forward_eps': None, 'analyst_count': None, 'has_consensus': 0})
+                new.append({'date': day8, 'ticker': t, 'forward_eps': None, 'eps_cy': None, 'eps_ny': None, 'analyst_count': None, 'has_consensus': 0})
             if i % 50 == 0: print(f"    {i}/{len(todo)}", flush=True)
             time.sleep(FETCH_DELAY)
         cache = pd.concat([cache, pd.DataFrame(new)], ignore_index=True)
         cache.to_csv(CACHE, index=False)
     cur = cache[cache['date'] == day8]
-    return {r['ticker']: r['forward_eps'] for _, r in cur.iterrows() if pd.notna(r['forward_eps']) and r['forward_eps'] > 0}
+    # NTM(선행12개월) 합성: 당해×(12-월)/12 + 차기×월/12. 차기 없으면 forward_eps(당해) 폴백.
+    mth = int(day8[4:6])
+    out = {}
+    for _, r in cur.iterrows():
+        cy = r.get('eps_cy'); ny = r.get('eps_ny'); fe = r.get('forward_eps')
+        if pd.notna(cy) and pd.notna(ny) and cy and ny:
+            out[r['ticker']] = cy * (12 - mth) / 12 + ny * mth / 12   # NTM 합성
+        elif pd.notna(fe) and fe > 0:
+            out[r['ticker']] = fe   # 차기 결측 → 당해 폴백
+    return {t: v for t, v in out.items() if v and v > 0}
 
 def price_on(t6, d8):
     if t6 not in pcol or d8 not in pdi: return None
     v = parr[pdi[d8], pcol[t6]]; return float(v) if v > 0 else None
+
+def latest_prices(day8):
+    """★최신 거래일 전종목 종가 (pykrx 1호출). forward PER은 가격 변동에 민감 → OHLCV(증분지연) 대신 실시간.
+    실패 시 빈 dict(price_on OHLCV 폴백). pykrx 1호출이라 부담 적음(순차원칙 무관)."""
+    try:
+        from pykrx import stock
+        try:
+            import krx_auth; krx_auth.login()
+        except Exception:
+            pass
+        df = stock.get_market_ohlcv_by_ticker(day8, market="ALL")
+        return {t: float(df.loc[t, '종가']) for t in df.index if df.loc[t, '종가'] > 0}
+    except Exception as e:
+        print(f"  ⚠️ pykrx 최신가 실패({type(e).__name__}), OHLCV 폴백 — fwd_per 가격 지연 가능", flush=True)
+        return {}
 
 def main():
     pbd, held3 = latest_production()
@@ -118,10 +147,14 @@ def main():
     # 보유종목은 커버셋에 없어도 컨센 확인하려 추가 수집
     targets = sorted(set(covered) | set(held3))
     fwd_eps = collect_consensus(targets, pbd)
-    # 기대성장 = 선행EPS / TTM실적EPS, forward PER = 현재가 / 선행EPS (커버 유니버스 전체)
+    # 기대성장 = 선행EPS / TTM실적EPS, forward PER = 최신종가 / 선행EPS (커버 유니버스 전체)
+    # ★fwd_per 가격은 pykrx 최신종가 우선(가격 변동 민감, OHLCV 증분지연 시 자격 오판) → 폴백 OHLCV.
+    latest_px = latest_prices(pbd)
+    def cur_price(t6):
+        return latest_px.get(t6) or price_on(t6, pbd) or price_on(t6, ptd[-1])
     grow = {}; fwdper = {}
     for t in targets:
-        fe = fwd_eps.get(t); te = ttm_eps(t); p0 = price_on(t, pbd) or price_on(t, ptd[-1])
+        fe = fwd_eps.get(t); te = ttm_eps(t); p0 = cur_price(t)
         if fe and te and te > 0: grow[t] = fe / te
         if fe and fe > 0 and p0: fwdper[t] = p0 / fe
     # ★확인 자격 = forward PER < FWD_PER_GATE (구 'cross-sec 상위100' 폐기, 2026-06-25).
@@ -156,7 +189,7 @@ def main():
     # 로그 누적(OOS)
     newrows = [{'run_date': pbd, 'prod_date': pbd, 'ticker': h['ticker'], 'name': h['name'], 'rank': h['rank'],
                 'has_consensus': h['has_consensus'], 'grow': h['grow'] if h['grow'] else '',
-                'confirmed': h['confirmed'], 'weight_pct': wp, 'entry_px': price_on(h['ticker'], pbd)}
+                'confirmed': h['confirmed'], 'weight_pct': wp, 'entry_px': cur_price(h['ticker'])}
                for h, wp in zip(held_info, wpct)]
     log = pd.read_csv(LOG, dtype={'ticker': str, 'run_date': str, 'prod_date': str}) if os.path.exists(LOG) else pd.DataFrame()
     log = pd.concat([log, pd.DataFrame(newrows)], ignore_index=True).drop_duplicates(['run_date', 'ticker'], keep='last')

@@ -505,6 +505,8 @@ def get_consensus_data(ticker):
         'analyst_count': None,
         'target_price': None,
         'has_consensus': False,
+        'eps_cy': None,   # 당해 회계연도 추정 EPS (연도별 Annual 테이블)
+        'eps_ny': None,   # 차기 회계연도 추정 EPS — NTM(선행12개월) 합성용
     }
 
     try:
@@ -515,6 +517,21 @@ def get_consensus_data(ticker):
         _resp2 = _rq2.get(url, timeout=10)
         _resp2.raise_for_status()
         tables = pd.read_html(_resp2.text, displayed_only=False, encoding='utf-8')
+
+        # 연도별 Annual 추정 EPS (당해/차기) — NTM(선행12개월) 합성용. Annual (E) 2개+ 테이블.
+        for tbl in tables:
+            cols = list(tbl.columns)
+            e_ann = [j for j, c in enumerate(cols) if 'Annual' in str(c) and '(E)' in str(c)]
+            if len(e_ann) >= 2:
+                for i2 in range(len(tbl)):
+                    if 'EPS' in str(tbl.iloc[i2, 0]):
+                        try:
+                            result['eps_cy'] = float(tbl.iloc[i2, e_ann[0]])
+                            result['eps_ny'] = float(tbl.iloc[i2, e_ann[1]])
+                        except Exception:
+                            pass
+                        break
+                break
 
         # 컨센서스 테이블 찾기 (보통 인덱스 7~10 사이)
         for i, tbl in enumerate(tables):
