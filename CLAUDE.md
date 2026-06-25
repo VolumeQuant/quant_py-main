@@ -163,7 +163,16 @@
 - ★**정정(2026-06-25)**: 초기 검증의 "baseline 2.71·24-26 +1.89/+0.54·전구간≥baseline"은 **틀린 harness 두 겹**이었음 — ①production의 recent_ca(-0.3) 오버레이 누락 ②baseline을 풀재생성 대신 `growth_s/0.3` 편법복원(유니버스 z재배열 못 살림). 둘이 24-26을 실제 +0.18인데 -0.33으로 뒤집음. **교훈: 페널티 효과 측정은 편법 un-apply 금지, 반드시 `*_DISABLE=1` 풀재생성 + recent_ca 포함 harness.** 위 ON/OFF 표가 정답.
 - research: `backtest/_oneoff_entry_test.py`(forward-return 결판)·`_lumpiness_bt.py`(sweep)·`_lump_wf.py`(WF+디바이스)·`_lump_lowo.py`(LOWO)·`_lumpcompare.py`(★ON/OFF 풀재생성 결판)·`_validate_lump_auth.py`(recent_ca harness), 재생성 `_regen_lump.py`·`_regen_lumpoff.py`.
 
-> ⚠️ **별개 발견 맹점 (후속 점검 필요, 이번 배포와 미혼합):** CLAUDE.md 상단 "수정주가(adj) 전환 배포됨(2026-06-18)"의 배선 `run_daily._run_fg_single`(OHLCV_FILE=adj 설정)이 **호출처 없는 죽은 코드**. 실제 production(`run_fg_pipeline`)은 OHLCV_FILE 미설정 → FG 기본값 **raw**(`all_ohlcv_*` glob sort[0])로 동작. 라이브 로그 `OHLCV: all_ohlcv_20170601_..` 확인. 즉 수정주가/최근CA 페널티 체계가 production에 실제 활성인지 재검증 필요. (lumpiness 검증·재생성도 production과 동일 raw 기준이라 정합.)
+> ⚠️ **별개 발견 맹점 (후속 점검 필요, 이번 배포와 미혼합):** CLAUDE.md 상단 "수정주가(adj) 전환 배포됨(2026-06-18)"의 배선 `run_daily._run_fg_single`(OHLCV_FILE=adj 설정)이 **호출처 없는 죽은 코드**. 실제 production(`run_fg_pipeline`)은 OHLCV_FILE 미설정 → FG 기본값 **raw**(`all_ohlcv_*` glob sort[0])로 동작. 라이브 로그 `OHLCV: all_ohlcv_20170601_..` 확인. 즉 수정주가/최근CA 페널티 체계가 production에 실제 활성인지 재검증 필요. (lumpiness 검증·재생성도 production과 동일 raw 기준이라 정합.) ※2026-06-24 후속(다른 PC) 확인: **raw==adj 차이 0.026%**(raw가 이미 KRX 수정주가) → 가격은 무해, 죽은코드는 정리만 필요.
+
+## ★ 창의적 함정 시그니처 전수실험 = 전부 BT 기각, 필터링 프론티어 도달 (2026-06-25)
+
+> 사용자 "놓친 종목·어이없이 손실난 종목 EDA → 함정 데이터 찾아 개선점". 7.4년 매수진입 346건(재무·가격 318) 전수 분석. **결론: lumpiness 외 추가 사전필터 불가 확정.** 상세: `research/CREATIVE_TRAP_SIGNATURE_FINDINGS_2026_06_25.md`.
+> - **놓친 승자 0:** 순위버킷 fwd60 — 엣지는 **rank 1-2(+18~19%·승률55~57%)에 집중**, rank 3은 절벽(+10%·48%), rank 4-20은 baseline +8%(매수권 밖 놓친 승자 없음).
+> - **왜 잃나:** 패자의 70%는 종목고유 영구붕괴(시장+4%인데 −24%), 89%가 fwd120도 손실. 단 **이탈룰(rank>6)이 장부 −23%를 실현 −3.1%로 차단**(중앙 7일 보유, 삼천리 −68%도 +6%에 매도). = 사전구별 불가하나 이탈룰이 손실차단.
+> - **창의 피처 20+ (이격도·거래량급증·Amihud·상한가스파이크·자산증가·성장×모멘텀…):** 단일·tail·composite 전수 → 깨끗한 −fwd 신호 0. "성장 없는 모멘텀"(저성장+고모멘텀, 싼 경기주 모멘텀펌프=삼천리·대한제강류)이 fwd120 −4~−10%로 **유일한 영구함정 특성**이나 **+EV·회복**이라 필터 불가.
+> - **개선가설 BT 3종 전부 기각**(production-faithful harness): 모멘텀게이트(저성장+고모멘텀 제외) 4.24→3.30·약세붕괴, 슬롯비중40/40/20 →3.96·MDD악화·약세1.42→0.76, SL/TS →전부 미달(승자깎임). 공통: 나쁜 cohort도 +EV라 제외시 수익·분산·참여 동반상실 + 이탈룰이 이미 드로다운 처리.
+> - **통하는 필터 = 구조적 회계착시뿐**(lumpiness 일회성매출·accruals 비현금이익 = 음의 fwd). 가격/거래량/모멘텀 기반은 전부 막다른 길. **남은 레버 = 구조(3슬롯분산·이탈·비대칭)·메타현금버퍼**, 사전필터 추가탐색 중단 권고.
 
 ## v80.27 얇은 밸류트랩 제외 필터 (대덕류) — 2026-06-10 (배포됨)
 
