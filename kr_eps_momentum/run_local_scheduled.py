@@ -59,13 +59,8 @@ def main():
     r = subprocess.run([PY, 'daily_runner.py'], cwd=KRD, env=env)
     log(f'daily_runner.py 종료코드 {r.returncode}')
 
-    # 4b. 융합(확신가중) forward 추적기 — NTM 수집 직후 (production state는 16:00 이미 생성됨).
-    #     read-only(DB/state) → CSV append. 실패해도 일일 파이프라인 무영향(검증 트래커일 뿐).
-    try:
-        rf = subprocess.run([PY, 'conviction_fusion_tracker.py'], cwd=KRD, env=env, timeout=300)
-        log(f'conviction_fusion_tracker.py 종료코드 {rf.returncode}')
-    except Exception as e:
-        log(f'fusion_tracker 실패(무시): {e}')
+    # 4b. (2026-06-26 정리) 확신가중 tracker 호출 제거 — run_daily.py(16:00 메시지 전)가 이미 실행(lag0).
+    #     단 fusion 산출물 git add는 아래 6번에 유지(run_daily는 state/만 커밋, fusion 파일은 여기서 영구화).
 
     # 5. 7일+ 백업 삭제
     for f in glob.glob(f'{DB}.bak_*'):
