@@ -1,5 +1,5 @@
 {
- "prod_date": "20260625",
+ "prod_date": "20260626",
  "method": "forward PER<20 자격 + 기대성장 비례(k2cap3)",
  "cw": 3.0,
  "fwd_per_gate": 20.0,
@@ -9,37 +9,40 @@
    "name": "SK하이닉스",
    "rank": 1,
    "confirmed": 1,
-   "grow": 3.5015,
-   "fwd_per": 7.9,
-   "revision": null,
-   "has_consensus": 1
-  },
-  {
-   "ticker": "089970",
-   "name": "브이엠",
-   "rank": 2,
-   "confirmed": 0,
-   "grow": 1.9012,
-   "fwd_per": 26.2,
-   "revision": null,
+   "grow": 3.5044,
+   "fwd_per": 7.2,
+   "revision": 0.0,
+   "self_est": 0,
    "has_consensus": 1
   },
   {
    "ticker": "080220",
    "name": "제주반도체",
-   "rank": 3,
-   "confirmed": 0,
-   "grow": null,
-   "fwd_per": null,
+   "rank": 2,
+   "confirmed": 1,
+   "grow": 1.6451,
+   "fwd_per": 18.3,
    "revision": null,
+   "self_est": 1,
    "has_consensus": 0
+  },
+  {
+   "ticker": "005930",
+   "name": "삼성전자",
+   "rank": 3,
+   "confirmed": 1,
+   "grow": 3.6943,
+   "fwd_per": 6.4,
+   "revision": -0.0001,
+   "self_est": 0,
+   "has_consensus": 1
   }
  ],
  "weights_pct": [
-  60.0,
-  20.0,
-  20.0
+  36.2,
+  27.6,
+  36.2
  ],
  "n_covered": 487,
- "n_grow": 416
+ "n_grow": 417
 }

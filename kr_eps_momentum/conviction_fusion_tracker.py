@@ -68,6 +68,22 @@ def ttm_eps(t6):
             return (v[-4:].sum() * 1e8) / sh
     return None
 
+def self_forward_eps(t6):
+    """애널 컨센 없는 종목 자작 forward EPS (2026-06-26, 제주반도체용). ★보수적: 최근2분기 지배순이익
+    평균×4 (단일 블록버스터 분기 과대반영 방지, lumpy 종목 안전판). 신뢰도 낮음=자작추정. held 종목만 사용."""
+    p = ROOT + f'/data_cache/fs_dart_{t6}.parquet'
+    if not os.path.exists(p) or t6 not in mc.index: return None
+    fs = pd.read_parquet(p); fs['rcept_dt'] = pd.to_datetime(fs['rcept_dt'], errors='coerce')
+    sh = mc.loc[t6, '상장주식수']
+    if not (sh > 0): return None
+    for acct in ('지배주주당기순이익', '당기순이익'):
+        q = fs[(fs['공시구분'] == 'q') & (fs['계정'] == acct) & (fs['rcept_dt'].notna())].sort_values('rcept_dt')
+        v = q['값'].astype(float).values
+        if len(v) >= 2:
+            fe_eok = float(np.mean(v[-2:]) * 4)
+            return (fe_eok * 1e8) / sh if fe_eok > 0 else None
+    return None
+
 def load_covered():
     if os.path.exists(COVERED):
         return json.load(open(COVERED, encoding='utf-8')).get('covered', [])
@@ -163,9 +179,13 @@ def main():
         if len(h) < 2 or str(h.iloc[0]['date']) >= pbd: return None
         cur, past = h.iloc[-1]['forward_eps'], h.iloc[0]['forward_eps']
         return round(cur / past - 1, 4) if past > 0 else None
-    grow = {}; fwdper = {}
+    grow = {}; fwdper = {}; self_est = set()
     for t in targets:
-        fe = fwd_eps.get(t); te = ttm_eps(t); p0 = cur_price(t)
+        fe = fwd_eps.get(t)
+        if fe is None and t in held3:   # ★held인데 애널 컨센없음(제주류) → 자작 forward EPS 폴백(보수적)
+            fe = self_forward_eps(t)
+            if fe and fe > 0: self_est.add(t)
+        te = ttm_eps(t); p0 = cur_price(t)
         if fe and te and te > 0: grow[t] = fe / te
         if fe and fe > 0 and p0: fwdper[t] = p0 / fe
     # ★확인 자격 = forward PER < FWD_PER_GATE (구 'cross-sec 상위100' 폐기, 2026-06-25).
@@ -186,13 +206,15 @@ def main():
         raw_w.append(w)
         held_info.append({'ticker': t, 'name': name(t), 'rank': i, 'confirmed': int(isc),
                           'grow': round(g, 4) if g else None, 'fwd_per': round(fper, 1) if fper else None,
-                          'revision': est_rev(t), 'has_consensus': int(fwd_eps.get(t) is not None)})
+                          'revision': est_rev(t), 'self_est': int(t in self_est),
+                          'has_consensus': int(fwd_eps.get(t) is not None)})
     tot = sum(raw_w); wpct = [round(w / tot * 100, 1) for w in raw_w]
     for hi, wp in zip(held_info, wpct):
         g = hi['grow']; fp = hi['fwd_per']
         gs = f"+{(g-1)*100:.0f}% ({g:.2f}x)" if g else ('NA(컨센없음)' if not hi['has_consensus'] else 'NA(TTM없음)')
-        fps = f"fwdPER {fp}" if fp else "fwdPER NA"
-        print(f"{hi['rank']}. {hi['name'][:12]:12s} {'✅확인' if hi['confirmed'] else '  미확인':7s} {gs:18s} {fps:12s} → 비중 {wp}%")
+        est = '자작추정' if hi.get('self_est') else ''
+        fps = f"fwdPER {fp}{est}" if fp else "fwdPER NA"
+        print(f"{hi['rank']}. {hi['name'][:12]:12s} {'✅확인' if hi['confirmed'] else '  미확인':7s} {gs:18s} {fps:16s} → 비중 {wp}%")
     # 상태파일(메시지용)
     json.dump({'prod_date': pbd, 'method': f'forward PER<{FWD_PER_GATE:.0f} 자격 + 기대성장 비례(k{CONV_K:.0f}cap{CONV_CAP:.0f})', 'cw': CONV_CAP,
                'fwd_per_gate': FWD_PER_GATE, 'held': held_info, 'weights_pct': wpct, 'n_covered': len(covered), 'n_grow': len(grow)},
