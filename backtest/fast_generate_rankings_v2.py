@@ -1657,6 +1657,18 @@ def calculate_multifactor_fast(multifactor_df, price_df, sector_map, base_date,
         extreme_mask = (data[cat_cols_4] < -1.5).any(axis=1) & (qgm_avg <= 0)
         if extreme_mask.any():
             data = data[~extreme_mask].copy()
+    elif _extreme_mode == 'E':
+        # ★V 바닥 면제: 고모멘텀(M >= VFLOOR_MOM_EXEMPT)이면 V<-1.5 무시. Q/G/M<-1.5는 항상 제외.
+        # 근거: 브이엠 등 고PBR 모멘텀 승자가 급등→V 극단→강제이탈(휩쏘) 방지. 2026-06-26 실험.
+        MOM_EXEMPT = float(os.environ.get('VFLOOR_MOM_EXEMPT', '1.0'))
+        qgm_cols = ['퀄리티_점수', '성장_점수', '모멘텀_점수']
+        other_viol = (data[qgm_cols] < -1.5).any(axis=1)
+        v_viol = (data['밸류_점수'] < -1.5) & (data['모멘텀_점수'] < MOM_EXEMPT)
+        extreme_mask = other_viol | v_viol
+        if '밸류_점수' in data.columns and '종목코드' in data.columns:
+            _vo = data.loc[(data['밸류_점수'] < -1.5) & (data['모멘텀_점수'] >= MOM_EXEMPT), '종목코드'].astype(str).tolist()
+        if extreme_mask.any():
+            data = data[~extreme_mask].copy()
     else:
         # 기본 (v77 원본)
         EXTREME_THRESHOLD = -1.5
