@@ -2315,6 +2315,39 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
         scored['멀티팩터_순위'] = scored['멀티팩터_점수'].rank(ascending=False, method='first', na_option='bottom')
 
     # ============================================================
+    # v80.31 (2026-06-29): 과열+저성장 펌프게이트 — 정치펌프(금호건설류) 매수차단
+    # 이격도20(종가/20일평균) > 1.4 AND 성장_점수 < 0.5 → 멀티팩터_점수 바닥(매수권 제외)
+    # 시그니처: "펀더 안 좋아졌는데 가격만 폭등"(금호 4일 +131% 정치발언). 정조준.
+    # ★단독 이격도/단독 저성장은 BT 실패(승자 학살), 교집합만 robust.
+    # 7.4년 production-faithful BT: Calmar 4.18→4.22(+0.05), MDD 25.9% 불변,
+    # LOWO(제주·SK·제룡·티에스이·디바이스) 전부 +0.04~0.05, 임계 1.3~1.5 전부 +.
+    # 과거 코호트(이격도>1.4 & 성장<0.5) = 7건 전부 손실·승률 0%. 환경변수 PUMPGATE_DISABLE=1.
+    # ============================================================
+    if os.environ.get('PUMPGATE_DISABLE') != '1' and not scored.empty and price_df is not None:
+        PUMP_DISP = float(os.environ.get('PUMPGATE_DISP', '1.4'))
+        PUMP_GROWTH = float(os.environ.get('PUMPGATE_GROWTH', '0.5'))
+        try:
+            _ne = price_df.notna().sum(axis=1) >= (price_df.shape[1] * 0.5)
+            _bp = price_df.loc[_ne]
+            if len(_bp) >= 20:
+                _cur = _bp.iloc[-1]
+                _ma20 = _bp.iloc[-20:].mean()
+                _disp = (_cur / _ma20).replace([np.inf, -np.inf], np.nan)
+                _dmap = _disp.to_dict()
+                pump_applied = 0
+                for idx, row in scored.iterrows():
+                    _dv = _dmap.get(row['종목코드'])
+                    _gv = row.get('성장_점수', 0) or 0
+                    if _dv is not None and _dv == _dv and _dv > PUMP_DISP and _gv < PUMP_GROWTH:
+                        scored.at[idx, '멀티팩터_점수'] = -999.0
+                        pump_applied += 1
+                if pump_applied:
+                    scored['멀티팩터_순위'] = scored['멀티팩터_점수'].rank(ascending=False, method='first', na_option='bottom')
+                    print(f'    과열+저성장 펌프게이트: {pump_applied}종목 매수차단 (이격도>{PUMP_DISP} & 성장<{PUMP_GROWTH})')
+        except Exception as _pe:
+            print(f'    펌프게이트 스킵: {_pe}')
+
+    # ============================================================
     # 성장-밸류 괴리 과열 캡 (pen_cs) — 가격반응 earnings yield 기반 (boost only)
     # 자기 PER = 시총(일별, 가격반응) / TTM 지배순이익(PIT). 단면 z 중 '비싼 쪽'만 감점.
     # 사용자 의도: 가격 폭등 종목 자동 회피(추격매수 위험), 가격이 순위에 반영.

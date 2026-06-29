@@ -1,0 +1,188 @@
+[
+ {
+  "name": "사이클조정 어닝일드(CAPE식)로 과열캡 분모 교체 — overheat_fix",
+  "signal_def": "기존 과열캡은 ey = TTM지배순이익 / 시가총액 (fast_generate_rankings_v2.py L2318-2335). 분자를 '정규화이익'으로 교체:\n- DART 계정 '지배주주당기순이익'(폴백 '당기순이익'), 공시구분 'q', rcept_dt <= base_date 인 분기만(PIT).\n- 기준일 중복 시 rcept_dt 최신 keep, 기준일 정렬.\n- norm_ni = mean(최근 N분기 분기순이익) × 4  (N=20 우선, 가용 분기<20이면 N=12, 그것도 부족하면 N=8; 최소 8분기 미만이면 사이클조정 안 함=기존 TTM ey 폴백).\n- cape_ey = norm_ni / 시가총액(일별,가격반응). norm_ni<=0 이면 NaN(=감점 0, 손실저점 종목 보호).\n- 단면 log(cape_ey) z-score → pen_cs2 = min(z, 0) (기존과 동일 비대칭, 비싼 쪽만 감점).\n- score += FACTOR_OVERHEAT_W × pen_cs2 (기존 0.2 자리 그대로 교체). 핵심: 분모만 norm_ni로 바꾸고 나머지 파이프라인 동일.",
+  "rationale": "후행PER 착시의 정확한 메커니즘: 사이클저점 분기엔 TTM이익이 0 근처/음수라 PER가 폭등→과열캡이 '비싸다'고 부당감점. 실측(SK하이닉스 000660): 2024-03 TTM지배순이익 -46127억(음수)인데 그 직후 fwd 폭등. 8분기평균(ttm8avg)도 -34712로 저점을 객관적으로 보여줌. 정규화이익(여러해 평균)으로 분모를 메우면 일시 저점이 평준화돼, 진짜 비싼(구조적 고PER) 종목만 감점되고 사이클저점 회복주는 감점 면제. CAPE(Shiller) 원리의 단일종목·단면 적용.",
+  "backtestable_now": true,
+  "integration": "overheat_fix",
+  "orthogonality": "기존 과열캡과 '같은 자리·같은 형태'지만 분모만 cyclical-adjust → 순수 개선(누락 알파 복원). value(저PER)와는 단면 z라 겹치나, value는 leveldistortion 미보정 raw PER라 사이클저점주에서 부호가 반대로 작동(저점주=저PER 보상 vs 정규화=고PER 아님 인식). growth/momentum과 직교(이익레벨 normalization은 변화율 아님).",
+  "priced_in_risk": "정규화이익이 '이미 회복 시작'을 일부 반영할 수 있으나, 이건 감점을 '면제'하는 방향이라 선반영 위험은 비대칭적으로 안전(없는 알파를 만드는 게 아니라 잘못된 감점을 제거). 회피: pen_cs2는 여전히 min(z,0)로 감점만 하므로 cape_ey가 높아도(싸도) 무보상→추격매수 유발 안 함. 2019-2020 초반 N<8 종목은 기존 TTM ey 폴백으로 graceful degrade.",
+  "lens": "cyclical-value"
+ },
+ {
+  "name": "이익 사이클 인플렉션 부스트 (저후행성장 + 조기회복) — new_factor",
+  "signal_def": "DART '영업이익'(폴백 '당기순이익') 분기, PIT(rcept_dt<=base). 분기 OP 시계열 op_q (기준일 정렬, 중복 rcept 최신).\n- trough_recovery = (op_q[t] − min(op_q[t-7 .. t-1])) / (max(|op_q[t-7..t-1]|, |op_q[t]|, 자산×0.005))  # 최근 8분기 저점 대비 최신분기 반등폭, 자산 스케일 정규화(소형주 분모폭발 방지)\n- accel2 = (op_q[t] − op_q[t-1]) − (op_q[t-1] − op_q[t-2])  # 2차 차분(가속), 자산으로 정규화\n- yoy_ttm = TTM_OP[t]/TTM_OP[t-4] − 1  (후행성장)\n- 인플렉션 게이트: yoy_ttm 이 단면 하위 60%(저후행성장) AND trough_recovery 단면 상위 → inflection_z = zscore(trough_recovery)+zscore(accel2), 단 yoy_ttm 단면 z > 0(이미 후행성장 높은) 종목은 inflection 0으로 마스킹(중복 제거).\n- score += FACTOR_INFLECTION_W × clip(inflection_z, 0, None)  # 양의 가산만(boost only), 스윕 0.03~0.08 권장.",
+  "rationale": "인플렉션 종목 정의 = 후행성장 낮고(아직 안 좋아보임) 사이클저점에서 막 반등하는 분기. 실측 SK하이닉스 2024-03: NI가 -25804(전년동기)→당분기 +19192로 부호전환, TTM YoY는 여전히 음수(후행은 나쁨)인데 분기 저점반등은 명확. 이 조기구간이 fwd250d +28.8% 실현 알파의 원천. 순차분기 저점반등+가속이 YoY가 못 잡는 '턴'을 포착.",
+  "backtestable_now": true,
+  "integration": "new_factor",
+  "orthogonality": "후행성장(rev/op YoY z)과 corr +0.14: 명시적으로 yoy>0 종목을 마스킹해 후행성장 강한 종목과 분리(중복 제거)→ 직교성 강화. 모멘텀과 +0.57이 핵심 리스크: 회피법은 '저후행성장 게이트'로 이미 모멘텀이 붙은 종목(YoY 좋아 가격 오른)을 빼고 '기대 큰데 아직 안 오른 조기구간'만 남김 → 모멘텀 잔차에 집중. accruals 페널티와 직교(현금흐름 아닌 OP 순차구조).",
+  "priced_in_risk": "분기 저점반등은 발표 후 즉시 일부 반영(PEAD). 회피: ① 게이트로 '아직 후행성장 낮은=시장이 아직 안 믿는' 종목만 → 선반영 적은 구간. ② PIT 엄격(rcept_dt<=base)로 look-ahead 차단(과거 PEAD 가짜알파 사고 재발 방지). ③ boost-only 양의 가산이라 최악의 경우 무해(없는 종목엔 0). 검증 필수: 7.4y BT+WF 3블록+LOWO에서 모멘텀 대비 incremental Calmar 확인(중복이면 0 근처).",
+  "lens": "cyclical-value"
+ },
+ {
+  "name": "이익 저점 회복 sleeve — 정규화이익 대비 현재이익 위치 + 회복확인 (separate_sleeve)",
+  "signal_def": "단면 게이트가 아니라 별도 sleeve 후보군. PIT 분기 OP·NI.\n- earnings_position = TTM_NI[t] / (mean(최근 20분기 NI)×4)  # 정규화이익 대비 현재 TTM 위치(<0.7 = 사이클저점)\n- recovery_confirm = (TTM_OP[t] > TTM_OP[t-1]) AND (op_q[t] > op_q[t-1]) AND (op_q[t-1] > op_q[t-2])  # 2분기 연속 순차개선\n- valuation_ok = 시가총액 / norm_ni(위 N=20 정규화) < 단면 중앙값  # 정규화기준 안 비쌈\n- sleeve 진입: earnings_position < 0.7 AND recovery_confirm AND valuation_ok 인 종목을 별도 랭킹(정규화 earnings yield 높은순), 3슬롯 동일가중. 메인 boost와 분리 운용/관찰.",
+  "rationale": "메인 시스템(rank≤3, 모멘텀·후행성장 중심)은 구조적으로 '이미 좋아보이는' 종목을 사서, 사이클저점에서 막 도는 종목은 후행지표상 못생겨서 절대 top3에 못 듦. 이걸 단면 가중으로 욱여넣으면 메인 알파를 희석(과거 value-tilt가 모멘텀 희석시킨 전례). 분리 sleeve가 정공법: 사이클회복 전용 바스켓을 별도 트랙으로 두고, 라이브 검증 후 자본배분 결정. CAPE식 normalization으로 저점 종목만 선별.",
+  "backtestable_now": true,
+  "integration": "separate_sleeve",
+  "orthogonality": "메인 4팩터와 의도적으로 다른 유니버스(저후행성장·저모멘텀·사이클저점) → corr 낮음이 설계목표. 메인과 겹치는 종목은 sleeve에서 제외(메인 top6 내 종목 배제)해 직교 보장. value와는 normalization 분모로 차별화(raw PER 저점착시 회피).",
+  "priced_in_risk": "저점 회복주는 가치덫(value trap)과 시그니처가 유사 — 영구쇠퇴 vs 사이클반등 구분이 핵심위험. 회피: ① recovery_confirm(2분기 연속 순차개선)으로 '아직 안 돈' 진짜 덫 제외. ② 정규화이익 N=20분기(5년)로 구조적 쇠퇴(평균 자체가 하락추세)면 earnings_position 게이트 통과해도 norm_ni 낮아 valuation_ok 탈락. ③ 별도 sleeve라 메인 시스템 오염 0 — 검증 실패해도 본 시스템 무영향(가장 안전한 통합방식). 7.4y BT로 sleeve 단독 Calmar·메인과 corr 측정 후에만 자본배분.",
+  "lens": "cyclical-value"
+ },
+ {
+  "name": "이익 변곡 가속도 (Earnings Acceleration / 2차도함수, EAC)",
+  "signal_def": "DART 분기(공시구분='q') 영업이익을 PIT(rcept_dt<=base_ts)로 정렬, 최근 6분기 단일분기 영업이익을 q0..q5(q0=최신). 두 개의 QoQ 변화율을 계산: ΔTTM_now = TTM(q0..q3) - TTM(q1..q4), ΔTTM_prev = TTM(q1..q4) - TTM(q2..q5). 가속도 ACC = (ΔTTM_now - ΔTTM_prev) / max(|TTM(q1..q4)|, 직전4분기 매출액TTM*0.02). 적자종목 분모 폭주 방지로 매출 floor 사용. 동일하게 지배주주당기순이익으로도 계산해 ACC_ni 산출, 최종 raw = 0.6*ACC_op + 0.4*ACC_ni. 영업이익은 분기 8개(2년) 이상 있는 종목만, 결측은 NaN(z에서 자동 제외). 일자별 단면 z-score(EAC_z), boost score에 += w*EAC_z. 2019~2026 BT: 매 base_date마다 그날 PIT로 ACC 재계산 가능(과거 분기재무만 사용, 선행데이터 0).",
+  "rationale": "후행 TTM성장(rev_yoy/oca)은 '이미 얼마나 컸나'를 보지만(레벨), 사이클 인플렉션은 '성장률이 막 위로 꺾였나'라는 2차도함수다. SK하이닉스 영업이익은 2023Q2 -28820(저점)→2023Q4 +3460(흑전)→2026Q1 +376102로, TTM YoY레벨이 양수로 보이기 한참 전에 분기증가분(ΔTTM)이 plus로 돌아서며 가속이 시작된다. EAC는 그 '막 꺾인' 순간을 후행이익만으로 포착해, 컨센서스 선행PER이 급락(이익 5배 예정)하기 전 단계를 잡는다. 모멘텀과 0.57 겹치는 '이미 오른' 구간이 아니라, 펀더멘털 가속이 가격에 아직 안 실린 조기구간을 펀더로 본다.",
+  "backtestable_now": true,
+  "integration": "new_factor",
+  "orthogonality": "기존 oca/rev_yoy/gp_yoy는 TTM의 1차 레벨(YoY 크기). EAC는 그 변화율의 변화율(2차)이라 레벨이 낮아도(또는 음수여도) 가속 중이면 높게 나옴 → 후행성장과 corr 낮음. lumpiness/accruals 페널티는 '한 분기 쏠림/현금 미동반'을 빼는데, EAC는 6분기 추세의 곡률이라 단발 분기쏠림은 ΔTTM_prev에도 반영돼 상쇄(추세적 가속만 남김). 모멘텀과는 펀더 기반이라 가격 미반영 조기구간에서 분리.",
+  "priced_in_risk": "분기실적 공시 직후 급등으로 일부 선반영. 회피: ① rcept_dt 기준 PIT 엄수(공시 전 정보 0), ② raw를 매출floor로 정규화해 마이크로캡 적자주 노이즈 제거, ③ 단면 z를 진입(rank<=3)에 직접 안 쓰고 boost score 가산항(작은 w 0.05~0.1)으로만 → 과열캡·3슬롯분산이 추격매수를 흡수. 모멘텀과 0.57겹침이므로 BT에서 모멘텀 통제 후 증분IC(fwd250d) 확인 필요.",
+  "lens": "earnings-revision"
+ },
+ {
+  "name": "흑자전환 / 사이클 저점탈출 게이트 (Turnaround Inflection, TIG)",
+  "signal_def": "DART 분기 영업이익을 PIT 정렬. 단일분기 영업이익 q0..q7. 조건 A(흑전): 직전 연속 N분기(N>=2, q1..qN) 영업이익<0 이고 q0>0. 조건 B(저점탈출): 최근 8분기 단일분기 영업이익의 최저점 분기 idx_min을 찾고, q0가 idx_min 이후이며 q0 >= TTM_trough*? → 간단화로 'TTM(q0..q3) > TTM 직전4분기 AND 최근4분기 단일영업이익 최저값이 직전4분기보다 높음'. 강도 = (TTM(q0..q3) - min_quarter_op_8q) / max(매출액TTM*0.05, 1). 지배주주당기순이익으로도 흑전 동시충족 시 강도+가중. 신호값 = 충족 종목에 양(+)의 부스트(연속값: tanh(강도) 형태), 미충족 0. 결측/분기<8 제외. base_date마다 PIT 재계산 → 7.4y BT 가능.",
+  "rationale": "적자→흑자 전환은 한국 사이클주(반도체·소재·화학)에서 가장 강한 이익 인플렉션 신호인데, 현 시스템은 이를 오히려 처벌한다: 저점 적자 TTM → 후행PER 음수/거대 → 과열캡과 value floor가 '못 산다'고 배제. SK하이닉스가 2023Q4 흑전한 시점에 정확히 이 함정에 빠진다(TTM이익 여전히 적자권→비싸보임). TIG는 후행이익만으로 '적자 바닥을 막 벗어난' 종목을 명시 식별해, 그 시점에 부당감점을 상쇄(또는 가점)한다. 실현 fwd250d +28.8% 인플렉션 구간을 펀더로 잡는 가장 직접적 경로.",
+  "backtestable_now": true,
+  "integration": "overheat_fix",
+  "orthogonality": "후행 YoY성장은 적자권에서 분모<0로 무의미/노이즈(p4>0 조건에서 아예 계산 안 됨)라 TIG가 채우는 빈 공간. 과열캡과는 정반대 부호로 직접 상호작용: 흑전종목은 trailing EY z가 음(비싸보임)→과열캡이 감점하는데 TIG 충족이면 그 감점을 cap(예: 흑전 게이트 ON이면 overheat pen을 0으로 클립). value floor(-1.5σ)도 흑전종목엔 완화. accruals/lumpiness와는 흑전을 현금흐름(CFO)·매출 동반으로 게이팅하면 가짜흑전(자산매각 일회성) 분리 가능.",
+  "priced_in_risk": "흑전은 잘 알려진 이벤트라 공시일 급등으로 선반영 위험 큼. 회피: ① '첫 흑전 분기만'이 아니라 '저점탈출 추세(2분기 연속 개선)'까지 요구해 데드캣(한 분기만 반짝 흑전 후 재적자) 배제, ② 일회성 흑전 필터로 CFO_TTM>0 동반 + max(4Q영업이익)/TTM영업이익<0.7(lumpiness)로 단발 흑전 제외, ③ overheat_fix로만 적용(가점 아닌 부당감점 해제)해 추격 리스크 최소화. ④ 흑전 직후 fwd 분포가 양극(대박 vs 데드캣)이라 3슬롯 분산이 개별 데드캣 흡수.",
+  "lens": "earnings-revision"
+ },
+ {
+  "name": "마진 모멘텀 변곡 (Operating Margin Slope Inflection, MMI)",
+  "signal_def": "DART 분기 영업이익·매출액 PIT 정렬. 분기 영업이익률 OPM_q = 영업이익_q / 매출액_q (매출_q>0 분기만). 최근 6개 분기 OPM 시계열에 대해 두 기울기: slope_now = OPM(q0)-OPM(q2) (최근 2분기 변화), slope_prev = OPM(q2)-OPM(q4). 마진가속 raw = slope_now - slope_prev (%p, OPM 기울기의 변곡). 보강: 매출총이익률(매출총이익_q/매출액_q)로 동일 계산해 GPM_slope_chg 산출, raw_final = 0.5*OPM_slope_chg + 0.5*GPM_slope_chg. 분기매출 결측·6분기미만 제외, 단발 분기 노이즈 완화 위해 각 OPM은 동일분기 단일값(계절성 있으면 YoY분기쌍 OPM(q0)-OPM(q4) 변화로 대체 옵션). 일자별 단면 z(MMI_z), boost 가산. base_date PIT로 7.4y 계산.",
+  "rationale": "이익 인플렉션의 선행 핵심은 매출보다 '마진이 먼저 꺾여 올라가는' 것이다(가동률·가격·믹스 개선이 매출 폭증보다 분기 빠르게 OPM에 나타남). 반도체·디스플레이는 매출이 횡보해도 OPM이 적자→흑자 기울기로 먼저 돈다. SK하이닉스 2023Q4 영업이익 흑전 시 매출은 아직 약한데 OPM 기울기가 급반전한다. MMI는 op_margin_chg(레벨 변화)와 달리 '기울기의 변곡'(2차)이라 마진 회복이 막 시작된 조기구간을 펀더로 잡는다. 가격엔 아직 안 실려 모멘텀과 분리.",
+  "backtestable_now": true,
+  "integration": "new_factor",
+  "orthogonality": "기존 op_margin_chg(영업이익률변화_z)는 OPM의 1차 레벨변화(OPM_t - OPM_t-4). MMI는 그 변화의 2차(기울기 가속)라 직교 — 레벨변화가 작아도 막 위로 꺾이면 높음. rev_yoy(매출성장)와는 마진(분자/매출)이라 매출규모 무관, 매출 횡보+마진반전 종목을 매출성장 팩터가 못 잡는 영역을 채움. EAC(영업이익 절대 가속)와는 '마진' 기반이라 대형주 절대이익 가속과 중소형 마진턴 둘 다 포착(상호보완). 과열캡과 직교(밸류 무관).",
+  "priced_in_risk": "마진 반전도 실적공시로 부분 선반영. 회피: ① PIT rcept_dt 엄수, ② OPM 분기노이즈(일회성 원가환입 등) 대비 2분기 기울기 + GPM 동시충족 요구로 robust화(매출원가 단위라 GPM이 더 깨끗), ③ 매출_q>0 + 분기8개 필터로 마이크로캡 제외, ④ 작은 가산w로만 + 3슬롯분산. BT에서 EAC·모멘텀 통제 후 증분IC 확인(EAC와 corr 중간 예상 → 둘 중 증분 큰 쪽 채택 or 합성).",
+  "lens": "earnings-revision"
+ },
+ {
+  "name": "OP 가속도 z (TTM 영업이익 2차미분, 사이클 인플렉션 포착)",
+  "signal_def": "DART 분기 영업이익(계정='영업이익')으로 PIT TTM 시퀀스를 만들고(rcept_dt 기준, 이미 _compute_ticker_growth_events가 op TTM 보유), 다음 두 시점의 TTM-YoY를 계산: g_t = (TTM_op[t]/TTM_op[t-4]-1), g_{t-1} = (TTM_op[t-1]/TTM_op[t-5]-1). accel = g_t - g_{t-1} (영업이익 성장률의 2차미분, %p). 추가로 더 빠른 turn 감지를 위해 TTM 영업이익 자체의 QoQ 가속도도 합성: ttm_qoq_t = TTM_op[t]/TTM_op[t-1]-1, ttm_qoq_accel = ttm_qoq_t - ttm_qoq_{t-1}. 최종 signal = 0.6*zscore(accel) + 0.4*zscore(ttm_qoq_accel) (단면 z, 일자별). 음수 자산/TTM<=0 종목은 NaN→0. 기존 rev_accel(매출 가속) 코드 패턴 그대로 영업이익에 적용.",
+  "rationale": "사이클 저점에서 이익이 '턴'할 때 후행 TTM 레벨은 여전히 낮아 후행PER 착시(SK하이닉스 후행24)를 주지만, 성장률의 2차미분(가속도)은 저점에서 '음→양'으로 가장 먼저 부호전환한다. 선행컨센서스 없이도 '이익이 이미 가속 시작했는가'를 과거재무만으로 측정 → 선행성장의 가장 깨끗한 과거 프록시. 레벨(YoY)이 아닌 변화율을 봐서 트로프 종목을 일찍 잡는다.",
+  "backtestable_now": true,
+  "integration": "new_factor",
+  "orthogonality": "후행 rev_yoy/gp_yoy(레벨 성장)와 직교: 레벨 성장은 이미 높은 종목을 잡지만 accel은 '아직 낮으나 가속하는' 종목을 잡음(인플렉션 = 저레벨+고가속). 모멘텀(12m, corp +0.57)과는 절반 겹치나 가속이 가격에 반영되기 전 구간(조기)을 분리 — 진짜 알파. QoQ 패널티(레벨 약세 차단)와는 반대 방향이라 보완적. growth_s에 소가중(0.05~0.10) 가산으로 시작.",
+  "priced_in_risk": "이익 가속이 이미 주가에 반영됐을 수 있음(모멘텀 겹침). 회피: ① 신호를 '가속도 z'만 쓰지 말고 모멘텀 residual화(12m 모멘텀 회귀 후 잔차)로 조기구간만 추출 ② boost only 적용 + 소가중으로 기존 모멘텀 알파 안 깨지게 ③ 단일분기 노이즈 회피 위해 TTM accel(4분기 평활) 사용. BT시 LOWO(SK하이닉스 제외)로 단일 사이클주 착시 점검 필수.",
+  "lens": "system-architect"
+ },
+ {
+  "name": "Forward-aware 과열캡 (TTM ey를 가속도로 할인 — overheat 부당감점 수정)",
+  "signal_def": "현행 pen_cs = min(zscore(log(시총/TTM지배순이익)), 0). 이를 forward-aware하게 수정: TTM 지배순이익 대신 '가속도-조정 순이익(adj_NI)'으로 ey를 계산. adj_NI = TTM_NI * (1 + clip(op_accel_norm, 0, cap)). 여기서 op_accel_norm = (최근 2분기 TTM 영업이익 QoQ 성장률 평균), cap=1.0(최대 2배까지만 인정, 과대추정 방지). 즉 이익이 가파르게 가속 중이면 분모 NI를 상향 → ey 상승 → '비싸 보임' 완화 → 과열 감점 축소. 가속이 0이거나 음수면 현행과 동일(adj=TTM_NI). 정확히: ey_adj = log(adj_NI / 시총)의 음수영역만 감점 pen_cs_fwd = min(zscore(ey_adj), 0). 모든 입력 PIT(영업이익 TTM은 이미 계산됨), 시총은 일별.",
+  "rationale": "현 과열캡은 후행 NI로 PER을 봐서, 사이클 저점에서 이익이 곧 5배 될 종목(선행PER 4.6)을 '후행PER 24 = 비쌈'으로 부당 감점. 이익이 명백히 가속 중이면 '저점 후행이익이 곧 정상화'된다는 신호이므로 분모를 가속도로 살짝 끌어올려 그 종목을 감점에서 면제. 데이터 없는 컨센서스 대신 '과거 가속도'를 forward earnings의 보수적 프록시로 사용.",
+  "backtestable_now": true,
+  "integration": "overheat_fix",
+  "orthogonality": "기존 과열캡을 대체(수정)하는 것이라 새 직교축 아님 — 과열캡의 '인플렉션 종목 부당감점' 부작용만 제거. 이익 안 가속하는 진짜 거품(가속 0)은 현행대로 감점 유지 → 거품회피 알파 보존. 가속하는 종목만 감점 면제라 정밀 타겟.",
+  "priced_in_risk": "가속도 상향이 과대해 진짜 거품을 통과시킬 위험. 회피: ① cap=1.0(분모 2배 한도) 보수적 설정 ② 가속도는 '레벨이 아닌 추세'라 한두 분기 노이즈에 강건(TTM 평활) ③ 핵심 검증: 현행 과열캡 W0.2 baseline 대비 '수정캡'을 7.4년 BT — Calmar 비악화 + 인플렉션 종목(저후행성장+고가속) fwd250d 개선 확인 + WF 약세장(거품통과 위험) 비악화 필수. 악화시 cap 축소 or 가속임계 강화로 후퇴.",
+  "lens": "system-architect"
+ },
+ {
+  "name": "Growth 지속성(persistence) 가중 — lumpy 성장 할인, 꾸준한 성장 가산",
+  "signal_def": "기존 growth_s(rev_z/oca_z/gp_growth_z 합)를 '지속성'으로 스케일. 지난 4분기의 분기별 YoY 부호 일관성을 측정: 최근 5개 TTM 시점의 g_t(영업이익 TTM YoY) 시퀀스에서 persistence = (양의 YoY 분기 수 / 4) and 단조성. 구체: 최근 4개 분기 영업이익 QoQ(TTM 기준) 중 양수 비율 p_up, 그리고 변동성 cv = std(4분기 QoQ)/|mean|. persist_score = p_up * (1 / (1 + cv)). 최종 growth_s_adj = growth_s * (0.7 + 0.6*zscore(persist_score)의 0~1 스케일). 즉 꾸준히 한 방향으로 성장(낮은 cv, 높은 p_up)이면 가중 ↑, 한 분기 튀고 마는 lumpy 성장이면 가중 ↓. 모든 분기값 PIT(rcept_dt). 자산/TTM<=0 NaN 처리.",
+  "rationale": "사이클 인플렉션의 핵심은 '일회성 반등'이 아니라 '지속되는 턴'. 후행 YoY가 같은 +50%여도, 한 분기 base효과로 튄 것(보성파워텍형, lumpy)과 4분기 연속 가속한 것(진짜 사이클 회복, SK하이닉스형)은 forward 수익이 정반대. 지속성으로 가중하면 forward 이익성장이 실제로 이어질 종목에 베팅 → 선행성장의 quality 차원. 기존 lumpiness 페널티(min/max<0.25)는 매출 한 계정의 분기쏠림만 보지만, 이건 성장률 추세의 일관성을 봄.",
+  "backtestable_now": true,
+  "integration": "new_factor",
+  "orthogonality": "기존 lumpiness 페널티(절대 매출 분기쏠림)·accruals 페널티(현금vs이익)와 직교: 이건 '성장률 시계열의 단조성/일관성'이라는 다른 축. QoQ 패널티(레벨 약세 차단)와도 다름 — QoQ는 직전분기 약세, persistence는 4분기 추세 일관성. growth_s를 곱셈 스케일하므로 기존 성장팩터 방향은 보존하고 강도만 재배분 → 직교 가산 아닌 가중 재배분이라 multicollinearity 없음.",
+  "priced_in_risk": "지속성장은 시장이 이미 알아본 '검증된 성장주'라 선반영·고밸류 위험(과열캡과 충돌). 회피: ① persistence는 곱셈 가중이라 절대점수 폭증 안 시킴(0.7~1.3 배율 클립) ② 과열캡(또는 위 수정캡)이 동시 작동해 고밸류는 별도 감점 → 지속성·과열캡 상호작용 BT로 동시 측정 ③ 핵심: 고정 config(V15Q0G55M30)에서 growth_s 곱셈 전후 IC + 7.4년 Calmar + 인접 CV(배율 0.5/0.6/0.7 grid) 검증, best-vs-best 금지. lumpy 종목 할인이 단일 사이클주(LOWO) 착시 아닌지 확인.",
+  "lens": "system-architect"
+ },
+ {
+  "name": "영업레버리지 인플렉션 (Operating-Leverage Inflection, OLI)",
+  "signal_def": "PIT 분기 DART(rcept_dt<=base_date)로 종목별 매출/영업이익 TTM 시계열 구성(4분기 가중합, 기존 _weighted_ttm_sum 재사용). 두 지표를 곱한 게이트 신호:\n  (1) 매출 회복: rev_yoy_TTM = (TTM매출_t / TTM매출_{t-4q} - 1)*100, 단 QoQ로 변곡 확인 — rev_qoq = (분기매출_t - 분기매출_{t-1})/분기매출_{t-1}*100 > 0 (직전분기 대비 매출 반등).\n  (2) 마진 저점: opm_ttm = TTM영업이익/TTM매출. 최근 8분기 분기 OPM 시계열(분기영업이익/분기매출)에서 opm_q_t 가 직전 8분기 최저 대비 회복 초기 — 정의: opm_q_min8 = min(최근8분기 분기OPM), gap = opm_q_t - opm_q_min8. '저점부근'을 opm_q_t < (8분기 OPM 중앙값) 으로 정의(아직 마진 정상화 전).\n  핵심 raw 신호 OLI = ΔOPM_accel = (opm_q_t - opm_q_{t-1}) - (opm_q_{t-1} - opm_q_{t-2}) — 분기 영업마진의 2차차분(마진 개선 가속). 매출은 회복(rev_qoq>0)인데 마진이 저점에서 막 꺾여 올라오기 시작(ΔOPM_accel>0 & opm_q_t < median8)하는 종목 = 영업레버리지 점화 직전.\n  단면 z-score: OLI_z = zscore(ΔOPM_accel) * 1[rev_qoq>0] * 1[opm_q_t < opm_median8]. 게이트 미충족시 0. boost score에 + OLI_z * W (W=0.05~0.08 스윕).",
+  "rationale": "고정비 비중이 큰 사이클 기업(반도체·소재·장비)은 다운사이클 저점에서 매출이 먼저 회복돼도 고정비 흡수(가동률 회복) 전이라 영업이익은 아직 적자/미미 → 후행이익·후행PER로는 '비싸고 성장 없음'으로 보임. 그러나 가동률이 손익분기를 넘는 순간 한 분기에 영업이익이 폭증(영업레버리지). 이 점화 직전 = '매출 QoQ 반등 + 분기 영업마진이 8분기 저점 근처에서 2차차분 플러스(개선 가속)'. SK하이닉스류 인플렉션의 회계적 발자국을 '미래 컨센서스 없이' 과거 분기 마진 추세만으로 포착.",
+  "backtestable_now": true,
+  "integration": "new_factor",
+  "orthogonality": "기존 op_margin_chg는 TTM OPM의 YoY 레벨 변화(느림, 이미 회복된 뒤 점등)인 반면 OLI는 분기 OPM의 2차차분(가속, 저점 근처에서만 점등) — 변곡 타이밍이 4~8개월 빠름. rev_yoy/gp_yoy는 매출·총이익 성장 레벨(후행), OLI는 마진 가속이라 직교. 과열캡(후행PER 비쌈 감점)과는 반대 방향 정보(이익 저점이라 후행PER 높을수록 OLI가 큼) → 과열캡 오작동 보완. 모멘텀과는 게이트(opm<median8 = 아직 안 오른 조기구간)로 분리해 corr 낮춤.",
+  "priced_in_risk": "마진 변곡이 1분기치 분기데이터의 노이즈(일회성 환입·계절성)일 수 있음. 회피: (a) 2차차분에 rev_qoq>0 동반 게이트로 '매출 실회복' 동반만 인정, (b) lumpiness 페널티(min/max 4분기<0.25)·계절성 페널티와 ADD로 결합해 프로젝트성 반짝마진 제거, (c) opm_q_t<median8 게이트로 이미 마진 정상화된(선반영된) 종목 제외 → 정의상 '아직 안 오른' 종목만. 선반영 추가 회피: W는 0.05~0.08 소가중으로 모멘텀(이미 오른 것)이 아닌 '조기' 영역에만 틸트.",
+  "integration_method": "new_factor",
+  "lens": "margin-operating-leverage"
+ },
+ {
+  "name": "사이클 저점 과열캡 면제 (Trough-Earnings Overheat Exemption)",
+  "signal_def": "기존 과열캡 pen_cs = min(zscore(log(시총/TTM지배순이익)), 0) 을 수정. '사이클 저점에서 후행PER이 비싼' 종목은 감점 면제. 면제 게이트(전부 PIT DART 과거재무):\n  (1) 이익 저점 판정: TTM지배순이익_t < (최근 12분기 TTM지배순이익 시계열의 25퍼센타일) → 현재 TTM이익이 최근 3년 하위권(사이클 저점).\n  (2) 회복 시작 동반: rev_qoq>0 AND op_qoq>0 (직전분기 대비 매출·영업이익 동시 반등) — 저점 통과 신호.\n  면제 강도: exempt = 1[조건1 & 조건2]. 수정 pen = pen_cs * (1 - α*exempt), α=0.6~1.0 스윕(부분~전체 면제). 즉 '이익이 사이클 저점이라 후행PER이 일시적으로 부풀려진' 종목은 과열캡을 안 맞거나 덜 맞음. 정상 고평가(이익 정상인데 비싼)는 그대로 감점.",
+  "rationale": "과열캡은 '시총/TTM순이익'이 비싼 종목을 추격매수 회피로 감점하는데, 사이클 저점 종목은 분모(TTM이익)가 바닥이라 후행PER이 기계적으로 폭등 → 정작 다음분기 이익 5배 폭증할 인플렉션 종목(SK하이닉스 후행24/선행4.6)을 '비싸다'고 부당 감점하는 게 현재 시스템의 명시적 결함. 이익이 최근 3년 저점이고 매출·영업이익이 막 반등하면 그 후행PER 고평가는 '착시'이므로 감점을 면제하는 게 경제적으로 옳다. overheat_fix 형태가 사용자 통찰을 가장 직접 교정.",
+  "backtestable_now": true,
+  "integration": "overheat_fix",
+  "orthogonality": "기존 팩터를 새로 추가하는 게 아니라 과열캡(pen_cs)의 오탐을 제거하는 보정. value/quality/growth/momentum은 불변. 인플렉션 종목에 대한 '잘못된 음의 신호 제거'라 순수 직교(기존 알파 훼손 없이 오작동만 수정). 단 OLI(아이디어1)와 정보원천이 일부 겹침(둘 다 마진/이익 저점+회복) → 둘을 동시 도입 시 한쪽만 채택하거나 약가중. 권장 검증순서: 이 overheat_fix를 먼저 BT(가장 안전, 기존 결함 교정)하고, 잔여 알파가 있으면 OLI를 new_factor로 추가.",
+  "priced_in_risk": "면제가 진짜 저점통과가 아닌 '구조적 이익훼손(영구 적자전환)' 종목까지 풀어주면 가치함정 매수 위험. 회피: (a) rev_qoq>0 AND op_qoq>0 동시 게이트(매출·이익 동반 반등만), (b) accruals 페널티(B>25&C>0.7)·lumpiness와 병행 — 가짜이익·프로젝트성 제외, (c) -1.5σ 단일팩터 바닥필터 유지로 펀더 붕괴 종목 사전 제거, (d) α를 부분면제(0.6)로 시작해 완전면제(1.0) 전 BT 비교. 선반영: 과열캡 자체가 boost-only·소가중(0.2)이라 면제의 다운사이드 제한적, 약세장 WF에서 가치함정 매수 안 늘어나는지 확인 필수.",
+  "integration_method": "overheat_fix",
+  "lens": "margin-operating-leverage"
+ },
+ {
+  "name": "총이익률 변곡 선행지표 (Gross-Margin Turn, GMT)",
+  "signal_def": "PIT 분기 DART로 분기 총이익률 시계열 구성: gm_q_t = 분기매출총이익_t / 분기매출_t. 매출총이익은 영업이익보다 위 라인(판관비·일회성 영향 적음)이라 마진 변곡이 더 깨끗·선행.\n  신호: GMT = (gm_q_t - gm_q_{t-1}) 의 부호전환 + 매출 동반. 정의:\n    gm_chg_t = gm_q_t - gm_q_{t-1} (직전분기 대비 총이익률 변화, %p)\n    선행 게이트: 최근 2분기 연속 gm_chg>0 (gm_chg_t>0 AND gm_chg_{t-1}>0) = 마진 2분기 연속 개선(추세 확립) AND rev_yoy_TTM가 아직 음수~저성장(rev_yoy_TTM < 단면 중앙값) = 매출 성장은 아직 안 붙음(조기).\n    raw 강도 = gm_chg_t + gm_chg_{t-1} (2분기 누적 마진개선 %p). 단면 z: GMT_z = zscore(gm_chg_t + gm_chg_{t-1}) * 1[2분기연속개선] * 1[rev_yoy_TTM < median]. boost score에 + GMT_z * W (W=0.04~0.07).\n  ★대체안(게이트 단순화): gp_margin_q 2차차분(매출총이익률 가속) zscore만 써도 BT 가능 — 데이터 동일.",
+  "rationale": "총이익률(매출총이익/매출)은 단가·믹스·원가의 1차 반영으로 영업이익률보다 사이클 변곡이 1~2분기 선행(판관비 레버리지·일회성 비용 노이즈 제거). 반도체 DRAM 가격, 소재 스프레드, 장비 가동률 회복이 가장 먼저 GP마진에 찍힘. '매출은 아직 안 붙었는데(rev_yoy<중앙값) GP마진이 2분기 연속 개선' = 단가·믹스 턴이 매출 회복보다 먼저 온 인플렉션 초입. 다음 1~2분기 매출 회복이 따라붙으면 영업이익 폭증. 미래 컨센서스 없이 과거 GP마진 추세만으로 '이익 인플렉션의 가장 이른 회계 흔적'을 잡음.",
+  "backtestable_now": true,
+  "integration": "new_factor",
+  "orthogonality": "기존 gp_yoy는 매출총이익 TTM YoY(성장 레벨, 후행·느림)이고 GMT는 분기 GP마진의 방향전환(레벨 아닌 1차차분, 빠름)이라 직교. op_margin_chg(영업마진 TTM YoY 변화)보다 위 라인·1~2분기 선행. rev_yoy<median 게이트로 모멘텀(이미 매출·주가 오른 것)과 분리 → '선행기대 큰데 아직 안 오른 조기구간' 타겟. 과열캡과는 보완(이익 저점 종목이 GP턴을 먼저 보임).",
+  "priced_in_risk": "GP마진 분기값이 원가배분·계정 mismatch로 노이즈 가능(DART 매출총이익 누락 종목 있음). 회피: (a) 매출총이익 8분기 이상·전부 양수 분기만(0채우기 금지, 기존 gp_dates 로직 재사용), (b) 2분기 연속 개선 게이트로 단일분기 노이즈 제거, (c) fix_dart_account_mismatch(이미 운영중)로 매출/원가 ratio 이상치 제거된 데이터 사용, (d) lumpiness와 병행. 선반영: rev_yoy<median 게이트가 '이미 시장이 반응한(매출·모멘텀 붙은)' 종목을 제외해 선반영 위험 축소. W 소가중(0.04~0.07)으로 조기영역만 틸트, 모멘텀과 corr 측정해 0.5 초과면 게이트 강화.",
+  "integration_method": "new_factor",
+  "lens": "margin-operating-leverage"
+ },
+ {
+  "name": "earnings_trough_turn (이익 저점 반등 가속) — 분기 영업이익 2차미분 × 저점근접도",
+  "signal_def": "DART 분기 '영업이익' PIT(rcept_dt≤base_date) 사용. 각 종목 분기 영업이익 시계열 op[0]=최신…op[3]. (1) QoQ 가속도 accel = (op[0]-op[1]) - (op[1]-op[2]) (영업이익 절대증분의 2차차분; 자산으로 정규화: accel/자산[0]). (2) 저점근접도 trough_z = -1 × (op[0] - min(op[0..7])) / (max(op[0..7])-min(op[0..7])+eps) 의 단면 z — 즉 최근 8분기 레인지 중 '아직 바닥 근처'일수록 큼. (3) 부호게이트: 최근 분기 QoQ증분(op[0]-op[1])>0 AND 직전 QoQ증분(op[1]-op[2])<0 = '막 우상향 전환'일 때만 점수 부여, 아니면 0. signal = zscore(accel/자산) × clip(trough_z,0,2). 최소 8분기 영업이익 필요(검증: SK하이닉스 000660 41분기 보유, 유니버스 86%가 ≥12분기). boost 점수에 + W × signal (W≈0.05~0.08 스윕).",
+  "rationale": "후행PER·후행성장은 분모(TTM이익)가 저점일 때 둘 다 망가짐 — SK하이닉스 2023Q2 영업손실 -28820 → 2023Q4 +3460(부호반전) → 2026Q1 +376102. TTM YoY가 양전될 때쯤(현 growth팩터가 잡는 시점)엔 주가 이미 5배. 진짜 미가격 구간은 '분기이익이 막 우상향 꺾였지만 TTM은 아직 처참'한 6~9개월. accel(2차미분)은 추세전환의 1차증분보다 한 분기 빠르고, trough_z 곱으로 '이미 회복 끝난 고점주'(저점근접도 낮음)를 자동 배제 → 조기구간만 가중.",
+  "orthogonality": "기존 growth는 TTM YoY 레벨(저점선 늦음), 이건 분기레벨 2차미분(전환점 선행)이라 직교. 모멘텀과 corr~0.57이나 trough_z 게이트가 '아직 안 오른' 조기구간만 남겨 가격모멘텀과 분리(저점근접=가격도 아직 바닥). 부호게이트로 단순 모멘텀 추격과 차별화.",
+  "backtestable_now": true,
+  "integration": "new_factor",
+  "priced_in_risk": "분기실적 발표(rcept_dt) 직후 1~2일 갭은 선반영 — 회피: signal은 rcept_dt를 eff_date로 PIT 적용하되 진입은 wr 3일평활(이미 시스템 보유)로 발표일 갭 일부 회피, +trough_z 게이트가 '이미 급등해 저점 멀어진' 종목을 빼므로 갭상승분 추격을 구조적으로 차단. 추가검증: signal을 rcept_dt+5영업일 지연 부여한 BT가 무지연 대비 Calmar 유지되면 알파가 발표갭이 아닌 조기추세에 있음을 확인.",
+  "integration_note": "",
+  "lens": "contrarian-skeptic"
+ },
+ {
+  "name": "overheat_cyclical_exemption (사이클 저점 과열캡 면제) — 후행PER 착시 보정",
+  "signal_def": "현 과열캡 pen_cs = min(zscore(log(시총/TTM지배순이익)),0) 감점을 '사이클 저점에서 이익 반등 중'인 종목엔 면제/완화. 면제조건(전부 DART 과거재무): (a) 최근4분기 영업이익TTM이 직전2년 평균TTM 대비 depressed: TTM_op[now] < 0.6 × mean(TTM_op over 8q ago) — 즉 trailing이 사이클저점, AND (b) 최근 분기 영업이익 QoQ증분>0 이 2분기 연속(op[0]>op[1] and op[1]≥op[2]) = 이익 우상향, AND (c) 매출TTM YoY > -10%(매출붕괴 아닌 마진사이클). 조건 충족 시 overheat 감점에 ×0.3 곱(완전면제 아닌 70%완화). 미충족 시 현행 ×1.0 유지. 코드: pen_cs 계산부에 cyc_mask 곱.",
+  "rationale": "과열캡은 '시총/TTM순이익'이 비싸면 감점하는데, 사이클 저점 종목은 분모(TTM순이익)가 일시 함몰돼 PER이 구조적으로 높게 뜸 = '비싸서'가 아니라 '이익이 바닥이라' 높은 것. SK하이닉스 후행PER 24(과열캡 감점대상)인데 이익이 5배 회복 예정 = 캡이 정확히 잡아야 할 '추격펌프'와 정반대인 '저평가 회복주'를 부당감점. 면제는 후행이익 함몰(a)+우상향(b)+매출유지(c) 3중게이트로 '진짜 마진사이클 반등'만 골라 PER분모 착시를 교정.",
+  "orthogonality": "과열캡 자체를 수정하므로 신규팩터 아님(직교성 무관). 단 면제게이트는 후행성장과 직교(분기 우상향 + TTM저점 동시조건은 growth팩터가 못 표현). 후행PER만 보는 과열캡의 사각(저점착시)을 메움.",
+  "backtestable_now": true,
+  "integration": "overheat_fix",
+  "priced_in_risk": "'저점이라 PER높음'이 이미 시장에 알려져 선반영됐을 위험 — 회피: 면제는 점수를 더 주는 게 아니라 '부당감점을 줄이는' 보수적 방향이라 선반영돼도 손실 비대칭 작음. 함정(이익 한번 반짝 후 재추락)은 (b)의 '2분기 연속 우상향' 요구로 단일분기 블립 배제, (c) 매출게이트로 '매출은 죽는데 일회성이익'(자산매각 등) 배제. ★중복위험: 과열캡은 annual value와 +0.94 시너지지만 TTM과는 ~0(CLAUDE.md) — 이 면제가 과열캡 알파를 깎으면 안 되므로, 면제 ×0.3은 보수적, 풀BT에서 전체 Calmar·과열캡 기여 비악화 확인 필수(약세장 2022 WF 포함).",
+  "integration_note": "",
+  "lens": "contrarian-skeptic"
+ },
+ {
+  "name": "fragile_spike_penalty (반짝이익 함정 페널티) — 일회성 급등 후 재추락 거름",
+  "signal_def": "Signal1/2가 잡은 '반등'이 가짜(한 분기 반짝 후 재추락)인 종목을 down-only 감점. 트리거(전부 DART 과거재무, PIT): (a) 단일분기 쏠림: op[0] > 0.7 × (op[0]+op[1]+op[2]+op[3]) (최근TTM영업이익의 70%+가 한 분기) — 이미 lumpiness 페널티(매출 min/max<0.25)와 유사하나 여기선 '영업이익' 기준, AND (b) accrual 적신호: (당기순이익TTM - 영업활동현금흐름TTM)/자산 > 0.05 (이익이 현금으로 안 들어옴 = 회계적 반짝), AND (c) QoQ 감속: op[0]-op[1] < op[1]-op[2] (증분이 이미 꺾임 = 피크아웃). (a AND b) 또는 (a AND c) → 성장점수 × 0.7 감점(down-only, soft). 최소 4분기 영업이익·CFO 필요.",
+  "rationale": "공매도자 관점: 사이클 인플렉션 알파의 최대 적은 '진짜 턴어라운드'가 아니라 '일회성 충당금 환입·자산매각·재고평가이익으로 한 분기 영업이익 점프 후 다음분기 재추락'. Signal1의 accel·Signal2의 면제가 이런 가짜를 잡아 잘못 매수하면 -구간 진입. (a)단일분기쏠림+(b)현금미동반(accruals)+(c)이미피크아웃 3신호로 '이익의 질'을 검증 — 현금이 따라오고(b통과) 분산돼(a통과) 가속중(c통과)인 진짜 반등은 보존, 종이이익 반짝은 감점.",
+  "orthogonality": "기존 accruals 페널티(B>25&C>0.7)와 임계·결합이 다름: 여기선 영업이익 단일분기쏠림(a)을 1차게이트로 두고 accruals(b)·피크아웃(c)을 보조로 묶어 '인플렉션 맥락의 가짜반등'만 표적. lumpiness(매출 min/max)는 매출변동성, 이건 영업이익 집중도+질이라 직교. Signal1/2의 false positive를 막는 짝페널티 역할.",
+  "backtestable_now": true,
+  "integration": "new_penalty",
+  "priced_in_risk": "일회성 이익이 가짜란 건 정교한 투자자엔 이미 반영됐을 수 있음 — 그러나 KR 소형주(시스템 주매수권)는 회계투명성 낮아 미반영 잔존(에스에이엠티 사고 전례). 회피·함정처리: down-only soft(×0.7)라 진짜 반등을 과배제 안 함(완전추방=−40p 전례, CLAUDE.md). 선반영 위험엔 ×0.7로 보수적. ★검증: 트리거 종목의 fwd20d/fwd250d가 비트리거 대비 일관 열위(승률 포함)여야 알파 — 아니면 노이즈. 단독배포 금지, Signal1/2와 함께 풀BT(LOWO: SK하이닉스·제주반도체 보존 확인).",
+  "integration_note": "",
+  "lens": "contrarian-skeptic"
+ },
+ {
+  "name": "마진 사이클 인플렉션 (영업이익률 2차미분 + 가속 QoQ)",
+  "signal_def": "분기 영업이익률 OPM_q = 영업이익_q / 매출액_q (단일분기, TTM 아님 — 사이클 저점 신호는 TTM이 평활시켜 죽음). 최근 6개 분기(PIT, rcept_dt<=base_date) 단일분기 OPM 시계열 m[t]를 구성하고 두 신호를 합성: (A) 마진 가속도 accel = (m[0]-m[-1]) - (m[-1]-m[-2]) = m[0] - 2*m[-1] + m[-2] (직전 3분기 OPM의 2차차분, %p). (B) 저점탈출 trough_exit = 1 if (m[-2]가 최근6분기 중 최소 AND m[0] > m[-1] > m[-2]) else 0. 최종 inflection_z = zscore_단면(accel) * (1 + 0.5*trough_exit). 사용 계정: 영업이익(q), 매출액(q). DART 분기재무 6개 분기면 충분 → 2019부터 전구간 PIT 계산 가능.",
+  "rationale": "사이클주(반도체·소재·장비)의 이익 인플렉션은 '매출이 돌기 전에 마진이 먼저 돈다'. 가동률 회복기에는 고정비 레버리지로 OPM이 비선형 점프(QoQ로 먼저 나타남)하지만 TTM은 직전 3개 적자분기에 눌려 후행PER·후행성장이 여전히 나쁘게 보인다. 2차미분(가속도)은 '아직 레벨은 낮지만 변곡이 막 시작된' 조기구간을 잡는다 — SK하이닉스류의 '선행PER 4.6'을 가격컨센서스 없이 마진의 미분구조만으로 근사 포착.",
+  "backtestable_now": true,
+  "integration": "new_factor",
+  "orthogonality": "기존 op_margin_chg는 TTM-OPM의 1차변화(레벨, 후행)라 저점에서 음수로 나와 인플렉션을 오히려 감점. 본 신호는 단일분기 OPM의 2차미분(곡률)이라 부호가 반대로 켜짐. 후행 매출/영업이익 YoY와 corr 낮음(YoY는 여전히 음수 구간에서 본 신호는 양수). 모멘텀(12m)과는 변곡 초기 가격이 아직 안 올랐을 때 직교, 가격이 이미 오른 뒤엔 겹침 → '조기'만 캡처.",
+  "priced_in_risk": "마진 점프가 이미 한 분기 공시돼 가격에 일부 반영됐을 수 있음. 회피법: 레벨(m[0] 절대치)이 아니라 가속도(곡률)에 가중 → 이미 마진이 정상화돼 가속이 0/음수로 꺾인 종목은 자동 탈락. trough_exit 게이트로 '저점 직후 첫 2분기'로 한정해 과열 후기 진입 차단. 단면 z라 시장 전체 마진 회복기엔 상대값으로 중립화.",
+  "lens": "creative-novel"
+ },
+ {
+  "name": "현금흐름 선행 디버전스 (CFO가 회계이익을 추월)",
+  "signal_def": "TTM 영업활동현금흐름 OCF_ttm = sum(영업활동으로인한현금흐름, 최근4분기 단순합, PIT) 와 TTM 영업이익 OP_ttm = sum(영업이익, 최근4분기). 선행지표 acc_quality = (OCF_ttm - OP_ttm) / 자산_최근분기 * 100 (=음의 발생액, accruals의 반대부호). 추가로 모멘텀화: cfo_lead = acc_quality_now - acc_quality_4분기전 (현금전환의 '개선 속도'). 최종 신호 lead_cfo_z = zscore_단면( 0.5*acc_quality + 0.5*cfo_lead ), 단 OP_ttm<=0(적자) 종목엔 acc_quality 항 대신 OCF_ttm/자산만 사용(분모붕괴 방지). 사용 계정: 영업활동으로인한현금흐름(q), 영업이익(q), 자산(q). 8개 분기 필요 → 2019 전구간 PIT 계산 가능.",
+  "rationale": "사이클 회복 초입에는 회계이익(영업이익)이 적자/저점이라 후행PER·성장이 나쁘지만, 운전자본 회수·재고소진으로 영업현금흐름이 먼저 플러스로 돈다. CFO가 OP를 추월하는 디버전스(높은 음의 발생액)는 '장부이익은 아직 저점인데 실제 현금창출은 회복 중' = 다음 분기 이익 인플렉션의 선행 증거. 재고-매출 관계를 직접 안 봐도 현금흐름이 운전자본 사이클을 요약해준다.",
+  "backtestable_now": true,
+  "integration": "new_factor",
+  "orthogonality": "기존 CFO_yoy(현금흐름성장_z)는 OCF의 절대 성장률(레벨), accruals 페널티는 (NI-CFO)>임계의 '가짜이익 컷'(음의 방향 페널티). 본 신호는 (CFO-OP)의 부호와 그 개선속도를 양의 알파로 사용 → accruals 페널티와 정확히 거울. quality(CFO/자산)와는 레벨 vs 디버전스로 분리. 후행성장과 직교(OP 저점에서 켜짐).",
+  "priced_in_risk": "현금흐름 개선이 이미 분기보고서로 공개됨. 회피법: cfo_lead(개선 '속도', 2차 정보)에 절반 가중해 단순 레벨 선반영을 줄임. 또한 본 신호 단독 sleeve가 아니라 boost score 가산이라 rank≤3 진입·3슬롯 분산이 개별 선반영 종목의 충격을 흡수. 적자기업 분모붕괴는 OP_ttm<=0 분기 경로분리로 차단.",
+  "lens": "creative-novel"
+ },
+ {
+  "name": "과열캡 인플렉션 면제 (저점이익 PER 착시 보정)",
+  "signal_def": "기존 overheat pen_cs = min( zscore_단면(log(시총/TTM지배순이익)), 0 ) 의 적용을 인플렉션 종목에 한해 완화. 인플렉션 플래그 infl = 1 if ( 단일분기 영업이익 QoQ 가속: op_q[0] > op_q[-1] AND op_q[-1] <= op_q[-2]  (직전저점 후 반등) ) AND ( OCF_ttm/자산 > 매출액기준 단면 중앙값  =현금창출 건전 ) else 0. 보정식: pen_eff = pen_cs * (1 - 0.6*infl)  (인플렉션이면 과열감점 60% 면제, 완전면제 아님=거품방어 유지). 사용 계정: 영업이익(q), 영업활동으로인한현금흐름(q), 자산(q), 지배주주당기순이익(TTM, 이미 계산됨), 시가총액(일별). 전구간 PIT 계산 가능.",
+  "rationale": "과열캡은 시총/TTM순이익(후행PER)이 높으면 감점한다. 사이클 저점주는 TTM순이익이 바닥이라 후행PER이 인위적으로 높게 찍혀(SK하이닉스 후행24) '비싸다'고 부당 감점된다 — 실제론 이익 폭증 직전(선행4.6)이라 싸다. 인플렉션 증거(분기이익 저점탈출 + 현금건전)가 있으면 과열감점을 부분 면제해, 후행PER 착시로 진짜 변곡주를 쳐내는 시스템 결함을 직접 교정.",
+  "backtestable_now": true,
+  "integration": "overheat_fix",
+  "orthogonality": "신규 팩터 추가가 아니라 기존 pen_cs의 '오작동 케이스'를 좁히는 교정이라 다른 팩터와 중복 없음. 인플렉션 플래그 자체는 신호1·2의 부분요소를 재사용하나 여기선 점수가산이 아니라 '감점 면제'로만 작동 → 효과 분리 가능(W=0이면 기존과 동일). 거품주(현금 안 따라오는 고PER)는 OCF 게이트로 면제 제외 → 순수 거품방어는 유지.",
+  "priced_in_risk": "면제가 과하면 거품주까지 살려 추격매수 위험. 회피법: (1) 완전면제 아닌 60%만 → 극단 고평가는 여전히 일부 감점, (2) 현금흐름 게이트(OCF_ttm/자산 상위)로 '이익 없이 PER만 높은' 펌프주 면제 차단, (3) 분기이익 저점탈출 게이트로 이미 마진 정상화돼 후기 과열인 종목은 면제 박탈. 0.6 계수는 BT 스윕 대상(0/0.3/0.6/1.0)으로 plateau 확인 후 보수적 어깨 채택.",
+  "lens": "creative-novel"
+ }
+]
