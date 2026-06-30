@@ -1518,7 +1518,7 @@ def main():
     ai_msg = None
     ai_msg_raw = None  # AI 원본 (create_ai_risk_message에 전달)
     risk_flagged_tickers = set()
-    if all_candidates:
+    if all_candidates and os.environ.get('SKIP_AI') != '1':  # SKIP_AI=1: AI 호출 생략(토큰 절약·테스트)
         try:
             from gemini_analysis import run_ai_analysis, compute_risk_flags
             # 시장 평균 등락률 (KOSPI/KOSDAQ 평균) — 초과 수익률 계산용
