@@ -122,24 +122,22 @@ def git_push_state(logfile):
 
 
 def _git_pull_safe(logfile=None):
-    """run_daily 시작 시 origin/main rebase pull (working tree clean 시만, 안전)"""
+    """run_daily 시작 시 origin/main rebase pull.
+    ★2026-06-30 fix: data_cache 1만+ 파일이 매일 갱신돼 working tree가 항상 dirty →
+    기존 'dirty면 skip'은 다른 PC의 코드/state 변경을 영영 못 받았음(집PC pull 안되던 증상).
+    --autostash로 dirty여도 로컬변경 자동 stash→rebase→복원. 코드/state는 정상 동기화되고
+    data_cache 충돌은 다음 data_refresher가 어차피 재생성하므로 무해. 실패 시 rebase 정리."""
     try:
-        st = subprocess.run(
-            ['git', 'status', '--porcelain'],
-            cwd=str(SCRIPT_DIR), capture_output=True, text=True, timeout=30,
-        )
-        if st.stdout.strip():
-            if logfile: log("git pull skip: working tree dirty", logfile)
-            return False
         result = subprocess.run(
-            ['git', 'pull', '--rebase', 'origin', 'main'],
-            cwd=str(SCRIPT_DIR), capture_output=True, text=True, timeout=60,
+            ['git', 'pull', '--rebase', '--autostash', 'origin', 'main'],
+            cwd=str(SCRIPT_DIR), capture_output=True, text=True, timeout=120,
         )
         if result.returncode == 0:
-            if logfile: log("git pull --rebase: 성공", logfile)
+            if logfile: log("git pull --rebase --autostash: 성공", logfile)
             return True
         else:
-            if logfile: log(f"git pull 실패: {(result.stderr or '')[:200]}", logfile)
+            subprocess.run(['git', 'rebase', '--abort'], cwd=str(SCRIPT_DIR), capture_output=True)
+            if logfile: log(f"git pull 실패(rebase 정리됨): {(result.stderr or '')[:200]}", logfile)
             return False
     except Exception as e:
         if logfile: log(f"git pull 오류: {e}", logfile)
