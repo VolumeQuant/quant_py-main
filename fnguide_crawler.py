@@ -509,82 +509,66 @@ def get_consensus_data(ticker):
         'eps_ny': None,   # 차기 회계연도 추정 EPS — NTM(선행12개월) 합성용
     }
 
+    # 2026-06-30 fix: FnGuide가 comp.fnguide.com/SVD_Main.asp(컨센·추정 페이지)를 막음
+    #  (302→wcomp.fnguide.com, 모든 gicode에 삼성전자 기본페이지 반환 → 전종목 컨센 오염).
+    # → 네이버 백엔드 WISEfn(=FnGuide 동일데이터) c1010001 Snapshot으로 전환. 종목별 정상.
+    #   forward EPS/PER = '주요지표' (E)컬럼(robust), 애널수/목표 = 컨센요약(값행 숫자일 때만).
+    def _num(x):
+        s = str(x)
+        if '없' in s or '개월' in s or s.strip() in ('', '-', 'nan', 'NaN'):
+            return None
+        s = re.sub(r'[^\d.\-]', '', s)
+        try:
+            return float(s) if s not in ('', '-', '.') else None
+        except Exception:
+            return None
     try:
-        url = f'http://comp.fnguide.com/SVO2/ASP/SVD_Main.asp?pGB=1&gicode=A{ticker}'
-
-        # HTML 테이블 파싱 (timeout 적용)
+        from io import StringIO as _SIO
+        url = f'https://navercomp.wisereport.co.kr/v2/company/c1010001.aspx?cmp_cd={ticker}'
         import requests as _rq2
-        _resp2 = _rq2.get(url, timeout=10)
+        _hdr = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120 Safari/537.36',
+                'Referer': 'https://finance.naver.com/'}
+        _resp2 = _rq2.get(url, timeout=10, headers=_hdr)
         _resp2.raise_for_status()
-        tables = pd.read_html(_resp2.text, displayed_only=False, encoding='utf-8')
+        _soup = BeautifulSoup(_resp2.text, 'lxml')
+        tables = []
+        for _tb in _soup.find_all('table'):
+            try:
+                tables.append(pd.read_html(_SIO(str(_tb)))[0])
+            except Exception:
+                continue
 
-        # 연도별 Annual 추정 EPS (당해/차기) — NTM(선행12개월) 합성용. Annual (E) 2개+ 테이블.
         for tbl in tables:
-            cols = list(tbl.columns)
-            e_ann = [j for j, c in enumerate(cols) if 'Annual' in str(c) and '(E)' in str(c)]
-            if len(e_ann) >= 2:
-                for i2 in range(len(tbl)):
-                    if 'EPS' in str(tbl.iloc[i2, 0]):
-                        try:
-                            result['eps_cy'] = float(tbl.iloc[i2, e_ann[0]])
-                            result['eps_ny'] = float(tbl.iloc[i2, e_ann[1]])
-                        except Exception:
-                            pass
+            cols = [str(c) for c in tbl.columns]
+            # 주요지표 (E)컬럼 → forward EPS/PER (당해 추정, robust)
+            if any('주요지표' in c for c in cols):
+                e_cols = [j for j, c in enumerate(cols) if '(E)' in c]
+                if e_cols:
+                    ej = e_cols[0]
+                    for row in tbl.values.tolist():
+                        r0 = str(row[0]).strip()
+                        if r0 == 'EPS':
+                            result['eps_cy'] = _num(row[ej])
+                            result['forward_eps'] = result['eps_cy']
+                        elif r0 == 'PER':
+                            result['forward_per'] = _num(row[ej])
+            # 컨센 요약 → 애널수/목표주가 (값행이 숫자일 때만; '없습니다'면 스킵)
+            vals = tbl.values.tolist()
+            for ri, row in enumerate(vals):
+                rs = [str(x) for x in row]
+                if any('추정기관수' in x for x in rs) and any('목표주가' in x for x in rs) and ri + 1 < len(vals):
+                    vr = [str(x) for x in vals[ri + 1]]
+                    if any('없' in x for x in vr):
                         break
-                break
+                    for ci, h in enumerate(rs):
+                        if '목표주가' in h:
+                            result['target_price'] = _num(vr[ci])
+                        elif '추정기관수' in h:
+                            _a = _num(vr[ci])
+                            result['analyst_count'] = int(_a) if _a else None
+                    break
 
-        # 컨센서스 테이블 찾기 (보통 인덱스 7~10 사이)
-        for i, tbl in enumerate(tables):
-            tbl_str = str(tbl.columns.tolist()) + str(tbl.values.tolist())
-
-            # EPS, PER 컬럼이 있는 테이블 찾기
-            if 'EPS' in tbl_str and 'PER' in tbl_str:
-                # EPS 추출
-                if 'EPS' in tbl.columns:
-                    try:
-                        eps_val = tbl['EPS'].iloc[0]
-                        eps_str = str(eps_val).replace(',', '').replace('원', '').strip()
-                        if eps_str and eps_str not in ['nan', '-', '']:
-                            result['forward_eps'] = float(eps_str)
-                            result['has_consensus'] = True
-                    except Exception:
-                        pass
-
-                # PER 추출
-                if 'PER' in tbl.columns:
-                    try:
-                        per_val = tbl['PER'].iloc[0]
-                        per_str = str(per_val).replace('배', '').strip()
-                        if per_str and per_str not in ['nan', '-', '']:
-                            result['forward_per'] = float(per_str)
-                    except Exception:
-                        pass
-
-                # 목표주가 추출
-                for col in tbl.columns:
-                    if '목표' in str(col):
-                        try:
-                            target_val = tbl[col].iloc[0]
-                            target_str = str(target_val).replace(',', '').replace('원', '').strip()
-                            if target_str and target_str not in ['nan', '-', '']:
-                                result['target_price'] = float(target_str)
-                        except Exception:
-                            pass
-                        break
-
-                # 추정기관수(=애널리스트 커버리지) 추출 — 컨센서스 테이블 '추정기관수' 컬럼
-                # (2026-06-13 fix: 기존엔 1로 하드코딩 버그 → 실제 컬럼 파싱)
-                for col in tbl.columns:
-                    if '추정기관수' in str(col) or '기관수' in str(col):
-                        try:
-                            an_str = str(tbl[col].iloc[0]).replace(',', '').strip()
-                            if an_str and an_str not in ['nan', '-', '']:
-                                result['analyst_count'] = int(float(an_str))
-                        except Exception:
-                            pass
-                        break
-
-                break
+        result['has_consensus'] = bool(result['eps_cy'] and result['eps_cy'] > 0)
 
     except Exception as e:
         pass
