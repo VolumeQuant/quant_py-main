@@ -115,7 +115,9 @@ def collect_consensus(tickers, day8):
     재수집 조건: 당일치 없거나 eps_ny 결측(구버전 캐시)."""
     cache = load_cache()
     cur0 = cache[cache['date'] == day8]
-    have = set(cur0[cur0['eps_ny'].notna()]['ticker']) if 'eps_ny' in cur0.columns else set()
+    # 2026-06-30: WISEfn 전환 후 eps_ny(차기연도)는 항상 없음 → eps_ny 기준 재수집은 매번 전종목 재수집 유발.
+    #   '당일 행이 이미 있으면 수집됨'으로 변경(실패 종목은 다음날 재시도).
+    have = set(cur0['ticker'].astype(str))
     todo = [t for t in tickers if t not in have]
     if todo:
         # 구버전 당일 행(eps_ny 없음) 제거 후 재수집
@@ -213,6 +215,27 @@ def main():
         te = ttm_eps(t); p0 = cur_price(t)
         if fe and te and te > 0: grow[t] = fe / te
         if fe and fe > 0 and p0: fwdper[t] = p0 / fe
+    # ★forward 스위트스팟 로거 (2026-06-30): 커버 전종목 선행PER·기대성장·종가 일별 기록.
+    #   목적: "선행PER<10 & 기대성장 큰 종목이 실제로 오르나"를 60~90일 후 forward 검증(look-ahead 아닌 실컨센).
+    #   EDA(look-ahead 상한)는 +43%였으나 컨센은 낙관편향·priced-in이라 실측 필요. SK지주(forward황금이나 묽은복사판) 교훈.
+    try:
+        SWLOG = os.path.join(HERE, 'fwd_sweetspot_log.csv')
+        _rows = []
+        for t in fwdper:
+            if t not in grow: continue
+            _rows.append({'date': pbd, 'ticker': t, 'name': name(t),
+                          'fwd_per': round(fwdper[t], 2), 'gap': round(grow[t], 3), 'price': cur_price(t),
+                          'has_consensus': int(t not in self_est and fwd_eps.get(t) is not None),
+                          'sweetspot': int(fwdper[t] < 10 and grow[t] > 1.67)})  # 선행PER<10 & 배수<0.6(gap>1.67)
+        if _rows:
+            _new = pd.DataFrame(_rows)
+            if os.path.exists(SWLOG):
+                _old = pd.read_csv(SWLOG, dtype={'ticker': str, 'date': str})
+                _new = pd.concat([_old[_old['date'] != str(pbd)], _new], ignore_index=True)
+            _new.to_csv(SWLOG, index=False)
+            print(f"  forward 스위트스팟 로거: {len(_rows)}종목 기록 (스위트스팟 {sum(r['sweetspot'] for r in _rows)}개)")
+    except Exception as _e:
+        print(f"  스위트스팟 로거 스킵: {_e}")
     # ★확인 자격 = forward PER < FWD_PER_GATE (구 'cross-sec 상위100' 폐기, 2026-06-25).
     #   근거: forward PER 단독 IC 0.147 >> 기대성장 비율 0.041. 자격=forward PER<20 게이트, 비중=기대성장 비례.
     #   기간별 BT(강세19-21·최근24-26 쪼갬) min Calmar 정점 fwPER<20(plateau 15~35), 게이트없음보다 우위.
