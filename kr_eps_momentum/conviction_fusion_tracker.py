@@ -100,6 +100,16 @@ def load_cache():
         return pd.read_csv(CACHE, dtype={'ticker': str, 'date': str})
     return pd.DataFrame(columns=['date', 'ticker', 'forward_eps', 'eps_cy', 'eps_ny', 'analyst_count', 'has_consensus'])
 
+def _alert(msg):
+    """개인봇 경고 (실패해도 무해)."""
+    try:
+        import requests
+        from config import TELEGRAM_BOT_TOKEN, TELEGRAM_PRIVATE_ID
+        requests.post(f'https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage',
+                      data={'chat_id': TELEGRAM_PRIVATE_ID, 'text': msg}, timeout=15)
+    except Exception:
+        pass
+
 def collect_consensus(tickers, day8):
     """커버셋에 FnGuide 컨센 순차 수집(당일 캐시 재사용). eps_cy(당해)/eps_ny(차기)도 저장 → NTM 합성용.
     재수집 조건: 당일치 없거나 eps_ny 결측(구버전 캐시)."""
@@ -126,6 +136,21 @@ def collect_consensus(tickers, day8):
         cache = pd.concat([cache, pd.DataFrame(new)], ignore_index=True)
         cache.to_csv(CACHE, index=False)
     cur = cache[cache['date'] == day8]
+    # ★컨센 수집률 급감 경고 (2026-06-30): 외부소스(FnGuide/WISEfn) 변경/차단 조기감지.
+    #   조용한 try/except 폴백이 며칠 늦게 발견된 교훈 → 최근 중앙 대비 절반 미만이면 개인봇 알림.
+    try:
+        _cov = cur[cur['ticker'].isin(tickers)]
+        today_n = int(_cov['has_consensus'].sum())
+        _hist = cache[(cache['ticker'].isin(tickers)) & (cache['date'] < day8)]
+        if len(_hist):
+            _by = _hist.groupby('date')['has_consensus'].sum().tail(5)
+            _med = float(_by.median()) if len(_by) else 0.0
+            if _med >= 20 and today_n < 0.5 * _med:
+                _alert(f"⚠️ 확신가중 컨센 수집률 급감: 오늘 {today_n}종목 (최근 중앙 {_med:.0f}). "
+                       f"FnGuide/WISEfn 등 외부소스 변경·차단 의심 — 점검 필요. (self_est 폴백 작동 중, 매매 안전)")
+                print(f"  ⚠️ 컨센 수집률 급감 경고 발송 (오늘 {today_n} < 최근중앙 {_med:.0f}×0.5)", flush=True)
+    except Exception:
+        pass
     # NTM(선행12개월) 합성: 당해×(12-월)/12 + 차기×월/12. 차기 없으면 forward_eps(당해) 폴백.
     mth = int(day8[4:6])
     out = {}
