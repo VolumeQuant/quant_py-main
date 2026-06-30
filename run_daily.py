@@ -541,7 +541,9 @@ def main():
                 best_span = 0
                 for f in ohlcv_files:
                     parts = f.stem.split('_')
-                    if len(parts) >= 4:
+                    # ★2026-07-01 fix: all_ohlcv_* glob이 all_ohlcv_adj_* 도 잡아 int('adj') 크래시
+                    #   → 날짜(숫자) 파일만. data_refresher.py와 동일 가드.
+                    if len(parts) >= 4 and parts[2].isdigit() and parts[3].isdigit():
                         span = int(parts[3]) - int(parts[2])
                         if span > best_span:
                             best_span = span
