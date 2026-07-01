@@ -2315,17 +2315,19 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
         scored['멀티팩터_순위'] = scored['멀티팩터_점수'].rank(ascending=False, method='first', na_option='bottom')
 
     # ============================================================
-    # v80.31 (2026-06-29): 과열+저성장 펌프게이트 — 정치펌프(금호건설류) 매수차단
-    # 이격도20(종가/20일평균) > 1.4 AND 성장_점수 < 0.5 → 멀티팩터_점수 바닥(매수권 제외)
-    # 시그니처: "펀더 안 좋아졌는데 가격만 폭등"(금호 4일 +131% 정치발언). 정조준.
+    # v80.31 과열+과대성장아님 펌프게이트 — 펀더 대비 과열된 종목 매수차단
+    # 이격도20(종가/20일평균) > 1.4 AND 성장_점수 < 1.5 → 멀티팩터_점수 바닥(매수권 제외)
+    # ★2026-07-01 확장: 성장임계 0.5→1.5. 근거: 과열(이격도>1.4)은 성장이 극단(>1.7σ)일 때만
+    #   정당하고, 적당한 성장(0.5~1.7)이면 반락. EDA(rank≤6 과열): 성장0.5~1.0 −23%/승0%,
+    #   1.0~1.7 −14%/승17%, >1.7 +24%/승62%. 미래산업(성장0.7·이격도1.46·+363%/3M)류 포착.
+    # 시그니처: "펀더(성장)가 폭발적이지 않은데 가격만 과열"(금호 정치펌프 + 미래산업 모멘텀과열).
     # ★단독 이격도/단독 저성장은 BT 실패(승자 학살), 교집합만 robust.
-    # 7.4년 production-faithful BT: Calmar 4.18→4.22(+0.05), MDD 25.9% 불변,
-    # LOWO(제주·SK·제룡·티에스이·디바이스) 전부 +0.04~0.05, 임계 1.3~1.5 전부 +.
-    # 과거 코호트(이격도>1.4 & 성장<0.5) = 7건 전부 손실·승률 0%. 환경변수 PUMPGATE_DISABLE=1.
+    # BT 임계스윕: 성장<1.5가 최적 Calmar +0.084(MDD 25.9% 불변), LOWO 전부+(미래산업 포함),
+    #   1.0~1.5 안정고원·1.7부터 SK존 침범해 −0.11. SK(1.8)·제주(2.1) 안전. env PUMPGATE_GROWTH.
     # ============================================================
     if os.environ.get('PUMPGATE_DISABLE') != '1' and not scored.empty and price_df is not None:
         PUMP_DISP = float(os.environ.get('PUMPGATE_DISP', '1.4'))
-        PUMP_GROWTH = float(os.environ.get('PUMPGATE_GROWTH', '0.5'))
+        PUMP_GROWTH = float(os.environ.get('PUMPGATE_GROWTH', '1.5'))
         try:
             _ne = price_df.notna().sum(axis=1) >= (price_df.shape[1] * 0.5)
             _bp = price_df.loc[_ne]
