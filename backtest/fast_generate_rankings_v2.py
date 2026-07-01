@@ -2327,7 +2327,7 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
     # ============================================================
     if os.environ.get('PUMPGATE_DISABLE') != '1' and not scored.empty and price_df is not None:
         PUMP_DISP = float(os.environ.get('PUMPGATE_DISP', '1.4'))
-        PUMP_GROWTH = float(os.environ.get('PUMPGATE_GROWTH', '1.5'))
+        PUMP_GROWTH = float(os.environ.get('PUMPGATE_GROWTH', '1.3'))
         try:
             _ne = price_df.notna().sum(axis=1) >= (price_df.shape[1] * 0.5)
             _bp = price_df.loc[_ne]

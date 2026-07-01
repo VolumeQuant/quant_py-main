@@ -5,7 +5,7 @@ import sys, os, glob, json, shutil
 sys.path.insert(0,'C:/dev')
 import numpy as np, pandas as pd
 import run_daily as RD
-PUMP_DISP=1.4; PUMP_GROWTH=1.5
+PUMP_DISP=1.4; PUMP_GROWTH=1.3
 # 이격도: OHLCV(raw) biz행 close/MA20 (FG와 동일)
 ohlcv=sorted(glob.glob('C:/dev/data_cache/all_ohlcv_2017*_20260*.parquet'))[-1]
 px=pd.read_parquet(ohlcv).replace(0,np.nan)
