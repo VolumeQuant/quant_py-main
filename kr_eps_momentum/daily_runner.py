@@ -3239,6 +3239,15 @@ def select_display_top5(results_df, status_map=None, weighted_ranks=None,
 
     log(f"디스플레이 {n}종목: " + ", ".join(f"{s['ticker']}({s['weight']}%)" for s in selected))
 
+    # ★2026-07-02: portfolio_log 정식 기록 (log_portfolio_trades 미호출 버그 수정).
+    # 지금껏 매수 궤적이 DB에 안 남아 _replay_holdings로 매번 역산해야 했음 → 이제 production처럼
+    # 일자별 enter/hold/exit + return_pct가 portfolio_log에 누적. try/except라 실패해도 메시지 정상.
+    if today_str and selected:
+        try:
+            log_portfolio_trades(selected, today_str)
+        except Exception as _e:
+            log(f"  portfolio_log 기록 실패(무해, 메시지 정상): {_e}")
+
     return selected
 
 
