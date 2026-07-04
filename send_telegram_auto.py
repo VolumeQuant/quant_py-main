@@ -1878,6 +1878,25 @@ def main():
                 _send_batch(PRIVATE_CHAT_ID, '개인봇 전송')
 
     # ============================================================
+    # 신규진입 검문소 (2026-07-05) — ★개인봇 전용 (채널 발송 절대 없음)
+    # top20 신규진입/순위급등/신규 매수권 종목의 건강 자동진단 (매매신호 불변).
+    # PRIVATE_CHAT_ID 없으면 스킵. 실패해도 본 메시지 영향 0. 킬스위치 ENTRY_SENTINEL_DISABLE=1
+    # ============================================================
+    try:
+        if os.environ.get('ENTRY_SENTINEL_DISABLE') != '1' and PRIVATE_CHAT_ID:
+            from entry_sentinel import build_sentinel_message
+            _sentinel_msg = build_sentinel_message(
+                rankings_t0, rankings_t1, picks=picks,
+                reentry_wait=_reentry_wait, state_dir=STATE_DIR)
+            if _sentinel_msg:
+                _sr = send_telegram_long(_sentinel_msg, TELEGRAM_BOT_TOKEN, PRIVATE_CHAT_ID)
+                print(f'\n[검문소] 개인봇 전송: {", ".join(str(r.status_code) for r in _sr)}')
+            else:
+                print('\n[검문소] 신규/급등 종목 없음 — 미발송')
+    except Exception as _e:
+        print(f'\n[검문소] 실패 (무시): {_e}')
+
+    # ============================================================
     # 정리
     # ============================================================
     # cleanup_old_rankings(keep_days=30)  # v70: 과거 랭킹 보존 (로그용)

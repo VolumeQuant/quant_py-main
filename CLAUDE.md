@@ -260,6 +260,12 @@
 **★★배포 중 핵심 발견 — production 시맨틱스 재검증 (배포 전 필수였음):** production `calc_system_returns` 진입은 BT 하니스와 달리 **wr≤3 절대게이트가 없어** (verified top-N 슬라이스만), 쿨다운 차단 자리에 4순위 승격시키면 **Cal 4.23→3.93 악화**(약한 후보 매수). **승격금지(슬롯 비움)로 구현해야 4.77(+0.54, 전 기간 개선)**. → production 정확 시맨틱스 재검증(`_reentry_prod_semantics.py`) 후 승격금지로 배포. ⚠️ 이 검증에서 **BT 하니스(wr≤3 게이트) vs production(게이트 없음) 진입 시맨틱스 불일치**가 확인됨(baseline Cal 4.85 vs 4.23) — 쿨다운은 양쪽 다 개선이라 유효, 단 향후 매매룰 검증은 `_reentry_prod_semantics.py`류 production-정확 하니스 병행 권장.
 **메시지:** 쿨다운 중 ✅ 종목은 "🔁 재진입 대기 (매도 후 10거래일 룰, N일 남음)" 표시, 후보 전원 쿨다운 시 약세장 오표시 방지 가드. picks 줄면 비중 자동 재계산(100/n). **배포 후 첫 라이브(월 16:00) 검수 필수**: picks 수·쿨다운 라인·시스템 수익률(리플레이 변경으로 표시 수익률 상승: 누적 16547→26198%·YTD 213→247.5%는 정상). research: `backtest/_reentry_*.py`·`_reentry_prod_semantics.py`, 상세 `research/REENTRY_COOLDOWN_FINDINGS_2026_07_04.md`.
 
+## 신규진입 검문소 (entry_sentinel) — 2026-07-05 (배포됨, 개인봇 전용 정보·매매 무관)
+
+> 배포: `entry_sentinel.py` + `send_telegram_auto.py` 발송 배선(★개인봇 전용, 채널 발송 구조적 불가) + FG 진단값 저장(`lump_mm`·`accr_b`·`accr_c` — 점수 무관 add-only 컬럼, ranking JSON 포함). 계기: 사용자 "top20 신규/급등 종목 매번 수동 검색 힘들다 + 가짜 순위(디바이스·선익·삼지 유형) 재발 걱정".
+> **내용**: 매일 ①신규 매수권(어제 cr>3→오늘 picks) ②top20 신규 ③급등(10계단↑) 종목에 대해 — 섹터·PER/PBR/ROE·**순위 궤적 8일**(3일내 30계단 급행 🚨)·**필터와 동일 수치 건강진단**(lump_mm<0.25 디바이스형 🚨 / accr B>25&C>0.7 삼지형 🚨 / 경계구간 ⚠️ / recent_ca / 과열pen / 재진입 쿨다운) 리포트. footer에 **필터 생존 모니터**(상위권 페널티 발동 종목수 — 0이면 6/18형 '필터 조용한 사망' 의심 경고). 구파일(진단값 미저장)은 페널티 역산 폴백.
+> 표본검증(7/3): top20 신규 3종목 자동 감지, 삼지전자에 accruals 발동중 경고 정확 표시, 필터 발동 23종목=정상. 킬스위치 `ENTRY_SENTINEL_DISABLE=1`, 실패시 본 메시지 영향 0. ⚠️ 월요일 첫 라이브 검수: FG 신규 진단필드 생성 + 검문소 개인봇 수신 확인.
+
 ## v80.33 이탈 X6→X5 (섹터 브레드스 도입 후 재최적화) — 2026-07-04 (배포됨)
 
 > 배포: `regime_indicator.py` boost `EXIT_RANK: 6 → 5` (진입3·슬롯3 불변) + 메시지 문구("6위 밖"→"5위 밖", send_telegram_auto.py 752/1220행·send_notice_once.py 28행 하드코딩). **state 재생성 불필요**(매매룰만). 다음 16:00부터. 롤백: `EXIT_RANK 5→6` + git revert.

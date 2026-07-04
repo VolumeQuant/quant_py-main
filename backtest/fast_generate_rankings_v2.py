@@ -2098,7 +2098,9 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
             last4 = vals[-4:]
             mx = float(last4.max())
             if mx <= 0: continue
-            if (float(last4.min()) / mx) < LUMP_THRESH:
+            _lump_mm = float(last4.min()) / mx
+            scored.at[idx, 'lump_mm'] = _lump_mm  # 진단 저장 (검문소 표시용, 점수 무관)
+            if _lump_mm < LUMP_THRESH:
                 V_W = float(os.environ.get('FACTOR_V_W', '0.20'))
                 Q_W = float(os.environ.get('FACTOR_Q_W', '0.20'))
                 G_W = float(os.environ.get('FACTOR_G_W', '0.30'))
@@ -2159,6 +2161,8 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
             if op_ttm <= 0 or asset <= 0: continue
             B = (float(niv[-4:].sum()) - float(cfv[-4:].sum())) / asset * 100
             C = float(op4.max()) / op_ttm
+            scored.at[idx, 'accr_b'] = B   # 진단 저장 (검문소 표시용, 점수 무관)
+            scored.at[idx, 'accr_c'] = C
             if B > ONEOFF_B and C > ONEOFF_C:
                 new_g = (row.get('성장_점수', 0) or 0) * ONEOFF_PENALTY
                 scored.at[idx, '성장_점수'] = new_g
@@ -2463,6 +2467,11 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
         _rc = row.get('recent_ca')
         if _rc is not None and pd.notna(_rc) and int(_rc) != 0:
             item['recent_ca'] = int(_rc)
+        # 검문소 진단값 (2026-07-05): lumpiness min/max · accruals B/C — 표시/감시 전용, 점수 무관
+        for _dc, _nd in [('lump_mm', 3), ('accr_b', 1), ('accr_c', 2)]:
+            _dv = row.get(_dc)
+            if _dv is not None and pd.notna(_dv):
+                item[_dc] = round(float(_dv), _nd)
         # v80.20 mom_10_z / vol_low_z (가중치 그리드 BT용 — z 저장, score 재계산 가능)
         for _zc, _zk in [('mom_10_z', 'mom_10_z'), ('vol_low_z', 'vol_low_z'), ('mom_5_z', 'mom_5_z')]:
             _zv = row.get(_zc)
