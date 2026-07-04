@@ -168,6 +168,13 @@ def calc_system_returns(regime_info=None):
     rp_boost = get_regime_params('boost')
     rp_defense = get_regime_params('defense')
 
+    # v80.34 (2026-07-04): 재진입 쿨다운 — 시스템 가상 포트폴리오가 rank 이탈로 매도한 종목은
+    # K거래일 내 재진입 금지. 개인 보유 가정이 아니라 시스템 상태(모두에게 동일) 기준이라
+    # 2026-05-16 "매수 후보 표시는 모두에게 동일" 정책과 충돌 없음. BT==production 정합.
+    # 킬스위치: env REENTRY_COOLDOWN_DISABLE=1 (그때 reentry_wait 빈 dict = 무영향)
+    _reentry_cd = 0 if os.environ.get('REENTRY_COOLDOWN_DISABLE') == '1' else int(rp_boost.get('REENTRY_COOLDOWN', 0))
+    last_rank_exit = {}  # ticker → dates 인덱스 (rank 이탈일만, 국면전환 청산 제외)
+
     # 양쪽 ranking 파일 모두 로드
     today_str = get_korea_now().strftime('%Y%m%d')
     boost_data = {}
@@ -358,6 +365,7 @@ def calc_system_returns(regime_info=None):
         for tk in list(portfolio.keys()):
             if _wr(tk) > _exit_rank:
                 del portfolio[tk]
+                last_rank_exit[tk] = i  # v80.34: 재진입 쿨다운 시점 기록 (rank 이탈만)
 
         # 진입용: 3일 교집합 + 가중순위 계산
         verified = []
@@ -378,6 +386,12 @@ def calc_system_returns(regime_info=None):
                 continue
             if len(portfolio) >= _max_slots:
                 break
+            # v80.34: 재진입 쿨다운 — rank 이탈 후 K거래일 내 종목은 진입 스킵.
+            # ★승격 금지(하위 후보로 채우지 않고 슬롯 비움): 승격 변형은 production 시맨틱스
+            # BT에서 Cal 4.23→3.93 악화, 승격금지는 4.77 개선 (_reentry_prod_semantics.py)
+            if (_reentry_cd > 0 and v['ticker'] in last_rank_exit
+                    and (i - last_rank_exit[v['ticker']]) <= _reentry_cd):
+                continue
             entry_price = _get_price(v['ticker'], d0)
             if entry_price > 0:
                 portfolio[v['ticker']] = entry_price
@@ -444,6 +458,17 @@ def calc_system_returns(regime_info=None):
         except Exception:
             pass
 
+    # v80.34: 오늘 기준 재진입 쿨다운 중인 종목 (ticker → {name, days: 재진입까지 남은 거래일})
+    reentry_wait = {}
+    if _reentry_cd > 0 and dates:
+        _i_last = len(dates) - 1
+        _name_map = {r['ticker']: r.get('name', r['ticker'])
+                     for r in all_data[dates[-1]].get('rankings', [])}
+        for _tk, _xi in last_rank_exit.items():
+            _remain = _xi + _reentry_cd + 1 - _i_last  # 첫 재진입 가능일 = 이탈일 + K + 1
+            if _remain > 0 and _tk not in portfolio:
+                reentry_wait[_tk] = {'name': _name_map.get(_tk, _tk), 'days': _remain}
+
     return {
         'system_pct': round(system_pct, 1),
         'kospi_pct': round(kospi_pct, 1),
@@ -456,6 +481,7 @@ def calc_system_returns(regime_info=None):
         'kospi_month': kospi_month,
         'kosdaq_ytd': kosdaq_ytd,
         'kosdaq_month': kosdaq_month,
+        'reentry_wait': reentry_wait,
     }
 
 
@@ -899,7 +925,14 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
     lines.append('━━━━━━━━━━━━━━━')
     lines.append('🛒 <b>매수 후보 종목 (비중)</b>' if (_fw and n > 0) else '🛒 <b>매수 후보 종목</b>')
     lines.append('━━━━━━━━━━━━━━━')
-    if n == 0:
+    _rw0 = (system_returns or {}).get('reentry_wait') or {}
+    _is_boost0 = bool(regime_info and regime_info.get('mode') == 'boost')
+    if n == 0 and _is_boost0 and _rw0:
+        # v80.34: 강세장인데 후보 전원 재진입 쿨다운 → 약세장 문구 오표시 방지
+        lines.append('🔁 <b>매수 후보가 모두 재진입 대기 중 — 오늘은 신규 매수 없음</b>')
+        for _tk0, _v0 in sorted(_rw0.items(), key=lambda x: x[1]['days']):
+            lines.append(f'{_v0["name"]}: {_v0["days"]}거래일 후 재진입 가능')
+    elif n == 0:
         # v80.16 (2026-05-24): defense cash 100% 모드
         lines.append('🛡️ <b>약세장 진입 — 신규 매수 없음 (cash 100%)</b>')
         lines.append('')
@@ -915,6 +948,16 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
             fw = _fw.get(pick['ticker'])
             wtxt = f' · {fw["w"]:.0f}%' if fw else ''
             lines.append(f'<b>{i+1}. {pick["name"]}({pick["ticker"]}) · {sector}{wtxt}</b>')
+
+        # v80.34: 재진입 쿨다운 안내 — 상위권이지만 시스템 최근 매도로 진입 대기 중인 종목
+        _rw = (system_returns or {}).get('reentry_wait') or {}
+        if _rw:
+            _v_tk = {s['ticker'] for s in pipeline if s.get('status') == '✅'}
+            _wait_lines = [f'🔁 {v["name"]}: 재진입 대기 (매도 후 10거래일 룰, {v["days"]}일 남음)'
+                           for tk, v in sorted(_rw.items(), key=lambda x: x[1]['days']) if tk in _v_tk]
+            if _wait_lines:
+                lines.append('')
+                lines.extend(_wait_lines)
 
     # v74: 상관관계 경고 제거 (전략에서 corr 필터 미사용)
     meta = rankings_t0.get('metadata') or {}
@@ -1503,6 +1546,13 @@ def main():
     else:
         print("  콜드 스타트 → 추천 없음 (관망)")
 
+    # v80.34 (2026-07-04): 재진입 쿨다운 대상 안내 (제외는 picks 단계에서 승격 없이 수행)
+    # system_returns 실패 시 reentry_wait 없음 = 필터 미적용 (안전 폴백).
+    _reentry_wait = (system_returns or {}).get('reentry_wait') or {}
+    for c in all_candidates:
+        if c['ticker'] in _reentry_wait:
+            print(f"  🔁 재진입 쿨다운 대상: {c['name']} (재진입까지 {_reentry_wait[c['ticker']]['days']}거래일)")
+
     print(f"  추천 후보: {len(all_candidates)}개 종목")
 
     # ============================================================
@@ -1583,6 +1633,10 @@ def main():
     else:
         # v80: 동점 tie-breaker는 cr 작은 쪽 우선 (매매 판단 일관성)
         picks = sorted(all_candidates, key=lambda x: (x.get('weighted_rank', 999), x.get('composite_rank', 999)))[:_ENTRY]
+        # v80.34: 재진입 쿨다운 종목은 top-N 슬라이스 후 제외 (★승격 금지 = 슬롯 비움,
+        # calc_system_returns 리플레이와 동일 시맨틱스. _reentry_prod_semantics.py 검증)
+        if _reentry_wait:
+            picks = [p for p in picks if p['ticker'] not in _reentry_wait]
         picks = picks[:_SLOTS]
     if picks:
         stock_weight = round(100 / len(picks))

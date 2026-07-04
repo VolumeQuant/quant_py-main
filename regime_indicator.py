@@ -221,6 +221,15 @@ def get_regime_params(mode):
             # LOWO 3대장제외 +0.56(broad), 인접 CV 0.095. 끄려면 W=0.
             'FACTOR_RECENT_CA_W': 0.3,
             'FACTOR_RECENT_CA_K': 126,
+            # v80.34 (2026-07-04): 재진입 쿨다운 — rank 이탈(wr>EXIT) 후 10거래일 내 재진입 금지.
+            #   근거: 이탈 후 4~10일 재진입 코호트 승률 29%/평균 -2.05% (fresh 진입 +11.3%)
+            #   = 임계 근처 순위 출렁이는 약해진 리더. faithful BT: Cal 4.85→5.35(+0.50),
+            #   MDD -24.0 동일, LOWO 5종목 +0.35~0.56, 2-fold WF 양방향 OOS+, 인접CV 0.008,
+            #   브레드스 OFF서도 +0.48(규율 무관). K=10은 보수적 어깨(고원 K8~30, K45 절벽).
+            #   국면전환 청산은 쿨다운 미적용(재진입 배치 1:1:1 정책 유지). rank 이탈만 대상.
+            #   킬스위치: env REENTRY_COOLDOWN_DISABLE=1. research: backtest/_reentry_*.py,
+            #   상세: research/REENTRY_COOLDOWN_FINDINGS_2026_07_04.md
+            'REENTRY_COOLDOWN': 10,
             'label': '공격 모드 (Growth 55%, 3팩터, QoQ-D6-SG6, mom_10+vol, 과열캡, 수정주가+CA페널티)',
             'icon': '📈',
         }
@@ -242,6 +251,7 @@ def get_regime_params(mode):
             'STOP_LOSS': None,        # v80.22: SL 제거 (defense는 cash라 원래 무효)
             'TRAILING_STOP': None,    # v80.21: TS 제거 (defense는 cash 100%라 원래 무효)
             'TS_COOLDOWN': 1,
+            'REENTRY_COOLDOWN': 0,    # v80.34: defense는 신규매수 없음(ENTRY 0)이라 무효, 명시만
             'USE_REV_ACCEL': False,
             'label': '방어 모드 (Momentum 40%)',
             'icon': '📉',

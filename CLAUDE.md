@@ -251,6 +251,15 @@
 
 ⚠️ 개인 손실은 한 종목 집중 탓(시스템은 분산+이탈로 흡수). 페널티는 진입권 4위까지만 밀어냄(완전추방=−40p라 안 함). research: `backtest/_oneoff_*.py`
 
+## v80.34 재진입 쿨다운 10거래일 — 2026-07-04 (배포됨, 사용자 "지금 바로 발효" 승인)
+
+> 배포: `regime_indicator.py` boost `REENTRY_COOLDOWN: 10` + `send_telegram_auto.py` 3곳(calc_system_returns 리플레이 / picks 필터 / Signal 메시지 표시) — **rank 이탈(wr>EXIT)로 매도한 종목은 10거래일간 재진입 금지, ★승격 금지(하위 후보로 안 채우고 슬롯 비움)**. 국면전환 청산은 쿨다운 미적용(재진입 배치 1:1:1 유지). state 재생성 불필요(매매룰만). 킬스위치 `REENTRY_COOLDOWN_DISABLE=1`, calc 실패 시 필터 미적용(안전 폴백). 롤백: env 또는 git revert.
+
+**근거(EDA→BT):** 이탈 후 4~10일 재진입 코호트 승률 **29%/평균 −2.05%** vs fresh 진입 +11.3% = 임계 근처 순위 출렁이는 약해진 리더(월덱스 −11.8%·HMM −8.2%·2025-04 SK 되사기 −6.4% 등 23건, 손실합 −58.5%p vs 이익합 +28.8%p). 31일+ 재복귀는 +27.7%(진짜 재가속)라 K=45+는 절벽 — **K=10은 보수적 어깨**(고원 K8~30).
+**검증(전 관문 통과):** faithful 하니스 Cal 4.85→5.35(+0.50)·MDD −24.0 동일, LOWO 5종목 +0.35~0.56, 2-fold WF 양방향 OOS+(A승자→B +2.32/B승자→A +0.37), 인접CV(K8/10/13) 0.008, 브레드스 OFF서도 +0.48(X5와 달리 규율 무관), 연도별 해치는 해 없음(2023만 −4.9%p).
+**★★배포 중 핵심 발견 — production 시맨틱스 재검증 (배포 전 필수였음):** production `calc_system_returns` 진입은 BT 하니스와 달리 **wr≤3 절대게이트가 없어** (verified top-N 슬라이스만), 쿨다운 차단 자리에 4순위 승격시키면 **Cal 4.23→3.93 악화**(약한 후보 매수). **승격금지(슬롯 비움)로 구현해야 4.77(+0.54, 전 기간 개선)**. → production 정확 시맨틱스 재검증(`_reentry_prod_semantics.py`) 후 승격금지로 배포. ⚠️ 이 검증에서 **BT 하니스(wr≤3 게이트) vs production(게이트 없음) 진입 시맨틱스 불일치**가 확인됨(baseline Cal 4.85 vs 4.23) — 쿨다운은 양쪽 다 개선이라 유효, 단 향후 매매룰 검증은 `_reentry_prod_semantics.py`류 production-정확 하니스 병행 권장.
+**메시지:** 쿨다운 중 ✅ 종목은 "🔁 재진입 대기 (매도 후 10거래일 룰, N일 남음)" 표시, 후보 전원 쿨다운 시 약세장 오표시 방지 가드. picks 줄면 비중 자동 재계산(100/n). **배포 후 첫 라이브(월 16:00) 검수 필수**: picks 수·쿨다운 라인·시스템 수익률(리플레이 변경으로 표시 수익률 상승: 누적 16547→26198%·YTD 213→247.5%는 정상). research: `backtest/_reentry_*.py`·`_reentry_prod_semantics.py`, 상세 `research/REENTRY_COOLDOWN_FINDINGS_2026_07_04.md`.
+
 ## v80.33 이탈 X6→X5 (섹터 브레드스 도입 후 재최적화) — 2026-07-04 (배포됨)
 
 > 배포: `regime_indicator.py` boost `EXIT_RANK: 6 → 5` (진입3·슬롯3 불변) + 메시지 문구("6위 밖"→"5위 밖", send_telegram_auto.py 752/1220행·send_notice_once.py 28행 하드코딩). **state 재생성 불필요**(매매룰만). 다음 16:00부터. 롤백: `EXIT_RANK 5→6` + git revert.
