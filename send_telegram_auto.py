@@ -749,7 +749,7 @@ def create_regime_switch_message(regime_mode, prev_mode=None):
             '공격 모드 매매 기준',
             '━━━━━━━━━━━━━━━',
             '매수: 3일 연속 ✅ 상위 3종목 (최대 3)',
-            '매도: 순위 6위 밖으로 밀리면',
+            '매도: 순위 5위 밖으로 밀리면',
             '',
             '━━━━━━━━━━━━━━━',
             '백테스트 (7년, 2019~2026)',
@@ -1217,7 +1217,7 @@ def create_watchlist_message(pipeline, exited, rankings_t0, rankings_t1,
     lines.append('━━━━━━━━━━━━━━━')
     lines.append('앞 번호 = 매매 순위 (이 순위로 사고팔아요)')
     lines.append('화살표 = 날짜별 순위 (참고용, 매매 기준 아님)')
-    lines.append('매도선 아래 = 순위 6위 밖 → 매도·신규매수 X')
+    lines.append('매도선 아래 = 순위 5위 밖 → 매도·신규매수 X')
     lines.append('투자 손실 책임은 투자자 본인에게 있습니다.')
 
     return '\n'.join(lines)
