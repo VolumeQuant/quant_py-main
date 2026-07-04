@@ -2288,12 +2288,28 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
     # ============================================================
     MOM_10_W = float(os.environ.get('FACTOR_MOM_10_W', '0.0'))
     VOL_LOW_W = float(os.environ.get('FACTOR_VOL_LOW_W', '0.0'))
-    if (MOM_10_W != 0 or VOL_LOW_W != 0) and not scored.empty and price_df is not None:
+    # mom_5 초단기 모멘텀 — ★기각됨 (2026-07-04, 가격민감도 실험). production 배선 안 함(기본 0).
+    # 사용자 "가격 폭등해도 순위 안 바뀜" → 5일 가격변동률 cross-sec z로 민감도↑ 시도.
+    # ★하니스 정확할수록 효과 단조소멸: 오버레이 top10 +0.76 → cr full근사 top65 +0.36 →
+    #   wr 기반 E3X6S3(production 실매매룰) +0.07(noise 이내) + 최근장 24-26 −1.0 악화.
+    # = 외국인순매수(06-09)와 동일 착시: 단순하니스 유망→풀production wr 평활에 흡수.
+    # 근본: wr 3일가중이 단기신호 의도적 흡수(v80.13 알파), mom_10+과열캡이 이미 가격 적정반영.
+    # 코드는 재실험용 보존(FACTOR_MOM_5_W 기본0 → 미배선이라 무해). research: backtest/_mom5_full_bt.py
+    MOM_5_W = float(os.environ.get('FACTOR_MOM_5_W', '0.0'))
+    if (MOM_10_W != 0 or VOL_LOW_W != 0 or MOM_5_W != 0) and not scored.empty and price_df is not None:
         # CRITICAL: OHLCV 캐시는 캘린더 인덱스 (주말/휴일 = NaN 행).
         # iloc[-N]을 단순 적용하면 주말에 떨어질 위험 → 영업일만 추출.
         # 한국 KRX 거래일 기준 row가 데이터 있는 행만 사용 (>=50% 종목 가격 있음).
         nonempty_mask = price_df.notna().sum(axis=1) >= (price_df.shape[1] * 0.5)
         biz_prices = price_df.loc[nonempty_mask]
+        if MOM_5_W != 0 and len(biz_prices) >= 6:
+            mom_5_raw = biz_prices.iloc[-1] / biz_prices.iloc[-6] - 1
+            mom_5_raw = mom_5_raw.replace([np.inf, -np.inf], np.nan).dropna()
+            m, s = mom_5_raw.mean(), mom_5_raw.std()
+            if s > 0:
+                mom_5_z = (mom_5_raw - m) / s
+                scored['mom_5_z'] = scored['종목코드'].map(mom_5_z.to_dict()).fillna(0)
+                scored['멀티팩터_점수'] = scored['멀티팩터_점수'] + scored['mom_5_z'] * MOM_5_W
         if MOM_10_W != 0 and len(biz_prices) >= 11:
             mom_10_raw = biz_prices.iloc[-1] / biz_prices.iloc[-11] - 1
             mom_10_raw = mom_10_raw.replace([np.inf, -np.inf], np.nan).dropna()
@@ -2448,7 +2464,7 @@ def generate_ranking_for_date(date_str, preloaded, state_dir):
         if _rc is not None and pd.notna(_rc) and int(_rc) != 0:
             item['recent_ca'] = int(_rc)
         # v80.20 mom_10_z / vol_low_z (가중치 그리드 BT용 — z 저장, score 재계산 가능)
-        for _zc, _zk in [('mom_10_z', 'mom_10_z'), ('vol_low_z', 'vol_low_z')]:
+        for _zc, _zk in [('mom_10_z', 'mom_10_z'), ('vol_low_z', 'vol_low_z'), ('mom_5_z', 'mom_5_z')]:
             _zv = row.get(_zc)
             if _zv is not None and pd.notna(_zv):
                 item[_zk] = round(float(_zv), 6)
