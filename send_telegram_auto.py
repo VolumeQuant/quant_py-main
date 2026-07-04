@@ -782,6 +782,7 @@ def create_regime_switch_message(regime_mode, prev_mode=None):
             '━━━━━━━━━━━━━━━',
             '매수: 3일 연속 ✅ 상위 3종목 (최대 3)',
             '매도: 순위 5위 밖으로 밀리면',
+            '재매수: 매도한 종목은 10거래일 후부터 (조기 복귀 차단)',
             '',
             '━━━━━━━━━━━━━━━',
             '백테스트 (7년, 2019~2026)',
@@ -1068,6 +1069,7 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
     else:
         lines.append(f'매수: 3일 연속 상위 {_rule_e}종목 (최대 {_rule_s}종목)')
         lines.append(f'매도: 순위 {_rule_x}위 밖으로 밀리면')
+        lines.append('재매수: 매도한 종목은 10거래일 후부터')
         lines.append('시스템은 신호만, 매매는 본인 판단')
 
     return '\n'.join(lines)
