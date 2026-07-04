@@ -16,8 +16,12 @@ import pandas as pd
 import numpy as np
 
 # KRX 인증 (2026-02-27~ 로그인 필수)
+# 2026-07-05: login 예외가 모듈 import를 죽여 메시지 전체가 안 나가는 것 방지 (KRX 장애≠발송 실패)
 import krx_auth
-krx_auth.login()
+try:
+    krx_auth.login()
+except Exception as _krx_e:
+    print(f"[KRX 인증] login 예외 무시 — 비인증 모드 진행: {type(_krx_e).__name__}: {_krx_e}")
 
 from pykrx import stock
 from datetime import datetime, timedelta
@@ -482,6 +486,8 @@ def calc_system_returns(regime_info=None):
         'kosdaq_ytd': kosdaq_ytd,
         'kosdaq_month': kosdaq_month,
         'reentry_wait': reentry_wait,
+        # 2026-07-05: 알파 부식 감시용 — 전체 equity 곡선 (entry_sentinel이 소비, 직렬화 안 함)
+        'equity_history': equity_history,
     }
 
 
@@ -1887,7 +1893,8 @@ def main():
             from entry_sentinel import build_sentinel_message
             _sentinel_msg = build_sentinel_message(
                 rankings_t0, rankings_t1, picks=picks,
-                reentry_wait=_reentry_wait, state_dir=STATE_DIR)
+                reentry_wait=_reentry_wait, state_dir=STATE_DIR,
+                system_returns=system_returns)
             if _sentinel_msg:
                 _sr = send_telegram_long(_sentinel_msg, TELEGRAM_BOT_TOKEN, PRIVATE_CHAT_ID)
                 print(f'\n[검문소] 개인봇 전송: {", ".join(str(r.status_code) for r in _sr)}')

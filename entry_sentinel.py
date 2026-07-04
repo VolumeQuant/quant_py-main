@@ -136,9 +136,39 @@ def _traj_str(ticker, hist_maps):
     return '→'.join(seq), express
 
 
+def alpha_decay_lines(equity_history, windows=(60, 120)):
+    """알파 부식 감시 — 최근 N일 수익률이 7.4년 역사 분포에서 몇 분위인지.
+    하위 5% 미만 🚨 / 15% 미만 ⚠️. returns (lines, alert_bool)."""
+    if not equity_history or len(equity_history) < 300:
+        return [], False
+    ds = sorted(equity_history)
+    eq = [float(equity_history[d]) for d in ds]
+    lines = []
+    alert = False
+    for w in windows:
+        if len(eq) <= w + 20:
+            continue
+        rolls = [eq[i] / eq[i - w] - 1 for i in range(w, len(eq)) if eq[i - w] > 0]
+        cur = rolls[-1]
+        hist = sorted(rolls[:-1])
+        # 백분위 (0~100)
+        import bisect
+        pct = bisect.bisect_left(hist, cur) / len(hist) * 100
+        if pct < 5:
+            lines.append(f'🚨 알파 부식 의심: 최근 {w}일 {cur*100:+.1f}% = 역사 하위 {pct:.0f}% — 전략/데이터 점검 필요')
+            alert = True
+        elif pct < 15:
+            lines.append(f'⚠️ 알파 감시: 최근 {w}일 {cur*100:+.1f}% = 역사 하위 {pct:.0f}%')
+            alert = True
+        else:
+            lines.append(f'알파 건강: 최근 {w}일 {cur*100:+.1f}% (역사 {pct:.0f}분위) ✅')
+    return lines, alert
+
+
 def build_sentinel_message(rankings_t0, rankings_t1, picks=None,
-                           reentry_wait=None, state_dir=None):
-    """개인봇용 검문소 메시지. 대상 종목 없으면 None."""
+                           reentry_wait=None, state_dir=None,
+                           system_returns=None):
+    """개인봇용 검문소 메시지. 대상 종목 없고 부식 경보도 없으면 None."""
     if os.environ.get('ENTRY_SENTINEL_DISABLE') == '1':
         return None
     if not rankings_t0 or not rankings_t1:
@@ -171,7 +201,10 @@ def build_sentinel_message(rankings_t0, rankings_t1, picks=None,
             targets.append((t, f'📈 급등 {m1.get(t)}→{m0.get(t)}위'))
             seen.add(t)
 
-    if not targets:
+    decay_lines, decay_alert = alpha_decay_lines(
+        (system_returns or {}).get('equity_history') or {})
+
+    if not targets and not decay_alert:
         return None
 
     lines = [f'🔍 <b>신규진입 검문소</b> ({date0})',
@@ -211,6 +244,9 @@ def build_sentinel_message(rankings_t0, rankings_t1, picks=None,
             pen_cnt += 1
     lines.append(f'필터 발동 현황: 상위권 {pen_cnt}종목 감점중'
                  + (' ⚠️ 0이면 필터 사망 의심 — 점검 필요' if pen_cnt == 0 else ' (필터 정상 작동)'))
+    if decay_lines:
+        lines.append('')
+        lines.extend(decay_lines)
     return '\n'.join(lines)
 
 

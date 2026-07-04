@@ -48,6 +48,7 @@ def login(user_id: str = None, password: str = None) -> bool:
 
     max_retries = 3
     for attempt in range(1, max_retries + 1):
+        resp = None  # 2026-07-05: 예외가 resp 할당 전에 나면 아래 핸들러서 UnboundLocalError → 호출자까지 즉사하던 버그 방지
         try:
             # 세션 쿠키 획득
             init_resp = _session.get('https://data.krx.co.kr/', timeout=15)
@@ -93,7 +94,8 @@ def login(user_id: str = None, password: str = None) -> bool:
 
         except (requests.exceptions.JSONDecodeError, ValueError):
             body_preview = resp.text[:200] if resp is not None else '(no response)'
-            print(f"[KRX 인증] JSON 파싱 실패 (attempt {attempt}/{max_retries}): [{resp.status_code}] {body_preview}")
+            _status = resp.status_code if resp is not None else '-'
+            print(f"[KRX 인증] JSON 파싱 실패 (attempt {attempt}/{max_retries}): [{_status}] {body_preview}")
             if attempt < max_retries:
                 time.sleep(3)
                 continue
