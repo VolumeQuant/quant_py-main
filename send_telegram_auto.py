@@ -630,16 +630,18 @@ def _get_buy_rationale(pick) -> str:
         elif z <= -1.0:
             weak.append(label)
 
-    NAMES = {'V': '밸류', 'Q': '퀄리티', 'G': '성장', 'M': '모멘텀'}
+    # 2026-07-06: 고객 오독 방지 일상어 (예: '밸류 약세' → '가격 부담'). 강/약 어휘 분리.
+    S_NM = {'V': '저평가 매력', 'Q': '재무 우량', 'G': '이익 성장', 'M': '상승 추세'}
+    W_NM = {'V': '가격 부담(비싼 편)', 'Q': '재무 체력 약함', 'G': '성장 둔화', 'M': '추세 약함'}
 
     if not strong and not weak:
-        return '멀티팩터 균형'
+        return '전 항목 고른 편 (특출/취약 없음)'
 
     parts = []
     if strong:
-        parts.append('·'.join(NAMES[s] for s in strong) + ' 상위')
+        parts.append('·'.join(S_NM[s] for s in strong) + ' 강점')
     if weak:
-        parts.append('·'.join(NAMES[w] for w in weak) + ' 약세')
+        parts.append('·'.join(W_NM[w] for w in weak) + ' 유의')
 
     return ' | '.join(parts)
 
@@ -787,7 +789,8 @@ def create_regime_switch_message(regime_mode, prev_mode=None):
             '━━━━━━━━━━━━━━━',
             '백테스트 (7년, 2019~2026)',
             '━━━━━━━━━━━━━━━',
-            'CAGR +72% / MDD -22% / Calmar 3.23',
+            '연 +114% / 최대낙폭 -24% (최근 급등장 포함 수치)',
+            '장기 실전 기대는 연 20~30% 수준입니다.',
             '',
             '자동매매 X — 매수/매도/손절은 본인 실행',
             '투자 손실 책임은 본인에게 있습니다.',
@@ -816,7 +819,8 @@ def create_regime_switch_message(regime_mode, prev_mode=None):
         '━━━━━━━━━━━━━━━',
         '백테스트 (7년, 2019~2026)',
         '━━━━━━━━━━━━━━━',
-        'CAGR +72% / MDD -22% / Calmar 3.23',
+        '연 +114% / 최대낙폭 -24% (최근 급등장 포함 수치)',
+        '장기 실전 기대는 연 20~30% 수준입니다.',
         '',
         '자동매매 X — 매수/매도/손절은 본인 실행',
         '투자 손실 책임은 본인에게 있습니다.',

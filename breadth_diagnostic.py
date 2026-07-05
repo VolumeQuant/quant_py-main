@@ -139,14 +139,16 @@ def build_breadth_advisory():
         tb, _best = true_breadth()  # 종목기준 참여폭(전체 종목 중 200일선 위 비율 = 상승추세)
         head_pct = (tb * 100) if tb is not None else s['value'] * 100
         note = "  ※ 종목 신호는 그대로, 비중만 조절"  # 짧게(폰 1줄)
+        # 2026-07-06: '방어' 단어 제거 — 국면 '방어 모드'와 용어 충돌 (공격 모드 헤더 바로 밑에
+        # '방어 지속'이 떠서 모순처럼 읽힘, 사용자 지적). 비중 권고임이 드러나는 표현으로.
         if s.get('just_recovered'):
-            return (f"✅ <b>방어 해제 — 주식 100% 복귀 OK</b>\n"
+            return (f"✅ <b>시장 회복 — 주식 100% 복귀 OK</b>\n"
                     f"  상승 추세 종목 {head_pct:.0f}%로 회복", True)
         if s.get('just_fired'):
-            return (f"🚨 <b>시장 방어 — 주식 50% 현금화 권고</b>\n"
+            return (f"🚨 <b>시장 참여폭 급감 — 주식 절반은 현금화 권고</b>\n"
                     f"  상승 추세 종목 {head_pct:.0f}%뿐 (대부분 약세)\n{note}", True)
         if s['defense_on']:
-            return (f"🟠 <b>방어 지속 — 현금 50% 유지</b> ({s['streak_below']}일째)\n"
+            return (f"🟠 <b>주식 절반·현금 절반 권고 지속</b> ({s['streak_below']}일째)\n"
                     f"  상승 추세 종목 {head_pct:.0f}%\n{note}", True)
         if head_pct < 30:
             return (f"🔴 상승 추세 종목 {head_pct:.0f}%뿐 — 소수만 강세\n"
