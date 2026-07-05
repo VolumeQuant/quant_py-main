@@ -361,25 +361,31 @@ def weighted_score_100(ticker, rankings_t0, rankings_t1=None, rankings_t2=None):
     v80.26: 가중치 wr과 일치(T0×0.4+T1×0.35+T2×0.25) → 순위-점수 정합(어긋남 제거).
     앵커 1.9(괴물주=100, 평범=0). 1등 고정 100 제거 → 실제 강도 반영.
     """
-    DEFAULT_MISSING_RANK = 50
+    # 2026-07-06 수정 (사용자 "케이씨텍 0.0점/삼지 8점, 그러면 안되지"):
+    # ①필터 제외일 sentinel(score -999)이 가중평균에 섞여 0.0점 붕괴 → 그날 결측 취급
+    # ②결측일을 '그날 50위 점수'(음수·날마다 변동)로 채우던 폴백 → 있는 날 가중치로 재정규화
+    #   (구 폴백은 wr PENALTY 50 정합 의도였으나 신규주 표시점수 왜곡이 더 컸음. 표시 전용·매매 무관)
+    SENTINEL_FLOOR = -900  # score <= -900 = 필터 제외 표식(-999)
 
-    def _build_maps(rankings):
+    def _score_of(rankings):
         if not rankings:
-            return {}, 0
-        rlist = rankings.get('rankings', [])
-        ticker_map = {r['ticker']: r['score'] for r in rlist}
-        rank_map = {r.get('composite_rank', r['rank']): r['score'] for r in rlist}
-        fallback = rank_map.get(DEFAULT_MISSING_RANK, 0)
-        return ticker_map, fallback
+            return None
+        for r in rankings.get('rankings', []):
+            if r['ticker'] == ticker:
+                s = r.get('score')
+                if s is None or s <= SENTINEL_FLOOR:
+                    return None
+                return s
+        return None
 
-    t0_map, _ = _build_maps(rankings_t0)
-    t1_map, t1_fallback = _build_maps(rankings_t1)
-    t2_map, t2_fallback = _build_maps(rankings_t2)
-
-    s0 = t0_map.get(ticker, 0)
-    s1 = t1_map.get(ticker, t1_fallback)
-    s2 = t2_map.get(ticker, t2_fallback)
-    ws = s0 * 0.4 + s1 * 0.35 + s2 * 0.25  # v80.26: wr(v80.13) 가중치 일치 → 순위-점수 정합
+    pairs = [(_score_of(rankings_t0), 0.4),
+             (_score_of(rankings_t1), 0.35),
+             (_score_of(rankings_t2), 0.25)]
+    avail = [(s, w) for s, w in pairs if s is not None]
+    if not avail:
+        return 0.0
+    tot_w = sum(w for _, w in avail)
+    ws = sum(s * w for s, w in avail) / tot_w  # 있는 날만 재정규화 (v80.13 비율 유지)
     # v80.26 고정앵커: ws/1.9×100 clip 0~100 (1.9=괴물주 앵커, score 0=0점)
     return max(0.0, min(100.0, ws / 1.9 * 100))
 
