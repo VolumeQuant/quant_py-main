@@ -111,6 +111,12 @@ def _health_lines(item, reentry_wait=None):
     if item.get('recent_ca'):
         lines.append('⚠️ 최근 무상증자/분할 이력 — CA 페널티 감점중')
         flags += 1
+    # 저ROE 경고 (2026-07-05 EDA): 매수권 ROE 1~10% 코호트 fwd60 +0.9%/승률 38%
+    # (vs 21%+ 코호트 +20.8%/58%). 표시 전용 — 선택/사이징 반영은 BT 기각 (_roe_inject_sweep.py)
+    _roe = item.get('roe')
+    if _roe is not None and 0 < _roe < 10:
+        lines.append(f'⚠️ 저ROE {_roe:.0f}% — 저ROE 매수권 코호트 역사 승률 38% (고ROE 58%)')
+        flags += 1
     op = item.get('overheat_pen')
     if op is not None and op < -1.0:
         lines.append(f'⚠️ 밸류 과열 감점중 (pen {op:.1f})')
