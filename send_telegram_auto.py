@@ -926,6 +926,10 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
     try:
         from conviction_display import get_conviction_weights as _gcw
         _fw = _gcw()
+        # 2026-07-06: 비중이 오늘 picks 전원을 커버 못하면(fusion stale/부분커버) 전부 숨김
+        # — 일부 종목만 %가 붙고 합계도 안 맞는 혼란 방지 (사용자 지적: 티에스이 비중 누락)
+        if picks and any(p['ticker'] not in _fw for p in picks):
+            _fw = {}
     except Exception:
         _fw = {}
     lines.append('')

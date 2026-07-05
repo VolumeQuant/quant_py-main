@@ -77,53 +77,58 @@ def _penalty_forensic(item):
 
 
 def _health_lines(item, reentry_wait=None):
-    """종목 건강 진단 줄들 — 저장 진단값 우선, 없으면 역산 폴백."""
+    """종목 건강 진단 줄들 — 저장 진단값 우선, 없으면 역산 폴백. (일상어, 2026-07-06 사용자 요청)"""
     lines = []
     flags = 0
     mm = item.get('lump_mm')
     if mm is not None:
         if mm < 0.25:
-            lines.append(f'🚨 매출 분기쏠림 {mm:.2f} — lumpiness 발동중 (디바이스형)')
+            lines.append('🚨 매출이 특정 분기에 몰리는 회사 (일회성 위험, 디바이스 유형) — 시스템이 자동 감점중')
             flags += 1
         elif mm < 0.35:
-            lines.append(f'⚠️ 매출 분기쏠림 경계 {mm:.2f} (0.25 미만이면 발동)')
+            lines.append('⚠️ 매출 기복이 큰 편 — 감점 기준 직전 수준')
             flags += 1
         else:
-            lines.append(f'매출 고름 {mm:.2f} ✅')
+            lines.append('매출 흐름 안정 ✅')
     b = item.get('accr_b')
     c = item.get('accr_c')
     if b is not None and c is not None:
         if b > 25 and c > 0.7:
-            lines.append(f'🚨 이익의 질 B{b:.0f}/C{c:.2f} — accruals 발동중 (삼지형)')
+            lines.append('🚨 이익이 장부상으로만 좋고 현금이 안 들어오는 유형 (삼지전자 유형) — 시스템이 자동 감점중')
             flags += 1
         elif b > 18:
-            lines.append(f'⚠️ 이익-현금 괴리 경계 B{b:.0f} (25 초과+쏠림이면 발동)')
+            lines.append('⚠️ 이익 대비 현금 유입이 약한 편 — 주의')
             flags += 1
         else:
-            lines.append(f'이익 질 양호 B{b:.0f}/C{c:.2f} ✅')
+            lines.append('이익의 질 양호 (현금 뒷받침) ✅')
     if mm is None and b is None:
         fx = _penalty_forensic(item)
         if fx:
-            lines.append(f'⚠️ {fx}')
+            if 'accruals' in fx:
+                lines.append('⚠️ 이익의 질 문제로 시스템이 자동 감점중 (장부 이익 대비 현금 부족 유형)')
+            elif 'lumpiness' in fx:
+                lines.append('⚠️ 매출 일회성 위험으로 시스템이 자동 감점중')
+            else:
+                lines.append('⚠️ 성장 둔화로 시스템이 일부 감점중')
             flags += 1
         else:
-            lines.append('재무진단값 미저장(구파일) — 페널티 역산상 무발동 ✅')
+            lines.append('자동 감점 없음 ✅')
     if item.get('recent_ca'):
-        lines.append('⚠️ 최근 무상증자/분할 이력 — CA 페널티 감점중')
+        lines.append('⚠️ 최근 무상증자/분할 이력 — 주가 착시 가능 구간, 시스템이 감점중')
         flags += 1
-    # 저ROE 경고 (2026-07-05 EDA): 매수권 ROE 1~10% 코호트 fwd60 +0.9%/승률 38%
-    # (vs 21%+ 코호트 +20.8%/58%). 표시 전용 — 선택/사이징 반영은 BT 기각 (_roe_inject_sweep.py)
+    # 저ROE 경고 (2026-07-05 EDA): 매수권 ROE 1~10% 코호트 fwd60 +0.9%/승률 38% (vs 21%+ 58%)
+    # 표시 전용 — 선택/사이징 반영은 BT 기각 (_roe_inject_sweep.py)
     _roe = item.get('roe')
     if _roe is not None and 0 < _roe < 10:
-        lines.append(f'⚠️ 저ROE {_roe:.0f}% — 저ROE 매수권 코호트 역사 승률 38% (고ROE 58%)')
+        lines.append(f'⚠️ 자본 대비 이익(ROE {_roe:.0f}%)이 낮은 회사 — 이 유형은 과거 승률이 낮았음 (38% vs 58%)')
         flags += 1
     op = item.get('overheat_pen')
     if op is not None and op < -1.0:
-        lines.append(f'⚠️ 밸류 과열 감점중 (pen {op:.1f})')
+        lines.append('⚠️ 실적 대비 주가가 과열 — 시스템이 감점중')
         flags += 1
     if reentry_wait and item.get('ticker') in reentry_wait:
         d = reentry_wait[item['ticker']].get('days')
-        lines.append(f'🔁 재진입 쿨다운 대기 {d}일 (최근 시스템 매도)')
+        lines.append(f'🔁 최근에 시스템이 판 종목 — {d}거래일 후부터 재매수 가능')
     return lines, flags
 
 
@@ -161,13 +166,13 @@ def alpha_decay_lines(equity_history, windows=(60, 120)):
         import bisect
         pct = bisect.bisect_left(hist, cur) / len(hist) * 100
         if pct < 5:
-            lines.append(f'🚨 알파 부식 의심: 최근 {w}일 {cur*100:+.1f}% = 역사 하위 {pct:.0f}% — 전략/데이터 점검 필요')
+            lines.append(f'🚨 시스템 컨디션 이상: 최근 {w}일 {cur*100:+.1f}% — 7년 역사상 최악권(하위 {pct:.0f}%). 전략·데이터 점검 필요')
             alert = True
         elif pct < 15:
-            lines.append(f'⚠️ 알파 감시: 최근 {w}일 {cur*100:+.1f}% = 역사 하위 {pct:.0f}%')
+            lines.append(f'⚠️ 시스템 컨디션 저조: 최근 {w}일 {cur*100:+.1f}% — 역사 하위 {pct:.0f}% 구간, 지켜보는 중')
             alert = True
         else:
-            lines.append(f'알파 건강: 최근 {w}일 {cur*100:+.1f}% (역사 {pct:.0f}분위) ✅')
+            lines.append(f'시스템 컨디션: 최근 {w}일 {cur*100:+.1f}% — 역대 상위 {100-pct:.0f}% ✅')
     return lines, alert
 
 
@@ -194,17 +199,17 @@ def build_sentinel_message(rankings_t0, rankings_t1, picks=None,
     seen = set()
     for t in pick_tks:
         if m1.get(t, ABSENT) > 3 and t not in seen:
-            targets.append((t, '🛒 신규 매수권'))
+            targets.append((t, '🛒 매수 후보에 새로 진입'))
             seen.add(t)
     for t in sorted(top20_now - top20_prev, key=lambda x: m0.get(x, ABSENT)):
         if t not in seen:
-            targets.append((t, '🆕 top20 신규'))
+            targets.append((t, '🆕 상위 20위에 새로 진입'))
             seen.add(t)
     for t in sorted(top20_now & top20_prev, key=lambda x: m0.get(x, ABSENT)):
         if t in seen:
             continue
         if (m1.get(t, ABSENT) - m0.get(t, ABSENT)) >= SURGE_STEPS:
-            targets.append((t, f'📈 급등 {m1.get(t)}→{m0.get(t)}위'))
+            targets.append((t, f'📈 순위 급등 (어제 {m1.get(t)}위 → 오늘 {m0.get(t)}위)'))
             seen.add(t)
 
     decay_lines, decay_alert = alpha_decay_lines(
@@ -213,8 +218,8 @@ def build_sentinel_message(rankings_t0, rankings_t1, picks=None,
     if not targets and not decay_alert:
         return None
 
-    lines = [f'🔍 <b>신규진입 검문소</b> ({date0})',
-             '매매신호와 무관한 참고 정보입니다.', '']
+    lines = [f'🔍 <b>새로 올라온 종목 점검</b> ({date0})',
+             '개인용 참고 리포트 (채널 미발송, 매매신호와 무관)', '']
     total_flags = 0
     for t, label in targets:
         it = items0.get(t)
@@ -231,15 +236,15 @@ def build_sentinel_message(rankings_t0, rankings_t1, picks=None,
         lines.append(f'<b>{label} — {nm}({t}) · {sec}</b>')
         if val:
             lines.append(f'{val}')
-        lines.append(f'궤적 {traj}' + (' 🚨3일내 급행 — 순위 급조 의심, 주의' if express else ''))
+        lines.append(f'최근 8일 순위: {traj}' + (' 🚨 3일 만에 수직 상승 — 반짝 신호 가능성, 주의' if express else ''))
         if express:
             total_flags += 1
         h, fl = _health_lines(it, reentry_wait)
         lines.extend(h)
         total_flags += fl
         lines.append('')
-    lines.append(f'경고 플래그 합계: {total_flags}개'
-                 + (' — 이상 없음' if total_flags == 0 else ' — 위 ⚠️/🚨 항목 확인 권장'))
+    lines.append(f'오늘 경고 {total_flags}개'
+                 + (' — 이상 없음 ✅' if total_flags == 0 else ' — 위 ⚠️/🚨 종목은 한 번 더 살펴보세요'))
     # 필터 생존 모니터 (6/18형 '조용한 필터 사망' 감지): 오늘 랭킹 내 페널티 발동 수
     pen_cnt = 0
     for it in rankings_t0.get('rankings', []):
@@ -248,8 +253,8 @@ def build_sentinel_message(rankings_t0, rankings_t1, picks=None,
             pen_cnt += 1
         elif mm is None and b is None and _penalty_forensic(it):
             pen_cnt += 1
-    lines.append(f'필터 발동 현황: 상위권 {pen_cnt}종목 감점중'
-                 + (' ⚠️ 0이면 필터 사망 의심 — 점검 필요' if pen_cnt == 0 else ' (필터 정상 작동)'))
+    lines.append(f'함정 필터: 정상 작동중 (오늘 {pen_cnt}종목 자동 감점)' if pen_cnt > 0
+                 else '함정 필터: ⚠️ 오늘 감점 종목 0개 — 필터가 꺼졌을 수 있음, 점검 필요')
     if decay_lines:
         lines.append('')
         lines.extend(decay_lines)
