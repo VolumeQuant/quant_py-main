@@ -268,6 +268,13 @@
 > 표본검증(7/3): top20 신규 3종목 자동 감지, 삼지전자에 accruals 발동중 경고 정확 표시, 필터 발동 23종목=정상. 킬스위치 `ENTRY_SENTINEL_DISABLE=1`, 실패시 본 메시지 영향 0. ⚠️ 월요일 첫 라이브 검수: FG 신규 진단필드 생성 + 검문소 개인봇 수신 확인.
 > **+동일 배치 (2026-07-05):** ①**알파 부식 경보** — 검문소 footer에 최근 60/120일 수익 vs 7.4y 분포 백분위(하위 15% ⚠️/5% 🚨, calc_system_returns가 equity_history 반환). 현재 97분위=건강. ②**실행갭 도구** `execution_gap.py` — 체결 기록(add) → 신호종가 대비 갭·연 드래그 리포트(report). 사용자 체결 기록 습관 필요. ③**krx_auth 즉사버그 수정** — resp UnboundLocalError + send_telegram import시 login 예외 가드(KRX 장애가 메시지 전멸시키던 경로 차단). ④**SPOF 감사**: `research/DATA_SPOF_AUDIT_2026_07_05.md` — P1=`_is_trading_day` 빈응답→"휴장일" 오판(무소음 신호 결번), P2=kospi 캐시 staleness 경보·브레드스 실패 명시화 (다음 주 반영 후보). ⑤**용량 스트레스**(`backtest/_capacity_stress.py`): 퀀트 sleeve 6.3억(총자산 18억)까지 OK(참여율10%+ 매매 3%, 드래그 ~6%p), sleeve 20억부터 한계(35% 매매가 참여율 10%+) — 그때 유동성하한/슬롯 재검증. 저유동 종목(ADV 20~30억)은 시간외 대신 다음날 아침 분할 권장.
 
+## 반기(H1) DOC 폴백 수정 — 2026-07-07 (8월 실적시즌 사전점검, 배포됨)
+
+> **사전점검 발견**: document API 폴백(5/15 1Q finstate_all 누락 37% 구조용, Phase B)이 **반기보고서에서 0계정 반환** — 8/14 폭주 시 무용지물이었음(DOC 수집 이력 1,123행 전부 Q1뿐 = H1 실전 0회, 검증 사각). 원인 3중: ①반기는 값이 `<P>` 래핑이라 `[^<]*` 캡처 전멸(직접 원인) ②컨텍스트가 반기 전용 dHYQ/dHYA/eHYA인데 필터가 분기(FQ*)만 허용 ③'문서순서 첫 매칭' 선택은 단독=누적인 Q1에서만 검증된 로직(반기서 누적 먼저 잡으면 손익 2배 왜곡 위험).
+> **수정**(`dart_collector._doc_pattern`/`_parse_doc_value`/`_parse_document_xml`): 태그허용 값캡처(DOTALL+태그스트립) + HY* 컨텍스트 추가 + **명시 우선순위**(손익=3개월단독 dFQQ/dHYQ 우선 / CF=누적 dFQA/dHYA — finstate도 CF는 누적 저장이라 시맨틱스 동일 / BS=기말 eFQA/eHYA).
+> **검증**: 2025 반기 실물 3종목(삼성·하이닉스·금화PSC) 폴백==finstate_all **15/15 계정 소수점 일치**(삼성 매출 74.6조=3개월 단독 정확, 누적 153조 아님) + **Q1 회귀**: 000070(구버전 DOC 수집분) 5/5 캐시 정확 재현=기존 동작 무변경. 사업보고서(Y)도 같은 래핑이면 동시 해결(3~4월 시즌 때 관측 확인).
+> **나머지 8월 시즌 방어 코드 확인 완료**: 폭주=list API 3일창+타임아웃 5h, H1 타겟매핑(FILING_SEASON[8]=06-30), 정상경로 반기 단일값 정확(실측), 페널티 3종 전부 PIT(rcept_dt≤base_ts), 누락감지 개인봇 알림(v80.8), FnGuide 컨센 붕괴는 6/30 WISEfn 전환으로 기복구. 잔여: SPOF P1(`_is_trading_day` 빈응답) 시즌 전 반영 권장. research: `backtest/_h1_doc_fallback_probe.py`·`_h1_doc_ctx_dump.py`.
+
 ## v80.33 이탈 X6→X5 (섹터 브레드스 도입 후 재최적화) — 2026-07-04 (배포됨)
 
 > 배포: `regime_indicator.py` boost `EXIT_RANK: 6 → 5` (진입3·슬롯3 불변) + 메시지 문구("6위 밖"→"5위 밖", send_telegram_auto.py 752/1220행·send_notice_once.py 28행 하드코딩). **state 재생성 불필요**(매매룰만). 다음 16:00부터. 롤백: `EXIT_RANK 5→6` + git revert.

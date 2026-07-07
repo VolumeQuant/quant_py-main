@@ -275,14 +275,19 @@ class DartCollector:
     def _doc_pattern(cls):
         if cls._DOC_TE_PAT is None:
             import re as _re
+            # 속성 전체를 잡고 개별 속성은 _parse_document_xml에서 추출.
+            # 값 캡처는 (.*?) + DOTALL — 반기보고서는 값이 <P>…</P>로 감싸져 있어
+            # 구버전 [^<]* 캡처가 전부 실패(반기 폴백 0계정 반환의 직접 원인).
             cls._DOC_TE_PAT = _re.compile(
-                r'<TE ACODE="([^"]+)" ACONTEXT="([^"]+)"[^>]*ADECIMAL="(-?\d+)"[^>]*>([^<]*)</TE>'
+                r'<TE ([^>]*ACONTEXT="[^"]+"[^>]*)>(.*?)</TE>', _re.DOTALL
             )
         return cls._DOC_TE_PAT
 
     @staticmethod
     def _parse_doc_value(val_str, adecimal):
-        s = str(val_str).strip().replace(',', '').replace('(', '-').replace(')', '').replace(' ', '')
+        import re as _re
+        s = _re.sub(r'<[^>]+>', '', str(val_str))  # 반기보고서 <P> 래핑 제거
+        s = s.strip().replace(',', '').replace('(', '-').replace(')', '').replace(' ', '').replace('　', '').replace('\n', '').replace('\r', '')
         if not s or s == '-':
             return None
         try:
@@ -291,35 +296,53 @@ class DartCollector:
             return None
 
     def _parse_document_xml(self, doc_xml, member='Consolidated'):
-        """document XML → {계정: 값} 추출. ACCOUNT_ID_MAP 14계정 + 영업CF dFQA.
+        """document XML → {계정: 값} 추출. ACCOUNT_ID_MAP 14계정.
 
         member: 'Consolidated' 또는 'Separate'
-        반환: {계정: 값(원 단위)} — 분기단독(dFQQ) 또는 분기누적(dFQA) 또는 분기말 instant(eFQA)
+        반환: {계정: 값(원 단위)}
+
+        컨텍스트 지원 (2026-07-07 반기 추가 — 구버전은 분기(FQ*)만 허용해 반기보고서에서 0계정 반환):
+          분기보고서: dFQQ(3개월단독) / dFQA(누적) / eFQA(기말)
+          반기보고서: dHYQ(3개월단독) / dHYA(반기누적) / eHYA(반기말)
+        우선순위 (finstate_all thstrm_amount 시맨틱스와 동일하게 명시 적용):
+          손익 = 3개월 단독(dFQQ/dHYQ) 우선, 영업CF = 누적만 존재(dFQA/dHYA — finstate도 CF는 누적 저장),
+          재무상태표 = 기말 instant(eFQA/eHYA).
+          ★구버전 '문서순서 첫 매칭'은 단독=누적인 Q1에서만 검증된 로직 — 반기에서 누적을 먼저 잡으면
+          손익 2배 왜곡이라 명시 우선순위로 교체. ADECIMAL 없는 태그는 스케일 0(원 단위 그대로).
         """
         import re as _re
-        result = {}
         member_tag = f'{member}Member'
-        pat_ctx = _re.compile(r'(CFY\d{4}[de](?:FQQ|FQA|FQ|SFQ|TFQ|SFA|TFA|FY|AFA))')
+        pat_ctx = _re.compile(r'(CFY\d{4}[de](?:FQQ|FQA|FQ|SFQ|TFQ|SFA|TFA|FY|AFA|HYQ|HYA|HY))')
+        a_code = _re.compile(r'ACODE="([^"]+)"')
+        a_ctx = _re.compile(r'ACONTEXT="([^"]+)"')
+        a_dec = _re.compile(r'ADECIMAL="(-?\d+)"')
+        single = {}   # 3개월 단독(dFQQ/dHYQ) + 기말 instant(eFQA/eHYA)
+        accum = {}    # 누적(dFQA/dHYA) — 단독 없을 때만 사용(CF 등)
         for m in self._doc_pattern().finditer(doc_xml):
-            code, ctx, dec, val = m.group(1), m.group(2), m.group(3), m.group(4)
-            if code not in ACCOUNT_ID_MAP:
+            attrs, val = m.group(1), m.group(2)
+            mc = a_code.search(attrs)
+            if not mc or mc.group(1) not in ACCOUNT_ID_MAP:
                 continue
-            if member_tag not in ctx:
+            mx = a_ctx.search(attrs)
+            if not mx or member_tag not in mx.group(1):
                 continue
-            ctx_match = pat_ctx.match(ctx)
+            ctx_match = pat_ctx.match(mx.group(1))
             if not ctx_match:
                 continue
             ctx_base = ctx_match.group(1)
-            # 1Q: dFQQ=dFQA. 손익은 dFQQ 우선, 영업CF는 dFQA, 재무상태표는 eFQA.
-            # 첫 매칭 사용 (중복 시 무시) — XBRL 순서는 보고서마다 동일
-            if 'dFQQ' not in ctx_base and 'eFQA' not in ctx_base and 'dFQA' not in ctx_base:
-                continue
-            v = self._parse_doc_value(val, dec)
+            md = a_dec.search(attrs)
+            v = self._parse_doc_value(val, md.group(1) if md else '0')
             if v is None:
                 continue
-            sys_name = ACCOUNT_ID_MAP[code]
-            if sys_name not in result:
-                result[sys_name] = v
+            sys_name = ACCOUNT_ID_MAP[mc.group(1)]
+            if any(k in ctx_base for k in ('dFQQ', 'dHYQ', 'eFQA', 'eHYA')):
+                if sys_name not in single:
+                    single[sys_name] = v
+            elif any(k in ctx_base for k in ('dFQA', 'dHYA')):
+                if sys_name not in accum:
+                    accum[sys_name] = v
+        result = dict(accum)
+        result.update(single)  # 단독/기말이 누적보다 우선
         return result
 
     def _fetch_quarter_via_document(self, ticker, year, rcode):
