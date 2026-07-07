@@ -873,6 +873,27 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
     if _breadth_line and _breadth_alert:
         lines.append(_breadth_line)
 
+    # 2026-07-08 사용자 합의: 브레드스 발동/복귀 '전환 첫날'만 개인봇 DM 별도 발송 —
+    # "다음 발동부터는 첫날에 절반 축소를 지킨다" 약속의 실행 장치 (채널 무관, 실패 무해).
+    try:
+        from breadth_diagnostic import sector_breadth_status as _sbs
+        _s = _sbs()
+        _dm = None
+        if _s.get('just_fired'):
+            _dm = ('🚨 <b>브레드스 발동 첫날</b>\n\n'
+                   '합의(2026-07-08)대로 오늘이 퀀트 주식비중 절반 축소를 실행하는 날입니다.\n'
+                   '(초입 방어가 이 룰 가치의 대부분 — 2024-08 +11.4%p)')
+        elif _s.get('just_recovered'):
+            _dm = ('✅ <b>브레드스 복귀 첫날</b>\n\n'
+                   '주식 100% 복귀 OK — 축소분을 되돌리는 날입니다.')
+        if _dm:
+            import requests as _rq
+            from config import TELEGRAM_BOT_TOKEN as _tk, TELEGRAM_PRIVATE_ID as _pid
+            _rq.post(f'https://api.telegram.org/bot{_tk}/sendMessage',
+                     data={'chat_id': _pid, 'text': _dm, 'parse_mode': 'HTML'}, timeout=15)
+    except Exception:
+        pass
+
     lines += [
         '국내 전 종목을 매일 자동 분석한',
         '종합 점수 상위 종목입니다.',
