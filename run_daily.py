@@ -370,6 +370,9 @@ def run_fg_pipeline(base_date, regime_env, regime_mode, logfile):
     except Exception as e:
         log(f"데이터 갱신 오류: {e} - 기존 캐시로 진행", logfile)
 
+    # P2 (2026-07-07, SPOF 감사): kospi 인덱스 캐시 staleness 경보 — 국면 동결 감지
+    _check_kospi_staleness(logfile)
+
     state_dir = str(SCRIPT_DIR / 'state')
     state_def_dir = str(SCRIPT_DIR / 'state' / 'defense')
     os.makedirs(state_def_dir, exist_ok=True)
@@ -444,6 +447,36 @@ def run_fg_pipeline(base_date, regime_env, regime_mode, logfile):
 
     log(f"완료: boost+defense 양쪽 생성, 활성={regime_mode}", logfile)
     return True
+
+
+def _check_kospi_staleness(logfile=None):
+    """P2 (2026-07-07, SPOF 감사): kospi 인덱스 캐시가 3영업일+ 뒤처지면 개인봇 경보.
+
+    국면 게이트(MA20/80)가 stale 캐시로 과거에 동결되는 것 감지 — 수일은 5일 확인 룰이
+    완충하므로 무해하나, 갱신 실패가 장기화되면 가짜 국면 위험(SPOF 감사 #2). 비차단."""
+    try:
+        import pandas as pd
+        f = SCRIPT_DIR / 'data_cache' / 'kospi_yf.parquet'
+        if not f.exists():
+            _send_personal_warning(
+                "⚠️ <b>KOSPI 인덱스 캐시 없음</b>\n\n"
+                "data_cache/kospi_yf.parquet 부재 — 국면 판단(공격/방어) 불가 위험. 점검 필요.",
+                logfile=logfile)
+            return
+        last = pd.read_parquet(f).index.max()
+        # 영업일 근사 = 주말 제외 (공휴일 미반영 — 임계 3일이 여유분)
+        gap = max(len(pd.bdate_range(last, datetime.now())) - 1, 0)
+        if gap >= 3:
+            _send_personal_warning(
+                f"⚠️ <b>KOSPI 캐시 뒤처짐 ({gap}영업일)</b>\n\n"
+                f"인덱스 캐시 최신일 {last:%Y-%m-%d} — 국면 신호(MA20/80)가 과거에 동결됐을 수 있습니다.\n"
+                "인덱스 갱신(data_refresher refresh_index) 실패가 지속되는지 점검 필요.\n"
+                "(수일은 5일 확인 룰이 완충 — 장기화가 위험)", logfile=logfile)
+        elif logfile:
+            log(f"KOSPI 캐시 최신성 OK (최신 {last:%Y-%m-%d}, gap {gap}영업일)", logfile)
+    except Exception as e:
+        if logfile:
+            log(f"KOSPI staleness 체크 실패: {e} (비차단)", logfile)
 
 
 def _is_trading_day():

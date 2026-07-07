@@ -5,9 +5,9 @@
 | # | 의존성 | 실패 시 동작 (코드 확인) | 등급 |
 |---|---|---|---|
 | 1 | **KRX/pykrx — `_is_trading_day()`** | (구) 빈 응답 → "휴장일" 오판 → 무소음 결번 → ★2026-07-07 수정: 빈 응답+평일이면 yfinance KOSPI 교차확인 + 전 경로 개인봇 알림, 실패방향=진행 우선(결번>중복메시지). 4경로 모킹 테스트 PASS | 🟢 (수정됨) |
-| 2 | **KRX/pykrx — kospi/kosdaq 지수 캐시** (`data_refresher` `'1001'/'2001'`) | 갱신 실패 → 캐시 stale → **국면게이트 MA가 과거에 동결**. 수일은 무해(5일 확인 룰), 장기화 시 가짜 국면 | 🟡 (3일+ stale 경보 권장) |
+| 2 | **KRX/pykrx — kospi/kosdaq 지수 캐시** (`data_refresher` `'1001'/'2001'`) | (구) stale → 국면 MA 동결 → ★2026-07-07 수정: `run_daily._check_kospi_staleness` — 3영업일+ 뒤처짐/캐시 부재 시 개인봇 경보(비차단). 모킹 테스트 PASS | 🟢 (수정됨) |
 | 3 | **krx_auth.login()** | (구) resp UnboundLocalError로 **send_telegram import 즉사 = 메시지 전멸** → ★2026-07-05 수정: resp=None 가드 + import시 try/except | 🟢 (수정됨) |
-| 4 | 브레드스 계산 (`breadth_diagnostic`) | 실패 → 빈문자열/스케일 1.0 (설계상 안전) — ★단 **조용히 사라짐**: X5는 브레드스 규율 전제라, 발동 중 라인이 소리 없이 빠지면 사용자가 50% 축소를 놓칠 수 있음 | 🟡 P2 (실패 시 "⚠️ 브레드스 계산 실패" 명시 라인 권장) |
+| 4 | 브레드스 계산 (`breadth_diagnostic`) | (구) 실패 → 빈문자열 = 조용히 사라짐 → ★2026-07-07 수정: 실패 시 "⚠️ 시장 참여폭 계산 실패 — 어제 상태 기준으로 판단하세요" 명시 라인(킬스위치 DISABLE만 빈문자열 유지). 모킹 테스트 PASS | 🟢 (수정됨) |
 | 5 | DART (refresh_dart_cache) | timeout 5h 가드 + 실패 시 기존 캐시 진행 (run_daily 명시 처리) | 🟢 |
 | 6 | FnGuide/WISEfn 컨센 (fusion) | 실패 → 전날 fusion_state 폴백 + 수집률 급감 경고(6/30 배포) + footer 빈문자열 | 🟢 |
 | 7 | Gemini AI | 429/503 → graceful skip, 메시지는 발송 (6/18 검증) | 🟢 |

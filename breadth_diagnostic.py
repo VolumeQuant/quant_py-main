@@ -157,7 +157,10 @@ def build_breadth_advisory():
             return (f"🟡 상승 추세 종목 {head_pct:.0f}% — 약화(감시 중)", False)
         return (f"🟢 상승 추세 종목 {head_pct:.0f}% — 정상", False)
     except Exception:
-        return '', False
+        # P2 (2026-07-07, SPOF 감사): 구버전 빈문자열 = 조용히 사라짐 — X5 이탈룰이 브레드스
+        # 규율(발동 시 50% 축소 실행)을 전제하므로, 발동 중 라인이 소리 없이 빠지면 위험.
+        # 실패를 명시해 사용자가 전일 상태 기준으로 판단하게 함. (킬스위치 DISABLE은 그대로 빈문자열)
+        return ("⚠️ 시장 참여폭 계산 실패 — 어제 상태 기준으로 판단하세요", False)
 
 
 def build_breadth_line():
