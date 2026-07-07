@@ -447,15 +447,46 @@ def run_fg_pipeline(base_date, regime_env, regime_mode, logfile):
 
 
 def _is_trading_day():
-    """오늘이 거래일인지 확인 (삼성전자 OHLCV로 판단)"""
+    """오늘이 거래일인지 확인 (삼성전자 OHLCV로 판단)
+
+    ★P1 수정 (2026-07-07, SPOF 감사): 구버전은 pykrx 빈 응답(IP 차단 전형)을 df.empty →
+    '휴장일'로 오판해 그날 신호가 무소음 결번됐음. 수정: 빈 응답 + 평일이면 yfinance
+    KOSPI(^KS11, KRX와 독립 소스)로 교차확인하고, 어느 경로든 개인봇 알림(무소음 제거).
+    실패 방향은 '진행' 우선 — 휴장일 오진행(중복 메시지, 무해)이 거래일 결번(신호 유실)보다 싸다.
+    """
+    now = datetime.now()
+    if now.weekday() >= 5:
+        return False  # 주말은 교차확인 불필요
+    today_str = now.strftime('%Y%m%d')
     try:
         from pykrx import stock as _pykrx
-        today_str = datetime.now().strftime('%Y%m%d')
         df = _pykrx.get_market_ohlcv(today_str, today_str, '005930')
-        return not df.empty
+        if not df.empty:
+            return True
     except Exception:
-        # API 실패 시 요일로 판단 (주말 제외)
-        return datetime.now().weekday() < 5
+        # pykrx 예외 + 평일 → 진행 (기존 동작 유지)
+        return True
+    # 빈 응답 + 평일: 진짜 휴장일 vs pykrx 장애(차단) 구분 → yfinance 교차확인
+    try:
+        import yfinance as yf
+        h = yf.Ticker('^KS11').history(period='5d')
+        if len(h) and h.index[-1].strftime('%Y%m%d') == today_str:
+            _send_personal_warning(
+                "⚠️ <b>pykrx 빈 응답 (차단 의심)</b>\n\n"
+                f"오늘({today_str}) 삼성전자 OHLCV 빈 응답인데 yfinance KOSPI는 거래 확인.\n"
+                "pykrx 장애/IP 차단 가능성 — 파이프라인은 진행합니다 (신호 결번 방지).")
+            return True
+        _send_personal_warning(
+            "ℹ️ <b>휴장일 판단 (평일)</b>\n\n"
+            f"오늘({today_str}) pykrx 빈 응답 + yfinance KOSPI에도 당일 데이터 없음 → 휴장일로 판단, 스킵.\n"
+            "오판이면 TEST_MODE=1로 수동 실행하세요.")
+        return False
+    except Exception:
+        _send_personal_warning(
+            "⚠️ <b>거래일 판단 불가</b>\n\n"
+            f"오늘({today_str}) pykrx 빈 응답 + yfinance 교차확인도 실패.\n"
+            "안전측(진행)으로 파이프라인 실행합니다 — 휴장일이었다면 중복 메시지 가능(무해).")
+        return True
 
 
 def main():
