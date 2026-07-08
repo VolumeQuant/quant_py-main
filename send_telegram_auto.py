@@ -1691,6 +1691,16 @@ def main():
     _sl_s = f'{int(_SL*100)}%' if _SL else 'X'
     print(f"\n  최종 picks: {len(picks)}개 (진입: top{_ENTRY} · 이탈: wr>{_EXIT} · 슬롯: {_SLOTS} · 손절: {_sl_s})")
 
+    # ★실발송 고정 원장 (as-sent ledger, 2026-07-08) — 발송 시점 picks 박제 (append-only)
+    # calc_system_returns(현재 룰 소급 리플레이)와 별개로, 실제 발송 픽만의 성적 추적용.
+    # 같은 날 재실행은 스킵 (박제 원칙). 킬스위치 ASENT_LEDGER_DISABLE=1. 실패 무해.
+    try:
+        if os.environ.get('ASENT_LEDGER_DISABLE') != '1':
+            from asent_ledger import record_today as _asent_record
+            _asent_record(picks, BASE_DATE)
+    except Exception as _e:
+        print(f'  [원장] 기록 실패 (무시): {_e}')
+
     # ============================================================
     # AI 종목별 내러티브 (Signal 💬 줄용)
     # ============================================================
@@ -1938,6 +1948,15 @@ def main():
                 reentry_wait=_reentry_wait, state_dir=STATE_DIR,
                 system_returns=system_returns)
             if _sentinel_msg:
+                # ★실발송 원장 라인 병기 (2026-07-08, 개인봇 검문소 전용 — 채널 불변).
+                # sentinel이 None이면 원장 라인만으로는 발송하지 않음. 실패 시 원본 그대로.
+                try:
+                    from asent_ledger import build_ledger_line as _bll
+                    _ledger_line = _bll()
+                    if _ledger_line:
+                        _sentinel_msg = _sentinel_msg + '\n' + _ledger_line
+                except Exception:
+                    pass
                 _sr = send_telegram_long(_sentinel_msg, TELEGRAM_BOT_TOKEN, PRIVATE_CHAT_ID)
                 print(f'\n[검문소] 개인봇 전송: {", ".join(str(r.status_code) for r in _sr)}')
             else:
