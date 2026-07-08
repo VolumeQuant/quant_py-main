@@ -331,9 +331,12 @@ def calc_system_returns(regime_info=None):
             else:
                 peak_prices[tk] = max(cp, ep) if cp > 0 else ep
             # 손절: 진입가 대비 (v80.22: _stop_loss=None이면 스킵)
+            # v80.35: SL 이탈도 재진입 쿨다운 기록 — 안 하면 순위가 높은 채 SL 맞은 종목이
+            # 다음날 바로 재매수되는 루프 (제주 유형: SL 후에도 rank 2 유지)
             if _stop_loss is not None and cp > 0 and ep > 0 and (cp / ep - 1) <= _stop_loss:
                 del portfolio[tk]
                 peak_prices.pop(tk, None)
+                last_rank_exit[tk] = i
             # 트레일링: 고점 대비 (v80.21: _trailing_stop=None이면 스킵)
             elif _trailing_stop is not None and cp > 0 and peak_prices.get(tk, 0) > 0 and (cp / peak_prices[tk] - 1) <= _trailing_stop:
                 del portfolio[tk]
@@ -783,7 +786,7 @@ def create_regime_switch_message(regime_mode, prev_mode=None):
             '공격 모드 매매 기준',
             '━━━━━━━━━━━━━━━',
             '매수: 3일 연속 ✅ 상위 3종목 (최대 3)',
-            '매도: 순위 5위 밖으로 밀리면',
+            '매도: 순위 5위 밖 or 진입가 -15% 손절',
             '재매수: 매도한 종목은 10거래일 후부터 (조기 복귀 차단)',
             '',
             '━━━━━━━━━━━━━━━',

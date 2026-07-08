@@ -190,7 +190,13 @@ def get_regime_params(mode):
             # 7년간 SL의 보호 효과 사실상 0. 단일거래 최악 -19% 선에서 자연 멈춤.
             # 비용반영: Cal 3.26→3.33, MDD -26.7→-26.5%, WF min 1.37→1.47, SK 제외 robust.
             # 운영: 연 SL 발동 4회→0회 (사용자 부담 가장 큰 항목 제거).
-            'STOP_LOSS': None,
+            # ★v80.35 (2026-07-08): SL -15% 재도입 — 테일 보험 (수익 근거 아님).
+            #   X5 체제 재검증(_sl_revalidate_20260708): 전체 Calmar 5.15 동일(비용 0),
+            #   최악 단일거래 -34.9%→-19.9% 절단. 타이트(-8/-10%)는 여전히 손해라 기각.
+            #   X5의 유일한 구멍(순위 유지한 채 폭락 — 2026-07 제주 -25% 사례)만 막는 순수 테일컷.
+            #   LOWO 6종목·인접(-12/-15/-20) plateau 통과. SL 이탈도 재진입 쿨다운 적용(안 하면 재매수 루프).
+            #   롤백: STOP_LOSS=None + git revert.
+            'STOP_LOSS': -0.15,
             'TRAILING_STOP': None,    # v80.21: TS 제거
             'TS_COOLDOWN': 1,                                  # v80.8 잔존 (TS 제거로 무효)
             'USE_REV_ACCEL': False,
@@ -248,7 +254,7 @@ def get_regime_params(mode):
             # 메커니즘: defense 거래 785건 평균 +0.5% (boost +4.6%의 1/10), 알파 거의 X
             # 약세장은 시스템 한계 인정 → 매수 안 하고 cash 보유가 정답
             'ENTRY_RANK': 0, 'EXIT_RANK': 8, 'MAX_SLOTS': 5,
-            'STOP_LOSS': None,        # v80.22: SL 제거 (defense는 cash라 원래 무효)
+            'STOP_LOSS': -0.15,       # v80.35: boost와 동일 (defense는 cash라 사실상 무효, 청산기 보유분 보호용)
             'TRAILING_STOP': None,    # v80.21: TS 제거 (defense는 cash 100%라 원래 무효)
             'TS_COOLDOWN': 1,
             'REENTRY_COOLDOWN': 0,    # v80.34: defense는 신규매수 없음(ENTRY 0)이라 무효, 명시만
