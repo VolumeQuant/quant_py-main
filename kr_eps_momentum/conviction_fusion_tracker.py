@@ -239,7 +239,20 @@ def main():
     # ★확인 자격 = forward PER < FWD_PER_GATE (구 'cross-sec 상위100' 폐기, 2026-06-25).
     #   근거: forward PER 단독 IC 0.147 >> 기대성장 비율 0.041. 자격=forward PER<20 게이트, 비중=기대성장 비례.
     #   기간별 BT(강세19-21·최근24-26 쪼갬) min Calmar 정점 fwPER<20(plateau 15~35), 게이트없음보다 우위.
-    confirm = set(t for t in grow if t in fwdper and fwdper[t] < FWD_PER_GATE)
+    # ★CA 정합가드 (2026-07-08, US KLAC 스플릿 사고 교차수용): 최신종가는 무상증자/분할 즉시 반영되나
+    #   컨센 EPS(FnGuide/WISEfn 주당값)는 반영 지연 가능 → CA 직후 fwd_per·기대성장이 가짜로 좋아져
+    #   자격 오통과 위험. 최근 45일 내 하락CA(ca_events) 종목은 자격 제외(=비중 ×1, 무해측 실패).
+    try:
+        _cad = json.load(open(os.path.join(ROOT, 'data_cache', 'ca_events.json'), encoding='utf-8'))
+        _cut45 = (pd.Timestamp(pbd) - pd.Timedelta(days=45)).strftime('%Y%m%d')
+        _ca_recent = {t for t, ds in _cad.get('ca_by_ticker', {}).items()
+                      if any(str(d) > _cut45 for d in (ds or []))}
+    except Exception:
+        _ca_recent = set()
+    confirm = set(t for t in grow if t in fwdper and fwdper[t] < FWD_PER_GATE and t not in _ca_recent)
+    _ca_hit = _ca_recent & set(fwdper)
+    if _ca_hit:
+        print(f"  🛡️ CA 정합가드: 최근 무상증자/분할 {len(_ca_hit)}종목 자격 제외 (컨센 EPS 지연 위험)")
     print(f"\n=== 융합 forward 추적기 (forward PER<{FWD_PER_GATE:.0f} 자격 + 기대성장 비례 k{CONV_K:.0f}cap{CONV_CAP:.0f}) ===")
     print(f"production {pbd} / 커버 {len(covered)} / 기대성장계산 {len(grow)} / forwardPER<{FWD_PER_GATE:.0f} 자격 {len(confirm)}종목\n")
     # 보유 top3 확인 + 가중치
