@@ -1957,6 +1957,18 @@ def main():
                         _sentinel_msg = _sentinel_msg + '\n' + _ledger_line
                 except Exception:
                     pass
+                # ★팩터 IC 알파부식 모니터 병기 (2026-07-09, 개인봇 검문소 전용 — 채널 불변).
+                # update_ic_log()는 여기서 증분 호출(가벼움, 보통 하루치만 신규). 표시 전용.
+                # 킬스위치 FACTOR_IC_DISABLE=1. 실패 시 무해(원본 sentinel 메시지 그대로).
+                try:
+                    if os.environ.get('FACTOR_IC_DISABLE') != '1':
+                        from factor_ic_monitor import update_ic_log as _uic, build_health_line as _bhl
+                        _uic()
+                        _health_line = _bhl()
+                        if _health_line:
+                            _sentinel_msg = _sentinel_msg + '\n' + _health_line
+                except Exception:
+                    pass
                 _sr = send_telegram_long(_sentinel_msg, TELEGRAM_BOT_TOKEN, PRIVATE_CHAT_ID)
                 print(f'\n[검문소] 개인봇 전송: {", ".join(str(r.status_code) for r in _sr)}')
             else:
