@@ -167,8 +167,10 @@ def main():
         # 폴백이 정상 작동 = 진짜 사고 X (data 자체는 보강됨). 모니터링만.
 
     # ── Phase B 추가 (2026-05-16): 직전 분기 누락률 자동 감지 ──
-    # 분기 마감 후 5거래일(약 1주) 이후에도 누락률 30%+ → finstate_all sync 문제
-    # 5/15 (1Q마감) → 5/22 이후 / 8/15 (2Q마감) → 8/22 이후 등
+    # 법정 공시기한 후 1주 이후에도 누락률 30%+ → finstate_all sync 문제
+    # 5/15 (1Q기한) → 5/22 이후 / 8/14 (반기기한) → 8/21 이후 등
+    # ★2026-07-08 수정: 구버전은 '분기말'(6/30) 기준으로 세서 반기 공시가 아직 안 나온
+    # 7월 초에 누락률 99.5% 오경보 발생(공시기한 8/14 전인데) — 기준을 법정 공시기한으로 교정.
     import datetime as _dt
     today = _dt.date.today()
     # 가장 가까운 분기말 (3/31, 6/30, 9/30, 12/31)
@@ -176,8 +178,13 @@ def main():
     q_ends = [q for q in q_ends if q <= today]
     if q_ends:
         last_q = max(q_ends)
-        days_since = (today - last_q).days
-        if 7 <= days_since <= 60:  # 분기마감 1주~2달
+        # 분기말 → 법정 공시기한 (Q1 5/15, 반기 8/14, Q3 11/14, 사업보고서 익년 3/31)
+        _DEADLINE = {(3, 31): (0, 5, 15), (6, 30): (0, 8, 14),
+                     (9, 30): (0, 11, 14), (12, 31): (1, 3, 31)}
+        yoff, dm, dd = _DEADLINE[(last_q.month, last_q.day)]
+        deadline = _dt.date(last_q.year + yoff, dm, dd)
+        days_since = (today - deadline).days
+        if 7 <= days_since <= 60:  # 공시기한 1주~2달 후
             q1_missing = 0
             total_checked = 0
             for fp in CACHE_DIR.glob('fs_dart_*.parquet'):
@@ -191,7 +198,7 @@ def main():
                 except Exception:
                     pass
             miss_rate = q1_missing / max(total_checked, 1) * 100
-            print(f'\n[health] {last_q} 분기 매출 누락률 (마감 {days_since}일 후): '
+            print(f'\n[health] {last_q} 분기 매출 누락률 (공시기한 {days_since}일 후): '
                   f'{q1_missing}/{total_checked} ({miss_rate:.1f}%)')
             THRESHOLD_MISS_PCT = 25  # 5/15 baseline 28.1%, 7일 후 25%까지 허용
             if days_since > 7 and miss_rate > THRESHOLD_MISS_PCT:

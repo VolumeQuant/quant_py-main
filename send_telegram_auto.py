@@ -955,6 +955,14 @@ def create_signal_message(picks, pipeline, exited, biz_day, ai_narratives,
         # — 일부 종목만 %가 붙고 합계도 안 맞는 혼란 방지 (사용자 지적: 티에스이 비중 누락)
         if picks and any(p['ticker'] not in _fw for p in picks):
             _fw = {}
+        elif picks and _fw:
+            # 2026-07-08: 쿨다운으로 picks가 fusion held(wr top3)보다 적으면 비중 합<100 표시
+            # (7/8 사례: 삼성 쿨다운 제외 → SK 36+제주 28=64%만 표시, 삼성 몫 36% 증발)
+            # → 실제 매수 가능한 picks 위로 재정규화. fusion_state 원본(OOS 로그)은 불변.
+            _tot = sum(_fw[p['ticker']]['w'] for p in picks)
+            if _tot > 0 and abs(_tot - 100) > 0.5:
+                _fw = {p['ticker']: dict(_fw[p['ticker']], w=_fw[p['ticker']]['w']/_tot*100)
+                       for p in picks}
     except Exception:
         _fw = {}
     lines.append('')
