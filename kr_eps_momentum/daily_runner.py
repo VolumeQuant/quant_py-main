@@ -552,8 +552,18 @@ def run_ntm_collection(config):
             "SELECT COUNT(*) FROM ntm_screening WHERE date < ? GROUP BY date ORDER BY date DESC LIMIT 7",
             (today.strftime('%Y-%m-%d'),)).fetchall()]
         _c.close()
-        from wisefn_source import coverage_alert_line
+        from wisefn_source import coverage_alert_line, history_rewrite_check
         _alert = coverage_alert_line(_ok_cnt, _recent)
+        # ★야후 이력 재작성 탐지 (US 삼성 오진 사건 판별법, 경보 전용 — 자동 수정 금지)
+        try:
+            _rw = history_rewrite_check(str(DB_PATH), today.strftime('%Y-%m-%d'))
+            if _rw:
+                _names = ', '.join(f"{t}({g:.0f}%)" for t, _, _, g in _rw[:5])
+                _rw_msg = f"⚠️ 야후 이력 재작성 의심 {len(_rw)}종목: {_names} — 해당 종목 리비전 신호 오늘 신뢰 낮음"
+                log(_rw_msg, "WARN")
+                _alert = (_alert + '\n' + _rw_msg) if _alert else _rw_msg
+        except Exception as _rw_e:
+            log(f"이력 재작성 체크 스킵: {_rw_e}", "WARN")
         if _alert:
             log(_alert, "WARN")
             try:

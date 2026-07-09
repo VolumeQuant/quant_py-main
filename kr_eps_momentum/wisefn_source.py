@@ -106,3 +106,38 @@ def coverage_alert_line(today_count, recent_counts):
         return (f"⚠️ NTM 수집 급감: 오늘 {today_count}종목 (최근 중앙값 {base}) — "
                 f"데이터 소스 점검 필요")
     return ''
+
+
+def history_rewrite_check(db_path, today_str, tol=0.03):
+    """★야후 이력 재작성 탐지 (2026-07-10, US 교차수용 — 삼성 오진 사건의 판별법).
+    원리: 오늘 행의 ntm_90d는 '90일 전 시점의 NTM'이므로, ~30일 전 행의 ntm_60d와
+    같은 시점을 가리킴 → 일치하면 실제 사건(어닝 base effect), 불일치하면 벤더가
+    이력을 재작성한 것(319660.KQ 유형 오염). ★경보 전용 — 자동 덮어쓰기 금지
+    (US _robust_n90_map 가드가 정상값을 덮어써 오작동한 교훈).
+    returns: [(ticker, 오늘90d, 과거행60d, 괴리%)] 오염 의심 목록."""
+    import sqlite3
+    from datetime import datetime, timedelta
+    con = sqlite3.connect(db_path)
+    try:
+        # ★정확히 30일(달력) 정렬만 사용 — ±k일 창은 어닝 계단 근처에서
+        #   가짜 양성 생성(1차 버전에서 삼성 오검출 33종목 확인). 과거 행 없으면 그날은 스킵.
+        ref = (datetime.strptime(today_str, '%Y-%m-%d') - timedelta(days=30))
+        past = ref.strftime('%Y-%m-%d')
+        exists = con.execute("SELECT 1 FROM ntm_screening WHERE date=? LIMIT 1", (past,)).fetchone()
+        if not exists:
+            return []
+        cur = {r[0]: r[1] for r in con.execute(
+            "SELECT ticker, ntm_90d FROM ntm_screening WHERE date=? AND ntm_90d IS NOT NULL", (today_str,))}
+        old = {r[0]: r[1] for r in con.execute(
+            "SELECT ticker, ntm_60d FROM ntm_screening WHERE date=? AND ntm_60d IS NOT NULL", (past,))}
+        out = []
+        for t, v90 in cur.items():
+            v60 = old.get(t)
+            if v60 is None or v60 == 0:
+                continue
+            gap = abs(v90 / v60 - 1)
+            if gap > tol:
+                out.append((t, round(v90, 2), round(v60, 2), round(gap * 100, 1)))
+        return sorted(out, key=lambda x: -x[3])
+    finally:
+        con.close()
