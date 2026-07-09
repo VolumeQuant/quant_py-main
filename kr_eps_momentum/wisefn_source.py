@@ -108,12 +108,17 @@ def coverage_alert_line(today_count, recent_counts):
     return ''
 
 
-def history_rewrite_check(db_path, today_str, tol=0.03):
+def history_rewrite_check(db_path, today_str, tol=0.03, today_rows=None):
     """★야후 이력 재작성 탐지 (2026-07-10, US 교차수용 — 삼성 오진 사건의 판별법).
     원리: 오늘 행의 ntm_90d는 '90일 전 시점의 NTM'이므로, ~30일 전 행의 ntm_60d와
     같은 시점을 가리킴 → 일치하면 실제 사건(어닝 base effect), 불일치하면 벤더가
     이력을 재작성한 것(319660.KQ 유형 오염). ★경보 전용 — 자동 덮어쓰기 금지
     (US _robust_n90_map 가드가 정상값을 덮어써 오작동한 교훈).
+    today_rows: {ticker: (ntm_90d, ntm_src)} — daily_runner는 DB 적재 '전'에 호출하므로
+      오늘 값을 메모리(_prefetched)로 받아야 함 (★2026-07-10 데드코드 수정: DB에서
+      오늘 행을 읽으면 적재 전이라 항상 0건이었음). None이면 DB 조회(오프라인 검증용).
+    ★야후 소스끼리만 비교 — WISEfn 전환/carry 행은 벤더 레벨차·날짜 어긋남이
+      재작성으로 오검출되므로 제외 (구버전 행 ntm_src NULL = 야후 시대 = 포함).
     returns: [(ticker, 오늘90d, 과거행60d, 괴리%)] 오염 의심 목록."""
     import sqlite3
     from datetime import datetime, timedelta
@@ -126,10 +131,18 @@ def history_rewrite_check(db_path, today_str, tol=0.03):
         exists = con.execute("SELECT 1 FROM ntm_screening WHERE date=? LIMIT 1", (past,)).fetchone()
         if not exists:
             return []
-        cur = {r[0]: r[1] for r in con.execute(
-            "SELECT ticker, ntm_90d FROM ntm_screening WHERE date=? AND ntm_90d IS NOT NULL", (today_str,))}
+        has_src = any(r[1] == 'ntm_src' for r in con.execute("PRAGMA table_info(ntm_screening)"))
+        src_ok = " AND (ntm_src IS NULL OR ntm_src='yahoo')" if has_src else ""
+        if today_rows is not None:
+            cur = {t: v90 for t, (v90, src) in today_rows.items()
+                   if v90 is not None and (src or 'yahoo') == 'yahoo'}
+        else:
+            cur = {r[0]: r[1] for r in con.execute(
+                "SELECT ticker, ntm_90d FROM ntm_screening WHERE date=? AND ntm_90d IS NOT NULL" + src_ok,
+                (today_str,))}
         old = {r[0]: r[1] for r in con.execute(
-            "SELECT ticker, ntm_60d FROM ntm_screening WHERE date=? AND ntm_60d IS NOT NULL", (past,))}
+            "SELECT ticker, ntm_60d FROM ntm_screening WHERE date=? AND ntm_60d IS NOT NULL" + src_ok,
+            (past,))}
         out = []
         for t, v90 in cur.items():
             v60 = old.get(t)

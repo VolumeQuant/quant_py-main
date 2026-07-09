@@ -5,7 +5,7 @@ import sys, io, os, glob, json
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 import numpy as np, pandas as pd
 
-R = 'C:/dev/claude-code/quant_py-main'
+R = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # 레포 루트 (PC별 경로 상이)
 px = pd.read_parquet(sorted(glob.glob(R + '/data_cache/all_ohlcv_adj_*.parquet'))[-1]).replace(0, np.nan)
 k = pd.read_parquet(R + '/data_cache/kospi_yf.parquet').iloc[:, 0].dropna()
 try:

@@ -161,7 +161,8 @@ def init_ntm_database():
     # 기존 DB 마이그레이션: 새 컬럼 추가
     for col, col_type in [('adj_score', 'REAL'), ('adj_gap', 'REAL'),
                           ('price', 'REAL'), ('ma60', 'REAL'), ('ma120', 'REAL'), ('part2_rank', 'INTEGER'),
-                          ('rev_up30', 'INTEGER'), ('rev_down30', 'INTEGER'), ('num_analysts', 'INTEGER')]:
+                          ('rev_up30', 'INTEGER'), ('rev_down30', 'INTEGER'), ('num_analysts', 'INTEGER'),
+                          ('ntm_src', 'TEXT')]:
         try:
             cursor.execute(f'ALTER TABLE ntm_screening ADD COLUMN {col} {col_type}')
         except sqlite3.OperationalError:
@@ -556,7 +557,12 @@ def run_ntm_collection(config):
         _alert = coverage_alert_line(_ok_cnt, _recent)
         # ★야후 이력 재작성 탐지 (US 삼성 오진 사건 판별법, 경보 전용 — 자동 수정 금지)
         try:
-            _rw = history_rewrite_check(str(DB_PATH), today.strftime('%Y-%m-%d'))
+            # ★2026-07-10 데드코드 수정: 이 시점은 Step 3b(DB 적재) 전이라 DB의 오늘 행이
+            #   항상 0건 → 오늘 값은 _prefetched에서 직접 전달. 소스도 함께 넘겨 야후끼리만 비교.
+            _today_rows = {t: (d['ntm'].get('90d'), d.get('ntm_src', 'yahoo'))
+                           for t, d in _prefetched.items() if d.get('ntm')}
+            _rw = history_rewrite_check(str(DB_PATH), today.strftime('%Y-%m-%d'),
+                                        today_rows=_today_rows)
             if _rw:
                 _names = ', '.join(f"{t}({g:.0f}%)" for t, _, _, g in _rw[:5])
                 _rw_msg = f"⚠️ 야후 이력 재작성 의심 {len(_rw)}종목: {_names} — 해당 종목 리비전 신호 오늘 신뢰 낮음"
@@ -630,16 +636,17 @@ def run_ntm_collection(config):
             # INSERT ON CONFLICT: 기존 part2_rank 보존
             cursor.execute('''
                 INSERT INTO ntm_screening
-                (date, ticker, rank, score, ntm_current, ntm_7d, ntm_30d, ntm_60d, ntm_90d, is_turnaround)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (date, ticker, rank, score, ntm_current, ntm_7d, ntm_30d, ntm_60d, ntm_90d, is_turnaround, ntm_src)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(date, ticker) DO UPDATE SET
                     rank=excluded.rank, score=excluded.score,
                     ntm_current=excluded.ntm_current, ntm_7d=excluded.ntm_7d,
                     ntm_30d=excluded.ntm_30d, ntm_60d=excluded.ntm_60d,
-                    ntm_90d=excluded.ntm_90d, is_turnaround=excluded.is_turnaround
+                    ntm_90d=excluded.ntm_90d, is_turnaround=excluded.is_turnaround,
+                    ntm_src=excluded.ntm_src
             ''', (today_str, ticker, 0, score,
                   ntm['current'], ntm['7d'], ntm['30d'], ntm['60d'], ntm['90d'],
-                  1 if is_turnaround else 0))
+                  1 if is_turnaround else 0, data.get('ntm_src', 'yahoo')))
 
             # 종목 정보 (캐시 우선, 미스면 플레이스홀더 — fetch_revenue_growth에서 갱신)
             if ticker in ticker_cache:
@@ -898,18 +905,20 @@ def run_ntm_collection(config):
                         continue  # adj_gap 없으면 순위 의미 없음
 
                     # 5) DB 삽입
+                    # ntm_src='carry': 전일 EPS 복사라 30일 정렬이 1일 어긋남 → 재작성 탐지 비교에서 제외
                     cur_cf.execute('''
                         INSERT INTO ntm_screening
-                        (date, ticker, rank, score, ntm_current, ntm_7d, ntm_30d, ntm_60d, ntm_90d, is_turnaround)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        (date, ticker, rank, score, ntm_current, ntm_7d, ntm_30d, ntm_60d, ntm_90d, is_turnaround, ntm_src)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT(date, ticker) DO UPDATE SET
                             rank=excluded.rank, score=excluded.score,
                             ntm_current=excluded.ntm_current, ntm_7d=excluded.ntm_7d,
                             ntm_30d=excluded.ntm_30d, ntm_60d=excluded.ntm_60d,
-                            ntm_90d=excluded.ntm_90d, is_turnaround=excluded.is_turnaround
+                            ntm_90d=excluded.ntm_90d, is_turnaround=excluded.is_turnaround,
+                            ntm_src=excluded.ntm_src
                     ''', (today_str, ticker, 0, score,
                           ntm['current'], ntm['7d'], ntm['30d'], ntm['60d'], ntm['90d'],
-                          1 if is_turnaround else 0))
+                          1 if is_turnaround else 0, 'carry'))
 
                     cur_cf.execute('''
                         UPDATE ntm_screening
