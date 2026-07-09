@@ -22,7 +22,11 @@ days = sorted(picks_by_day)
 print(f"실발송 원장: {days[0]} ~ {days[-1]}, {len(days)}일")
 
 # 거래일 커버리지 (결번 감사): px 인덱스 기준 거래일 중 web_data 없는 날
-trad = [d.strftime('%Y%m%d') for d in px.index if days[0] <= d.strftime('%Y%m%d') <= days[-1]]
+# ★2026-07-10 수정: OHLCV 캐시가 주말/휴장일을 NaN행으로 포함(캘린더 인덱스)
+#   → 전종목 NaN인 날은 거래일이 아님 (구버전은 주말 28일을 결번으로 오집계)
+has_px = px.notna().sum(axis=1)
+trad = [d.strftime('%Y%m%d') for d in px.index
+        if days[0] <= d.strftime('%Y%m%d') <= days[-1] and has_px.loc[d] > 0]
 missing = [d for d in trad if d not in picks_by_day]
 print(f"거래일 {len(trad)}일 중 web_data 결번 {len(missing)}일: {missing[:10]}")
 

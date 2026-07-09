@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
-"""진짜 메시지 팔로워 원장 — 진입: picks 등장 시 매수 / 청산: exited 등장 시 매도.
-당시 발송된 신호 그대로 (룰 진화 포함) = 라이브 실경험. + 현재룰 리플레이 동기간 비교."""
+"""진짜 메시지 팔로워 원장 — 진입: picks 등장 시 매수 / 청산: picks 이탈 시 매도.
+당시 발송된 신호 그대로 (룰 진화 포함) = 라이브 실경험. + 현재룰 리플레이 동기간 비교.
+★2026-07-10 수정: 구버전은 web_data 'exited'를 청산신호로 썼으나 그 필드는 top30
+'표시목록' 이탈이지 매도신호가 아님 — picks에서 빠져도 top30 안에 머물면 영영 안 팔려
+포지션이 누적(평균 10종목, 3슬롯 시스템인데)되는 버그. 청산 = picks 이탈로 교체."""
 import sys, io, os, glob, json
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 import numpy as np, pandas as pd
@@ -15,27 +18,14 @@ except Exception:
 def nm(t):
     v = NM.get(t, t); return v if isinstance(v, str) else t
 
-picks = {}; exited = {}
+picks = {}
 for f in sorted(glob.glob(R + '/state/web_data_*.json')):
     dt = os.path.basename(f)[9:17]
     try:
-        d = json.load(open(f, encoding='utf-8'))
-        picks[dt] = [p['ticker'] for p in d.get('picks', [])]
-        ex = d.get('exited') or []
-        # exited 원소가 dict(name/ticker) or str일 수 있음
-        exs = []
-        for e in ex:
-            if isinstance(e, dict):
-                exs.append(e.get('ticker') or e.get('name'))
-            else:
-                exs.append(str(e))
-        exited[dt] = exs
+        picks[dt] = [p['ticker'] for p in json.load(open(f, encoding='utf-8')).get('picks', [])]
     except Exception:
         continue
 days = sorted(picks)
-name2t = {}
-for t, v in NM.items():
-    if isinstance(v, str): name2t[v] = t
 
 def pxat(t, d):
     try:
@@ -55,16 +45,10 @@ for i, d0 in enumerate(days):
         daily.append((d0, np.mean(rr) if rr else 0.0, len(port)))
     else:
         daily.append((d0, 0.0, len(port)))
-    # 청산: exited 신호 (ticker 또는 이름)
-    exs = set()
-    for e in exited.get(d0, []):
-        if e in px.columns: exs.add(e)
-        elif e in name2t: exs.add(name2t[e])
-        else:
-            for t in list(port):
-                if nm(t).startswith(str(e)[:4]): exs.add(t)
+    # 청산: 보유 종목이 당일 picks에서 빠지면 매도 (메시지에서 매수 후보가 사라짐 = 매도 신호)
+    cur_picks = set(picks[d0])
     for t in list(port):
-        if t in exs:
+        if t not in cur_picks:
             p = pxat(t, d0)
             trades.append({'t': t, 'ed': port[t]['d'], 'xd': d0,
                            'ret': p / port[t]['px'] - 1 if (p and port[t]['px']) else np.nan})

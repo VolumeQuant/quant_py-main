@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """팔로워 원장 v2 — 진입: 당시 발송 picks / 청산: 당시 룰의 wr 기준선(state 저장 wr 사용).
-시대별 이탈: ~0524 X6 / 0525~0607 X4 / 0608~0703 X6 / 0704~ X5(+SL-15%).
+시대별 이탈: ~0524 X6 / 0525~0607 X4 / 0608~0703 X6 / 0704~ X5 / 0708~ +SL-15%(v80.35).
 = '그때 그 신호'를 충실히 따른 사람의 실제 경험."""
 import sys, io, os, glob, json
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
@@ -36,10 +36,11 @@ for f in sorted(glob.glob(R + '/state/ranking_*.json')):
 days = sorted(picks)
 
 def era_exit(d):
-    if d < '20260525': return 6, None
-    if d < '20260608': return 4, None
-    if d < '20260704': return 6, None
-    return 5, -0.15
+    if d < '20260525': return 6, None    # ~v80.16
+    if d < '20260608': return 4, None    # v80.17 (5/25)
+    if d < '20260704': return 6, None    # v80.24 (6/8)
+    if d < '20260708': return 5, None    # v80.33 X5 (7/4) — SL은 아직 없음
+    return 5, -0.15                      # v80.35 SL-15% (★7/8 배포 — 구버전은 7/4부터 오적용)
 
 def pxat(t, d):
     try:
