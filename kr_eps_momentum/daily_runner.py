@@ -444,25 +444,38 @@ def run_ntm_collection(config):
         pass
 
     def _prefetch_eps(ticker):
-        """워커: NTM EPS + 애널리스트 수집 (HTTP 1회 — eps_trend만)
-        .info는 fetch_revenue_growth()에서 별도 수집하므로 여기서 생략.
+        """워커: NTM EPS + 애널리스트 수집.
+        2026-07-10: WISEfn 주소스 승격 — 야후 eps_trend 커버리지 열화(111→73/일) 대응.
+        current NTM=WISEfn 우선, 과거 지평=WISEfn 축적분→야후 폴백 (wisefn_source.merge_ntm).
+        야후 완전 실패여도 WISEfn 이력 30d+면 편입 (이력 쌓일수록 자동 확대 = 2단계 전환).
+        킬스위치 KR_EPS_WISEFN_DISABLE=1 → 구동작(야후 단독).
         """
+        wf_ntm = None
+        try:
+            from wisefn_source import wisefn_ntm as _wntm
+            wf_ntm = _wntm(ticker, today)
+        except Exception:
+            wf_ntm = None
+        ya_ntm, raw_trend = None, None
         try:
             stock = yf.Ticker(ticker)
-            ntm = calculate_ntm_eps(stock, today)
-            if ntm is None:
-                return ticker, {'ntm': None}
-
+            ya_ntm = calculate_ntm_eps(stock, today)
             # _earnings_trend (calculate_ntm_eps 내부에서 이미 로드 → 캐시 히트)
-            raw_trend = None
             try:
                 raw_trend = stock._analysis._earnings_trend
             except Exception:
                 pass
-
-            return ticker, {'ntm': ntm, 'raw_trend': raw_trend}
         except Exception as e:
-            return ticker, {'error': str(e)}
+            if wf_ntm is None:
+                return ticker, {'error': str(e)}
+        try:
+            from wisefn_source import merge_ntm as _merge
+            merged, src = _merge(ya_ntm, wf_ntm)
+        except Exception:
+            merged, src = ya_ntm, 'yahoo'
+        if merged is None:
+            return ticker, {'ntm': None}
+        return ticker, {'ntm': merged, 'raw_trend': raw_trend, 'ntm_src': src}
 
     log(f"NTM EPS 병렬 수집 중 (3스레드, {len(eps_tickers)}종목)...")
     _t_eps = __import__('time').time()
@@ -523,6 +536,33 @@ def run_ntm_collection(config):
                     log(f"  Top20 우선 재시도 3회 실패: {','.join(sorted(_still_bad))}", "WARN")
 
     log(f"EPS 수집 완료: {len(_prefetched)}종목, {__import__('time').time() - _t_eps:.0f}초")
+
+    # 2026-07-10: 수집수 급감 경보 + 소스 구성 로그 (야후 열화 감시 — fusion 6/30 경보와 동형)
+    try:
+        _ok_cnt = sum(1 for d in _prefetched.values() if d.get('ntm') is not None)
+        _src_cnt = {}
+        for d in _prefetched.values():
+            if d.get('ntm') is not None:
+                _s = d.get('ntm_src', 'yahoo')
+                _src_cnt[_s] = _src_cnt.get(_s, 0) + 1
+        log(f"NTM 소스 구성: {_src_cnt} (유효 {_ok_cnt}종목)")
+        import sqlite3 as _sq3
+        _c = _sq3.connect(DB_PATH)
+        _recent = [r[0] for r in _c.execute(
+            "SELECT COUNT(*) FROM ntm_screening WHERE date < ? GROUP BY date ORDER BY date DESC LIMIT 7",
+            (today.strftime('%Y-%m-%d'),)).fetchall()]
+        _c.close()
+        from wisefn_source import coverage_alert_line
+        _alert = coverage_alert_line(_ok_cnt, _recent)
+        if _alert:
+            log(_alert, "WARN")
+            try:
+                _pid = config.get('telegram_private_id') or config.get('telegram_chat_id')
+                send_telegram_long(f"[KR EPS] {_alert}", config, chat_id=_pid)  # ★개인봇 전용
+            except Exception:
+                pass
+    except Exception as _e:
+        log(f"수집수 경보 체크 스킵: {_e}", "WARN")
 
     # Step 3b: DB 적재 + 스코어링 (순차, SQLite 안전)
     conn = sqlite3.connect(DB_PATH)
