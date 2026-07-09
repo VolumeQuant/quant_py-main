@@ -162,7 +162,7 @@ def init_ntm_database():
     for col, col_type in [('adj_score', 'REAL'), ('adj_gap', 'REAL'),
                           ('price', 'REAL'), ('ma60', 'REAL'), ('ma120', 'REAL'), ('part2_rank', 'INTEGER'),
                           ('rev_up30', 'INTEGER'), ('rev_down30', 'INTEGER'), ('num_analysts', 'INTEGER'),
-                          ('ntm_src', 'TEXT')]:
+                          ('ntm_src', 'TEXT'), ('rw_suspect', 'INTEGER')]:
         try:
             cursor.execute(f'ALTER TABLE ntm_screening ADD COLUMN {col} {col_type}')
         except sqlite3.OperationalError:
@@ -539,6 +539,7 @@ def run_ntm_collection(config):
     log(f"EPS 수집 완료: {len(_prefetched)}종목, {__import__('time').time() - _t_eps:.0f}초")
 
     # 2026-07-10: 수집수 급감 경보 + 소스 구성 로그 (야후 열화 감시 — fusion 6/30 경보와 동형)
+    _rw_suspects = []  # 재작성 의심 종목 (Step 3b 적재 후 rw_suspect=1 영구 기록용)
     try:
         _ok_cnt = sum(1 for d in _prefetched.values() if d.get('ntm') is not None)
         _src_cnt = {}
@@ -564,6 +565,7 @@ def run_ntm_collection(config):
             _rw = history_rewrite_check(str(DB_PATH), today.strftime('%Y-%m-%d'),
                                         today_rows=_today_rows)
             if _rw:
+                _rw_suspects = [t for t, _, _, _ in _rw]
                 _names = ', '.join(f"{t}({g:.0f}%)" for t, _, _, g in _rw[:5])
                 _rw_msg = f"⚠️ 야후 이력 재작성 의심 {len(_rw)}종목: {_names} — 해당 종목 리비전 신호 오늘 신뢰 낮음"
                 log(_rw_msg, "WARN")
@@ -816,6 +818,19 @@ def run_ntm_collection(config):
             continue
 
     conn.commit()
+
+    # ★재작성 의심 영구 기록 (2026-07-10): 경보는 텔레그램에서 휘발 → DB 플래그로 남겨
+    #   이후 검증/BT에서 오염 표본 제외 가능하게. 값은 절대 불변(US 자동덮어쓰기 사고 교훈),
+    #   꼬리표만. 적재(위 루프) 후에 실행해야 UPDATE가 걸림.
+    if _rw_suspects:
+        try:
+            cursor.executemany(
+                "UPDATE ntm_screening SET rw_suspect=1 WHERE date=? AND ticker=?",
+                [(today_str, t) for t in _rw_suspects])
+            conn.commit()
+            log(f"재작성 의심 플래그 기록: {len(_rw_suspects)}종목 (rw_suspect=1)")
+        except Exception as _e:
+            log(f"재작성 플래그 기록 실패: {_e}", "WARN")
 
     # ── carry-forward: 전일 Top30 수집 실패 종목 → 전일 EPS + 오늘 가격으로 row 삽입 ──
     _cf_inserted = []

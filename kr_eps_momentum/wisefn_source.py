@@ -98,11 +98,21 @@ def merge_ntm(yahoo_ntm, wf_ntm):
 
 
 def coverage_alert_line(today_count, recent_counts):
-    """수집수 급감 경보 (fusion 6/30 경보와 동형). recent_counts=직전 7세션 리스트."""
+    """수집수 급감 경보 (fusion 6/30 경보와 동형). recent_counts=직전 7세션 리스트(최신순).
+    ★에스컬레이션(2026-07-10): 절대 바닥(<50) 또는 3일 연속 급감 → WISEfn 조기 전환
+    검토 권고 — 브리지 기간(~7/25 rescue 활성화 전) 야후 완전붕괴 시 유일한 수동 레버."""
     if not recent_counts:
         return ''
     base = sorted(recent_counts)[len(recent_counts) // 2]  # median
-    if base > 0 and today_count < base * 0.8:
+    if base <= 0:
+        return ''
+    drop = today_count < base * 0.8
+    streak3 = drop and len(recent_counts) >= 2 and all(c < base * 0.8 for c in recent_counts[:2])
+    if today_count < 50 or streak3:
+        why = f'절대 바닥({today_count}<50)' if today_count < 50 else '3일 연속 급감'
+        return (f"🚨 NTM 수집 {why}: 오늘 {today_count}종목 (최근 중앙값 {base}) — "
+                f"WISEfn 조기 전환 검토 필요 (wisefn_source rescue의 30d 이력 요구 완화 판단)")
+    if drop:
         return (f"⚠️ NTM 수집 급감: 오늘 {today_count}종목 (최근 중앙값 {base}) — "
                 f"데이터 소스 점검 필요")
     return ''
