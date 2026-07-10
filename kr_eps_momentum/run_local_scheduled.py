@@ -33,13 +33,21 @@ def main():
             log(f'SKIP 주말: {today}'); return
     log(f'영업일(KST): {today}')
 
-    # 2. 토큰을 env로만 전달 (config_kr.json 안 건드림). 채널 관련 env는 명시적 제거.
+    # 2. ★메시지 발송 전면 중단 (2026-07-10 사용자 결정: "KR EPS는 수집만") —
+    #    실매매 본선 = 저녁 18:10 통합(US+KR) 신호로 단일화. 이 시스템의 역할은
+    #    ntm_screening 수집(통합 트랙의 KR 입력) + DB git push뿐.
+    #    daily_runner는 env TELEGRAM_BOT_TOKEN 있을 때만 telegram_enabled=True가 되므로
+    #    토큰 미주입 = 발송 0 (AI 분석 호출도 telegram_enabled 블록 안이라 같이 꺼짐 —
+    #    Gemini 무료쿼터 20/일을 통합 트랙에 양보하는 부수효과).
+    #    복원: 아래 주석 2줄 해제.
     sys.path.insert(0, ROOT)
-    import config as C
+    import config as C  # noqa: F401 — 복원 시 사용
     env = dict(os.environ)
-    env['TELEGRAM_BOT_TOKEN'] = getattr(C, 'TELEGRAM_BOT_TOKEN', '') or ''
-    env['TELEGRAM_PRIVATE_ID'] = getattr(C, 'TELEGRAM_PRIVATE_ID', '') or ''
-    env['GEMINI_API_KEY'] = getattr(C, 'GEMINI_API_KEY', '') or ''
+    # env['TELEGRAM_BOT_TOKEN'] = getattr(C, 'TELEGRAM_BOT_TOKEN', '') or ''
+    # env['TELEGRAM_PRIVATE_ID'] = getattr(C, 'TELEGRAM_PRIVATE_ID', '') or ''
+    env.pop('TELEGRAM_BOT_TOKEN', None)  # 상위 env 잔존 토큰도 차단 (발송 0 보장)
+    env.pop('TELEGRAM_PRIVATE_ID', None)
+    env.pop('GEMINI_API_KEY', None)
     env.pop('TELEGRAM_CHAT_ID', None)   # 채널 전송 방지
     env.pop('GITHUB_ACTIONS', None)     # is_github_actions=False
     # ★ 이 스케줄 실행은 GA cron을 대체하는 authoritative 일일 실행 → 진짜 DB에 기록해야 함.
@@ -48,7 +56,7 @@ def main():
     #   (수동 테스트 _send_official.py는 KR_EPS_NO_DB_WRITE=1로 여전히 보호됨)
     env['KR_EPS_FORCE_DB_WRITE'] = '1'
     env['PYTHONIOENCODING'] = 'utf-8'
-    log('env 설정: 개인봇 전용 + DB 강제기록(authoritative 일일 실행)')
+    log('env 설정: 발송 OFF(수집 전용, 2026-07-10~) + DB 강제기록(authoritative 일일 실행)')
 
     # 3. DB 백업
     if os.path.exists(DB):
