@@ -403,9 +403,14 @@ def run_ntm_collection(config):
             else:
                 log(f"일괄 다운로드 재시도 실패: {e}, 개별 다운로드로 전환", "WARN")
 
-    # Step 2.5: 동적 신규 종목 MA120 사전 필터
-    # price < MA120인 동적 종목은 Top 30 진입 불가 → EPS 수집 생략
-    if hist_all is not None and new_dynamic:
+    # Step 2.5: 동적 신규 종목 MA120 사전 필터 — ★기본 OFF (2026-07-10 사용자 결정)
+    # US 원본에선 base_original(정적 S&P 916개)이 있어 이 필터가 '신규 동적 종목'만 다듬는
+    # 보조장치였는데, KR은 정적 base가 빈 set → 전체 유니버스(1,430)가 '신규' 취급되어
+    # 필터가 유니버스를 통째로 잘랐음(협소장에서 MA120 위 249개만 수집 → 73종목 사고,
+    # 210→69 "수집 붕괴"의 진범 — yf는 정상이었음). 이 DB는 통합(US+KR) 트랙의 KR 백분위
+    # 분모라 MA120(모멘텀) 필터가 걸리면 차가운 종목이 빠져 분모가 뜨거워지는 구조 왜곡.
+    # US 수집도 코어에 MA120 안 걸림(1,273행/일) → 대칭. 복원: KR_EPS_MA120_PREFILTER=1.
+    if os.environ.get('KR_EPS_MA120_PREFILTER') == '1' and hist_all is not None and new_dynamic:
         ma120_skip = set()
         for t in new_dynamic:
             try:
