@@ -29,7 +29,7 @@
 
 ---
 
-> **버전 변경 이력 / 거부된 옵션 / 과거 사고 상세 / 검증 단계 기록**: `C:\dev\CHANGELOG.md` (자동 로드 X — 과거 결정 근거가 필요할 때만 검색).
+> **버전 변경 이력**: `C:\dev\CHANGELOG.md` (2026-07-10 공개용 압축 재작성 — 최신순 시대별 로그). **거부된 옵션 / 과거 사고 상세 / 검증 단계 기록 원본(~2026-05)**: `docs/archive/CHANGELOG_20260528_snapshot.md` (자동 로드 X — 과거 결정 근거가 필요할 때만 검색). 시대 서사·기각 아카이브: `docs/VERSION_HISTORY.md`.
 > 이 파일(CLAUDE.md)은 **현재 운영 기준만** 담는다. 전략 교체 시 맹점 제로 체크리스트: `C:\dev\SYSTEM_MAP.md`.
 > 코드 경로: KR = `C:\dev` (루트, regime_indicator.py / backtest/fast_generate_rankings_v2.py 등). US = `C:\dev\claude code\eps-momentum-us`.
 
