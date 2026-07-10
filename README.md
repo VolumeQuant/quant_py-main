@@ -1,210 +1,104 @@
-# 한국 주식 퀀트 스크리닝 시스템
+# 한국 주식 퀀트 시스템 (KR Momentum-Growth)
 
-KOSPI/KOSDAQ 전종목 대상 **국면전환 멀티팩터** 퀀트 전략
+KOSPI/KOSDAQ 전종목 대상 **국면전환 멀티팩터** 퀀트 전략 — 매일 16:00 완전 자동 실행.
 
-매일 자동으로 ~300개 종목을 4팩터로 채점하고, 3일 연속 검증된 고점수 종목만 텔레그램으로 전송합니다.
-
-> 채널: [@kr_dailyquant](https://t.me/kr_dailyquant) | 전략 버전: v80 | 최종 업데이트: 2026-04-18
+> 전략 버전: **v80.35** (2026-07-08) | 라이브: 2026-02-23~ | 채널: [@kr_dailyquant](https://t.me/kr_dailyquant)
+>
+> 📘 **[현재 시스템 상세 설명](docs/SYSTEM_OVERVIEW.md)** · 📜 **[버전 이력](docs/VERSION_HISTORY.md)** · 🗺️ [전략 교체 체크리스트](SYSTEM_MAP.md)
 
 ---
 
-## 시스템 한눈에 보기
+## 핵심 아이디어
+
+1. **성장 리더 추종**: 실적(매출·영업현금흐름·매출총이익)이 가속하는 종목을 12개월 모멘텀과 결합해 순위화. 상위 3종목만 보유.
+2. **국면 게이트가 1차 방어**: KOSPI MA20/MA80 골든/데드크로스(5일 확인)로 공격/방어 전환. 방어 = 전량 현금. 약세장을 종목 선택이 아니라 시장 이탈로 피한다.
+3. **함정은 회계로 거른다**: 일회성 매출(lumpiness), 비현금 이익(accruals), 최근 무상증자/유상증자 착시 같은 구조적 회계 착시만 필터링. 가격·거래량 기반 함정 필터는 창의 피처 20+종 전수 검증에서 전부 기각 — 승자와 휩쏘는 진입 시점에 구별 불가.
+4. **점수가 아니라 순위, 하루가 아니라 3일**: 일별 순위(cr)를 3일 가중(wr = 0.4/0.35/0.25)해 노이즈를 죽이고, 3일 연속 상위권(✅ 검증)만 매수 후보.
+
+## 시스템 한눈에
 
 ```
-전체 상장 (~2,770종목)
+전체 상장 (~2,700종목)
+  ↓ 시총 1,000억+ / 거래대금 / 우선주·금융·지주 제외 / MA120 추세 필터
+  ↓ 데이터 품질 (DART 분기 8개+, PIT) / -1.5σ 극단값 바닥 필터
+4팩터 스코어링 (공격 모드: V15 · Q0 · G55 · M30)
+  + mom_10 ×0.05 + vol_low ×0.06   (가격 자연 반영)
+  + 과열 캡 ×0.2                    (실적 대비 비싸진 쪽만 감점)
+  − 함정 페널티                     (lumpiness / accruals / 최근 CA / QoQ)
   ↓
-시총 1000억+ / 거래대금 필터 / 우선주 제거
-  ↓ (~800종목)
-MA120 추세 필터 (126일 미만 제외)
-  ↓ (~650종목)
-데이터 품질 필터: DART 분기 8개+, 금융 제외, -1.5σ 극단값
-  ↓ (~300종목)
-4팩터 스코어링 (국면에 따라 비중 변경)
-  ├─ 공격 모드: V15 + Q0 + G55 + M30
-  └─ 방어 모드: V30 + Q15 + G15 + M40
+weighted_rank (3일 가중 0.4/0.35/0.25) → ✅ 3일 연속 검증
   ↓
-weighted_rank (3일 가중: T0×0.5 + T1×0.3 + T2×0.2)
+진입 wr≤3 / 이탈 wr>5 / 3슬롯 / SL −15% / 재진입 쿨다운 10거래일
   ↓
-3일 교집합 (✅ 검증) → 진입: rank ≤ 3 / 퇴출: WR > 6
-  ↓
-텔레그램 3메시지 [Signal] [AI Risk] [Watchlist]
+텔레그램 [Signal] [Watchlist] + 신규진입 검문소·확신가중 제안 (개인봇)
 ```
 
----
+## 현재 매매 룰 요약 (v80.35, 2026-07 기준)
 
-## 전략 상세 (v80)
+| 항목 | 값 | 근거 요약 |
+|---|---|---|
+| 국면 | KOSPI MA20>MA80, 5일 확인 | 75조합 재탐색 — 약세장(2022-23) WF 1위 |
+| 팩터 (공격) | V 0.15 / Q 0 / G 0.55 / M 0.30 | 12시나리오 재최적화 압도적 1위 |
+| G 서브팩터 | rev 0.4 / oca 0.4 / gp 0.2 | 3팩터, PIT (공시일 기준) |
+| 진입/이탈/슬롯 | rank≤3 / rank>5 / 3슬롯 | 섹터 브레드스 도입 후 그리드 재최적 |
+| 손절 | −15% (테일 보험) | 비용 0으로 최악 단일거래 −35%→−20% 절단 |
+| 재진입 쿨다운 | 이탈 후 10거래일, 빈 슬롯 승격 금지 | 되사기 코호트 승률 29%·평균 −2.05% |
+| 방어 모드 | 현금 100% | 신규 매수 없음, 보유만 룰대로 청산 |
+| 섹터 브레드스 | 참여폭<35% 3일 → 노출 50% 축소 권고 | "느린 약세" 정밀 보호 (표시 제안, 매매신호 불변) |
 
-### 국면전환 전략 — KP_MA170_8d
+상세 근거·수치는 [docs/SYSTEM_OVERVIEW.md](docs/SYSTEM_OVERVIEW.md) 참조.
 
-KOSPI가 170일 이동평균선 위에서 8거래일 연속 유지하면 **공격 모드**, 하회하면 **방어 모드**로 전환. 전환 시 기존 포트폴리오 전량 청산.
+## 성과 — 정직 버전
 
-| 구분 | 공격 모드 (Boost) | 방어 모드 (Defense) |
-|------|-------------------|---------------------|
-| **조건** | KOSPI > MA170, 8일 확인 | KOSPI < MA170, 8일 확인 |
-| **Value** | 15% | 30% |
-| **Quality** | 0% | 15% |
-| **Growth** | 55% | 15% |
-| **Momentum** | 30% | 40% |
-| **G 서브팩터** | 2f: rev_z 60% + oca_z 40% | 2f: rev_z 70% + oca_z 30% |
-| **모멘텀** | 12m | 6m-1m |
-| **진입** | rank ≤ 3 | rank ≤ 3 |
-| **퇴출** | WR > 6 | WR > 6 |
-| **슬롯** | 3 | 5 |
-| **손절** | -10% | -10% |
-| **트레일링** | -15% | -15% |
+- **백테스트 (7.4년, 2019-01~)**: Calmar ~5.2 / MDD −24%. 단 2025-26 대폭등이 CAGR을 크게 인플레시킨 수치로, **실전 기대 중심은 CAGR ~25%, MDD −26% 수준** (거래통계: 승률 53%, 손익비 3.8, 수익의 75%가 상위 5% 거래에 집중 — 승자 몇 개를 놓치면 평범해지는 구조).
+- **라이브 (2026-02-23~)**: 실제 발송된 신호를 그대로 따른 팔로워 원장 기준 **+26% vs KOSPI +25%** (2026-07-09 기준, 7월 크래시 포함, MDD −31%). 아직 5개월 — 벤치마크 수준이며 검증 진행 중. 부풀리지 않는다.
+- 모든 신규 룰은 **7.4년 풀BT + Walk-Forward 블록 + Leave-One-Winner-Out + 인접 파라미터 CV(노이즈 ±0.10 초과)** 통과 후에만 배포. 단기 검증만으로 배포했다가 당한 실측 사고들이 이 원칙의 근거다 — [버전 이력의 사고 기록](docs/VERSION_HISTORY.md#주요-사고와-교훈) 참조.
 
-### Growth 서브팩터 (v80 핵심 변경)
-
-v80에서 3팩터(rev+oca+gp_growth) → **2팩터(rev+oca)**로 변경.
-- 매출총이익 성장(gp_growth_z) 제거 → 오히려 성과 개선
-- 2팩터만 사용 → 잠정실적 공시 데이터와 PIT 호환
-
-### 성과 (BT 재측정)
-
-| 기간 | Calmar | CAGR | MDD |
-|------|--------|------|-----|
-| **7.8년** (2018-07~2026-04) | **3.86** | 138% | -35.7% |
-| **5.25년** (2021-01~2026-04) | **4.37** | 113% | -25.9% |
-
-Walk-Forward: min=2.92, mean=5.26, CV=0.35
-
-### 데이터 소스 (DART 주도)
-
-| 소스 | 역할 | 비중 |
-|------|------|------|
-| **DART** | 재무제표 (매출/영업이익/자산 등 16계정) | **87.7%** (주 데이터) |
-| **FnGuide** | DART 누락 계정 보충 (130계정) | 12.3% (보충) |
-| **pykrx** | PER/PBR/ROE, OHLCV, 시총, 섹터 | 시세/밸류 |
-
-Growth 팩터 PIT: DART rcept_dt(실제 공시일) 기반 Point-in-Time 보장.
-
----
-
-## 순위 체계
-
-- `composite_rank`(cr): 당일 단독 순위. **판단 기준으로 안 씀.** wr 입력값.
-- `weighted_rank`(wr): `cr_t0×0.5 + cr_t1×0.3 + cr_t2×0.2`. **모든 판단의 유일한 기준.**
-- 점수 표시: `max(5, 100 - (wr - min_wr) × 5)` — 선형, 1등=100점
-- 상태: ✅ 3일 검증 / ⏳ 관찰 / 🆕 신규
-
----
-
-## 프로덕션 파이프라인
+## 프로젝트 구조 (핵심 파일)
 
 ```
-매일 16시 (평일, Task Scheduler):
-  run_daily.py
-    → Step 0: DART 증분 갱신
-    → Step 0.1: FnGuide 증분 (DART 최근 공시 종목)
-    → Step 0.3: OHLCV 신규 종목 증분
-    → Step 0.5: 국면 판단 (KP_MA170_8d)
-    → Step 1: FG 스코어링 (boost + defense 병렬)
-    → Step 2: weighted_rank 후처리
-    → Step 3: 텔레그램 전송
-    → Step 4: git push state/
+run_daily.py                        # 매일 16:00 파이프라인 진입점
+regime_indicator.py                 # 국면 판단 + 전 파라미터 (코드가 진실)
+data_refresher.py                   # 시총/재무/OHLCV/섹터 캐시 갱신
+backtest/fast_generate_rankings_v2.py  # 스코어링 엔진 (FG)
+ranking_manager.py                  # weighted_rank / 진입·퇴출
+send_telegram_auto.py               # Signal/Watchlist 메시지 + 수익률 리플레이
+breadth_diagnostic.py               # 섹터 브레드스 진단
+entry_sentinel.py                   # 신규진입 검문소 (개인봇 리포트)
+conviction_display.py               # 확신가중 비중 제안 (표시 전용)
+dart_collector.py                   # DART 수집 (finstate + document 폴백)
+backtest/turbo_simulator.py         # 백테스트 엔진 (5ms/run)
+state/                              # 일별 랭킹·발송 원장 (라이브 기록, git 추적)
+docs/                               # 시스템 문서 + 과거 문서 아카이브
 ```
-
----
-
-## 프로젝트 구조
-
-```
-quant_py-main/
-├── [핵심 파이프라인]
-│   ├── run_daily.py                 # 파이프라인 진입점
-│   ├── regime_indicator.py          # 국면 판단 (KP_MA170_8d) + 파라미터
-│   ├── data_refresher.py            # 시총/펀더멘털/OHLCV/섹터 캐시 갱신
-│   ├── backtest/fast_generate_rankings_v2.py  # FG 스코어링 엔진
-│   ├── ranking_manager.py           # weighted_rank, 진입/퇴출
-│   ├── send_telegram_auto.py        # 텔레그램 3메시지
-│   └── send_notice_once.py          # 국면 전환 공지
-│
-├── [데이터 수집]
-│   ├── dart_collector.py            # DART API 수집
-│   ├── refresh_dart_cache.py        # DART 증분 갱신
-│   ├── data_collector.py            # pykrx 수집
-│   ├── postprocess_fnguide_rcept.py # FnGuide rcept_dt 역추적
-│   └── credit_monitor.py            # 시장 위험 지표
-│
-├── [AI 분석]
-│   └── gemini_analysis.py           # Gemini 리스크 + 종목 내러티브
-│
-├── [백테스트]
-│   ├── backtest/turbo_simulator.py  # TurboSimulator (5ms/run)
-│   ├── backtest/v80_master_search.py # v80 VQGM 탐색 (5,652조합)
-│   ├── backtest/v80_regime_step*.py # v80 국면 탐색 (352조합)
-│   └── backtest/grid_search_final.py # 범용 그리드서치
-│
-├── [상태/데이터]
-│   ├── state/                       # boost ranking JSON (git tracked)
-│   ├── state/defense/               # defense ranking JSON
-│   ├── backtest/bt_extended/        # 2018-2020 ranking
-│   ├── data_cache/                  # DART/FnGuide/OHLCV 캐시
-│   └── config.py                    # API 키 (.gitignore)
-│
-├── [문서]
-│   ├── README.md                    # 이 파일
-│   ├── CLAUDE.md                    # v80 전략 + 작업 원칙
-│   ├── SYSTEM_MAP.md                # 영구 지도 (전략 교체 체크리스트)
-│   └── PROVISIONAL_EARNINGS_RESEARCH.md # 잠정실적 연구
-│
-└── [출력 (.gitignore)]
-    ├── logs/                        # 실행 로그
-    └── output/                      # 포트폴리오 CSV
-```
-
----
 
 ## 설치 및 실행
 
-### 환경
-
-- Python 3.10+ (conda 권장)
-- Windows (Task Scheduler)
-
-### 패키지
+- Python 3.10+ (conda 권장), Windows Task Scheduler 기준
 
 ```bash
 pip install pykrx pandas numpy requests beautifulsoup4 lxml pyarrow scipy google-genai yfinance opendartreader
 ```
 
-### 실행
-
 ```bash
-# 전체 파이프라인 (개인봇 테스트)
+# 전체 파이프라인 (개인봇 테스트 모드)
 TEST_MODE=1 python run_daily.py
-
-# 텔레그램만 (기존 ranking 사용)
-TEST_MODE=1 python send_telegram_auto.py
 ```
 
-### 스케줄러
+- API 키/토큰은 `config.py`(git 미추적)에 보관 — `config.example.py` 참조
+- 스케줄: 평일 16:00 일일 파이프라인, 일요일 종목명 캐시 갱신
 
-- **일일**: 평일 16:00 (`QuanT_DailyPipeline`)
-- **종목명 캐시**: 매주 월요일 09:00 (`QuanT_TickerRefresh`)
+## 문서 안내
 
----
+| 문서 | 내용 |
+|---|---|
+| [docs/SYSTEM_OVERVIEW.md](docs/SYSTEM_OVERVIEW.md) | **현재 시스템 상세** — 팩터, 함정 필터 스택, 매매룰, 파이프라인, 검증 철학 |
+| [docs/VERSION_HISTORY.md](docs/VERSION_HISTORY.md) | **버전별 이력** v70→v80.35 + 주요 사고와 교훈 |
+| [CHANGELOG.md](CHANGELOG.md) | 변경별 상세 검증 기록 (원본 — 길고 상세함) |
+| [SYSTEM_MAP.md](SYSTEM_MAP.md) | 전략 교체 시 맹점 제로 체크리스트 |
+| [CLAUDE.md](CLAUDE.md) | AI 협업용 운영 노트 (내부 작업 문서 — 현재 운영 기준의 원본) |
+| docs/archive/ | 과거 핸드오버·조사·TODO 문서 아카이브 |
 
-## 버전 이력
+## 디스클레이머
 
-| 버전 | 날짜 | 핵심 변경 |
-|------|------|-----------|
-| **v80** | 04-18 | KP_MA170_8d + 2f(rev60+oca40) + Q=0 — 6,004조합 탐색, Phase5a 오류 수정 |
-| v79 | 04-15 | KP_MA200_7d + FnGuide PIT — Cal3.23/3.44 |
-| v77 | 04-09 | 3팩터G + 궤적wr변경 — Cal6.62 |
-| v76 | 04-06 | KP_MA200_5d + CP제거 FG직접호출 |
-| v75 | 04-05 | G서브팩터 최적화 + B126_40_3d |
-| v74 | 04-04 | 국면전환 단일트랙 확정 |
-| v73 | 04-03 | 투트랙 Core+Boost |
-| v72 | 03-30 | DART 기반 전환 |
-| v70 | 03-25 | rank기반 확정 |
-
----
-
-## 라이선스
-
-Private repository. 무단 복제 및 배포를 금합니다.
-
----
-
-*Generated by Claude Code | VolumeQuant/quant_py-main*
+이 저장소는 개인 연구·기록 목적입니다. 어떤 내용도 투자 권유가 아니며, 백테스트 성과는 미래 수익을 보장하지 않습니다. 시스템은 신호만 제공하고, 매매와 사이징은 각자의 판단과 책임입니다.
