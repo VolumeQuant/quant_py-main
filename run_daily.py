@@ -691,6 +691,19 @@ def main():
         except Exception as e:
             log(f"OHLCV 증분 수집 오류: {e} — 기존 데이터로 진행", logfile)
 
+        # 0.4. KOSPI 인덱스 선(先)갱신 — 국면 판단이 당일 종가를 쓰도록 (2026-07-14 fix)
+        #   버그: refresh_all(→refresh_index)이 국면 판단 뒤(run_fg_pipeline)에 돌아서
+        #   국면 판단이 항상 전(前)거래일 캐시로 계산됐음(예: 7/14에 7/13 종가로 boost 판정).
+        #   → 국면 판단 직전에 인덱스만 미리 갱신. refresh_index는 cache-hit 가드가 있어
+        #   뒤의 refresh_all 호출은 스킵됨(pykrx 추가 부하 0). 실패해도 기존 캐시로 진행(비차단).
+        log("KOSPI 인덱스 선갱신 (국면 판단용 당일 종가)", logfile)
+        try:
+            sys.path.insert(0, str(SCRIPT_DIR))
+            from data_refresher import refresh_index as _refresh_index_early
+            _refresh_index_early(today)
+        except Exception as e:
+            log(f"인덱스 선갱신 실패: {e} — 기존 캐시로 국면 판단 진행 (비차단)", logfile)
+
         # 0.5. 국면 판단 (v80.18: KP_MA_CROSS — MA20 > MA80, 5일 confirm)
         try:
             sys.path.insert(0, str(SCRIPT_DIR))
