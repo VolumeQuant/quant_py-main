@@ -11,7 +11,9 @@ PROJ = r'C:\dev\claude-code\quant_py-main'
 PY = r'C:\Users\jkw88\miniconda3\envs\volumequant\python.exe'
 
 STEPS = [
-    ('FnGuide 컨센서스 스냅샷 (축적)', [PY, os.path.join(PROJ, 'fnguide_consensus_snapshot.py')], 1500),
+    # timeout 1500→3600 (2026-07-22): 943종목 크롤이 delay 0.5s만으로 ~16~25분 = 1500s 경계라
+    # 대부분 저장 직전 kill → 스냅샷이 ~주 1회만 쌓이던 원인. 여유 1시간으로 확대.
+    ('FnGuide 컨센서스 스냅샷 (축적)', [PY, os.path.join(PROJ, 'fnguide_consensus_snapshot.py')], 3600),
     ('융합 추적기 (volume vs fused)', [PY, os.path.join(PROJ, 'research', 'eps_fusion_tracker.py')], 300),
 ]
 

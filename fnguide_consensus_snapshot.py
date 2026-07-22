@@ -68,7 +68,10 @@ def main():
 
     # 누적 저장 (date+ticker 중복 제거 → 재실행 시 당일분 갱신)
     if os.path.exists(OUT):
-        old = pd.read_parquet(OUT)
+        try:
+            old = pd.read_parquet(OUT)
+        except Exception:  # 엔진 불일치(pyarrow↔fastparquet) 재발 방지 — fs_dart/HY-OAS와 동일 패턴
+            old = pd.read_parquet(OUT, engine='fastparquet')
         old = old[old['date'] != snap_date]
         df = pd.concat([old, df], ignore_index=True)
     df.to_parquet(OUT, index=False)
