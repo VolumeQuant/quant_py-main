@@ -38,12 +38,17 @@ def main():
     ap.add_argument('--date', default=None)
     args = ap.parse_args()
 
-    # 날짜: 인자 우선, 없으면 최신 market_cap 파일 날짜(거래일 기준)
+    # 날짜: 인자 우선, 없으면 오늘(평일). ⚠️구현이 market_cap 파일 날짜였는데 그 파일 생산자가
+    # 무스케줄이라 7/8에 멈춤 → 매일 크롤이 같은 날짜(7/8)를 덮어써 이력이 4일치에 고정되던
+    # 진범(2026-07-22 발견). 크롤은 '지금' 값이므로 도장은 오늘이 맞다. 주말은 스킵(거래일 정렬).
+    from datetime import datetime
     if args.date:
         snap_date = args.date
     else:
-        mf = sorted(glob.glob(os.path.join(PROJ, 'data_cache', 'market_cap_ALL_*.parquet')))[-1]
-        snap_date = mf.split('_')[-1].replace('.parquet', '')
+        now = datetime.now()
+        if now.weekday() >= 5:
+            print('[스킵] 주말 — 스냅샷 생략'); return
+        snap_date = now.strftime('%Y%m%d')
 
     tickers = universe()
     if args.sample:
