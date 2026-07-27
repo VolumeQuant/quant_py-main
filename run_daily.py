@@ -691,16 +691,34 @@ def main():
         except Exception as e:
             log(f"OHLCV 증분 수집 오류: {e} — 기존 데이터로 진행", logfile)
 
-        # 0.4. KOSPI 인덱스 선(先)갱신 — 국면 판단이 당일 종가를 쓰도록 (2026-07-14 fix)
-        #   버그: refresh_all(→refresh_index)이 국면 판단 뒤(run_fg_pipeline)에 돌아서
-        #   국면 판단이 항상 전(前)거래일 캐시로 계산됐음(예: 7/14에 7/13 종가로 boost 판정).
-        #   → 국면 판단 직전에 인덱스만 미리 갱신. refresh_index는 cache-hit 가드가 있어
-        #   뒤의 refresh_all 호출은 스킵됨(pykrx 추가 부하 0). 실패해도 기존 캐시로 진행(비차단).
+        # 0.4. KOSPI 인덱스 선(先)갱신 — 국면 판단이 당일 종가를 쓰도록
+        #   버그1(2026-07-14): refresh_all(→refresh_index)이 국면 판단 뒤(run_fg_pipeline)에
+        #     돌아서 국면 판단이 항상 전거래일 캐시로 계산됨(예: 7/14에 7/13 종가). → 선갱신 추가.
+        #   버그2(2026-07-27): 16:00 스케줄 실행 시 KRX 인덱스 종가가 pykrx에 ~16:04까지 미발행
+        #     → 선갱신 1회로는 stale(전일) 반환, 국면 판단이 또 전일값 사용(7/27에 7/24 종가).
+        #   → 캐시 최신일이 today가 될 때까지 검증+재시도(최대 6회×45s≈4.5분). pykrx는 순차·
+        #     45s 간격이라 집IP 안전. 재시도 소진해도 기존 캐시로 진행(비차단, 하루 stale로 폴백).
         log("KOSPI 인덱스 선갱신 (국면 판단용 당일 종가)", logfile)
         try:
             sys.path.insert(0, str(SCRIPT_DIR))
             from data_refresher import refresh_index as _refresh_index_early
-            _refresh_index_early(today)
+            import time as _t_early
+            _kospi_f = SCRIPT_DIR / 'data_cache' / 'kospi_yf.parquet'
+            for _attempt in range(6):
+                _refresh_index_early(today)
+                try:
+                    import pandas as _pd_early
+                    _last = _pd_early.read_parquet(_kospi_f).index.max().strftime('%Y%m%d')
+                except Exception:
+                    _last = None
+                if _last == today:
+                    log(f"  인덱스 당일 종가 확보 ({_last}, 시도 {_attempt + 1}/6)", logfile)
+                    break
+                if _attempt < 5:
+                    log(f"  인덱스 아직 전일({_last}) — KRX 종가 미발행, 45s 후 재시도 ({_attempt + 1}/6)", logfile)
+                    _t_early.sleep(45)
+            else:
+                log(f"  인덱스 당일({today}) 종가 미확보 — 기존 캐시로 국면 판단 (비차단, 하루 stale)", logfile)
         except Exception as e:
             log(f"인덱스 선갱신 실패: {e} — 기존 캐시로 국면 판단 진행 (비차단)", logfile)
 
