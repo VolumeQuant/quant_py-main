@@ -295,8 +295,10 @@ def calc_system_returns(regime_info=None):
             if daily_rets:
                 avg_ret = sum(daily_rets) / len(daily_rets)
                 # 섹터브레드스 발동일 = 노출 50%(절반 현금). boost인 날만(defense는 이미 현금).
-                _sc = _breadth_scale.get(d0, 1.0)
-                if _sc != 1.0 and regime_by_date.get(d0, True):
+                # 2026-07-31 look-ahead 수정: d-1→d0 수익의 사이징은 d-1 종가로 알 수 있던
+                # 상태(d1)로 판단해야 한다. 구 코드는 d0 상태를 d0 수익에 적용(미래 참조).
+                _sc = _breadth_scale.get(d1, 1.0)
+                if _sc != 1.0 and regime_by_date.get(d1, True):
                     avg_ret = _sc * avg_ret + (1 - _sc) * _cash_daily
                 equity *= (1 + avg_ret)
         equity_history[d0] = equity
