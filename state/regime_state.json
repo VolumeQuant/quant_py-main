@@ -1,17 +1,11 @@
 {
-  "mode": "boost",
-  "streak": 4,
+  "mode": "defense",
+  "streak": 5,
   "streak_mode": "defense",
-  "last_date": "20260731",
+  "last_date": "20260803",
   "version": "v80.6",
   "rule": "KP_MA250_8d",
   "history": [
-    {
-      "date": "20260619",
-      "signal": "boost",
-      "mode": "boost",
-      "switched": false
-    },
     {
       "date": "20260622",
       "signal": "boost",
@@ -185,6 +179,12 @@
       "signal": "defense",
       "mode": "boost",
       "switched": false
+    },
+    {
+      "date": "20260803",
+      "signal": "defense",
+      "mode": "defense",
+      "switched": true
     }
   ]
 }
