@@ -52,7 +52,8 @@ KOSPI MA20 > MA80 (단기 > 장기) 5거래일 연속 확인 후 전환.
 종목 선별 기준이며, 비중은 본인 판단
 투자 손실 책임은 본인에게 있습니다."""
 
-for target, name in [(TELEGRAM_CHAT_ID, '채널'), (TELEGRAM_PRIVATE_ID, '개인봇')]:
+# ★2026-08-06 사용자 지시: 채널 발송 중단 — 개인봇에만. 복원 = (TELEGRAM_CHAT_ID, '채널') 튜플 복구.
+for target, name in [(TELEGRAM_PRIVATE_ID, '개인봇')]:
     results = send_telegram_long(notice, TELEGRAM_BOT_TOKEN, target)
     codes = [str(r.status_code) for r in results]
     print(f'{name}: {", ".join(codes)}')

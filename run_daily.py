@@ -932,6 +932,11 @@ def main():
             _script = SCRIPT_DIR / "send_telegram_auto.py"
             log(f"실행: send_telegram_auto.py (타임아웃 600초, 실시간 로깅)", logfile)
             _env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+            # ★2026-08-06 사용자 지시: 채널 발송 중단 — 개인봇에만 전송.
+            #   send_telegram_auto의 TEST_MODE는 전송 타깃만 바꾼다(발생 지점 3곳 전수 확인:
+            #   인수 파싱·타깃 선택뿐, 계산·state 기록·수익률 리플레이 무영향).
+            #   복원 = 아래 한 줄 제거.
+            _env["TEST_MODE"] = "1"
             if regime_env:
                 _env.update(regime_env)
             _proc = subprocess.Popen(
